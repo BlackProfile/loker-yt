@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   BadgeCheck,
@@ -140,7 +141,13 @@ export function StatusCheckSection() {
             ) : null}
 
             {result && result.found ? (
-              <div className="mt-6 flex flex-col gap-5" role="status">
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className="mt-6 flex flex-col gap-5"
+                role="status"
+              >
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                   {result.positionTitle ? (
                     <p>
@@ -239,7 +246,7 @@ export function StatusCheckSection() {
                     {t.status.rejected}
                   </div>
                 ) : null}
-              </div>
+              </motion.div>
             ) : null}
           </Card>
         </FadeIn>

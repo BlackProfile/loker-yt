@@ -107,7 +107,7 @@ export function LogsTab() {
           <Button
             variant="outline"
             size="sm"
-            className="h-10 sm:h-9"
+            className="h-10 active:scale-[0.99] sm:h-9"
             onClick={() => void load()}
             disabled={loading}
             aria-label="Segarkan log aktivitas"

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { LangProvider, useLang } from "@/components/landing/lang-context";
-import { BrandMark, ROSE_BADGE } from "@/components/landing/primitives";
+import { BrandMark, HoverLift, ROSE_BADGE } from "@/components/landing/primitives";
 
 function EmbedJobsInner({
   content,
@@ -49,35 +49,37 @@ function EmbedJobsInner({
             </Card>
           ) : (
             positions.map((position) => (
-              <Card key={position.id} className="gap-2 rounded-xl p-4 sm:p-5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className={ROSE_BADGE}>
-                    {position.department}
-                  </Badge>
-                  <Badge variant="secondary">{position.type}</Badge>
-                  <Badge variant="secondary" className="gap-1">
-                    <MapPin className="h-3 w-3" aria-hidden="true" />
-                    {position.location}
-                  </Badge>
-                </div>
-                <h3 className="font-semibold leading-snug">{position.title}</h3>
-                <p className="line-clamp-1 text-sm text-muted-foreground">
-                  {position.description}
-                </p>
-                <div className="mt-1 flex justify-end">
-                  <Button size="sm" asChild>
-                    <a
-                      href={applyUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={`${t.embed.applyButton} - ${position.title}`}
-                    >
-                      <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                      {t.embed.applyButton}
-                    </a>
-                  </Button>
-                </div>
-              </Card>
+              <HoverLift key={position.id}>
+                <Card className="gap-2 rounded-xl p-4 transition-shadow hover:shadow-md sm:p-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className={ROSE_BADGE}>
+                      {position.department}
+                    </Badge>
+                    <Badge variant="secondary">{position.type}</Badge>
+                    <Badge variant="secondary" className="gap-1">
+                      <MapPin className="h-3 w-3" aria-hidden="true" />
+                      {position.location}
+                    </Badge>
+                  </div>
+                  <h3 className="font-semibold leading-snug">{position.title}</h3>
+                  <p className="line-clamp-1 text-sm text-muted-foreground">
+                    {position.description}
+                  </p>
+                  <div className="mt-1 flex justify-end">
+                    <Button size="sm" asChild>
+                      <a
+                        href={applyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`${t.embed.applyButton} - ${position.title}`}
+                      >
+                        <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                        {t.embed.applyButton}
+                      </a>
+                    </Button>
+                  </div>
+                </Card>
+              </HoverLift>
             ))
           )}
         </main>

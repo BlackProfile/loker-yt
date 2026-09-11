@@ -25,7 +25,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useLang } from "@/components/landing/lang-context";
-import { ROSE_BADGE, Container, FadeIn } from "@/components/landing/primitives";
+import {
+  HoverLift,
+  ROSE_BADGE,
+  Container,
+  FadeIn,
+} from "@/components/landing/primitives";
 import { formatDateId, waShareHref } from "@/components/landing/landing-utils";
 
 function PositionCard({
@@ -42,7 +47,10 @@ function PositionCard({
   const { t } = useLang();
 
   return (
-    <Card className="h-full cursor-pointer gap-4 rounded-2xl p-6" onClick={() => onOpenDetail(position)}>
+    <Card
+      className="h-full cursor-pointer gap-4 rounded-2xl p-6 transition-shadow hover:shadow-lg hover:shadow-rose-600/10 dark:hover:shadow-black/30"
+      onClick={() => onOpenDetail(position)}
+    >
       <div>
         <Badge className={ROSE_BADGE} variant="outline">
           {position.department}
@@ -104,6 +112,7 @@ function PositionCard({
           {canApply ? (
             <Button
               size="sm"
+              className="transition-transform hover:scale-[1.04] active:scale-95"
               onClick={(event) => {
                 event.stopPropagation();
                 onApply(position.id);
@@ -374,7 +383,7 @@ export function PositionsSection({
             ) : (
               <motion.div
                 layout
-                className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3"
+                className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"
               >
                 <AnimatePresence mode="popLayout" initial={false}>
                   {filtered.map((position) => (
@@ -385,13 +394,16 @@ export function PositionsSection({
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.96 }}
                       transition={{ duration: 0.22, ease: "easeOut" }}
+                      className="h-full"
                     >
-                      <PositionCard
-                        position={position}
-                        canApply={canApply}
-                        onApply={onApply}
-                        onOpenDetail={setDetail}
-                      />
+                      <HoverLift className="h-full">
+                        <PositionCard
+                          position={position}
+                          canApply={canApply}
+                          onApply={onApply}
+                          onOpenDetail={setDetail}
+                        />
+                      </HoverLift>
                     </motion.div>
                   ))}
                 </AnimatePresence>

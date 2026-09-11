@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { motion, MotionConfig } from "framer-motion";
 import {
   Clock,
   Instagram,
-  Lock,
   Mail,
   Menu,
   MessageCircle,
@@ -38,11 +38,15 @@ import {
 import { cn } from "@/lib/utils";
 import { LangProvider, useLang } from "@/components/landing/lang-context";
 import {
+  AnimatedNumber,
   BrandMark,
   Container,
   FadeIn,
+  HoverLift,
   ICON_TILE,
   ROSE_BADGE,
+  Stagger,
+  StaggerItem,
 } from "@/components/landing/primitives";
 import {
   employmentTypeOf,
@@ -64,7 +68,6 @@ type LandingPageProps = {
   content: SiteContent;
   positions: Position[];
   stats: { openRoles: number; totalApplications: number };
-  onOpenAdmin: () => void;
 };
 
 // Link nav/footer mengikuti visibilitas section terkait —
@@ -82,6 +85,18 @@ function useNavLinks(sections: SectionVisibility) {
 
 const TRUST_ICONS = [ShieldCheck, Clock, MessageCircle];
 
+// Status "halaman sudah digulir" via useSyncExternalStore (murah, tanpa setState di effect).
+function useScrolled(threshold = 8): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      window.addEventListener("scroll", notify, { passive: true });
+      return () => window.removeEventListener("scroll", notify);
+    },
+    () => window.scrollY > threshold,
+    () => false,
+  );
+}
+
 function Navbar({
   siteName,
   tagline,
@@ -96,15 +111,26 @@ function Navbar({
   const navLinks = useNavLinks(sections);
   // Hamburger seluler hanya bila isinya ada: link nav atau CTA lamaran.
   const hasMobileMenu = navLinks.length > 0 || sections.applyForm;
+  const scrolled = useScrolled();
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur">
-      <Container className="flex h-16 items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+    <header
+      className={cn(
+        "sticky top-0 z-50 border-b bg-background/80 backdrop-blur transition-[box-shadow] duration-300",
+        scrolled && "shadow-sm",
+      )}
+    >
+      <Container
+        className={cn(
+          "flex h-16 items-center justify-between gap-4 transition-[height] duration-300",
+          scrolled && "h-14",
+        )}
+      >
+        <div className="flex min-w-0 items-center gap-3">
           <BrandMark />
-          <div className="leading-tight">
-            <p className="font-bold">{siteName}</p>
-            <p className="hidden text-xs text-muted-foreground sm:block">
+          <div className="min-w-0 leading-tight">
+            <p className="truncate font-bold">{siteName}</p>
+            <p className="hidden truncate text-xs text-muted-foreground sm:block">
               {tagline}
             </p>
           </div>
@@ -215,86 +241,108 @@ function Hero({
   return (
     <section className="relative overflow-hidden bg-zinc-950 text-zinc-50">
       <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
+      {/* Glow blob rose mengambang pelan (loop y + opacity, hanya transform/opacity) */}
       <div
         aria-hidden="true"
-        className="absolute -top-32 left-1/2 h-96 w-[44rem] max-w-full -translate-x-1/2 rounded-full bg-rose-600/20 blur-3xl"
-      />
-      <div
+        className="absolute -top-32 left-1/2 h-96 w-[44rem] max-w-full -translate-x-1/2"
+      >
+        <motion.div
+          className="h-full w-full rounded-full bg-rose-600/20 blur-3xl"
+          animate={{ y: [0, 24, 0], opacity: [0.75, 1, 0.75] }}
+          transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
+        />
+      </div>
+      <motion.div
         aria-hidden="true"
         className="absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-amber-500/10 blur-3xl"
+        animate={{ y: [0, -18, 0], opacity: [0.7, 1, 0.7] }}
+        transition={{ duration: 11, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
       />
 
       <Container className="relative py-20 md:py-28">
-        <FadeIn className="max-w-3xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-zinc-300">
-            <span
-              className="dot-pulse h-2 w-2 rounded-full bg-emerald-400 text-emerald-400"
-              aria-hidden="true"
-            />
-            {content.heroBadge}
-          </div>
+        {/* Entrance berurutan: badge → judul → deskripsi → countdown → CTA → statistik */}
+        <Stagger className="max-w-3xl" gap={0.09} delay={0.05}>
+          <StaggerItem>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-zinc-300">
+              <span
+                className="dot-pulse h-2 w-2 rounded-full bg-emerald-400 text-emerald-400"
+                aria-hidden="true"
+              />
+              {content.heroBadge}
+            </div>
+          </StaggerItem>
 
-          <h1 className="mt-6 text-4xl font-bold tracking-tight md:text-6xl">
-            {content.heroTitle}{" "}
-            {content.heroHighlight ? (
-              <span className="text-gradient">{content.heroHighlight}</span>
-            ) : null}
-          </h1>
+          <StaggerItem>
+            <h1 className="mt-6 text-4xl font-bold tracking-tight md:text-6xl">
+              {content.heroTitle}{" "}
+              {content.heroHighlight ? (
+                <span className="text-gradient">{content.heroHighlight}</span>
+              ) : null}
+            </h1>
+          </StaggerItem>
 
-          <p className="mt-6 max-w-2xl text-base text-zinc-400 md:text-lg">
-            {content.heroDescription}
-          </p>
+          <StaggerItem>
+            <p className="mt-6 max-w-2xl text-base text-zinc-400 md:text-lg">
+              {content.heroDescription}
+            </p>
+          </StaggerItem>
 
           {content.deadline ? (
-            <DeadlineCountdown deadline={content.deadline} />
+            <StaggerItem>
+              <DeadlineCountdown deadline={content.deadline} />
+            </StaggerItem>
           ) : null}
 
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            {sections.applyForm ? (
-              <Button size="lg" className="h-11" asChild>
-                <a href="#lamar">{t.nav.applyNow}</a>
-              </Button>
-            ) : null}
-            {sections.positions ? (
-              <Button
-                size="lg"
-                variant="outline"
-                className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
-                asChild
-              >
-                <a href="#posisi">{t.hero.viewPositions}</a>
-              </Button>
-            ) : null}
-            <ShareMenu dark siteName={content.siteName} tagline={content.tagline} />
-          </div>
-        </FadeIn>
+          <StaggerItem>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              {sections.applyForm ? (
+                <Button size="lg" className="h-11" asChild>
+                  <a href="#lamar">{t.nav.applyNow}</a>
+                </Button>
+              ) : null}
+              {sections.positions ? (
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                  asChild
+                >
+                  <a href="#posisi">{t.hero.viewPositions}</a>
+                </Button>
+              ) : null}
+              <ShareMenu dark siteName={content.siteName} tagline={content.tagline} />
+            </div>
+          </StaggerItem>
 
-        <FadeIn delay={0.15} className="mt-14">
-          <div className="grid grid-cols-3 divide-x divide-white/10 border-t border-white/10 pt-8">
-            <div className="pr-4 sm:pr-10">
-              <p className="text-2xl font-bold tabular-nums md:text-3xl">
-                {stats.openRoles}
-              </p>
-              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
-                {t.hero.statsOpen}
-              </p>
+          <StaggerItem className="mt-14">
+            <div className="grid grid-cols-3 divide-x divide-white/10 border-t border-white/10 pt-8">
+              <div className="min-w-0 pr-3 sm:pr-10">
+                <p className="text-xl font-bold tabular-nums sm:text-2xl md:text-3xl">
+                  <AnimatedNumber value={stats.openRoles} />
+                </p>
+                <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+                  {t.hero.statsOpen}
+                </p>
+              </div>
+              <div className="min-w-0 px-3 sm:px-10">
+                <p className="text-xl font-bold tabular-nums sm:text-2xl md:text-3xl">
+                  <AnimatedNumber value={stats.totalApplications} suffix="+" />
+                </p>
+                <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+                  {t.hero.statsApps}
+                </p>
+              </div>
+              <div className="min-w-0 pl-3 sm:pl-10">
+                <p className="text-xl font-bold tabular-nums sm:text-2xl md:text-3xl">
+                  <AnimatedNumber value={100} suffix="%" />
+                </p>
+                <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+                  {t.hero.statsRemote}
+                </p>
+              </div>
             </div>
-            <div className="px-4 sm:px-10">
-              <p className="text-2xl font-bold tabular-nums md:text-3xl">
-                {stats.totalApplications}+
-              </p>
-              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
-                {t.hero.statsApps}
-              </p>
-            </div>
-            <div className="pl-4 sm:pl-10">
-              <p className="text-2xl font-bold tabular-nums md:text-3xl">100%</p>
-              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
-                {t.hero.statsRemote}
-              </p>
-            </div>
-          </div>
-        </FadeIn>
+          </StaggerItem>
+        </Stagger>
       </Container>
     </section>
   );
@@ -331,25 +379,34 @@ function AboutSection({
               <p className="mt-4 text-xl font-semibold">{t.about.cardTitle}</p>
               <p className="mt-2 text-sm text-white/80">{t.about.cardBody}</p>
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-4">
-              <Card className="gap-1 rounded-2xl p-4 text-center">
-                <p className="text-xl font-bold tabular-nums md:text-2xl">
-                  {stats.openRoles}
-                </p>
-                <p className="text-xs text-muted-foreground">{t.about.statActive}</p>
-              </Card>
-              <Card className="gap-1 rounded-2xl p-4 text-center">
-                <p className="text-xl font-bold tabular-nums md:text-2xl">
-                  {stats.totalApplications}+
-                </p>
-                <p className="text-xs text-muted-foreground">{t.about.statApps}</p>
-              </Card>
-              <Card className="gap-1 rounded-2xl p-4 text-center">
-                <p className="text-xl font-bold md:text-2xl">2 Jt+</p>
-                <p className="text-xs text-muted-foreground">
-                  {t.about.statCommunity}
-                </p>
-              </Card>
+            {/* Padding/gap mengecil di layar sangat kecil agar 3 kolom tidak sesak */}
+            <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-4">
+              <HoverLift className="h-full">
+                <Card className="h-full gap-1 rounded-2xl p-3 text-center transition-shadow hover:shadow-md sm:p-4">
+                  <p className="text-lg font-bold tabular-nums sm:text-xl md:text-2xl">
+                    <AnimatedNumber value={stats.openRoles} />
+                  </p>
+                  <p className="text-xs text-muted-foreground">{t.about.statActive}</p>
+                </Card>
+              </HoverLift>
+              <HoverLift className="h-full">
+                <Card className="h-full gap-1 rounded-2xl p-3 text-center transition-shadow hover:shadow-md sm:p-4">
+                  <p className="text-lg font-bold tabular-nums sm:text-xl md:text-2xl">
+                    <AnimatedNumber value={stats.totalApplications} suffix="+" />
+                  </p>
+                  <p className="text-xs text-muted-foreground">{t.about.statApps}</p>
+                </Card>
+              </HoverLift>
+              <HoverLift className="h-full">
+                <Card className="h-full gap-1 rounded-2xl p-3 text-center transition-shadow hover:shadow-md sm:p-4">
+                  <p className="text-lg font-bold tabular-nums sm:text-xl md:text-2xl">
+                    2 Jt+
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t.about.statCommunity}
+                  </p>
+                </Card>
+              </HoverLift>
             </div>
           </FadeIn>
         </div>
@@ -377,25 +434,23 @@ function BenefitsSection({ content }: { content: SiteContent }) {
         {content.benefits.length === 0 ? (
           <p className="mt-10 text-sm text-muted-foreground">{t.benefits.empty}</p>
         ) : (
-          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <Stagger className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {content.benefits.map((benefit, index) => (
-              <FadeIn
-                key={`${benefit.title}-${index}`}
-                delay={Math.min(index, 5) * 0.06}
-                className="h-full"
-              >
-                <Card className="h-full gap-4 rounded-2xl p-6">
-                  <div className={cn("w-fit rounded-xl p-3", ICON_TILE)}>
-                    <BenefitIcon name={benefit.icon} className="h-6 w-6" />
-                  </div>
-                  <h3 className="font-semibold">{benefit.title}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {benefit.description}
-                  </p>
-                </Card>
-              </FadeIn>
+              <StaggerItem key={`${benefit.title}-${index}`} className="h-full">
+                <HoverLift className="h-full">
+                  <Card className="h-full gap-4 rounded-2xl p-6 transition-shadow hover:shadow-md">
+                    <div className={cn("w-fit rounded-xl p-3", ICON_TILE)}>
+                      <BenefitIcon name={benefit.icon} className="h-6 w-6" />
+                    </div>
+                    <h3 className="font-semibold">{benefit.title}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {benefit.description}
+                    </p>
+                  </Card>
+                </HoverLift>
+              </StaggerItem>
             ))}
-          </div>
+          </Stagger>
         )}
       </Container>
     </section>
@@ -418,22 +473,24 @@ function HowToApplySection() {
           <p className="mt-3 text-muted-foreground">{t.howTo.desc}</p>
         </FadeIn>
 
-        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <Stagger className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {t.howTo.steps.map((step, index) => (
-            <FadeIn key={step.title} delay={index * 0.06} className="h-full">
-              <Card className="h-full gap-3 rounded-2xl p-6">
-                <span
-                  aria-hidden="true"
-                  className="text-4xl font-bold text-rose-600/20 dark:text-rose-400/20"
-                >
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <h3 className="font-semibold">{step.title}</h3>
-                <p className="text-sm text-muted-foreground">{step.description}</p>
-              </Card>
-            </FadeIn>
+            <StaggerItem key={step.title} className="h-full">
+              <HoverLift className="h-full">
+                <Card className="h-full gap-3 rounded-2xl p-6 transition-shadow hover:shadow-md">
+                  <span
+                    aria-hidden="true"
+                    className="text-4xl font-bold text-rose-600/20 dark:text-rose-400/20"
+                  >
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <h3 className="font-semibold">{step.title}</h3>
+                  <p className="text-sm text-muted-foreground">{step.description}</p>
+                </Card>
+              </HoverLift>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </Container>
     </section>
   );
@@ -455,7 +512,7 @@ function ApplySection({
   return (
     <section id="lamar" className="scroll-mt-24 bg-background py-16 md:py-24">
       <Container>
-        <div className="grid gap-8 lg:grid-cols-5 lg:gap-10">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-5 lg:gap-10">
           <FadeIn className="lg:col-span-2">
             <Badge variant="outline" className={ROSE_BADGE}>
               {t.apply.badge}
@@ -556,42 +613,40 @@ function VoicesSection({ content }: { content: SiteContent }) {
           <p className="mt-3 text-muted-foreground">{t.voices.desc}</p>
         </FadeIn>
 
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
+        <Stagger className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
           {content.teamMembers.map((member, index) => (
-            <FadeIn
-              key={`${member.name}-${index}`}
-              delay={Math.min(index, 5) * 0.06}
-              className="h-full"
-            >
-              <Card className="h-full gap-4 rounded-2xl p-6">
-                <Quote
-                  className="h-7 w-7 text-rose-600 dark:text-rose-400"
-                  aria-hidden="true"
-                />
-                <p className="text-sm italic leading-relaxed">
-                  &ldquo;{member.quote}&rdquo;
-                </p>
-                <div className="mt-auto flex items-center gap-3 border-t pt-4">
-                  <span
+            <StaggerItem key={`${member.name}-${index}`} className="h-full">
+              <HoverLift className="h-full">
+                <Card className="h-full gap-4 rounded-2xl p-6 transition-shadow hover:shadow-md">
+                  <Quote
+                    className="h-7 w-7 text-rose-600 dark:text-rose-400"
                     aria-hidden="true"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-600 to-amber-500 text-sm font-bold text-white"
-                  >
-                    {member.name
-                      .trim()
-                      .split(/\s+/)
-                      .slice(0, 2)
-                      .map((part) => part.charAt(0).toUpperCase())
-                      .join("") || "?"}
-                  </span>
-                  <div className="leading-tight">
-                    <p className="text-sm font-semibold">{member.name}</p>
-                    <p className="text-xs text-muted-foreground">{member.role}</p>
+                  />
+                  <p className="text-sm italic leading-relaxed">
+                    &ldquo;{member.quote}&rdquo;
+                  </p>
+                  <div className="mt-auto flex items-center gap-3 border-t pt-4">
+                    <span
+                      aria-hidden="true"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-600 to-amber-500 text-sm font-bold text-white"
+                    >
+                      {member.name
+                        .trim()
+                        .split(/\s+/)
+                        .slice(0, 2)
+                        .map((part) => part.charAt(0).toUpperCase())
+                        .join("") || "?"}
+                    </span>
+                    <div className="leading-tight">
+                      <p className="text-sm font-semibold">{member.name}</p>
+                      <p className="text-xs text-muted-foreground">{member.role}</p>
+                    </div>
                   </div>
-                </div>
-              </Card>
-            </FadeIn>
+                </Card>
+              </HoverLift>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </Container>
     </section>
   );
@@ -660,8 +715,14 @@ function FinalCtaSection({
             <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
             <div
               aria-hidden="true"
-              className="absolute -top-24 left-1/2 h-72 w-[36rem] max-w-full -translate-x-1/2 rounded-full bg-rose-600/20 blur-3xl"
-            />
+              className="absolute -top-24 left-1/2 h-72 w-[36rem] max-w-full -translate-x-1/2"
+            >
+              <motion.div
+                className="h-full w-full rounded-full bg-rose-600/20 blur-3xl"
+                animate={{ y: [0, 18, 0], opacity: [0.7, 1, 0.7] }}
+                transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+              />
+            </div>
             <div className="relative mx-auto max-w-2xl">
               <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
                 {t.cta.title}
@@ -699,11 +760,9 @@ function FinalCtaSection({
 function Footer({
   content,
   sections,
-  onOpenAdmin,
 }: {
   content: SiteContent;
   sections: SectionVisibility;
-  onOpenAdmin: () => void;
 }) {
   const { t } = useLang();
   const navLinks = useNavLinks(sections);
@@ -792,19 +851,12 @@ function Footer({
           </div>
         </div>
 
-        {/* pe-20 memberi ruang agar tombol Admin tidak tertutup chat widget */}
-        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t pe-20 pt-6 sm:flex-row">
+        {/* Garis bawah footer: hak cipta + catatan kecil. */}
+        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t pt-6 text-center sm:flex-row sm:text-left">
           <p className="text-xs text-muted-foreground">{content.footerText}</p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onOpenAdmin}
-            aria-label={t.footer.adminAria}
-            className="text-muted-foreground"
-          >
-            <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-            {t.footer.admin}
-          </Button>
+          <p className="text-xs text-muted-foreground/70">
+            {content.siteName} — {content.tagline}
+          </p>
         </div>
       </Container>
     </footer>
@@ -836,12 +888,7 @@ function useJobPostingJsonLd(positions: Position[], siteName: string) {
   }, [positions, siteName]);
 }
 
-function LandingShell({
-  content,
-  positions,
-  stats,
-  onOpenAdmin,
-}: LandingPageProps) {
+function LandingShell({ content, positions, stats }: LandingPageProps) {
   const [selectedPositionId, setSelectedPositionId] = useState("");
   // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin).
   const sections = content.sections;
@@ -854,50 +901,48 @@ function LandingShell({
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <Navbar
-        siteName={content.siteName}
-        tagline={content.tagline}
-        sections={sections}
-      />
-      <main className="flex-1">
-        {sections.hero ? (
-          <Hero content={content} stats={stats} sections={sections} />
-        ) : null}
-        {sections.positions ? (
-          <PositionsSection
-            positions={positions}
-            siteName={content.siteName}
-            canApply={sections.applyForm}
-            onApply={handleApplyPosition}
-          />
-        ) : null}
-        {sections.about ? <AboutSection content={content} stats={stats} /> : null}
-        {sections.benefits ? <BenefitsSection content={content} /> : null}
-        {sections.steps ? <HowToApplySection /> : null}
-        {sections.applyForm ? (
-          <ApplySection
-            content={content}
-            positions={positions}
-            positionId={selectedPositionId}
-            onPositionIdChange={setSelectedPositionId}
-          />
-        ) : null}
-        {sections.statusCheck ? <StatusCheckSection /> : null}
-        {sections.testimonials ? <VoicesSection content={content} /> : null}
-        {sections.faq ? <FaqSection content={content} /> : null}
-        {sections.finalCta ? (
-          <FinalCtaSection content={content} sections={sections} />
-        ) : null}
-        {sections.subscribe ? <SubscribeSection /> : null}
-      </main>
-      <Footer
-        content={content}
-        sections={sections}
-        onOpenAdmin={onOpenAdmin}
-      />
-      {content.chatbotEnabled && sections.chatbot ? <ChatWidget /> : null}
-    </div>
+    <MotionConfig reducedMotion="user">
+      <div className="flex min-h-screen flex-col">
+        <Navbar
+          siteName={content.siteName}
+          tagline={content.tagline}
+          sections={sections}
+        />
+        <main className="flex-1">
+          {sections.hero ? (
+            <Hero content={content} stats={stats} sections={sections} />
+          ) : null}
+          {sections.positions ? (
+            <PositionsSection
+              positions={positions}
+              siteName={content.siteName}
+              canApply={sections.applyForm}
+              onApply={handleApplyPosition}
+            />
+          ) : null}
+          {sections.about ? <AboutSection content={content} stats={stats} /> : null}
+          {sections.benefits ? <BenefitsSection content={content} /> : null}
+          {sections.steps ? <HowToApplySection /> : null}
+          {sections.applyForm ? (
+            <ApplySection
+              content={content}
+              positions={positions}
+              positionId={selectedPositionId}
+              onPositionIdChange={setSelectedPositionId}
+            />
+          ) : null}
+          {sections.statusCheck ? <StatusCheckSection /> : null}
+          {sections.testimonials ? <VoicesSection content={content} /> : null}
+          {sections.faq ? <FaqSection content={content} /> : null}
+          {sections.finalCta ? (
+            <FinalCtaSection content={content} sections={sections} />
+          ) : null}
+          {sections.subscribe ? <SubscribeSection /> : null}
+        </main>
+        <Footer content={content} sections={sections} />
+        {content.chatbotEnabled && sections.chatbot ? <ChatWidget /> : null}
+      </div>
+    </MotionConfig>
   );
 }
 

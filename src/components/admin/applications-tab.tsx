@@ -47,6 +47,7 @@ import { ApplicationDetailDialog } from "./application-detail-dialog";
 import { ApplicationsTable } from "./applications-table";
 import { KanbanBoard } from "./kanban-board";
 import { ComparisonDialog } from "./comparison-dialog";
+import { Reveal } from "./motion-primitives";
 import { cn } from "@/lib/utils";
 
 const ALL = "ALL";
@@ -306,7 +307,7 @@ export function ApplicationsTab() {
               className="h-10 rounded-xl pl-9"
             />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Toggle tampilan */}
             <div className="flex items-center gap-1 rounded-xl border p-1">
               <Button
@@ -491,7 +492,12 @@ export function ApplicationsTab() {
 
       {/* Bulk bar */}
       {canMutate && selectedIds.size > 0 ? (
-        <div className="sticky bottom-4 z-20 flex flex-wrap items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/95 p-3 backdrop-blur dark:border-rose-900 dark:bg-rose-950/90">
+        <Reveal
+          slideY={8}
+          duration={0.2}
+          className="sticky bottom-4 z-20"
+        >
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/95 p-3 backdrop-blur dark:border-rose-900 dark:bg-rose-950/90">
           <span className="text-sm font-semibold">
             {selectedIds.size} dipilih
           </span>
@@ -515,7 +521,7 @@ export function ApplicationsTab() {
           </Select>
           <Button
             size="sm"
-            className="h-9"
+            className="h-9 active:scale-[0.99]"
             disabled={!bulkStatus || bulkWorking}
             onClick={() =>
               void runBulk(
@@ -562,19 +568,28 @@ export function ApplicationsTab() {
           >
             Bersihkan pilihan
           </Button>
-        </div>
+          </div>
+        </Reveal>
       ) : null}
 
       {/* Bar perbandingan melayang */}
       {comparedApps.length > 0 && !compareOpen ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
-          <Button
-            className="pointer-events-auto h-11 rounded-full px-5 shadow-lg"
-            onClick={() => setCompareOpen(true)}
-            aria-label={`Bandingkan ${comparedApps.length} kandidat`}
+          <Reveal
+            slideY={10}
+            duration={0.25}
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            className="pointer-events-auto"
           >
-            Bandingkan ({comparedApps.length})
-          </Button>
+            <Button
+              className="h-11 rounded-full px-5 shadow-lg"
+              onClick={() => setCompareOpen(true)}
+              aria-label={`Bandingkan ${comparedApps.length} kandidat`}
+            >
+              Bandingkan ({comparedApps.length})
+            </Button>
+          </Reveal>
         </div>
       ) : null}
 

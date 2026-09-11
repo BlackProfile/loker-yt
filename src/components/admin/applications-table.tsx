@@ -52,7 +52,7 @@ export function ApplicationsTable({
     <>
       {/* Desktop: table */}
       <Card className="hidden gap-0 overflow-hidden rounded-2xl py-0 md:block">
-        <Table>
+        <Table className="min-w-[920px]">
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
               <TableHead className="w-10 px-4 py-3">
@@ -194,7 +194,10 @@ export function ApplicationsTable({
           const isSelected = selectedIds.has(app.id);
           const isCompared = compareIds.includes(app.id);
           return (
-            <Card key={app.id} className="gap-0 rounded-2xl p-4">
+            <Card
+              key={app.id}
+              className="gap-0 rounded-2xl p-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md"
+            >
               <CardContent className="px-0">
                 <div className="flex items-start gap-3">
                   <Checkbox
@@ -250,7 +253,7 @@ export function ApplicationsTable({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-10"
+                    className="h-11 sm:h-10"
                     onClick={() => onOpenDetail(app)}
                   >
                     <Eye className="size-4" aria-hidden="true" />
@@ -260,7 +263,7 @@ export function ApplicationsTable({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950"
+                      className="h-11 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:h-10 dark:hover:bg-rose-950"
                       onClick={() => onDeleteRequest(app)}
                     >
                       <Trash2 className="size-4" aria-hidden="true" />

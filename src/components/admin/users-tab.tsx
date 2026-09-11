@@ -361,7 +361,7 @@ export function UsersTab() {
               Admin panel dengan role Pemilik, HR, atau Pengamat.
             </CardDescription>
           </div>
-          <Button onClick={openCreate} className="h-10">
+          <Button onClick={openCreate} className="h-11 active:scale-[0.99] sm:h-10">
             <Plus className="size-4" aria-hidden="true" />
             Tambah Pengguna
           </Button>
@@ -383,7 +383,7 @@ export function UsersTab() {
               {users.map((user) => (
                 <div
                   key={user.id}
-                  className="flex flex-wrap items-center gap-3 rounded-xl border p-3"
+                  className="flex flex-wrap items-center gap-3 rounded-xl border p-3 transition-colors duration-150 hover:border-zinc-300 dark:hover:border-zinc-600"
                 >
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
                     {user.name.charAt(0).toUpperCase()}
@@ -419,7 +419,7 @@ export function UsersTab() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-10 sm:size-9"
+                      className="size-11 sm:size-9"
                       onClick={() => openEdit(user)}
                       aria-label={`Edit pengguna ${user.name}`}
                     >
@@ -428,7 +428,7 @@ export function UsersTab() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
+                      className="size-11 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
                       onClick={() => setDeleteTarget(user)}
                       aria-label={`Hapus pengguna ${user.name}`}
                     >

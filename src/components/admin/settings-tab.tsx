@@ -63,6 +63,7 @@ import {
 import { apiGet, apiPost, apiPut } from "./api";
 import { copyText } from "./format";
 import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
+import { Reveal } from "./motion-primitives";
 
 // Peta ikon lucide untuk benefit (fallback Sparkles).
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -914,26 +915,28 @@ export function SettingsTab() {
         </CardContent>
       </Card>
 
-      {/* Bar simpan sticky */}
-      <Card className="sticky bottom-4 z-10 flex-row items-center justify-between gap-3 rounded-2xl border-rose-200 bg-rose-50/80 p-4 backdrop-blur dark:border-rose-900 dark:bg-rose-950/80">
-        <p className="text-sm font-medium">
-          Perubahan konten situs belum disimpan.
-        </p>
-        <Button
-          onClick={() => void handleSaveSite()}
-          disabled={saving}
-          className="h-10 shrink-0"
-        >
-          {saving ? (
-            <>
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              Menyimpan...
-            </>
-          ) : (
-            "Simpan Perubahan"
-          )}
-        </Button>
-      </Card>
+      {/* Bar simpan sticky (entrance halus, pola simpan tak berubah) */}
+      <Reveal slideY={10} duration={0.25} className="sticky bottom-4 z-10">
+        <Card className="flex-row items-center justify-between gap-3 rounded-2xl border-rose-200 bg-rose-50/80 p-4 backdrop-blur dark:border-rose-900 dark:bg-rose-950/80">
+          <p className="text-sm font-medium">
+            Perubahan konten situs belum disimpan.
+          </p>
+          <Button
+            onClick={() => void handleSaveSite()}
+            disabled={saving}
+            className="h-11 shrink-0 active:scale-[0.99] sm:h-10"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                Menyimpan...
+              </>
+            ) : (
+              "Simpan Perubahan"
+            )}
+          </Button>
+        </Card>
+      </Reveal>
     </div>
   );
 }

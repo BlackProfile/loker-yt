@@ -133,7 +133,7 @@ export function ShareMenu({ siteName, tagline, dark = false }: ShareMenuProps) {
             aria-label={t.hero.share.trigger}
             title={t.hero.share.trigger}
             className={cn(
-              "h-11 w-11 rounded-full",
+              "h-11 w-11 rounded-full transition-transform active:scale-95",
               dark &&
                 "border border-white/20 bg-transparent text-zinc-200 hover:bg-white/10 hover:text-white",
             )}

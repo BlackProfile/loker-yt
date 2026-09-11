@@ -129,7 +129,7 @@ const id = {
     requiredBefore: "Kolom bertanda",
     requiredAfter: "wajib diisi.",
     stepOf: "Langkah",
-    steps: ["Data Diri", "Pengalaman", "File & Kirim"],
+    steps: ["Data Diri", "Pengalaman", "Berkas", "Pratinjau & Kirim"],
     fields: {
       name: "Nama Lengkap",
       namePh: "cth. Rani Putri",
@@ -179,6 +179,28 @@ const id = {
       phone: "WhatsApp",
       notChosen: "Belum dipilih",
     },
+    preview: {
+      badge: "Langkah Terakhir",
+      title: "Pratinjau Lamaran",
+      desc: "Periksa kembali seluruh data di bawah ini sebelum dikirim. Pastikan semuanya sudah benar dan tidak ada salah ketik.",
+      sectionPersonal: "Data Diri",
+      sectionAnswers: "Pengalaman & Jawaban",
+      sectionFiles: "Berkas Terlampir",
+      edit: "Ubah",
+      notFilled: "Tidak diisi",
+      noFile: "Tidak diunggah",
+      agreeLabel:
+        "Saya menyatakan bahwa data di atas benar, akurat, dan dapat dipertanggungjawabkan.",
+      agreeRequired:
+        "Centang pernyataan kebenaran data sebelum mengirim lamaran.",
+      confirmTitle: "Kirim lamaran sekarang?",
+      confirmDesc:
+        "Setelah terkirim, isi lamaran tidak bisa diubah lagi. Kamu akan menerima kode pelacakan untuk memantau status seleksi.",
+      confirmYes: "Ya, Kirim Lamaran",
+      confirmCancel: "Periksa Lagi",
+      privacyNote:
+        "Lamaran baru benar-benar dikirim setelah kamu konfirmasi — tidak ada data yang terkirim otomatis.",
+    },
     uploads: {
       cvLabel: "CV (PDF, maks 5 MB)",
       introLabel:
@@ -190,6 +212,7 @@ const id = {
     buttons: {
       back: "Kembali",
       next: "Lanjut",
+      review: "Pratinjau Lamaran",
       submit: "Kirim Lamaran",
       submitting: "Mengirim...",
     },
@@ -252,8 +275,6 @@ const id = {
     nav: "Navigasi",
     contact: "Kontak",
     whatsapp: "WhatsApp",
-    admin: "Admin",
-    adminAria: "Buka panel admin",
   },
   chat: {
     open: "Buka obrolan",
@@ -413,6 +434,24 @@ type idDictShape = {
       phone: string;
       notChosen: string;
     };
+    preview: {
+      badge: string;
+      title: string;
+      desc: string;
+      sectionPersonal: string;
+      sectionAnswers: string;
+      sectionFiles: string;
+      edit: string;
+      notFilled: string;
+      noFile: string;
+      agreeLabel: string;
+      agreeRequired: string;
+      confirmTitle: string;
+      confirmDesc: string;
+      confirmYes: string;
+      confirmCancel: string;
+      privacyNote: string;
+    };
     uploads: {
       cvLabel: string;
       introLabel: string;
@@ -423,6 +462,7 @@ type idDictShape = {
     buttons: {
       back: string;
       next: string;
+      review: string;
       submit: string;
       submitting: string;
     };
@@ -475,8 +515,6 @@ type idDictShape = {
     nav: string;
     contact: string;
     whatsapp: string;
-    admin: string;
-    adminAria: string;
   };
   chat: {
     open: string;
@@ -614,7 +652,7 @@ const en: Dict = {
     requiredBefore: "Fields marked with",
     requiredAfter: "are required.",
     stepOf: "Step",
-    steps: ["Personal Data", "Experience", "Files & Submit"],
+    steps: ["Personal Data", "Experience", "Files", "Review & Submit"],
     fields: {
       name: "Full Name",
       namePh: "e.g. Rani Putri",
@@ -664,6 +702,28 @@ const en: Dict = {
       phone: "WhatsApp",
       notChosen: "Not chosen yet",
     },
+    preview: {
+      badge: "Final Step",
+      title: "Review Your Application",
+      desc: "Check all the details below before sending. Make sure everything is correct and typo-free.",
+      sectionPersonal: "Personal Data",
+      sectionAnswers: "Experience & Answers",
+      sectionFiles: "Attached Files",
+      edit: "Edit",
+      notFilled: "Not filled in",
+      noFile: "Not uploaded",
+      agreeLabel:
+        "I declare that the information above is true, accurate, and verifiable.",
+      agreeRequired:
+        "Tick the accuracy statement before submitting your application.",
+      confirmTitle: "Send application now?",
+      confirmDesc:
+        "Once sent, the application cannot be edited. You will receive a tracking code to monitor your selection status.",
+      confirmYes: "Yes, Submit Application",
+      confirmCancel: "Check Again",
+      privacyNote:
+        "Your application is only sent after you confirm — nothing is submitted automatically.",
+    },
     uploads: {
       cvLabel: "CV (PDF, max 5 MB)",
       introLabel:
@@ -675,6 +735,7 @@ const en: Dict = {
     buttons: {
       back: "Back",
       next: "Next",
+      review: "Review Application",
       submit: "Submit Application",
       submitting: "Sending...",
     },
@@ -737,8 +798,6 @@ const en: Dict = {
     nav: "Navigation",
     contact: "Contact",
     whatsapp: "WhatsApp",
-    admin: "Admin",
-    adminAria: "Open admin panel",
   },
   chat: {
     open: "Open chat",

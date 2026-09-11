@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { Calendar } from "lucide-react";
 import { useLang } from "@/components/landing/lang-context";
 import { parseDeadlineDate } from "@/components/landing/landing-utils";
@@ -31,6 +32,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export function DeadlineCountdown({ deadline }: { deadline: string }) {
   const { t } = useLang();
   const mounted = useMounted();
+  const reduce = useReducedMotion();
   const target = useMemo(() => parseDeadlineDate(deadline), [deadline]);
   const targetMs = target?.getTime() ?? 0;
   const [now, setNow] = useState(() => Date.now());
@@ -57,10 +59,10 @@ export function DeadlineCountdown({ deadline }: { deadline: string }) {
 
   const parts = diffParts(targetMs, now);
   const boxes = [
-    { value: pad(parts.days), label: t.hero.countdown.days },
-    { value: pad(parts.hours), label: t.hero.countdown.hours },
-    { value: pad(parts.minutes), label: t.hero.countdown.minutes },
-    { value: pad(parts.seconds), label: t.hero.countdown.seconds },
+    { value: pad(parts.days), label: t.hero.countdown.days, pulse: false },
+    { value: pad(parts.hours), label: t.hero.countdown.hours, pulse: false },
+    { value: pad(parts.minutes), label: t.hero.countdown.minutes, pulse: false },
+    { value: pad(parts.seconds), label: t.hero.countdown.seconds, pulse: true },
   ];
 
   return (
@@ -79,9 +81,23 @@ export function DeadlineCountdown({ deadline }: { deadline: string }) {
             key={box.label}
             className="min-w-16 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-center backdrop-blur-sm sm:min-w-20 sm:px-4"
           >
-            <p className="text-2xl font-bold tabular-nums text-zinc-50 sm:text-3xl">
-              {box.value}
-            </p>
+            {box.pulse && !reduce ? (
+              // Detak halus tiap pergantian detik: elemen di-remount via key agar
+              // animasi initial terulang (scale turun ke 1, opacity naik ke 1).
+              <motion.p
+                key={box.value}
+                initial={{ scale: 1.16, opacity: 0.55 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                className="text-2xl font-bold tabular-nums text-zinc-50 sm:text-3xl"
+              >
+                {box.value}
+              </motion.p>
+            ) : (
+              <p className="text-2xl font-bold tabular-nums text-zinc-50 sm:text-3xl">
+                {box.value}
+              </p>
+            )}
             <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-zinc-400 sm:text-xs">
               {box.label}
             </p>

@@ -1,0 +1,911 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useState } from "react";
+     4→import {
+     5→  Clock,
+     6→  Instagram,
+     7→  Lock,
+     8→  Mail,
+     9→  Menu,
+    10→  MessageCircle,
+    11→  Phone,
+    12→  Quote,
+    13→  ShieldCheck,
+    14→  Sparkles,
+    15→} from "lucide-react";
+    16→import type {
+    17→  Position,
+    18→  SectionVisibility,
+    19→  SiteContent,
+    20→} from "@/lib/types";
+    21→import { Badge } from "@/components/ui/badge";
+    22→import { Button } from "@/components/ui/button";
+    23→import { Card } from "@/components/ui/card";
+    24→import {
+    25→  Accordion,
+    26→  AccordionContent,
+    27→  AccordionItem,
+    28→  AccordionTrigger,
+    29→} from "@/components/ui/accordion";
+    30→import {
+    31→  Sheet,
+    32→  SheetContent,
+    33→  SheetDescription,
+    34→  SheetHeader,
+    35→  SheetTitle,
+    36→  SheetTrigger,
+    37→} from "@/components/ui/sheet";
+    38→import { cn } from "@/lib/utils";
+    39→import { LangProvider, useLang } from "@/components/landing/lang-context";
+    40→import {
+    41→  BrandMark,
+    42→  Container,
+    43→  FadeIn,
+    44→  ICON_TILE,
+    45→  ROSE_BADGE,
+    46→} from "@/components/landing/primitives";
+    47→import {
+    48→  employmentTypeOf,
+    49→  instagramHref,
+    50→  whatsappHref,
+    51→} from "@/components/landing/landing-utils";
+    52→import { LangToggle } from "@/components/landing/lang-toggle";
+    53→import { ThemeToggle } from "@/components/landing/theme-toggle";
+    54→import { DeadlineCountdown } from "@/components/landing/deadline-countdown";
+    55→import { ShareMenu } from "@/components/landing/share-menu";
+    56→import { PositionsSection } from "@/components/landing/positions-section";
+    57→import { ApplyWizard } from "@/components/landing/apply-wizard";
+    58→import { StatusCheckSection } from "@/components/landing/status-check";
+    59→import { SubscribeSection } from "@/components/landing/subscribe-section";
+    60→import { ChatWidget } from "@/components/landing/chat-widget";
+    61→import { BenefitIcon } from "@/components/landing/benefit-icon";
+    62→
+    63→type LandingPageProps = {
+    64→  content: SiteContent;
+    65→  positions: Position[];
+    66→  stats: { openRoles: number; totalApplications: number };
+    67→  onOpenAdmin: () => void;
+    68→};
+    69→
+    70→// Link nav/footer mengikuti visibilitas section terkait —
+    71→// anchor menuju section yang disembunyikan tidak boleh dirender.
+    72→function useNavLinks(sections: SectionVisibility) {
+    73→  const { t } = useLang();
+    74→  return [
+    75→    { key: "positions" as const, href: "#posisi", label: t.nav.positions },
+    76→    { key: "benefits" as const, href: "#benefit", label: t.nav.benefits },
+    77→    { key: "steps" as const, href: "#cara-lamar", label: t.nav.howToApply },
+    78→    { key: "statusCheck" as const, href: "#status", label: t.nav.status },
+    79→    { key: "faq" as const, href: "#faq", label: t.nav.faq },
+    80→  ].filter((link) => sections[link.key]);
+    81→}
+    82→
+    83→const TRUST_ICONS = [ShieldCheck, Clock, MessageCircle];
+    84→
+    85→function Navbar({
+    86→  siteName,
+    87→  tagline,
+    88→  sections,
+    89→}: {
+    90→  siteName: string;
+    91→  tagline: string;
+    92→  sections: SectionVisibility;
+    93→}) {
+    94→  const { t } = useLang();
+    95→  const [mobileOpen, setMobileOpen] = useState(false);
+    96→  const navLinks = useNavLinks(sections);
+    97→  // Hamburger seluler hanya bila isinya ada: link nav atau CTA lamaran.
+    98→  const hasMobileMenu = navLinks.length > 0 || sections.applyForm;
+    99→
+   100→  return (
+   101→    <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur">
+   102→      <Container className="flex h-16 items-center justify-between gap-4">
+   103→        <div className="flex items-center gap-3">
+   104→          <BrandMark />
+   105→          <div className="leading-tight">
+   106→            <p className="font-bold">{siteName}</p>
+   107→            <p className="hidden text-xs text-muted-foreground sm:block">
+   108→              {tagline}
+   109→            </p>
+   110→          </div>
+   111→        </div>
+   112→
+   113→        {navLinks.length > 0 ? (
+   114→          <nav
+   115→            aria-label={t.nav.mainNav}
+   116→            className="hidden items-center gap-1 lg:flex"
+   117→          >
+   118→            {navLinks.map((link) => (
+   119→              <a
+   120→                key={link.href}
+   121→                href={link.href}
+   122→                className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+   123→              >
+   124→                {link.label}
+   125→              </a>
+   126→            ))}
+   127→          </nav>
+   128→        ) : null}
+   129→
+   130→        <div className="flex items-center gap-2">
+   131→          <div className="hidden items-center gap-2 md:flex">
+   132→            <LangToggle />
+   133→            <ThemeToggle />
+   134→          </div>
+   135→          {sections.applyForm ? (
+   136→            <Button size="sm" asChild className="hidden md:inline-flex">
+   137→              <a href="#lamar">{t.nav.applyNow}</a>
+   138→            </Button>
+   139→          ) : null}
+   140→
+   141→          {hasMobileMenu ? (
+   142→            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+   143→              <SheetTrigger asChild>
+   144→                <Button
+   145→                  variant="ghost"
+   146→                  size="icon"
+   147→                  className="h-11 w-11 md:hidden"
+   148→                  aria-label={t.nav.openMenu}
+   149→                >
+   150→                  <Menu className="h-5 w-5" aria-hidden="true" />
+   151→                </Button>
+   152→              </SheetTrigger>
+   153→              <SheetContent side="right" className="w-80">
+   154→                <SheetHeader>
+   155→                  <SheetTitle className="flex items-center gap-2 text-base">
+   156→                    <BrandMark size="sm" />
+   157→                    {siteName}
+   158→                  </SheetTitle>
+   159→                  <SheetDescription className="sr-only">
+   160→                    {t.nav.mobileNav}
+   161→                  </SheetDescription>
+   162→                </SheetHeader>
+   163→                <nav
+   164→                  aria-label={t.nav.mobileNav}
+   165→                  className="flex flex-col gap-1 px-4"
+   166→                >
+   167→                  {navLinks.map((link) => (
+   168→                    <a
+   169→                      key={link.href}
+   170→                      href={link.href}
+   171→                      onClick={() => setMobileOpen(false)}
+   172→                      className="flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+   173→                    >
+   174→                      {link.label}
+   175→                    </a>
+   176→                  ))}
+   177→                  {sections.applyForm ? (
+   178→                    <Button asChild className="mt-3">
+   179→                      <a href="#lamar" onClick={() => setMobileOpen(false)}>
+   180→                        {t.nav.applyNow}
+   181→                      </a>
+   182→                    </Button>
+   183→                  ) : null}
+   184→
+   185→                  <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4">
+   186→                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   187→                      {t.aria.langToggle} / {t.aria.themeToggle}
+   188→                    </span>
+   189→                    <div className="flex items-center gap-2">
+   190→                      <LangToggle />
+   191→                      <ThemeToggle />
+   192→                    </div>
+   193→                  </div>
+   194→                </nav>
+   195→              </SheetContent>
+   196→            </Sheet>
+   197→          ) : null}
+   198→        </div>
+   199→      </Container>
+   200→    </header>
+   201→  );
+   202→}
+   203→
+   204→function Hero({
+   205→  content,
+   206→  stats,
+   207→  sections,
+   208→}: {
+   209→  content: SiteContent;
+   210→  stats: LandingPageProps["stats"];
+   211→  sections: SectionVisibility;
+   212→}) {
+   213→  const { t } = useLang();
+   214→
+   215→  return (
+   216→    <section className="relative overflow-hidden bg-zinc-950 text-zinc-50">
+   217→      <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
+   218→      <div
+   219→        aria-hidden="true"
+   220→        className="absolute -top-32 left-1/2 h-96 w-[44rem] max-w-full -translate-x-1/2 rounded-full bg-rose-600/20 blur-3xl"
+   221→      />
+   222→      <div
+   223→        aria-hidden="true"
+   224→        className="absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-amber-500/10 blur-3xl"
+   225→      />
+   226→
+   227→      <Container className="relative py-20 md:py-28">
+   228→        <FadeIn className="max-w-3xl">
+   229→          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-zinc-300">
+   230→            <span
+   231→              className="dot-pulse h-2 w-2 rounded-full bg-emerald-400 text-emerald-400"
+   232→              aria-hidden="true"
+   233→            />
+   234→            {content.heroBadge}
+   235→          </div>
+   236→
+   237→          <h1 className="mt-6 text-4xl font-bold tracking-tight md:text-6xl">
+   238→            {content.heroTitle}{" "}
+   239→            {content.heroHighlight ? (
+   240→              <span className="text-gradient">{content.heroHighlight}</span>
+   241→            ) : null}
+   242→          </h1>
+   243→
+   244→          <p className="mt-6 max-w-2xl text-base text-zinc-400 md:text-lg">
+   245→            {content.heroDescription}
+   246→          </p>
+   247→
+   248→          {content.deadline ? (
+   249→            <DeadlineCountdown deadline={content.deadline} />
+   250→          ) : null}
+   251→
+   252→          <div className="mt-8 flex flex-wrap items-center gap-3">
+   253→            {sections.applyForm ? (
+   254→              <Button size="lg" className="h-11" asChild>
+   255→                <a href="#lamar">{t.nav.applyNow}</a>
+   256→              </Button>
+   257→            ) : null}
+   258→            {sections.positions ? (
+   259→              <Button
+   260→                size="lg"
+   261→                variant="outline"
+   262→                className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+   263→                asChild
+   264→              >
+   265→                <a href="#posisi">{t.hero.viewPositions}</a>
+   266→              </Button>
+   267→            ) : null}
+   268→            <ShareMenu dark siteName={content.siteName} tagline={content.tagline} />
+   269→          </div>
+   270→        </FadeIn>
+   271→
+   272→        <FadeIn delay={0.15} className="mt-14">
+   273→          <div className="grid grid-cols-3 divide-x divide-white/10 border-t border-white/10 pt-8">
+   274→            <div className="pr-4 sm:pr-10">
+   275→              <p className="text-2xl font-bold tabular-nums md:text-3xl">
+   276→                {stats.openRoles}
+   277→              </p>
+   278→              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+   279→                {t.hero.statsOpen}
+   280→              </p>
+   281→            </div>
+   282→            <div className="px-4 sm:px-10">
+   283→              <p className="text-2xl font-bold tabular-nums md:text-3xl">
+   284→                {stats.totalApplications}+
+   285→              </p>
+   286→              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+   287→                {t.hero.statsApps}
+   288→              </p>
+   289→            </div>
+   290→            <div className="pl-4 sm:pl-10">
+   291→              <p className="text-2xl font-bold tabular-nums md:text-3xl">100%</p>
+   292→              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+   293→                {t.hero.statsRemote}
+   294→              </p>
+   295→            </div>
+   296→          </div>
+   297→        </FadeIn>
+   298→      </Container>
+   299→    </section>
+   300→  );
+   301→}
+   302→
+   303→function AboutSection({
+   304→  content,
+   305→  stats,
+   306→}: {
+   307→  content: SiteContent;
+   308→  stats: LandingPageProps["stats"];
+   309→}) {
+   310→  const { t } = useLang();
+   311→
+   312→  return (
+   313→    <section className="bg-muted/40 py-16 md:py-24">
+   314→      <Container>
+   315→        <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+   316→          <FadeIn>
+   317→            <Badge variant="outline" className={ROSE_BADGE}>
+   318→              {t.about.badge}
+   319→            </Badge>
+   320→            <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   321→              {content.aboutTitle}
+   322→            </h2>
+   323→            <p className="mt-4 text-muted-foreground md:text-lg">
+   324→              {content.aboutDescription}
+   325→            </p>
+   326→          </FadeIn>
+   327→
+   328→          <FadeIn delay={0.1}>
+   329→            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-600 to-amber-500 p-8 text-white shadow-sm">
+   330→              <Sparkles className="h-10 w-10" aria-hidden="true" />
+   331→              <p className="mt-4 text-xl font-semibold">{t.about.cardTitle}</p>
+   332→              <p className="mt-2 text-sm text-white/80">{t.about.cardBody}</p>
+   333→            </div>
+   334→            <div className="mt-4 grid grid-cols-3 gap-4">
+   335→              <Card className="gap-1 rounded-2xl p-4 text-center">
+   336→                <p className="text-xl font-bold tabular-nums md:text-2xl">
+   337→                  {stats.openRoles}
+   338→                </p>
+   339→                <p className="text-xs text-muted-foreground">{t.about.statActive}</p>
+   340→              </Card>
+   341→              <Card className="gap-1 rounded-2xl p-4 text-center">
+   342→                <p className="text-xl font-bold tabular-nums md:text-2xl">
+   343→                  {stats.totalApplications}+
+   344→                </p>
+   345→                <p className="text-xs text-muted-foreground">{t.about.statApps}</p>
+   346→              </Card>
+   347→              <Card className="gap-1 rounded-2xl p-4 text-center">
+   348→                <p className="text-xl font-bold md:text-2xl">2 Jt+</p>
+   349→                <p className="text-xs text-muted-foreground">
+   350→                  {t.about.statCommunity}
+   351→                </p>
+   352→              </Card>
+   353→            </div>
+   354→          </FadeIn>
+   355→        </div>
+   356→      </Container>
+   357→    </section>
+   358→  );
+   359→}
+   360→
+   361→function BenefitsSection({ content }: { content: SiteContent }) {
+   362→  const { t } = useLang();
+   363→
+   364→  return (
+   365→    <section id="benefit" className="scroll-mt-24 bg-background py-16 md:py-24">
+   366→      <Container>
+   367→        <FadeIn className="max-w-2xl">
+   368→          <Badge variant="outline" className={ROSE_BADGE}>
+   369→            {t.benefits.badge}
+   370→          </Badge>
+   371→          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   372→            {t.benefits.title}
+   373→          </h2>
+   374→          <p className="mt-3 text-muted-foreground">{t.benefits.desc}</p>
+   375→        </FadeIn>
+   376→
+   377→        {content.benefits.length === 0 ? (
+   378→          <p className="mt-10 text-sm text-muted-foreground">{t.benefits.empty}</p>
+   379→        ) : (
+   380→          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+   381→            {content.benefits.map((benefit, index) => (
+   382→              <FadeIn
+   383→                key={`${benefit.title}-${index}`}
+   384→                delay={Math.min(index, 5) * 0.06}
+   385→                className="h-full"
+   386→              >
+   387→                <Card className="h-full gap-4 rounded-2xl p-6">
+   388→                  <div className={cn("w-fit rounded-xl p-3", ICON_TILE)}>
+   389→                    <BenefitIcon name={benefit.icon} className="h-6 w-6" />
+   390→                  </div>
+   391→                  <h3 className="font-semibold">{benefit.title}</h3>
+   392→                  <p className="text-sm text-muted-foreground">
+   393→                    {benefit.description}
+   394→                  </p>
+   395→                </Card>
+   396→              </FadeIn>
+   397→            ))}
+   398→          </div>
+   399→        )}
+   400→      </Container>
+   401→    </section>
+   402→  );
+   403→}
+   404→
+   405→function HowToApplySection() {
+   406→  const { t } = useLang();
+   407→
+   408→  return (
+   409→    <section id="cara-lamar" className="scroll-mt-24 bg-muted/40 py-16 md:py-24">
+   410→      <Container>
+   411→        <FadeIn className="max-w-2xl">
+   412→          <Badge variant="outline" className={ROSE_BADGE}>
+   413→            {t.howTo.badge}
+   414→          </Badge>
+   415→          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   416→            {t.howTo.title}
+   417→          </h2>
+   418→          <p className="mt-3 text-muted-foreground">{t.howTo.desc}</p>
+   419→        </FadeIn>
+   420→
+   421→        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+   422→          {t.howTo.steps.map((step, index) => (
+   423→            <FadeIn key={step.title} delay={index * 0.06} className="h-full">
+   424→              <Card className="h-full gap-3 rounded-2xl p-6">
+   425→                <span
+   426→                  aria-hidden="true"
+   427→                  className="text-4xl font-bold text-rose-600/20 dark:text-rose-400/20"
+   428→                >
+   429→                  {String(index + 1).padStart(2, "0")}
+   430→                </span>
+   431→                <h3 className="font-semibold">{step.title}</h3>
+   432→                <p className="text-sm text-muted-foreground">{step.description}</p>
+   433→              </Card>
+   434→            </FadeIn>
+   435→          ))}
+   436→        </div>
+   437→      </Container>
+   438→    </section>
+   439→  );
+   440→}
+   441→
+   442→function ApplySection({
+   443→  content,
+   444→  positions,
+   445→  positionId,
+   446→  onPositionIdChange,
+   447→}: {
+   448→  content: SiteContent;
+   449→  positions: Position[];
+   450→  positionId: string;
+   451→  onPositionIdChange: (positionId: string) => void;
+   452→}) {
+   453→  const { t } = useLang();
+   454→
+   455→  return (
+   456→    <section id="lamar" className="scroll-mt-24 bg-background py-16 md:py-24">
+   457→      <Container>
+   458→        <div className="grid gap-8 lg:grid-cols-5 lg:gap-10">
+   459→          <FadeIn className="lg:col-span-2">
+   460→            <Badge variant="outline" className={ROSE_BADGE}>
+   461→              {t.apply.badge}
+   462→            </Badge>
+   463→            <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   464→              {t.apply.title}
+   465→            </h2>
+   466→            <p className="mt-4 text-muted-foreground">{t.apply.desc}</p>
+   467→
+   468→            <ul className="mt-6 space-y-3">
+   469→              {t.apply.trust.map((line, index) => {
+   470→                const TrustIcon = TRUST_ICONS[index] ?? ShieldCheck;
+   471→                return (
+   472→                  <li key={line} className="flex items-start gap-3">
+   473→                    <TrustIcon
+   474→                      className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-400"
+   475→                      aria-hidden="true"
+   476→                    />
+   477→                    <span className="text-sm text-muted-foreground">{line}</span>
+   478→                  </li>
+   479→                );
+   480→              })}
+   481→            </ul>
+   482→
+   483→            <Card className="mt-8 gap-3 rounded-2xl p-6">
+   484→              <p className="text-sm font-semibold">{t.apply.contactTitle}</p>
+   485→              <a
+   486→                href={`mailto:${content.contactEmail}`}
+   487→                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   488→              >
+   489→                <Mail
+   490→                  className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   491→                  aria-hidden="true"
+   492→                />
+   493→                <span className="break-all">{content.contactEmail}</span>
+   494→              </a>
+   495→              <a
+   496→                href={whatsappHref(content.contactWhatsapp)}
+   497→                target="_blank"
+   498→                rel="noopener noreferrer"
+   499→                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   500→              >
+   501→                <Phone
+   502→                  className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   503→                  aria-hidden="true"
+   504→                />
+   505→                <span>
+   506→                  {t.apply.contactWhatsapp} {content.contactWhatsapp}
+   507→                </span>
+   508→              </a>
+   509→              <a
+   510→                href={instagramHref(content.instagram)}
+   511→                target="_blank"
+   512→                rel="noopener noreferrer"
+   513→                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   514→              >
+   515→                <Instagram
+   516→                  className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   517→                  aria-hidden="true"
+   518→                />
+   519→                <span className="break-all">
+   520→                  {content.instagram || "Instagram"}
+   521→                </span>
+   522→              </a>
+   523→            </Card>
+   524→          </FadeIn>
+   525→
+   526→          <FadeIn delay={0.1} className="lg:col-span-3">
+   527→            <Card className="rounded-2xl p-6 md:p-8">
+   528→              <ApplyWizard
+   529→                positions={positions}
+   530→                positionId={positionId}
+   531→                onPositionIdChange={onPositionIdChange}
+   532→              />
+   533→            </Card>
+   534→          </FadeIn>
+   535→        </div>
+   536→      </Container>
+   537→    </section>
+   538→  );
+   539→}
+   540→
+   541→function VoicesSection({ content }: { content: SiteContent }) {
+   542→  const { t } = useLang();
+   543→
+   544→  if (content.teamMembers.length === 0) return null;
+   545→
+   546→  return (
+   547→    <section className="bg-background py-16 md:py-24">
+   548→      <Container>
+   549→        <FadeIn className="max-w-2xl">
+   550→          <Badge variant="outline" className={ROSE_BADGE}>
+   551→            {t.voices.badge}
+   552→          </Badge>
+   553→          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   554→            {t.voices.title}
+   555→          </h2>
+   556→          <p className="mt-3 text-muted-foreground">{t.voices.desc}</p>
+   557→        </FadeIn>
+   558→
+   559→        <div className="mt-10 grid gap-6 md:grid-cols-3">
+   560→          {content.teamMembers.map((member, index) => (
+   561→            <FadeIn
+   562→              key={`${member.name}-${index}`}
+   563→              delay={Math.min(index, 5) * 0.06}
+   564→              className="h-full"
+   565→            >
+   566→              <Card className="h-full gap-4 rounded-2xl p-6">
+   567→                <Quote
+   568→                  className="h-7 w-7 text-rose-600 dark:text-rose-400"
+   569→                  aria-hidden="true"
+   570→                />
+   571→                <p className="text-sm italic leading-relaxed">
+   572→                  &ldquo;{member.quote}&rdquo;
+   573→                </p>
+   574→                <div className="mt-auto flex items-center gap-3 border-t pt-4">
+   575→                  <span
+   576→                    aria-hidden="true"
+   577→                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-600 to-amber-500 text-sm font-bold text-white"
+   578→                  >
+   579→                    {member.name
+   580→                      .trim()
+   581→                      .split(/\s+/)
+   582→                      .slice(0, 2)
+   583→                      .map((part) => part.charAt(0).toUpperCase())
+   584→                      .join("") || "?"}
+   585→                  </span>
+   586→                  <div className="leading-tight">
+   587→                    <p className="text-sm font-semibold">{member.name}</p>
+   588→                    <p className="text-xs text-muted-foreground">{member.role}</p>
+   589→                  </div>
+   590→                </div>
+   591→              </Card>
+   592→            </FadeIn>
+   593→          ))}
+   594→        </div>
+   595→      </Container>
+   596→    </section>
+   597→  );
+   598→}
+   599→
+   600→function FaqSection({ content }: { content: SiteContent }) {
+   601→  const { t } = useLang();
+   602→
+   603→  return (
+   604→    <section id="faq" className="scroll-mt-24 bg-muted/40 py-16 md:py-24">
+   605→      <Container>
+   606→        <FadeIn className="mx-auto max-w-3xl">
+   607→          <div className="text-center">
+   608→            <Badge variant="outline" className={ROSE_BADGE}>
+   609→              {t.faq.badge}
+   610→            </Badge>
+   611→            <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   612→              {t.faq.title}
+   613→            </h2>
+   614→            <p className="mt-3 text-muted-foreground">{t.faq.desc}</p>
+   615→          </div>
+   616→
+   617→          {content.faqs.length === 0 ? (
+   618→            <p className="mt-10 text-center text-sm text-muted-foreground">
+   619→              {t.faq.empty}
+   620→            </p>
+   621→          ) : (
+   622→            <Card className="mt-10 rounded-2xl px-6 py-2 md:px-8">
+   623→              <Accordion type="single" collapsible>
+   624→                {content.faqs.map((faq, index) => (
+   625→                  <AccordionItem
+   626→                    key={`${faq.question}-${index}`}
+   627→                    value={`faq-${index}`}
+   628→                  >
+   629→                    <AccordionTrigger className="text-left text-sm font-medium md:text-base">
+   630→                      {faq.question}
+   631→                    </AccordionTrigger>
+   632→                    <AccordionContent className="text-sm text-muted-foreground">
+   633→                      {faq.answer}
+   634→                    </AccordionContent>
+   635→                  </AccordionItem>
+   636→                ))}
+   637→              </Accordion>
+   638→            </Card>
+   639→          )}
+   640→        </FadeIn>
+   641→      </Container>
+   642→    </section>
+   643→  );
+   644→}
+   645→
+   646→function FinalCtaSection({
+   647→  content,
+   648→  sections,
+   649→}: {
+   650→  content: SiteContent;
+   651→  sections: SectionVisibility;
+   652→}) {
+   653→  const { t } = useLang();
+   654→
+   655→  return (
+   656→    <section className="bg-background py-16 md:py-24">
+   657→      <Container>
+   658→        <FadeIn>
+   659→          <div className="relative overflow-hidden rounded-3xl bg-zinc-950 px-6 py-16 text-center text-zinc-50 md:px-12 md:py-20">
+   660→            <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
+   661→            <div
+   662→              aria-hidden="true"
+   663→              className="absolute -top-24 left-1/2 h-72 w-[36rem] max-w-full -translate-x-1/2 rounded-full bg-rose-600/20 blur-3xl"
+   664→            />
+   665→            <div className="relative mx-auto max-w-2xl">
+   666→              <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
+   667→                {t.cta.title}
+   668→              </h2>
+   669→              <p className="mt-4 text-zinc-400">{t.cta.desc}</p>
+   670→              <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+   671→                {sections.applyForm ? (
+   672→                  <Button size="lg" className="h-11" asChild>
+   673→                    <a href="#lamar">{t.cta.apply}</a>
+   674→                  </Button>
+   675→                ) : null}
+   676→                <Button
+   677→                  size="lg"
+   678→                  variant="outline"
+   679→                  className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+   680→                  asChild
+   681→                >
+   682→                  <a
+   683→                    href={whatsappHref(content.contactWhatsapp)}
+   684→                    target="_blank"
+   685→                    rel="noopener noreferrer"
+   686→                  >
+   687→                    {t.cta.whatsapp}
+   688→                  </a>
+   689→                </Button>
+   690→              </div>
+   691→            </div>
+   692→          </div>
+   693→        </FadeIn>
+   694→      </Container>
+   695→    </section>
+   696→  );
+   697→}
+   698→
+   699→function Footer({
+   700→  content,
+   701→  sections,
+   702→  onOpenAdmin,
+   703→}: {
+   704→  content: SiteContent;
+   705→  sections: SectionVisibility;
+   706→  onOpenAdmin: () => void;
+   707→}) {
+   708→  const { t } = useLang();
+   709→  const navLinks = useNavLinks(sections);
+   710→
+   711→  return (
+   712→    <footer className="mt-auto border-t bg-background">
+   713→      <Container className="py-12 md:py-16">
+   714→        <div className="grid gap-10 md:grid-cols-3">
+   715→          <div>
+   716→            <div className="flex items-center gap-3">
+   717→              <BrandMark />
+   718→              <div className="leading-tight">
+   719→                <p className="font-bold">{content.siteName}</p>
+   720→                <p className="text-xs text-muted-foreground">{content.tagline}</p>
+   721→              </div>
+   722→            </div>
+   723→            <p className="mt-4 max-w-sm text-sm text-muted-foreground">
+   724→              {content.footerText}
+   725→            </p>
+   726→          </div>
+   727→
+   728→          {navLinks.length > 0 ? (
+   729→            <nav aria-label={t.footer.nav}>
+   730→              <h3 className="text-sm font-semibold">{t.footer.nav}</h3>
+   731→              <ul className="mt-4 space-y-1">
+   732→                {navLinks.map((link) => (
+   733→                  <li key={link.href}>
+   734→                    <a
+   735→                      href={link.href}
+   736→                      className="inline-flex min-h-11 items-center text-sm text-muted-foreground transition-colors hover:text-foreground"
+   737→                    >
+   738→                      {link.label}
+   739→                    </a>
+   740→                  </li>
+   741→                ))}
+   742→              </ul>
+   743→            </nav>
+   744→          ) : null}
+   745→
+   746→          <div>
+   747→            <h3 className="text-sm font-semibold">{t.footer.contact}</h3>
+   748→            <ul className="mt-4 space-y-1">
+   749→              <li>
+   750→                <a
+   751→                  href={`mailto:${content.contactEmail}`}
+   752→                  className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   753→                >
+   754→                  <Mail
+   755→                    className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   756→                    aria-hidden="true"
+   757→                  />
+   758→                  <span className="break-all">{content.contactEmail}</span>
+   759→                </a>
+   760→              </li>
+   761→              <li>
+   762→                <a
+   763→                  href={whatsappHref(content.contactWhatsapp)}
+   764→                  target="_blank"
+   765→                  rel="noopener noreferrer"
+   766→                  className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   767→                >
+   768→                  <Phone
+   769→                    className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   770→                    aria-hidden="true"
+   771→                  />
+   772→                  <span>{t.footer.whatsapp}</span>
+   773→                </a>
+   774→              </li>
+   775→              <li>
+   776→                <a
+   777→                  href={instagramHref(content.instagram)}
+   778→                  target="_blank"
+   779→                  rel="noopener noreferrer"
+   780→                  className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   781→                >
+   782→                  <Instagram
+   783→                    className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   784→                    aria-hidden="true"
+   785→                  />
+   786→                  <span className="break-all">
+   787→                    {content.instagram || "Instagram"}
+   788→                  </span>
+   789→                </a>
+   790→              </li>
+   791→            </ul>
+   792→          </div>
+   793→        </div>
+   794→
+   795→        {/* pe-20 memberi ruang agar tombol Admin tidak tertutup chat widget */}
+   796→        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t pe-20 pt-6 sm:flex-row">
+   797→          <p className="text-xs text-muted-foreground">{content.footerText}</p>
+   798→          <Button
+   799→            variant="ghost"
+   800→            size="sm"
+   801→            onClick={onOpenAdmin}
+   802→            aria-label={t.footer.adminAria}
+   803→            className="text-muted-foreground"
+   804→          >
+   805→            <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+   806→            {t.footer.admin}
+   807→          </Button>
+   808→        </div>
+   809→      </Container>
+   810→    </footer>
+   811→  );
+   812→}
+   813→
+   814→/** JSON-LD JobPosting untuk SEO (dipasang/dibongkar sesuai perubahan positions). */
+   815→function useJobPostingJsonLd(positions: Position[], siteName: string) {
+   816→  useEffect(() => {
+   817→    const jobPostings = positions.map((position) => ({
+   818→      "@context": "https://schema.org",
+   819→      "@type": "JobPosting",
+   820→      title: position.title,
+   821→      description: position.description,
+   822→      hiringOrganization: { "@type": "Organization", name: siteName },
+   823→      jobLocationType: "TELECOMMUTE",
+   824→      employmentType: employmentTypeOf(position.type),
+   825→      datePosted: position.createdAt,
+   826→      ...(position.closesAt ? { validThrough: position.closesAt } : {}),
+   827→    }));
+   828→    const script = document.createElement("script");
+   829→    script.id = "jobposting-ld";
+   830→    script.type = "application/ld+json";
+   831→    script.textContent = JSON.stringify(jobPostings);
+   832→    document.head.appendChild(script);
+   833→    return () => {
+   834→      document.getElementById("jobposting-ld")?.remove();
+   835→    };
+   836→  }, [positions, siteName]);
+   837→}
+   838→
+   839→function LandingShell({
+   840→  content,
+   841→  positions,
+   842→  stats,
+   843→  onOpenAdmin,
+   844→}: LandingPageProps) {
+   845→  const [selectedPositionId, setSelectedPositionId] = useState("");
+   846→  // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin).
+   847→  const sections = content.sections;
+   848→
+   849→  useJobPostingJsonLd(positions, content.siteName);
+   850→
+   851→  const handleApplyPosition = (positionId: string) => {
+   852→    setSelectedPositionId(positionId);
+   853→    document.getElementById("lamar")?.scrollIntoView({ behavior: "smooth" });
+   854→  };
+   855→
+   856→  return (
+   857→    <div className="flex min-h-screen flex-col">
+   858→      <Navbar
+   859→        siteName={content.siteName}
+   860→        tagline={content.tagline}
+   861→        sections={sections}
+   862→      />
+   863→      <main className="flex-1">
+   864→        {sections.hero ? (
+   865→          <Hero content={content} stats={stats} sections={sections} />
+   866→        ) : null}
+   867→        {sections.positions ? (
+   868→          <PositionsSection
+   869→            positions={positions}
+   870→            siteName={content.siteName}
+   871→            canApply={sections.applyForm}
+   872→            onApply={handleApplyPosition}
+   873→          />
+   874→        ) : null}
+   875→        {sections.about ? <AboutSection content={content} stats={stats} /> : null}
+   876→        {sections.benefits ? <BenefitsSection content={content} /> : null}
+   877→        {sections.steps ? <HowToApplySection /> : null}
+   878→        {sections.applyForm ? (
+   879→          <ApplySection
+   880→            content={content}
+   881→            positions={positions}
+   882→            positionId={selectedPositionId}
+   883→            onPositionIdChange={setSelectedPositionId}
+   884→          />
+   885→        ) : null}
+   886→        {sections.statusCheck ? <StatusCheckSection /> : null}
+   887→        {sections.testimonials ? <VoicesSection content={content} /> : null}
+   888→        {sections.faq ? <FaqSection content={content} /> : null}
+   889→        {sections.finalCta ? (
+   890→          <FinalCtaSection content={content} sections={sections} />
+   891→        ) : null}
+   892→        {sections.subscribe ? <SubscribeSection /> : null}
+   893→      </main>
+   894→      <Footer
+   895→        content={content}
+   896→        sections={sections}
+   897→        onOpenAdmin={onOpenAdmin}
+   898→      />
+   899→      {content.chatbotEnabled && sections.chatbot ? <ChatWidget /> : null}
+   900→    </div>
+   901→  );
+   902→}
+   903→
+   904→export function LandingPage(props: LandingPageProps) {
+   905→  return (
+   906→    <LangProvider>
+   907→      <LandingShell {...props} />
+   908→    </LangProvider>
+   909→  );
+   910→}
+   911→

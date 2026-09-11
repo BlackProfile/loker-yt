@@ -1,7 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { motion } from "framer-motion";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +29,7 @@ import {
 import { ApiError, apiGet, apiPost } from "./api";
 import { roleBadgeClass } from "./format";
 import { AdminSessionProvider } from "./admin-context";
+import { Reveal } from "./motion-primitives";
 import { LoginCard } from "./login-card";
 import { DashboardTab } from "./dashboard-tab";
 import { ApplicationsTab } from "./applications-tab";
@@ -35,15 +41,13 @@ import { SettingsTab } from "./settings-tab";
 
 type Phase = "checking" | "login" | "ready";
 
-function FadeIn({ children }: { children: ReactNode }) {
+// Konten tab masuk dengan fade + slide horizontal halus (x: 12, 0.2s).
+// Radix Tabs melepas konten nonaktif, sehingga animasi berjalan tiap pergantian tab.
+function TabReveal({ children }: { children: ReactNode }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
-    >
+    <Reveal slideX={12} duration={0.2}>
       {children}
-    </motion.div>
+    </Reveal>
   );
 }
 
@@ -54,7 +58,7 @@ function ThemeToggle() {
     <Button
       variant="ghost"
       size="icon"
-      className="size-10 sm:size-9"
+      className="size-11 sm:size-9"
       onClick={() => setTheme(isDark ? "light" : "dark")}
       aria-label={isDark ? "Aktifkan mode terang" : "Aktifkan mode gelap"}
     >
@@ -208,7 +212,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
               <ThemeToggle />
               <Button
                 variant="outline"
-                className="h-10"
+                className="h-11 active:scale-[0.99] sm:h-10"
                 onClick={onExit}
                 aria-label="Lihat halaman publik"
               >
@@ -218,7 +222,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
               </Button>
               <Button
                 variant="ghost"
-                className="h-10"
+                className="h-11 sm:h-10"
                 onClick={() => void handleLogout()}
                 aria-label="Keluar dari panel admin"
               >
@@ -271,44 +275,44 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
               </TabsList>
             </div>
             <TabsContent value="dashboard">
-              <FadeIn>
+              <TabReveal>
                 <DashboardTab />
-              </FadeIn>
+              </TabReveal>
             </TabsContent>
             <TabsContent value="applications">
-              <FadeIn>
+              <TabReveal>
                 <ApplicationsTab />
-              </FadeIn>
+              </TabReveal>
             </TabsContent>
             <TabsContent value="interview">
-              <FadeIn>
+              <TabReveal>
                 <InterviewTab />
-              </FadeIn>
+              </TabReveal>
             </TabsContent>
             <TabsContent value="logs">
-              <FadeIn>
+              <TabReveal>
                 <LogsTab />
-              </FadeIn>
+              </TabReveal>
             </TabsContent>
             {isOwnerOrHr ? (
               <TabsContent value="positions">
-                <FadeIn>
+                <TabReveal>
                   <PositionsTab />
-                </FadeIn>
+                </TabReveal>
               </TabsContent>
             ) : null}
             {isOwner ? (
               <TabsContent value="users">
-                <FadeIn>
+                <TabReveal>
                   <UsersTab />
-                </FadeIn>
+                </TabReveal>
               </TabsContent>
             ) : null}
             {isOwner ? (
               <TabsContent value="settings">
-                <FadeIn>
+                <TabReveal>
                   <SettingsTab />
-                </FadeIn>
+                </TabReveal>
               </TabsContent>
             ) : null}
           </Tabs>

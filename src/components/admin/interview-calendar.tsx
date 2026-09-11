@@ -57,7 +57,7 @@ export function InterviewCalendar({
           <Button
             variant="outline"
             size="icon"
-            className="size-9"
+            className="size-11 sm:size-9"
             onClick={() =>
               onMonthChange(new Date(month.getFullYear(), month.getMonth() - 1, 1))
             }
@@ -68,7 +68,7 @@ export function InterviewCalendar({
           <Button
             variant="outline"
             size="sm"
-            className="h-9"
+            className="h-11 sm:h-9"
             onClick={() => {
               const now = new Date();
               onMonthChange(new Date(now.getFullYear(), now.getMonth(), 1));
@@ -81,7 +81,7 @@ export function InterviewCalendar({
           <Button
             variant="outline"
             size="icon"
-            className="size-9"
+            className="size-11 sm:size-9"
             onClick={() =>
               onMonthChange(new Date(month.getFullYear(), month.getMonth() + 1, 1))
             }
@@ -116,7 +116,7 @@ export function InterviewCalendar({
               aria-label={`Jadwal tanggal ${format(day, "d MMMM yyyy", { locale: localeId })}, ${dayApps.length} wawancara`}
               aria-pressed={isSelected}
               className={cn(
-                "flex min-h-16 flex-col items-start gap-1 rounded-lg border p-1.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring/50 hover:bg-accent",
+                "flex min-h-16 flex-col items-start gap-1 rounded-lg border p-1.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring/50 hover:bg-accent active:scale-[0.97]",
                 !inMonth && "text-muted-foreground/40",
                 isSelected && "ring-2 ring-primary",
                 !isSelected && isToday && "ring-1 ring-primary/60"

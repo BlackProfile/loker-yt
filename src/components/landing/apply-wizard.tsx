@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, DragEvent, FormEvent } from "react";
+import type { ChangeEvent, DragEvent, FormEvent, ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   CheckCircle2,
   Copy,
+  Eye,
   FileText,
   Loader2,
   Mic,
+  PencilLine,
   ShieldCheck,
   Upload,
   X,
@@ -26,6 +29,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useLang } from "@/components/landing/lang-context";
 import { formatMb } from "@/components/landing/landing-utils";
@@ -34,6 +48,66 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DRAFT_KEY = "lumina-draft";
 const AUTOSAVE_DELAY_MS = 500;
 const MIN_TEXT_LENGTH = 10;
+
+/* ------------------------- Komponen pratinjau lamaran ------------------------- */
+
+function PreviewRow({
+  label,
+  value,
+  fallback,
+}: {
+  label: string;
+  value: string;
+  fallback: string;
+}) {
+  const empty = value.trim().length === 0;
+  return (
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
+      <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:w-40">
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          "whitespace-pre-line break-words text-sm",
+          empty ? "italic text-muted-foreground/70" : "font-medium",
+        )}
+      >
+        {empty ? fallback : value}
+      </dd>
+    </div>
+  );
+}
+
+function PreviewSection({
+  title,
+  editLabel,
+  onEdit,
+  children,
+}: {
+  title: string;
+  editLabel: string;
+  onEdit: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border bg-muted/30 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold">{title}</p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+          onClick={onEdit}
+        >
+          <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+          {editLabel}
+        </Button>
+      </div>
+      <dl className="mt-3 flex flex-col gap-3">{children}</dl>
+    </div>
+  );
+}
 
 type FormValues = {
   name: string;
@@ -90,6 +164,10 @@ export function ApplyWizard({
   const [errors, setErrors] = useState<FormErrors>({});
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  // Pratinjau & konfirmasi sebelum pengiriman (tidak ada kirim otomatis).
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const [direction, setDirection] = useState(1);
   const [success, setSuccess] = useState<{ name: string; trackingCode: string } | null>(
     null,
   );
@@ -168,15 +246,36 @@ export function ApplyWizard({
     return next;
   }
 
+  function goToStep(next: number) {
+    setDirection(next > step ? 1 : -1);
+    setStep(next);
+  }
+
   function goNext() {
     const next = step === 0 ? validateStep1() : validateStep2();
     setErrors((prev) => ({ ...prev, ...next }));
     if (Object.values(next).some(Boolean)) return;
-    setStep((s) => Math.min(2, s + 1));
+    goToStep(Math.min(2, step + 1));
   }
 
   function goBack() {
-    setStep((s) => Math.max(0, s - 1));
+    goToStep(Math.max(0, step - 1));
+  }
+
+  /** Validasi seluruh formulir; bila ada galat, lompat ke langkah pertama yang bermasalah. */
+  function validateAllAndJump(): boolean {
+    const e1 = validateStep1();
+    const e2 = validateStep2();
+    setErrors((prev) => ({ ...prev, ...e1, ...e2 }));
+    if (e1.name || e1.email || e1.phone || e1.positionId) {
+      goToStep(0);
+      return false;
+    }
+    if (Object.values({ ...e1, ...e2 }).some(Boolean)) {
+      goToStep(1);
+      return false;
+    }
+    return true;
   }
 
   function acceptCv(file: File | null) {
@@ -234,21 +333,11 @@ export function ApplyWizard({
     };
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const e1 = validateStep1();
-    const e2 = validateStep2();
-    const all = { ...e1, ...e2 };
-    setErrors(all);
-    if (e1.name || e1.email || e1.phone || e1.positionId) {
-      setStep(0);
-      return;
-    }
-    if (Object.values(all).some(Boolean)) {
-      setStep(1);
-      return;
-    }
-
+  /**
+   * Pengiriman sesungguhnya. Hanya dipanggil setelah pengguna melihat pratinjau
+   * dan menekan konfirmasi pada dialog — tidak pernah kirim otomatis.
+   */
+  async function doSubmit() {
     setSubmitting(true);
     try {
       const fd = new FormData();
@@ -301,6 +390,30 @@ export function ApplyWizard({
     }
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting) return;
+
+    // Langkah 0-1: validasi per langkah lalu maju.
+    if (step === 0 || step === 1) {
+      goNext();
+      return;
+    }
+
+    // Langkah 2 (Berkas): validasi semuanya, lalu tampilkan pratinjau.
+    if (step === 2) {
+      if (validateAllAndJump()) goToStep(3);
+      return;
+    }
+
+    // Langkah 3 (Pratinjau): wajib pernyataan kebenaran data sebelum konfirmasi.
+    if (!agreed) {
+      toast.error(t.apply.preview.agreeRequired);
+      return;
+    }
+    setConfirmOpen(true);
+  }
+
   function resetForm() {
     submittedRef.current = false;
     draftDismissedRef.current = false;
@@ -312,6 +425,9 @@ export function ApplyWizard({
     setIntroFile(null);
     setCvError(null);
     setIntroError(null);
+    setAgreed(false);
+    setConfirmOpen(false);
+    setDirection(1);
     onPositionIdChange("");
     try {
       window.localStorage.removeItem(DRAFT_KEY);
@@ -365,16 +481,24 @@ export function ApplyWizard({
 
   if (success) {
     return (
-      <div
+      <motion.div
         role="status"
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: "easeOut" }}
         className="flex flex-col items-center justify-center gap-4 py-8 text-center"
       >
-        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/15">
+        <motion.div
+          initial={{ scale: 0.4, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 260, damping: 16, delay: 0.1 }}
+          className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/15"
+        >
           <CheckCircle2
             className="h-12 w-12 text-emerald-600 dark:text-emerald-400"
             aria-hidden="true"
           />
-        </div>
+        </motion.div>
         <h3 className="text-2xl font-bold">{t.apply.success.title}</h3>
         <p className="text-sm font-medium">
           {t.apply.success.thanksTo} {success.name}
@@ -408,7 +532,7 @@ export function ApplyWizard({
             {t.apply.success.another}
           </Button>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
@@ -495,8 +619,23 @@ export function ApplyWizard({
       </ol>
 
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
+        <AnimatePresence mode="wait" initial={false} custom={direction}>
+          <motion.div
+            key={step}
+            custom={direction}
+            variants={{
+              enter: (dir: number) => ({ opacity: 0, x: 36 * dir }),
+              center: { opacity: 1, x: 0 },
+              exit: (dir: number) => ({ opacity: 0, x: -36 * dir }),
+            }}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="flex flex-col gap-5"
+          >
         {/* LANGKAH 1: Data Diri */}
-        {step === 0 ? (
+        {step === 0 && (
           <div className="flex flex-col gap-5">
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
@@ -614,10 +753,10 @@ export function ApplyWizard({
               </div>
             </div>
           </div>
-        ) : null}
+        )}
 
         {/* LANGKAH 2: Pengalaman */}
-        {step === 1 ? (
+        {step === 1 && (
           <div className="flex flex-col gap-5">
             <div className="flex flex-col gap-2">
               <Label htmlFor="apply-experience">
@@ -693,34 +832,11 @@ export function ApplyWizard({
               </div>
             </div>
           </div>
-        ) : null}
+        )}
 
-        {/* LANGKAH 3: File & Kirim */}
-        {step === 2 ? (
+        {/* LANGKAH 3: Berkas (CV & audio perkenalan) */}
+        {step === 2 && (
           <div className="flex flex-col gap-5">
-            <div className="rounded-xl border bg-muted/40 p-4 text-sm">
-              <p className="font-semibold">{t.apply.summary.title}</p>
-              <dl className="mt-2 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-                <div className="flex gap-2">
-                  <dt className="text-muted-foreground">{t.apply.summary.name}:</dt>
-                  <dd className="truncate font-medium">{values.name || "-"}</dd>
-                </div>
-                <div className="flex gap-2">
-                  <dt className="text-muted-foreground">{t.apply.summary.position}:</dt>
-                  <dd className="truncate font-medium">
-                    {selectedPosition?.title ?? t.apply.summary.notChosen}
-                  </dd>
-                </div>
-                <div className="flex gap-2">
-                  <dt className="text-muted-foreground">{t.apply.summary.email}:</dt>
-                  <dd className="truncate font-medium">{values.email || "-"}</dd>
-                </div>
-                <div className="flex gap-2">
-                  <dt className="text-muted-foreground">{t.apply.summary.phone}:</dt>
-                  <dd className="truncate font-medium">{values.phone || "-"}</dd>
-                </div>
-              </dl>
-            </div>
 
             {/* Dropzone CV */}
             <div className="flex flex-col gap-2">
@@ -857,7 +973,165 @@ export function ApplyWizard({
               {t.apply.trust[0]}
             </p>
           </div>
-        ) : null}
+        )}
+
+        {/* LANGKAH 4: Pratinjau & Konfirmasi — lamaran tidak terkirim otomatis */}
+        {step === 3 && (
+          <div className="flex flex-col gap-4">
+            <div className="rounded-xl border border-primary/30 bg-rose-50/70 p-4 dark:border-primary/40 dark:bg-primary/10">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <Eye
+                  className="h-4 w-4 text-rose-600 dark:text-rose-400"
+                  aria-hidden="true"
+                />
+                {t.apply.preview.title}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t.apply.preview.desc}
+              </p>
+            </div>
+
+            <PreviewSection
+              title={t.apply.preview.sectionPersonal}
+              editLabel={t.apply.preview.edit}
+              onEdit={() => goToStep(0)}
+            >
+              <PreviewRow
+                label={t.apply.summary.name}
+                value={values.name}
+                fallback={t.apply.preview.notFilled}
+              />
+              <PreviewRow
+                label={t.apply.summary.email}
+                value={values.email}
+                fallback={t.apply.preview.notFilled}
+              />
+              <PreviewRow
+                label={t.apply.summary.phone}
+                value={values.phone}
+                fallback={t.apply.preview.notFilled}
+              />
+              <PreviewRow
+                label={t.apply.summary.position}
+                value={selectedPosition?.title ?? ""}
+                fallback={t.apply.summary.notChosen}
+              />
+            </PreviewSection>
+
+            <PreviewSection
+              title={t.apply.preview.sectionAnswers}
+              editLabel={t.apply.preview.edit}
+              onEdit={() => goToStep(1)}
+            >
+              <PreviewRow
+                label={t.apply.fields.experience}
+                value={values.experience}
+                fallback={t.apply.preview.notFilled}
+              />
+              <PreviewRow
+                label={t.apply.fields.motivation}
+                value={values.motivation}
+                fallback={t.apply.preview.notFilled}
+              />
+              <PreviewRow
+                label={t.apply.fields.portfolio}
+                value={values.portfolioUrl}
+                fallback={t.apply.preview.notFilled}
+              />
+              <PreviewRow
+                label={t.apply.fields.social}
+                value={values.socialLinks}
+                fallback={t.apply.preview.notFilled}
+              />
+            </PreviewSection>
+
+            <PreviewSection
+              title={t.apply.preview.sectionFiles}
+              editLabel={t.apply.preview.edit}
+              onEdit={() => goToStep(2)}
+            >
+              <div className="flex items-center gap-2.5 text-sm">
+                <FileText
+                  className={cn(
+                    "h-4 w-4 shrink-0",
+                    cvFile
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-muted-foreground/50",
+                  )}
+                  aria-hidden="true"
+                />
+                {cvFile ? (
+                  <span className="min-w-0 truncate font-medium">
+                    {cvFile.name}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      ({formatMb(cvFile.size)})
+                    </span>
+                  </span>
+                ) : (
+                  <span className="italic text-muted-foreground/70">
+                    {t.apply.preview.noFile}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2.5 text-sm">
+                <Mic
+                  className={cn(
+                    "h-4 w-4 shrink-0",
+                    introFile
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-muted-foreground/50",
+                  )}
+                  aria-hidden="true"
+                />
+                {introFile ? (
+                  <span className="min-w-0 truncate font-medium">
+                    {introFile.name}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      ({formatMb(introFile.size)})
+                    </span>
+                  </span>
+                ) : (
+                  <span className="italic text-muted-foreground/70">
+                    {t.apply.preview.noFile}
+                  </span>
+                )}
+              </div>
+            </PreviewSection>
+
+            {/* Pernyataan kebenaran data — wajib dicentang sebelum konfirmasi */}
+            <div
+              className={cn(
+                "flex items-start gap-3 rounded-xl border p-4 transition-colors",
+                agreed
+                  ? "border-emerald-300 bg-emerald-50/60 dark:border-emerald-500/40 dark:bg-emerald-500/10"
+                  : "border-border",
+              )}
+            >
+              <Checkbox
+                id="apply-agree"
+                checked={agreed}
+                onCheckedChange={(checked) => setAgreed(checked === true)}
+                className="mt-0.5"
+              />
+              <Label
+                htmlFor="apply-agree"
+                className="cursor-pointer text-sm font-normal leading-relaxed"
+              >
+                {t.apply.preview.agreeLabel}
+              </Label>
+            </div>
+
+            <p className="flex items-start gap-2 text-xs text-muted-foreground">
+              <ShieldCheck
+                className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                aria-hidden="true"
+              />
+              {t.apply.preview.privacyNote}
+            </p>
+          </div>
+        )}
+          </motion.div>
+        </AnimatePresence>
 
         {/* Navigasi langkah */}
         <div className="flex items-center justify-between gap-3">
@@ -872,8 +1146,13 @@ export function ApplyWizard({
           </Button>
 
           {step < 2 ? (
-            <Button type="button" className="h-11 min-w-32" onClick={goNext}>
+            <Button type="submit" className="h-11 min-w-32">
               {t.apply.buttons.next}
+            </Button>
+          ) : step === 2 ? (
+            <Button type="submit" className="h-11 min-w-40">
+              <Eye className="h-4 w-4" aria-hidden="true" />
+              {t.apply.buttons.review}
             </Button>
           ) : (
             <Button type="submit" className="h-11 min-w-40" disabled={submitting}>
@@ -888,6 +1167,44 @@ export function ApplyWizard({
             </Button>
           )}
         </div>
+
+        {/* Dialog konfirmasi akhir — lamaran hanya terkirim setelah tombol ini ditekan */}
+        <AlertDialog
+          open={confirmOpen}
+          onOpenChange={(open) => {
+            if (!submitting) setConfirmOpen(open);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t.apply.preview.confirmTitle}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t.apply.preview.confirmDesc}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={submitting}>
+                {t.apply.preview.confirmCancel}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={submitting}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void doSubmit().finally(() => setConfirmOpen(false));
+                }}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    {t.apply.buttons.submitting}
+                  </>
+                ) : (
+                  t.apply.preview.confirmYes
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </form>
     </div>
   );

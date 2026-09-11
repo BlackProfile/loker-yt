@@ -108,8 +108,10 @@ function ContentError({ onRetry }: { onRetry: () => void }) {
 
 /**
  * View publik: landing lengkap.
+ * Panel admin tidak lagi ditautkan dari halaman publik —
+ * pemilik studio mengaksesnya lewat URL langsung #admin.
  */
-function LandingView({ onOpenAdmin }: { onOpenAdmin: () => void }) {
+function LandingView() {
   const { data, error, loading, reload } = usePublicContent();
 
   if (loading) return <ContentSkeleton />;
@@ -120,7 +122,6 @@ function LandingView({ onOpenAdmin }: { onOpenAdmin: () => void }) {
       content={data.site}
       positions={data.positions}
       stats={data.stats}
-      onOpenAdmin={onOpenAdmin}
     />
   );
 }
@@ -151,7 +152,7 @@ function EmbedView() {
 }
 
 /**
- * Halaman utama: landing publik, panel admin (#admin), dan widget embed (?embed=1).
+ * Halaman utama: landing publik, panel admin (URL langsung #admin), dan widget embed (?embed=1).
  */
 export default function Home() {
   const [view, setView] = useState<View>("landing");
@@ -172,13 +173,6 @@ export default function Home() {
     };
   }, []);
 
-  const openAdmin = useCallback(() => {
-    if (window.location.hash !== "#admin") {
-      window.location.hash = "admin";
-    }
-    setView("admin");
-  }, []);
-
   const exitAdmin = useCallback(() => {
     if (window.location.hash === "#admin") {
       history.replaceState(null, "", window.location.pathname);
@@ -188,5 +182,5 @@ export default function Home() {
 
   if (view === "admin") return <AdminApp onExit={exitAdmin} />;
   if (view === "embed") return <EmbedView />;
-  return <LandingView onOpenAdmin={openAdmin} />;
+  return <LandingView />;
 }

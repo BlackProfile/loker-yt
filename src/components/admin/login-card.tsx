@@ -16,6 +16,7 @@ import { Eye, EyeOff, Loader2, Lock } from "lucide-react";
 import { toast } from "sonner";
 import type { AdminSession } from "@/lib/types";
 import { ApiError, apiPost } from "./api";
+import { Reveal } from "./motion-primitives";
 
 export function LoginCard({
   onSuccess,
@@ -55,7 +56,9 @@ export function LoginCard({
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-background">
-      <Card className="w-full max-w-sm rounded-2xl p-8 shadow-sm">
+      {/* Entrance lembut: fade + naik, tanpa shake */}
+      <Reveal slideX={0} slideY={16} duration={0.35} className="w-full max-w-sm">
+        <Card className="w-full rounded-2xl p-8 shadow-sm">
         <CardHeader className="items-center px-0 text-center">
           <div className="mx-auto mb-2 flex size-14 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-950">
             <Lock className="size-6 text-rose-600 dark:text-rose-400" aria-hidden="true" />
@@ -114,7 +117,11 @@ export function LoginCard({
                 </p>
               ) : null}
             </div>
-            <Button type="submit" className="h-11 w-full" disabled={loading}>
+            <Button
+              type="submit"
+              className="h-11 w-full active:scale-[0.99]"
+              disabled={loading}
+            >
               {loading ? (
                 <>
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -136,6 +143,7 @@ export function LoginCard({
           </Alert>
         </CardContent>
       </Card>
+      </Reveal>
     </div>
   );
 }

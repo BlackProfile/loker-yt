@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -51,6 +52,7 @@ import {
   aiScoreStyle,
 } from "./status-badge";
 import { ApplicationDetailDialog } from "./application-detail-dialog";
+import { CountUp, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion-primitives";
 import { cn } from "@/lib/utils";
 
 type StatCardConfig = {
@@ -95,6 +97,7 @@ function ChartTooltip({
 
 export function DashboardTab() {
   const { reportError } = useAdminSession();
+  const reducedMotion = useReducedMotion();
   const [overview, setOverview] = useState<AdminOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Application | null>(null);
@@ -128,72 +131,89 @@ export function DashboardTab() {
   return (
     <div className="flex flex-col gap-6">
       {/* Kartu statistik: 6 status + rata-rata skor AI + pelanggan */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+      <motion.div
+        className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4"
+        variants={STAGGER_CONTAINER}
+        initial={reducedMotion ? false : "hidden"}
+        animate="show"
+      >
         {STAT_CARDS.map((card) => {
           const Icon = card.icon;
           return (
-            <Card
-              key={card.key}
-              className={cn("gap-0 overflow-hidden rounded-2xl border-t-2 py-4", card.strip)}
-            >
-              <CardContent className="px-4">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-2xl font-bold tabular-nums">
-                    {loading ? "—" : (stats?.[card.key] ?? 0)}
-                  </span>
-                  <span
-                    className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${card.iconWrap}`}
-                  >
-                    <Icon className="size-4" aria-hidden="true" />
-                  </span>
-                </div>
-                <p className="mt-1.5 text-xs font-medium text-muted-foreground">
-                  {card.label}
-                </p>
-              </CardContent>
-            </Card>
+            <motion.div key={card.key} variants={STAGGER_ITEM}>
+              <Card
+                className={cn(
+                  "gap-0 overflow-hidden rounded-2xl border-t-2 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md",
+                  card.strip
+                )}
+              >
+                <CardContent className="px-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-2xl font-bold tabular-nums">
+                      {loading ? "—" : <CountUp value={stats?.[card.key] ?? 0} />}
+                    </span>
+                    <span
+                      className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${card.iconWrap}`}
+                    >
+                      <Icon className="size-4" aria-hidden="true" />
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-xs font-medium text-muted-foreground">
+                    {card.label}
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
           );
         })}
 
         {/* Rata-rata Skor AI */}
-        <Card className="gap-0 overflow-hidden rounded-2xl border-t-2 border-t-rose-600 py-4">
-          <CardContent className="px-4">
-            <div className="flex items-center justify-between gap-2">
-              <span
-                className={cn(
-                  "text-2xl font-bold tabular-nums",
-                  overview?.avgAiScore != null ? aiScoreStyle(overview.avgAiScore) : "text-muted-foreground"
-                )}
-              >
-                {loading ? "—" : (overview?.avgAiScore != null ? overview.avgAiScore : "-")}
-              </span>
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
-                <Sparkles className="size-4" aria-hidden="true" />
-              </span>
-            </div>
-            <p className="mt-1.5 text-xs font-medium text-muted-foreground">
-              Rata-rata Skor AI
-            </p>
-          </CardContent>
-        </Card>
+        <motion.div variants={STAGGER_ITEM}>
+          <Card className="gap-0 overflow-hidden rounded-2xl border-t-2 border-t-rose-600 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <CardContent className="px-4">
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={cn(
+                    "text-2xl font-bold tabular-nums",
+                    overview?.avgAiScore != null ? aiScoreStyle(overview.avgAiScore) : "text-muted-foreground"
+                  )}
+                >
+                  {loading
+                    ? "—"
+                    : overview?.avgAiScore != null
+                      ? <CountUp value={overview.avgAiScore} />
+                      : "-"}
+                </span>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+                  <Sparkles className="size-4" aria-hidden="true" />
+                </span>
+              </div>
+              <p className="mt-1.5 text-xs font-medium text-muted-foreground">
+                Rata-rata Skor AI
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
 
         {/* Pelanggan Notifikasi */}
-        <Card className="gap-0 overflow-hidden rounded-2xl border-t-2 border-t-amber-500 py-4">
-          <CardContent className="px-4">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-2xl font-bold tabular-nums">
-                {loading ? "—" : (overview?.subscriberCount ?? 0)}
-              </span>
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
-                <MailCheck className="size-4" aria-hidden="true" />
-              </span>
-            </div>
-            <p className="mt-1.5 text-xs font-medium text-muted-foreground">
-              Pelanggan Notifikasi
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+        <motion.div variants={STAGGER_ITEM}>
+          <Card className="gap-0 overflow-hidden rounded-2xl border-t-2 border-t-amber-500 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <CardContent className="px-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-2xl font-bold tabular-nums">
+                  {loading ? "—" : <CountUp value={overview?.subscriberCount ?? 0} />}
+                </span>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
+                  <MailCheck className="size-4" aria-hidden="true" />
+                </span>
+              </div>
+              <p className="mt-1.5 text-xs font-medium text-muted-foreground">
+                Pelanggan Notifikasi
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </motion.div>
 
       {/* Grafik tren 30 hari */}
       <Card className="rounded-2xl p-6">
@@ -289,7 +309,7 @@ export function DashboardTab() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-10 shrink-0 sm:h-8"
+                      className="h-11 shrink-0 sm:h-8"
                       onClick={() => setDetail(app)}
                     >
                       Detail
@@ -345,7 +365,7 @@ export function DashboardTab() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-10 shrink-0 sm:h-8"
+                      className="h-11 shrink-0 sm:h-8"
                       onClick={() => setDetail(app)}
                     >
                       Detail
@@ -416,7 +436,7 @@ export function DashboardTab() {
           <Button
             variant="outline"
             size="sm"
-            className="h-10 sm:h-9"
+            className="h-10 active:scale-[0.99] sm:h-9"
             onClick={() => void load()}
             disabled={loading}
             aria-label="Segarkan data dashboard"
@@ -465,7 +485,7 @@ export function DashboardTab() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-10 shrink-0 sm:h-8"
+                    className="h-11 shrink-0 sm:h-8"
                     onClick={() => setDetail(app)}
                   >
                     Detail

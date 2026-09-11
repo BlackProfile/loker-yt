@@ -76,7 +76,7 @@ function KanbanCard({
       tabIndex={0}
       aria-label={`Detail lamaran ${app.name}`}
       className={cn(
-        "cursor-grab touch-none rounded-xl border bg-card p-3 shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "cursor-grab touch-none rounded-xl border bg-card p-3 shadow-xs outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring/50 hover:shadow-md",
         isDragging && "opacity-50 shadow-md"
       )}
     >
@@ -122,7 +122,12 @@ function KanbanColumn({
   const { setNodeRef, isOver } = useDroppable({ id: `${COLUMN_ID_PREFIX}${status}` });
 
   return (
-    <div className="flex w-[280px] shrink-0 flex-col rounded-xl border bg-muted/40">
+    <div
+      className={cn(
+        "flex w-[280px] shrink-0 flex-col rounded-xl border transition-colors duration-150",
+        isOver ? "border-primary/40 bg-muted/70" : "bg-muted/40"
+      )}
+    >
       <div className="flex items-center gap-2 border-b px-3 py-2.5">
         <span
           className={`size-2 rounded-full ${STATUS_DOT_COLORS[status]}`}
@@ -140,13 +145,18 @@ function KanbanColumn({
         <div
           ref={setNodeRef}
           className={cn(
-            "flex max-h-[70vh] min-h-24 flex-col gap-2 overflow-y-auto p-2 nice-scrollbar",
+            "flex max-h-[70vh] min-h-24 flex-col gap-2 overflow-y-auto rounded-b-xl p-2 transition-colors duration-150 nice-scrollbar",
             isOver && "bg-accent/60"
           )}
           aria-label={`Kolom ${STATUS_LABELS[status]}`}
         >
           {apps.length === 0 ? (
-            <div className="flex min-h-20 items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">
+            <div
+              className={cn(
+                "flex min-h-20 items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground transition-colors duration-150",
+                isOver && "border-primary/50 bg-background/70 text-foreground"
+              )}
+            >
               Kosong
             </div>
           ) : (

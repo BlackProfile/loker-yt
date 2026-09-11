@@ -26,8 +26,8 @@ export function ThemeToggle({ dark = false }: { dark?: boolean }) {
       size="icon"
       className={
         dark
-          ? "h-11 w-11 border border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white"
-          : "h-11 w-11"
+          ? "h-11 w-11 border border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white active:scale-95"
+          : "h-11 w-11 active:scale-95"
       }
       aria-label={t.aria.themeToggle}
       title={t.aria.themeToggle}

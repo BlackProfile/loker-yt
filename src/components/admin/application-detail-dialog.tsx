@@ -442,7 +442,7 @@ export function ApplicationDetailDialog({
                   />
                   <Button
                     size="sm"
-                    className="h-9"
+                    className="h-11 sm:h-9"
                     onClick={() => void handleSaveInterview()}
                     disabled={savingInterview}
                   >
@@ -455,7 +455,7 @@ export function ApplicationDetailDialog({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-9"
+                      className="size-11 sm:size-9"
                       onClick={() => void handleClearInterview()}
                       disabled={savingInterview}
                       aria-label="Hapus jadwal wawancara"
@@ -662,6 +662,7 @@ export function ApplicationDetailDialog({
             <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
               <Button
                 variant="destructive"
+                className="h-11 sm:h-9"
                 onClick={() => setConfirmOpen(true)}
                 disabled={deleting || saving}
               >
@@ -702,7 +703,11 @@ export function ApplicationDetailDialog({
           )}
 
           {canMutate ? (
-            <Button onClick={() => void handleSave()} disabled={saving || deleting}>
+            <Button
+              onClick={() => void handleSave()}
+              disabled={saving || deleting}
+              className="h-11 active:scale-[0.99] sm:h-9"
+            >
               {saving ? (
                 <>
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />

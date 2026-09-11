@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Bot, Loader2, MessageCircle, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,7 +72,7 @@ export function ChatWidget() {
 
   return (
     <>
-      {/* Tombol bulat mengambang */}
+      {/* Tombol bulat mengambang (dengan denyut idle halus saat tertutup) */}
       <Button
         type="button"
         size="icon"
@@ -79,6 +80,12 @@ export function ChatWidget() {
         onClick={() => setOpen((v) => !v)}
         className="fixed bottom-5 right-5 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-rose-600 to-amber-500 text-white shadow-lg transition-transform hover:scale-105 hover:from-rose-600 hover:to-amber-500"
       >
+        {!open ? (
+          <span
+            aria-hidden="true"
+            className="absolute -inset-1 rounded-full border-2 border-rose-400/40 motion-safe:animate-ping"
+          />
+        ) : null}
         {open ? (
           <X className="h-6 w-6" aria-hidden="true" />
         ) : (
@@ -86,104 +93,115 @@ export function ChatWidget() {
         )}
       </Button>
 
-      {/* Panel obrolan */}
-      {open ? (
-        <div
-          role="dialog"
-          aria-label={t.chat.title}
-          className="fixed bottom-20 right-5 z-50 flex max-h-[min(70vh,560px)] w-[min(92vw,360px)] flex-col overflow-hidden rounded-2xl border bg-card shadow-xl"
-        >
-          <div className="flex items-center gap-3 bg-gradient-to-r from-rose-600 to-rose-500 px-4 py-3 text-white">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
-              <Bot className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div className="leading-tight">
-              <p className="text-sm font-semibold">{t.chat.title}</p>
-              <p className="flex items-center gap-1.5 text-xs text-white/85">
-                <span className="dot-pulse h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
-                {t.chat.online}
-              </p>
-            </div>
-          </div>
-
-          <div
-            ref={bodyRef}
-            role="log"
-            aria-live="polite"
-            className="nice-scrollbar flex max-h-80 min-h-40 flex-1 flex-col gap-2 overflow-y-auto p-3"
+      {/* Panel obrolan (buka/tutup pegas halus) */}
+      <AnimatePresence>
+        {open ? (
+          <motion.div
+            key="chat-panel"
+            role="dialog"
+            aria-label={t.chat.title}
+            initial={{ opacity: 0, y: 24, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 380, damping: 32 }}
+            style={{ transformOrigin: "bottom right" }}
+            className="fixed bottom-20 right-5 z-50 flex max-h-[min(70vh,560px)] w-[min(92vw,360px)] flex-col overflow-hidden rounded-2xl border bg-card shadow-xl"
           >
-            <div className="mr-auto max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm">
-              {t.chat.welcome}
+            <div className="flex items-center gap-3 bg-gradient-to-r from-rose-600 to-rose-500 px-4 py-3 text-white">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
+                <Bot className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="leading-tight">
+                <p className="text-sm font-semibold">{t.chat.title}</p>
+                <p className="flex items-center gap-1.5 text-xs text-white/85">
+                  <span className="dot-pulse h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
+                  {t.chat.online}
+                </p>
+              </div>
             </div>
 
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={cn(
-                  "max-w-[85%] rounded-2xl px-3 py-2 text-sm",
-                  message.role === "user"
-                    ? "ml-auto rounded-br-sm bg-primary text-primary-foreground"
-                    : "mr-auto rounded-bl-sm bg-muted",
-                )}
-              >
-                {message.content}
-              </div>
-            ))}
-
-            {errorBubble ? (
-              <div className="mx-auto rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
-                {errorBubble}
-              </div>
-            ) : null}
-
-            {loading ? (
-              <div className="mr-auto flex items-center gap-2 rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                ...
-              </div>
-            ) : null}
-          </div>
-
-          {messages.length === 0 ? (
-            <div className="flex flex-wrap gap-2 border-t px-3 pt-2.5">
-              {t.chat.chips.map((chip) => (
-                <button
-                  key={chip}
-                  type="button"
-                  onClick={() => void send(chip)}
-                  className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-                >
-                  {chip}
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          <form onSubmit={handleSubmit} className="flex items-center gap-2 p-3">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={t.chat.inputPh}
-              aria-label={t.chat.send}
-              className="h-10 flex-1"
-              maxLength={500}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              className="h-10 w-10 shrink-0"
-              aria-label={t.chat.send}
-              disabled={loading || !input.trim()}
+            <div
+              ref={bodyRef}
+              role="log"
+              aria-live="polite"
+              className="nice-scrollbar flex max-h-80 min-h-40 flex-1 flex-col gap-2 overflow-y-auto p-3"
             >
+              <div className="mr-auto max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm">
+                {t.chat.welcome}
+              </div>
+
+              {messages.map((message) => (
+                <motion.div
+                  key={message.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className={cn(
+                    "max-w-[85%] rounded-2xl px-3 py-2 text-sm",
+                    message.role === "user"
+                      ? "ml-auto rounded-br-sm bg-primary text-primary-foreground"
+                      : "mr-auto rounded-bl-sm bg-muted",
+                  )}
+                >
+                  {message.content}
+                </motion.div>
+              ))}
+
+              {errorBubble ? (
+                <div className="mx-auto rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  {errorBubble}
+                </div>
+              ) : null}
+
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Send className="h-4 w-4" aria-hidden="true" />
-              )}
-            </Button>
-          </form>
-        </div>
-      ) : null}
+                <div className="mr-auto flex items-center gap-2 rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ...
+                </div>
+              ) : null}
+            </div>
+
+            {messages.length === 0 ? (
+              <div className="flex flex-wrap gap-2 border-t px-3 pt-2.5">
+                {t.chat.chips.map((chip) => (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => void send(chip)}
+                    className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            <form onSubmit={handleSubmit} className="flex items-center gap-2 p-3">
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={t.chat.inputPh}
+                aria-label={t.chat.send}
+                className="h-10 flex-1"
+                maxLength={500}
+              />
+              <Button
+                type="submit"
+                size="icon"
+                className="h-10 w-10 shrink-0"
+                aria-label={t.chat.send}
+                disabled={loading || !input.trim()}
+              >
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Send className="h-4 w-4" aria-hidden="true" />
+                )}
+              </Button>
+            </form>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { BellRing, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -51,7 +52,25 @@ export function SubscribeSection() {
       <Container>
         <FadeIn>
           <div className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-rose-50 via-background to-amber-50 p-8 md:p-12 dark:border-rose-500/20 dark:from-rose-500/10 dark:via-background dark:to-amber-500/10">
-            <div className="mx-auto flex max-w-xl flex-col items-center text-center">
+            {/* Glow dekoratif mengambang pelan di pojok panel */}
+            <motion.div
+              aria-hidden="true"
+              className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-rose-400/20 blur-3xl dark:bg-rose-500/10"
+              animate={{ y: [0, 18, 0], opacity: [0.6, 1, 0.6] }}
+              transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <motion.div
+              aria-hidden="true"
+              className="absolute -bottom-20 -left-14 h-48 w-48 rounded-full bg-amber-400/20 blur-3xl dark:bg-amber-500/10"
+              animate={{ y: [0, -14, 0], opacity: [0.55, 0.95, 0.55] }}
+              transition={{
+                duration: 12,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: 1.5,
+              }}
+            />
+            <div className="relative mx-auto flex max-w-xl flex-col items-center text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
                 <BellRing className="h-6 w-6" aria-hidden="true" />
               </span>

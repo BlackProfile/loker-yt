@@ -33,7 +33,7 @@ export function LangToggle({ dark = false }: { dark?: boolean }) {
             aria-label={code === "id" ? "Bahasa Indonesia" : "English"}
             onClick={() => setLang(code)}
             className={cn(
-              "min-h-8 min-w-10 rounded-full px-2 text-xs font-semibold uppercase tracking-wide transition-colors",
+              "min-h-8 min-w-10 rounded-full px-2 text-xs font-semibold uppercase tracking-wide transition-all active:scale-95",
               active
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : dark

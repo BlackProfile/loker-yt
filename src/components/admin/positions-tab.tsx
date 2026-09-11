@@ -244,7 +244,7 @@ export function PositionsTab() {
             Kelola posisi lowongan yang tampil di halaman publik.
           </CardDescription>
         </div>
-        <Button onClick={openCreate} className="h-10">
+        <Button onClick={openCreate} className="h-11 active:scale-[0.99] sm:h-10">
           <Plus className="size-4" aria-hidden="true" />
           Tambah Posisi
         </Button>
@@ -268,7 +268,10 @@ export function PositionsTab() {
       ) : (
         <div className="flex flex-col gap-3">
           {positions.map((position) => (
-            <Card key={position.id} className="gap-0 rounded-2xl p-4">
+            <Card
+              key={position.id}
+              className="gap-0 rounded-2xl p-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md"
+            >
               <CardContent className="flex flex-wrap items-center gap-3 px-0">
                 <GripVertical
                   className="hidden size-5 shrink-0 text-muted-foreground/40 sm:block"
@@ -313,7 +316,7 @@ export function PositionsTab() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-10 sm:size-9"
+                    className="size-11 sm:size-9"
                     onClick={() => void handleDuplicate(position)}
                     aria-label={`Duplikat posisi ${position.title}`}
                   >
@@ -322,7 +325,7 @@ export function PositionsTab() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-10 sm:size-9"
+                    className="size-11 sm:size-9"
                     onClick={() => openEdit(position)}
                     aria-label={`Edit posisi ${position.title}`}
                   >
@@ -331,7 +334,7 @@ export function PositionsTab() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9"
+                    className="size-11 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9"
                     onClick={() => setDeleteTarget(position)}
                     aria-label={`Hapus posisi ${position.title}`}
                   >

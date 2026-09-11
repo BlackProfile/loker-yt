@@ -181,3 +181,11 @@ html {
     linear-gradient(to bottom, rgb(255 255 255 / 0.04) 1px, transparent 1px);
   background-size: 44px 44px;
 }
+
+/* Hormati preferensi reduce-motion untuk animasi CSS murni
+   (animasi framer-motion ditangani <MotionConfig reducedMotion="user">). */
+@media (prefers-reduced-motion: reduce) {
+  .dot-pulse::after {
+    animation: none;
+  }
+}
