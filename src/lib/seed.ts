@@ -18,6 +18,7 @@ import { generateUniqueTrackingCode } from "@/lib/tracking";
 import {
   AI_RECOMMENDATION_LABELS,
   APPLICATION_STATUSES,
+  SECTION_KEYS,
   type AdminUser,
   type AiRecommendation,
   type Application,
@@ -25,6 +26,7 @@ import {
   type BenefitItem,
   type FaqItem,
   type Position,
+  type SectionVisibility,
   type SiteContent,
   type TeamMember,
 } from "@/lib/types";
@@ -192,9 +194,24 @@ export function sanitizeTeamMembers(value: unknown, fallback: TeamMember[]): Tea
 }
 
 /**
+ * Normalisasi konfigurasi visibilitas bagian halaman publik.
+ * Kunci tak dikenal diabaikan; kunci hilang/tidak boolean diambil dari fallback.
+ */
+export function sanitizeSections(value: unknown, fallback: SectionVisibility): SectionVisibility {
+  const result = { ...fallback };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return result;
+  const obj = value as Record<string, unknown>;
+  for (const key of SECTION_KEYS) {
+    const v = obj[key];
+    if (typeof v === "boolean") result[key] = v;
+  }
+  return result;
+}
+
+/**
  * Normalisasi objek konten situs menjadi `SiteContent` lengkap.
  * Field yang tidak valid/tidak ada diambil dari `fallback` — sehingga field baru
- * (teamMembers, chatbotEnabled, dll) otomatis terisi dari default tanpa menimpa nilai lama.
+ * (teamMembers, chatbotEnabled, sections, dll) otomatis terisi dari default tanpa menimpa nilai lama.
  */
 export function sanitizeSiteContent(value: unknown, fallback: SiteContent = DEFAULT_SITE): SiteContent {
   const obj = (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
@@ -219,6 +236,7 @@ export function sanitizeSiteContent(value: unknown, fallback: SiteContent = DEFA
     discordWebhookUrl: pickString(obj, "discordWebhookUrl", fallback.discordWebhookUrl),
     telegramBotToken: pickString(obj, "telegramBotToken", fallback.telegramBotToken),
     telegramChatId: pickString(obj, "telegramChatId", fallback.telegramChatId),
+    sections: sanitizeSections(obj.sections, fallback.sections),
   };
 }
 

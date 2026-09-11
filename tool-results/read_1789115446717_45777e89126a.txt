@@ -1,0 +1,926 @@
+     1→"use client";
+     2→
+     3→import { useCallback, useEffect, useState, type ReactNode } from "react";
+     4→import { Button } from "@/components/ui/button";
+     5→import {
+     6→  Card,
+     7→  CardContent,
+     8→  CardDescription,
+     9→  CardHeader,
+    10→  CardTitle,
+    11→} from "@/components/ui/card";
+    12→import { Input } from "@/components/ui/input";
+    13→import { Label } from "@/components/ui/label";
+    14→import {
+    15→  Select,
+    16→  SelectContent,
+    17→  SelectItem,
+    18→  SelectTrigger,
+    19→  SelectValue,
+    20→} from "@/components/ui/select";
+    21→import { Skeleton } from "@/components/ui/skeleton";
+    22→import { Switch } from "@/components/ui/switch";
+    23→import { Textarea } from "@/components/ui/textarea";
+    24→import {
+    25→  Award,
+    26→  Bot,
+    27→  Calendar,
+    28→  Camera,
+    29→  ChevronDown,
+    30→  ChevronUp,
+    31→  Clock,
+    32→  Copy,
+    33→  Eye,
+    34→  Film,
+    35→  Globe,
+    36→  GraduationCap,
+    37→  Heart,
+    38→  Loader2,
+    39→  MailCheck,
+    40→  Mic,
+    41→  PenTool,
+    42→  Plus,
+    43→  Quote,
+    44→  Rocket,
+    45→  Send,
+    46→  Sparkles,
+    47→  Trash2,
+    48→  TrendingUp,
+    49→  Users,
+    50→  Wallet,
+    51→  Zap,
+    52→  type LucideIcon,
+    53→} from "lucide-react";
+    54→import { toast } from "sonner";
+    55→import {
+    56→  BENEFIT_ICONS,
+    57→  type FaqItem,
+    58→  type SiteContent,
+    59→  type Subscriber,
+    60→  type TeamMember,
+    61→} from "@/lib/types";
+    62→import { apiGet, apiPost, apiPut } from "./api";
+    63→import { copyText } from "./format";
+    64→
+    65→// Peta ikon lucide untuk benefit (fallback Sparkles).
+    66→const ICON_MAP: Record<string, LucideIcon> = {
+    67→  Sparkles,
+    68→  Film,
+    69→  Users,
+    70→  Rocket,
+    71→  Wallet,
+    72→  GraduationCap,
+    73→  Globe,
+    74→  Clock,
+    75→  Zap,
+    76→  Award,
+    77→  Heart,
+    78→  Calendar,
+    79→  Camera,
+    80→  Mic,
+    81→  PenTool,
+    82→  TrendingUp,
+    83→};
+    84→
+    85→function BenefitIcon({ name, className }: { name: string; className?: string }) {
+    86→  const Icon = ICON_MAP[name] ?? Sparkles;
+    87→  return <Icon className={className} aria-hidden="true" />;
+    88→}
+    89→
+    90→function moveItem<T>(items: T[], index: number, direction: -1 | 1): T[] {
+    91→  const next = [...items];
+    92→  const target = index + direction;
+    93→  if (target < 0 || target >= next.length) return next;
+    94→  const [item] = next.splice(index, 1);
+    95→  next.splice(target, 0, item);
+    96→  return next;
+    97→}
+    98→
+    99→function Field({
+   100→  id,
+   101→  label,
+   102→  hint,
+   103→  children,
+   104→}: {
+   105→  id: string;
+   106→  label: string;
+   107→  hint?: string;
+   108→  children: ReactNode;
+   109→}) {
+   110→  return (
+   111→    <div className="flex flex-col gap-1.5">
+   112→      <Label htmlFor={id}>{label}</Label>
+   113→      {children}
+   114→      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+   115→    </div>
+   116→  );
+   117→}
+   118→
+   119→export function SettingsTab() {
+   120→  const [site, setSite] = useState<SiteContent | null>(null);
+   121→  const [loading, setLoading] = useState(true);
+   122→  const [loadError, setLoadError] = useState<string | null>(null);
+   123→  const [saving, setSaving] = useState(false);
+   124→  const [webhookTesting, setWebhookTesting] = useState(false);
+   125→  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+   126→  const [origin, setOrigin] = useState("");
+   127→
+   128→  const load = useCallback(async () => {
+   129→    setLoading(true);
+   130→    setLoadError(null);
+   131→    try {
+   132→      const data = await apiGet<{ site: SiteContent }>("/api/admin/settings");
+   133→      setSite(JSON.parse(JSON.stringify(data.site)) as SiteContent);
+   134→    } catch (err) {
+   135→      setLoadError(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+   136→    } finally {
+   137→      setLoading(false);
+   138→    }
+   139→  }, []);
+   140→
+   141→  useEffect(() => {
+   142→    void load();
+   143→  }, [load]);
+   144→
+   145→  // Daftar pelanggan notifikasi (bersifat pelengkap).
+   146→  useEffect(() => {
+   147→    let cancelled = false;
+   148→    apiGet<Subscriber[]>("/api/admin/subscribers")
+   149→      .then((data) => {
+   150→        if (!cancelled) setSubscribers(data);
+   151→      })
+   152→      .catch(() => {
+   153→        // Abaikan: daftar pelanggan opsional.
+   154→      });
+   155→    return () => {
+   156→      cancelled = true;
+   157→    };
+   158→  }, []);
+   159→
+   160→  useEffect(() => {
+   161→    setOrigin(window.location.origin);
+   162→  }, []);
+   163→
+   164→  function updateField<K extends keyof SiteContent>(key: K, value: SiteContent[K]) {
+   165→    setSite((prev) => (prev ? { ...prev, [key]: value } : prev));
+   166→  }
+   167→
+   168→  function updateBenefit(index: number, patch: Partial<SiteContent["benefits"][number]>) {
+   169→    setSite((prev) =>
+   170→      prev
+   171→        ? {
+   172→            ...prev,
+   173→            benefits: prev.benefits.map((b, i) => (i === index ? { ...b, ...patch } : b)),
+   174→          }
+   175→        : prev
+   176→    );
+   177→  }
+   178→
+   179→  function updateFaq(index: number, patch: Partial<FaqItem>) {
+   180→    setSite((prev) =>
+   181→      prev
+   182→        ? {
+   183→            ...prev,
+   184→            faqs: prev.faqs.map((f, i) => (i === index ? { ...f, ...patch } : f)),
+   185→          }
+   186→        : prev
+   187→    );
+   188→  }
+   189→
+   190→  function updateTeamMember(index: number, patch: Partial<TeamMember>) {
+   191→    setSite((prev) =>
+   192→      prev
+   193→        ? {
+   194→            ...prev,
+   195→            teamMembers: prev.teamMembers.map((m, i) =>
+   196→              i === index ? { ...m, ...patch } : m
+   197→            ),
+   198→          }
+   199→        : prev
+   200→    );
+   201→  }
+   202→
+   203→  async function handleSaveSite() {
+   204→    if (!site || saving) return;
+   205→    setSaving(true);
+   206→    try {
+   207→      const res = await apiPut<{ ok: boolean; site: SiteContent }>(
+   208→        "/api/admin/settings",
+   209→        { site }
+   210→      );
+   211→      setSite(JSON.parse(JSON.stringify(res.site)) as SiteContent);
+   212→      toast.success("Pengaturan disimpan");
+   213→    } catch (err) {
+   214→      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+   215→    } finally {
+   216→      setSaving(false);
+   217→    }
+   218→  }
+   219→
+   220→  async function handleWebhookTest() {
+   221→    if (webhookTesting) return;
+   222→    setWebhookTesting(true);
+   223→    try {
+   224→      const res = await apiPost<{ discord: string; telegram: string }>(
+   225→        "/api/admin/webhook-test"
+   226→      );
+   227→      for (const [name, result] of [
+   228→        ["Discord", res.discord],
+   229→        ["Telegram", res.telegram],
+   230→      ] as const) {
+   231→        if (result === "ok") toast.success(`${name}: ok`);
+   232→        else if (result === "gagal") toast.error(`${name}: gagal`);
+   233→        else toast.info(`${name}: nonaktif`);
+   234→      }
+   235→    } catch (err) {
+   236→      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+   237→    } finally {
+   238→      setWebhookTesting(false);
+   239→    }
+   240→  }
+   241→
+   242→  async function handleCopySubscribers() {
+   243→    const ok = await copyText(subscribers.map((s) => s.email).join("\n"));
+   244→    if (ok) toast.success("Daftar email disalin");
+   245→    else toast.error("Gagal menyalin ke clipboard");
+   246→  }
+   247→
+   248→  async function handleCopyEmbed() {
+   249→    if (!site) return;
+   250→    const snippet = `<iframe src="${origin}/?embed=1" width="100%" height="600" style="border:0;border-radius:12px" title="Lowongan ${site.siteName}"></iframe>`;
+   251→    const ok = await copyText(snippet);
+   252→    if (ok) toast.success("Kode embed disalin");
+   253→    else toast.error("Gagal menyalin ke clipboard");
+   254→  }
+   255→
+   256→  if (loading) {
+   257→    return (
+   258→      <div className="flex flex-col gap-4">
+   259→        {Array.from({ length: 3 }).map((_, i) => (
+   260→          <Skeleton key={i} className="h-48 w-full rounded-2xl" />
+   261→        ))}
+   262→      </div>
+   263→    );
+   264→  }
+   265→
+   266→  if (loadError || !site) {
+   267→    return (
+   268→      <Card className="rounded-2xl">
+   269→        <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+   270→          <p className="text-sm text-muted-foreground">
+   271→            {loadError ?? "Pengaturan tidak tersedia."}
+   272→          </p>
+   273→          <Button variant="outline" onClick={() => void load()} className="h-10">
+   274→            Coba Lagi
+   275→          </Button>
+   276→        </CardContent>
+   277→      </Card>
+   278→    );
+   279→  }
+   280→
+   281→  const embedSnippet = `<iframe src="${origin || "https://domain-anda"}?embed=1" width="100%" height="600" style="border:0;border-radius:12px" title="Lowongan ${site.siteName}"></iframe>`;
+   282→
+   283→  return (
+   284→    <div className="flex flex-col gap-6">
+   285→      {/* Identitas & Hero */}
+   286→      <Card className="gap-4 rounded-2xl p-6">
+   287→        <CardHeader className="px-0">
+   288→          <CardTitle className="text-base">Identitas &amp; Hero</CardTitle>
+   289→          <CardDescription>
+   290→            Nama situs dan isi bagian hero halaman publik.
+   291→          </CardDescription>
+   292→        </CardHeader>
+   293→        <CardContent className="grid gap-4 px-0 md:grid-cols-2">
+   294→          <Field id="f-siteName" label="Nama Situs">
+   295→            <Input
+   296→              id="f-siteName"
+   297→              value={site.siteName}
+   298→              onChange={(e) => updateField("siteName", e.target.value)}
+   299→              className="h-10"
+   300→            />
+   301→          </Field>
+   302→          <Field id="f-tagline" label="Tagline">
+   303→            <Input
+   304→              id="f-tagline"
+   305→              value={site.tagline}
+   306→              onChange={(e) => updateField("tagline", e.target.value)}
+   307→              className="h-10"
+   308→            />
+   309→          </Field>
+   310→          <Field id="f-heroBadge" label="Badge Hero">
+   311→            <Input
+   312→              id="f-heroBadge"
+   313→              value={site.heroBadge}
+   314→              onChange={(e) => updateField("heroBadge", e.target.value)}
+   315→              className="h-10"
+   316→            />
+   317→          </Field>
+   318→          <Field id="f-deadline" label="Deadline" hint="Format bebas, mis. 30 September 2025. Kosongkan jika tidak ada.">
+   319→            <Input
+   320→              id="f-deadline"
+   321→              value={site.deadline}
+   322→              onChange={(e) => updateField("deadline", e.target.value)}
+   323→              className="h-10"
+   324→            />
+   325→          </Field>
+   326→          <Field id="f-heroTitle" label="Judul Hero">
+   327→            <Input
+   328→              id="f-heroTitle"
+   329→              value={site.heroTitle}
+   330→              onChange={(e) => updateField("heroTitle", e.target.value)}
+   331→              className="h-10"
+   332→            />
+   333→          </Field>
+   334→          <Field id="f-heroHighlight" label="Kata Highlight Hero" hint="Kata yang dihighlight gradien">
+   335→            <Input
+   336→              id="f-heroHighlight"
+   337→              value={site.heroHighlight}
+   338→              onChange={(e) => updateField("heroHighlight", e.target.value)}
+   339→              className="h-10"
+   340→            />
+   341→          </Field>
+   342→          <div className="md:col-span-2">
+   343→            <Field id="f-heroDescription" label="Deskripsi Hero">
+   344→              <Textarea
+   345→                id="f-heroDescription"
+   346→                value={site.heroDescription}
+   347→                onChange={(e) => updateField("heroDescription", e.target.value)}
+   348→                rows={3}
+   349→              />
+   350→            </Field>
+   351→          </div>
+   352→          <Field id="f-aboutTitle" label="Judul Tentang">
+   353→            <Input
+   354→              id="f-aboutTitle"
+   355→              value={site.aboutTitle}
+   356→              onChange={(e) => updateField("aboutTitle", e.target.value)}
+   357→              className="h-10"
+   358→            />
+   359→          </Field>
+   360→          <div className="md:col-span-1">
+   361→            <Field id="f-aboutDescription" label="Deskripsi Tentang">
+   362→              <Textarea
+   363→                id="f-aboutDescription"
+   364→                value={site.aboutDescription}
+   365→                onChange={(e) => updateField("aboutDescription", e.target.value)}
+   366→                rows={3}
+   367→              />
+   368→            </Field>
+   369→          </div>
+   370→        </CardContent>
+   371→      </Card>
+   372→
+   373→      {/* Kontak & Footer */}
+   374→      <Card className="gap-4 rounded-2xl p-6">
+   375→        <CardHeader className="px-0">
+   376→          <CardTitle className="text-base">Kontak &amp; Footer</CardTitle>
+   377→          <CardDescription>
+   378→            Informasi kontak dan teks footer halaman publik.
+   379→          </CardDescription>
+   380→        </CardHeader>
+   381→        <CardContent className="grid gap-4 px-0 md:grid-cols-2">
+   382→          <Field id="f-contactEmail" label="Email Kontak">
+   383→            <Input
+   384→              id="f-contactEmail"
+   385→              type="email"
+   386→              value={site.contactEmail}
+   387→              onChange={(e) => updateField("contactEmail", e.target.value)}
+   388→              className="h-10"
+   389→            />
+   390→          </Field>
+   391→          <Field
+   392→            id="f-contactWhatsapp"
+   393→            label="WhatsApp"
+   394→            hint="Format internasional tanpa tanda +, mis. 6281234567890"
+   395→          >
+   396→            <Input
+   397→              id="f-contactWhatsapp"
+   398→              value={site.contactWhatsapp}
+   399→              onChange={(e) => updateField("contactWhatsapp", e.target.value)}
+   400→              className="h-10"
+   401→            />
+   402→          </Field>
+   403→          <Field id="f-instagram" label="Instagram">
+   404→            <Input
+   405→              id="f-instagram"
+   406→              value={site.instagram}
+   407→              onChange={(e) => updateField("instagram", e.target.value)}
+   408→              placeholder="@lumina.studio"
+   409→              className="h-10"
+   410→            />
+   411→          </Field>
+   412→          <Field id="f-footerText" label="Teks Footer">
+   413→            <Input
+   414→              id="f-footerText"
+   415→              value={site.footerText}
+   416→              onChange={(e) => updateField("footerText", e.target.value)}
+   417→              className="h-10"
+   418→            />
+   419→          </Field>
+   420→        </CardContent>
+   421→      </Card>
+   422→
+   423→      {/* Suara Tim */}
+   424→      <Card className="gap-4 rounded-2xl p-6">
+   425→        <CardHeader className="px-0">
+   426→          <CardTitle className="text-base">Suara Tim</CardTitle>
+   427→          <CardDescription>
+   428→            Testimoni anggota tim yang tampil di halaman publik.
+   429→          </CardDescription>
+   430→        </CardHeader>
+   431→        <CardContent className="flex flex-col gap-3 px-0">
+   432→          {site.teamMembers.length === 0 ? (
+   433→            <p className="text-sm text-muted-foreground">
+   434→              Belum ada testimoni tim. Tambahkan agar halaman lebih hidup.
+   435→            </p>
+   436→          ) : (
+   437→            site.teamMembers.map((member, index) => (
+   438→              <div key={index} className="flex flex-col gap-2 rounded-xl border p-3">
+   439→                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+   440→                  <Input
+   441→                    value={member.name}
+   442→                    onChange={(e) => updateTeamMember(index, { name: e.target.value })}
+   443→                    placeholder="Nama anggota"
+   444→                    aria-label={`Nama anggota tim ${index + 1}`}
+   445→                    className="h-10"
+   446→                  />
+   447→                  <Input
+   448→                    value={member.role}
+   449→                    onChange={(e) => updateTeamMember(index, { role: e.target.value })}
+   450→                    placeholder="Peran, mis. Video Editor"
+   451→                    aria-label={`Peran anggota tim ${index + 1}`}
+   452→                    className="h-10"
+   453→                  />
+   454→                  <div className="flex items-center justify-end gap-1">
+   455→                    <Button
+   456→                      variant="ghost"
+   457→                      size="icon"
+   458→                      className="size-10 sm:size-9"
+   459→                      onClick={() =>
+   460→                        setSite((prev) =>
+   461→                          prev
+   462→                            ? { ...prev, teamMembers: moveItem(prev.teamMembers, index, -1) }
+   463→                            : prev
+   464→                        )
+   465→                      }
+   466→                      disabled={index === 0}
+   467→                      aria-label={`Naikkan testimoni ${index + 1}`}
+   468→                    >
+   469→                      <ChevronUp className="size-4" aria-hidden="true" />
+   470→                    </Button>
+   471→                    <Button
+   472→                      variant="ghost"
+   473→                      size="icon"
+   474→                      className="size-10 sm:size-9"
+   475→                      onClick={() =>
+   476→                        setSite((prev) =>
+   477→                          prev
+   478→                            ? { ...prev, teamMembers: moveItem(prev.teamMembers, index, 1) }
+   479→                            : prev
+   480→                        )
+   481→                      }
+   482→                      disabled={index === site.teamMembers.length - 1}
+   483→                      aria-label={`Turunkan testimoni ${index + 1}`}
+   484→                    >
+   485→                      <ChevronDown className="size-4" aria-hidden="true" />
+   486→                    </Button>
+   487→                    <Button
+   488→                      variant="ghost"
+   489→                      size="icon"
+   490→                      className="size-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
+   491→                      onClick={() =>
+   492→                        setSite((prev) =>
+   493→                          prev
+   494→                            ? {
+   495→                                ...prev,
+   496→                                teamMembers: prev.teamMembers.filter((_, i) => i !== index),
+   497→                              }
+   498→                            : prev
+   499→                        )
+   500→                      }
+   501→                      aria-label={`Hapus testimoni ${index + 1}`}
+   502→                    >
+   503→                      <Trash2 className="size-4" aria-hidden="true" />
+   504→                    </Button>
+   505→                  </div>
+   506→                </div>
+   507→                <Textarea
+   508→                  value={member.quote}
+   509→                  onChange={(e) => updateTeamMember(index, { quote: e.target.value })}
+   510→                  placeholder="Kutipan testimoni..."
+   511→                  aria-label={`Kutipan anggota tim ${index + 1}`}
+   512→                  rows={2}
+   513→                />
+   514→              </div>
+   515→            ))
+   516→          )}
+   517→          <Button
+   518→            variant="outline"
+   519→            className="h-10 w-fit"
+   520→            onClick={() =>
+   521→              setSite((prev) =>
+   522→                prev
+   523→                  ? {
+   524→                      ...prev,
+   525→                      teamMembers: [
+   526→                        ...prev.teamMembers,
+   527→                        { name: "", role: "", quote: "" },
+   528→                      ],
+   529→                    }
+   530→                  : prev
+   531→              )
+   532→            }
+   533→          >
+   534→            <Quote className="size-4" aria-hidden="true" />
+   535→            Tambah Anggota
+   536→          </Button>
+   537→        </CardContent>
+   538→      </Card>
+   539→
+   540→      {/* Benefit */}
+   541→      <Card className="gap-4 rounded-2xl p-6">
+   542→        <CardHeader className="px-0">
+   543→          <CardTitle className="text-base">Benefit Halaman Publik</CardTitle>
+   544→          <CardDescription>
+   545→            Daftar keuntungan bergabung yang tampil di landing page.
+   546→          </CardDescription>
+   547→        </CardHeader>
+   548→        <CardContent className="flex flex-col gap-3 px-0">
+   549→          {site.benefits.length === 0 ? (
+   550→            <p className="text-sm text-muted-foreground">
+   551→              Belum ada benefit. Tambahkan minimal satu agar bagian benefit tampil menarik.
+   552→            </p>
+   553→          ) : (
+   554→            site.benefits.map((benefit, index) => (
+   555→              <div
+   556→                key={index}
+   557→                className="flex flex-col gap-2 rounded-xl border p-3 md:grid md:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1.5fr)_auto] md:items-center"
+   558→              >
+   559→                <div className="flex items-center gap-2">
+   560→                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+   561→                    <BenefitIcon name={benefit.icon} className="size-4" />
+   562→                  </span>
+   563→                  <Select
+   564→                    value={benefit.icon}
+   565→                    onValueChange={(v) => updateBenefit(index, { icon: v })}
+   566→                  >
+   567→                    <SelectTrigger
+   568→                      size="sm"
+   569→                      className="w-full min-w-0"
+   570→                      aria-label={`Ikon benefit ${index + 1}`}
+   571→                    >
+   572→                      <SelectValue />
+   573→                    </SelectTrigger>
+   574→                    <SelectContent>
+   575→                      {BENEFIT_ICONS.map((icon) => (
+   576→                        <SelectItem key={icon} value={icon}>
+   577→                          {icon}
+   578→                        </SelectItem>
+   579→                      ))}
+   580→                    </SelectContent>
+   581→                  </Select>
+   582→                </div>
+   583→                <Input
+   584→                  value={benefit.title}
+   585→                  onChange={(e) => updateBenefit(index, { title: e.target.value })}
+   586→                  placeholder="Judul benefit"
+   587→                  aria-label={`Judul benefit ${index + 1}`}
+   588→                  className="h-10"
+   589→                />
+   590→                <Input
+   591→                  value={benefit.description}
+   592→                  onChange={(e) => updateBenefit(index, { description: e.target.value })}
+   593→                  placeholder="Deskripsi singkat"
+   594→                  aria-label={`Deskripsi benefit ${index + 1}`}
+   595→                  className="h-10"
+   596→                />
+   597→                <div className="flex items-center justify-end gap-1">
+   598→                  <Button
+   599→                    variant="ghost"
+   600→                    size="icon"
+   601→                    className="size-10 sm:size-9"
+   602→                    onClick={() =>
+   603→                      setSite((prev) =>
+   604→                        prev ? { ...prev, benefits: moveItem(prev.benefits, index, -1) } : prev
+   605→                      )
+   606→                    }
+   607→                    disabled={index === 0}
+   608→                    aria-label={`Naikkan benefit ${index + 1}`}
+   609→                  >
+   610→                    <ChevronUp className="size-4" aria-hidden="true" />
+   611→                  </Button>
+   612→                  <Button
+   613→                    variant="ghost"
+   614→                    size="icon"
+   615→                    className="size-10 sm:size-9"
+   616→                    onClick={() =>
+   617→                      setSite((prev) =>
+   618→                        prev ? { ...prev, benefits: moveItem(prev.benefits, index, 1) } : prev
+   619→                      )
+   620→                    }
+   621→                    disabled={index === site.benefits.length - 1}
+   622→                    aria-label={`Turunkan benefit ${index + 1}`}
+   623→                  >
+   624→                    <ChevronDown className="size-4" aria-hidden="true" />
+   625→                  </Button>
+   626→                  <Button
+   627→                    variant="ghost"
+   628→                    size="icon"
+   629→                    className="size-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
+   630→                    onClick={() =>
+   631→                      setSite((prev) =>
+   632→                        prev
+   633→                          ? { ...prev, benefits: prev.benefits.filter((_, i) => i !== index) }
+   634→                          : prev
+   635→                      )
+   636→                    }
+   637→                    aria-label={`Hapus benefit ${index + 1}`}
+   638→                  >
+   639→                    <Trash2 className="size-4" aria-hidden="true" />
+   640→                  </Button>
+   641→                </div>
+   642→              </div>
+   643→            ))
+   644→          )}
+   645→          <Button
+   646→            variant="outline"
+   647→            className="h-10 w-fit"
+   648→            onClick={() =>
+   649→              setSite((prev) =>
+   650→                prev
+   651→                  ? {
+   652→                      ...prev,
+   653→                      benefits: [
+   654→                        ...prev.benefits,
+   655→                        { icon: "Sparkles", title: "Benefit Baru", description: "" },
+   656→                      ],
+   657→                    }
+   658→                  : prev
+   659→              )
+   660→            }
+   661→          >
+   662→            <Plus className="size-4" aria-hidden="true" />
+   663→            Tambah Benefit
+   664→          </Button>
+   665→        </CardContent>
+   666→      </Card>
+   667→
+   668→      {/* FAQ */}
+   669→      <Card className="gap-4 rounded-2xl p-6">
+   670→        <CardHeader className="px-0">
+   671→          <CardTitle className="text-base">FAQ Halaman Publik</CardTitle>
+   672→          <CardDescription>
+   673→            Pertanyaan yang sering diajukan calon kreator.
+   674→          </CardDescription>
+   675→        </CardHeader>
+   676→        <CardContent className="flex flex-col gap-3 px-0">
+   677→          {site.faqs.length === 0 ? (
+   678→            <p className="text-sm text-muted-foreground">
+   679→              Belum ada FAQ. Tambahkan pertanyaan untuk membantu calon pelamar.
+   680→            </p>
+   681→          ) : (
+   682→            site.faqs.map((faq, index) => (
+   683→              <div key={index} className="flex flex-col gap-2 rounded-xl border p-3">
+   684→                <div className="flex items-center gap-2">
+   685→                  <Input
+   686→                    value={faq.question}
+   687→                    onChange={(e) => updateFaq(index, { question: e.target.value })}
+   688→                    placeholder="Pertanyaan"
+   689→                    aria-label={`Pertanyaan FAQ ${index + 1}`}
+   690→                    className="h-10"
+   691→                  />
+   692→                  <div className="flex shrink-0 items-center gap-1">
+   693→                    <Button
+   694→                      variant="ghost"
+   695→                      size="icon"
+   696→                      className="size-10 sm:size-9"
+   697→                      onClick={() =>
+   698→                        setSite((prev) =>
+   699→                          prev ? { ...prev, faqs: moveItem(prev.faqs, index, -1) } : prev
+   700→                        )
+   701→                      }
+   702→                      disabled={index === 0}
+   703→                      aria-label={`Naikkan FAQ ${index + 1}`}
+   704→                    >
+   705→                      <ChevronUp className="size-4" aria-hidden="true" />
+   706→                    </Button>
+   707→                    <Button
+   708→                      variant="ghost"
+   709→                      size="icon"
+   710→                      className="size-10 sm:size-9"
+   711→                      onClick={() =>
+   712→                        setSite((prev) =>
+   713→                          prev ? { ...prev, faqs: moveItem(prev.faqs, index, 1) } : prev
+   714→                        )
+   715→                      }
+   716→                      disabled={index === site.faqs.length - 1}
+   717→                      aria-label={`Turunkan FAQ ${index + 1}`}
+   718→                    >
+   719→                      <ChevronDown className="size-4" aria-hidden="true" />
+   720→                    </Button>
+   721→                    <Button
+   722→                      variant="ghost"
+   723→                      size="icon"
+   724→                      className="size-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
+   725→                      onClick={() =>
+   726→                        setSite((prev) =>
+   727→                          prev ? { ...prev, faqs: prev.faqs.filter((_, i) => i !== index) } : prev
+   728→                        )
+   729→                      }
+   730→                      aria-label={`Hapus FAQ ${index + 1}`}
+   731→                    >
+   732→                      <Trash2 className="size-4" aria-hidden="true" />
+   733→                    </Button>
+   734→                  </div>
+   735→                </div>
+   736→                <Textarea
+   737→                  value={faq.answer}
+   738→                  onChange={(e) => updateFaq(index, { answer: e.target.value })}
+   739→                  placeholder="Jawaban"
+   740→                  aria-label={`Jawaban FAQ ${index + 1}`}
+   741→                  rows={2}
+   742→                />
+   743→              </div>
+   744→            ))
+   745→          )}
+   746→          <Button
+   747→            variant="outline"
+   748→            className="h-10 w-fit"
+   749→            onClick={() =>
+   750→              setSite((prev) =>
+   751→                prev ? { ...prev, faqs: [...prev.faqs, { question: "", answer: "" }] } : prev
+   752→              )
+   753→            }
+   754→          >
+   755→            <Plus className="size-4" aria-hidden="true" />
+   756→            Tambah FAQ
+   757→          </Button>
+   758→        </CardContent>
+   759→      </Card>
+   760→
+   761→      {/* Integrasi & Otomasi */}
+   762→      <Card className="gap-4 rounded-2xl p-6">
+   763→        <CardHeader className="px-0">
+   764→          <CardTitle className="text-base">Integrasi &amp; Otomasi</CardTitle>
+   765→          <CardDescription>
+   766→            Chatbot publik dan notifikasi lamaran baru via Discord / Telegram.
+   767→          </CardDescription>
+   768→        </CardHeader>
+   769→        <CardContent className="flex flex-col gap-4 px-0">
+   770→          <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+   771→            <div>
+   772→              <p className="flex items-center gap-2 text-sm font-medium">
+   773→                <Bot className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+   774→                Chatbot Lumina Bot
+   775→              </p>
+   776→              <p className="text-xs text-muted-foreground">
+   777→                Aktifkan chatbot Lumina Bot di halaman publik
+   778→              </p>
+   779→            </div>
+   780→            <Switch
+   781→              checked={site.chatbotEnabled}
+   782→              onCheckedChange={(checked) => updateField("chatbotEnabled", checked)}
+   783→              aria-label="Aktifkan chatbot Lumina Bot di halaman publik"
+   784→            />
+   785→          </div>
+   786→
+   787→          <Field
+   788→            id="f-discord"
+   789→            label="Discord Webhook URL"
+   790→            hint="Notifikasi lamaran baru ke channel Discord."
+   791→          >
+   792→            <Input
+   793→              id="f-discord"
+   794→              value={site.discordWebhookUrl}
+   795→              onChange={(e) => updateField("discordWebhookUrl", e.target.value)}
+   796→              placeholder="https://discord.com/api/webhooks/..."
+   797→              className="h-10"
+   798→            />
+   799→          </Field>
+   800→          <div className="grid gap-4 md:grid-cols-2">
+   801→            <Field id="f-telegram-token" label="Telegram Bot Token">
+   802→              <Input
+   803→                id="f-telegram-token"
+   804→                value={site.telegramBotToken}
+   805→                onChange={(e) => updateField("telegramBotToken", e.target.value)}
+   806→                placeholder="123456:ABC-DEF..."
+   807→                className="h-10"
+   808→              />
+   809→            </Field>
+   810→            <Field id="f-telegram-chat" label="Telegram Chat ID">
+   811→              <Input
+   812→                id="f-telegram-chat"
+   813→                value={site.telegramChatId}
+   814→                onChange={(e) => updateField("telegramChatId", e.target.value)}
+   815→                placeholder="-1001234567890"
+   816→                className="h-10"
+   817→              />
+   818→            </Field>
+   819→          </div>
+   820→          <Button
+   821→            variant="outline"
+   822→            className="h-10 w-fit"
+   823→            onClick={() => void handleWebhookTest()}
+   824→            disabled={webhookTesting}
+   825→          >
+   826→            {webhookTesting ? (
+   827→              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+   828→            ) : (
+   829→              <Send className="size-4" aria-hidden="true" />
+   830→            )}
+   831→            Kirim Pesan Uji
+   832→          </Button>
+   833→        </CardContent>
+   834→      </Card>
+   835→
+   836→      {/* Pelanggan Notifikasi */}
+   837→      <Card className="gap-4 rounded-2xl p-6">
+   838→        <CardHeader className="flex-row items-center justify-between px-0">
+   839→          <div>
+   840→            <CardTitle className="flex items-center gap-2 text-base">
+   841→              <MailCheck className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+   842→              Pelanggan Notifikasi
+   843→            </CardTitle>
+   844→            <CardDescription className="mt-1">
+   845→              {subscribers.length} email menerima info lowongan baru.
+   846→            </CardDescription>
+   847→          </div>
+   848→          <Button
+   849→            variant="outline"
+   850→            className="h-10"
+   851→            onClick={() => void handleCopySubscribers()}
+   852→            disabled={subscribers.length === 0}
+   853→          >
+   854→            <Copy className="size-4" aria-hidden="true" />
+   855→            Salin Semua
+   856→          </Button>
+   857→        </CardHeader>
+   858→        <CardContent className="px-0">
+   859→          {subscribers.length === 0 ? (
+   860→            <p className="text-sm text-muted-foreground">
+   861→              Belum ada pelanggan notifikasi.
+   862→            </p>
+   863→          ) : (
+   864→            <div className="max-h-48 overflow-y-auto rounded-lg border p-3 nice-scrollbar">
+   865→              <ul className="flex flex-col gap-1 font-mono text-sm">
+   866→                {subscribers.map((sub) => (
+   867→                  <li key={sub.id} className="truncate">
+   868→                    {sub.email}
+   869→                  </li>
+   870→                ))}
+   871→              </ul>
+   872→            </div>
+   873→          )}
+   874→        </CardContent>
+   875→      </Card>
+   876→
+   877→      {/* Widget Embed */}
+   878→      <Card className="gap-4 rounded-2xl p-6">
+   879→        <CardHeader className="flex-row items-center justify-between px-0">
+   880→          <div>
+   881→            <CardTitle className="text-base">Widget Embed</CardTitle>
+   882→            <CardDescription className="mt-1">
+   883→              Tampilkan lowongan di situs lain dengan iframe ini.
+   884→            </CardDescription>
+   885→          </div>
+   886→          <Button variant="outline" className="h-10" onClick={() => void handleCopyEmbed()}>
+   887→            <Copy className="size-4" aria-hidden="true" />
+   888→            Salin
+   889→          </Button>
+   890→        </CardHeader>
+   891→        <CardContent className="px-0">
+   892→          <Textarea
+   893→            readOnly
+   894→            value={embedSnippet}
+   895→            aria-label="Kode widget embed"
+   896→            className="font-mono text-xs"
+   897→            rows={4}
+   898→            onFocus={(e) => e.currentTarget.select()}
+   899→          />
+   900→        </CardContent>
+   901→      </Card>
+   902→
+   903→      {/* Bar simpan sticky */}
+   904→      <Card className="sticky bottom-4 z-10 flex-row items-center justify-between gap-3 rounded-2xl border-rose-200 bg-rose-50/80 p-4 backdrop-blur dark:border-rose-900 dark:bg-rose-950/80">
+   905→        <p className="text-sm font-medium">
+   906→          Perubahan konten situs belum disimpan.
+   907→        </p>
+   908→        <Button
+   909→          onClick={() => void handleSaveSite()}
+   910→          disabled={saving}
+   911→          className="h-10 shrink-0"
+   912→        >
+   913→          {saving ? (
+   914→            <>
+   915→              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+   916→              Menyimpan...
+   917→            </>
+   918→          ) : (
+   919→            "Simpan Perubahan"
+   920→          )}
+   921→        </Button>
+   922→      </Card>
+   923→    </div>
+   924→  );
+   925→}
+   926→

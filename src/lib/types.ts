@@ -59,7 +59,58 @@ export type SiteContent = {
   discordWebhookUrl: string;
   telegramBotToken: string;
   telegramChatId: string;
+  // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin)
+  sections: SectionVisibility;
 };
+
+/* ------------------------ Visibilitas bagian halaman publik ------------------------ */
+
+export type SectionKey =
+  | "hero"
+  | "positions"
+  | "about"
+  | "benefits"
+  | "steps"
+  | "applyForm"
+  | "statusCheck"
+  | "testimonials"
+  | "faq"
+  | "subscribe"
+  | "finalCta"
+  | "chatbot";
+
+export const SECTION_KEYS: SectionKey[] = [
+  "hero",
+  "positions",
+  "about",
+  "benefits",
+  "steps",
+  "applyForm",
+  "statusCheck",
+  "testimonials",
+  "faq",
+  "subscribe",
+  "finalCta",
+  "chatbot",
+];
+
+export const SECTION_LABELS: Record<SectionKey, string> = {
+  hero: "Hero & Pengantar",
+  positions: "Daftar Posisi",
+  about: "Tentang Studio",
+  benefits: "Benefit Bergabung",
+  steps: "Cara Melamar",
+  applyForm: "Formulir Lamaran",
+  statusCheck: "Cek Status Lamaran",
+  testimonials: "Testimoni Tim",
+  faq: "FAQ",
+  subscribe: "Langganan Notifikasi Posisi Baru",
+  finalCta: "CTA Penutup",
+  chatbot: "Widget Chatbot",
+};
+
+// Kunci -> boolean (true = bagian tampil di halaman publik)
+export type SectionVisibility = Record<SectionKey, boolean>;
 
 export type Position = {
   id: string;

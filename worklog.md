@@ -260,3 +260,63 @@ Stage Summary:
 - Penyebab root 401 X-Token = instance SDK stale yang di-cache permanen; kini semua panggilan AI resilient (auto-retry dengan instance segar).
 - Chatbot & seluruh platform v2 terverifikasi hidup end-to-end kembali setelah perbaikan.
 - Tidak ada perubahan skema/tipe/kontrak; hanya hardening src/lib/ai.ts, transcribe.ts, api/chat/route.ts.
+
+---
+Task ID: 9-c
+Agent: full-stack-developer
+Task: Kartu visibilitas section di tab Pengaturan admin
+
+Work Log:
+- Membaca worklog.md (jurnal proyek) untuk konteks, src/lib/types.ts (kontrak SECTION_KEYS/SECTION_LABELS/SectionVisibility), settings-tab.tsx penuh (926 baris) untuk memahami pola state form, bar simpan sticky, dan toast, serta src/app/api/admin/settings/route.ts (read-only) untuk memastikan bentuk respons PUT { ok, site } dan merge server-side.
+- Membuat file baru src/components/admin/section-visibility-card.tsx: Card "Tampilan Halaman Publik" dengan deskripsi "Atur bagian mana yang tampil di halaman publik. Perubahan berlaku setelah disimpan.", grid responsif 1 kolom mobile / 2 kolom md+, 12 baris Switch terkontrol (kiri: ikon lucide kecil per kunci dalam badge rose + label SECTION_LABELS; kanan: Switch shadcn dengan aria-label Indonesia).
+- Peta ikon per kunci: hero=Sparkles, positions=Briefcase, about=Info, benefits=Gift, steps=ListOrdered, applyForm=FileText, statusCheck=Search, testimonials=MessagesSquare, faq=CircleHelp, subscribe=Bell, finalCta=Flag, chatbot=Bot (semua terverifikasi tersedia di lucide-react 0.525.0).
+- Hint amber tampil hanya saat bagian NONAKTIF untuk 3 kasus penting: positions ("Posisi tetap terbuka di dashboard & RSS/embed..."), applyForm ("Pelamar tidak dapat mengirim lamaran..."), chatbot ("Widget disembunyikan; saklar utama chatbot tetap di atas.").
+- Mengekspor helper normalizeSections(input): lengkapi kunci yang hilang dari data lama dengan nilai true agar Switch terkontrol penuh (typeof boolean check, fallback true).
+- Mengedit settings-tab.tsx: import SectionVisibilityCard + normalizeSections + type SectionKey; load() kini menormalisasi sections setelah deep-copy GET; handleSaveSite() menormalisasi sections dari respons PUT sebelum sinkron state; fungsi updateSection(key, value) menyebar sections di state site; kartu baru disisipkan setelah card "Integrasi & Otomasi" (sehingga hint "saklar utama chatbot tetap di atas" akurat secara spasial) dan sebelum "Pelanggan Notifikasi".
+- Verifikasi: bun run lint 0 error; bunx tsc --noEmit 0 error di src/ (4 error pre-existing hanya di examples/ & skills/ yang diabaikan sesuai instruksi); dev.log menunjukkan recompile sukses tanpa error. Tidak menjalankan dev server/build/prisma; tidak mengubah API, src/app/**, src/lib/**, landing, ui, prisma.
+
+Stage Summary:
+- Fitur selesai: kartu "Tampilan Halaman Publik" di tab Pengaturan admin dengan 12 Switch visibilitas bagian halaman publik, tersimpan lewat PUT /api/admin/settings yang sudah ada (sections terkirim sebagai bagian dari objek site, merge + sanitize tetap di server, OWNER-only tetap ditangani backend).
+- File diubah: src/components/admin/settings-tab.tsx (state load/save/updateSection + penempatan kartu); file baru: src/components/admin/section-visibility-card.tsx (kartu + SECTION_ICONS + SECTION_HINTS + normalizeSections).
+- Keputusan penting: normalisasi sections dilakukan di sisi client pada load() dan sinkronisasi setelah simpan (bukan di API, yang tak boleh disentuh); hint hanya muncul saat bagian off; gaya konsisten pola tab (rounded-2xl p-6, px-0 header/content, badge rose, hint amber) tanpa biru/indigo dan tanpa emoji.
+- Catatan integrator: bila data Setting "site" lama belum punya sections, GET mengembalikan sections dari parseSiteContent (fallback semua true server-side) dan normalizeSections di client menjamin 12 kunci lengkap; landing sudah membaca site.sections di task lain (9-a/9-b), tidak ada perubahan kontrak.
+
+---
+Task ID: 9-b
+Agent: frontend-styling-expert
+Task: Render kondisional per section di halaman publik
+
+Work Log:
+- Membaca worklog.md (konteks & gaya), src/lib/types.ts (kontrak SectionKey/SECTION_KEYS/SectionVisibility/SiteContent.sections), lalu memverifikasi read-only bahwa server selalu mengirim `sections` lengkap (src/lib/seed.ts: sanitizeSections + fallback semua true; src/app/api/public/content/route.ts memakai parseSiteContent) sehingga tidak perlu fetch tambahan; src/app/page.tsx dikonfirmasi (props LandingPage tetap { content, positions, stats, onOpenAdmin }).
+- landing-page.tsx — LandingShell: `const sections = content.sections`; tiap section dirender hanya bila flag-nya true: hero, positions (canApply=sections.applyForm), about, benefits, steps, applyForm (id #lamar), statusCheck, testimonials, faq (id #faq), subscribe, finalCta; widget chat hanya bila `content.chatbotEnabled && sections.chatbot`.
+- landing-page.tsx — useNavLinks(sections) kini difilter per kunci section: positions→#posisi, benefits→#benefit, steps→#cara-lamar, statusCheck→#status, faq→#faq; hasil dipakai Navbar desktop, Sheet mobile, dan Footer sehingga tidak ada anchor nav ke section tersembunyi. Nav desktop dan kolom "Navigasi" footer tidak dirender bila daftar kosong; hamburger mobile disembunyikan bila navLinks kosong DAN applyForm nonaktif (sheet masih tampil bila ada CTA/toggle yang berguna).
+- landing-page.tsx — dependensi applyForm=false: CTA "Lamar Sekarang" hero disembunyikan ("Lihat Posisi" tetap bila sections.positions; keduanya hilang bila positions juga nonaktif; ShareMenu tetap); tombol "Lamar Sekarang" di finalCta disembunyikan (section tetap tampil, tombol WhatsApp tetap); CTA navbar desktop + item CTA di Sheet mobile (anchor #lamar) disembunyikan; section #lamar tak dirender.
+- positions-section.tsx — prop baru `canApply: boolean` pada PositionsSection → PositionCard & PositionDetailDialog: semua tombol "Lamar Posisi Ini" (kartu + footer dialog) tidak dirender bila canApply=false; tombol Detail & share WhatsApp tetap.
+- Navbar, Hero, FinalCtaSection, Footer menerima prop internal `sections: SectionVisibility`; tidak ada perubahan pada wizard, autosave, tracking, share, countdown, dark mode, i18n.
+- strings.ts tidak diubah — semua label yang dibutuhkan sudah ada di kamus ID/EN (nav.*, hero.viewPositions, positions.apply, cta.apply).
+- Verifikasi: `bun run lint` 0 error; `bunx tsc --noEmit` 0 error di src/ (sisa 4 error pre-existing hanya di examples/ & skills/, diabaikan sesuai instruksi). Tidak menjalankan dev server/build/prisma.
+
+Stage Summary:
+- Halaman publik kini sepenuhnya mengikuti konfigurasi `sections` dari SiteContent: 11 bagian konten + widget chatbot bisa dinyalakan/matikan dari panel admin tanpa meninggalkan anchor mati (#posisi/#benefit/#cara-lamar/#faq/#lamar/#status hanya ada saat section-nya tampil).
+- File diubah: src/components/landing/landing-page.tsx (render kondisional per section, navbar/Sheet/footer adaptif, CTA dependen applyForm, kondisi chatbot ganda) dan src/components/landing/positions-section.tsx (prop canApply). strings.ts tidak perlu perubahan.
+- Keputusan penting untuk integrator: (1) CTA "Lamar Sekarang" di navbar ikut disembunyikan saat sections.applyForm=false — menindaklanjuti aturan poin 5 "anchor nav yang merujuk section tersembunyi tidak boleh ada"; kalimat "CTA tetap" (poin 2) ditafsirkan sebagai CTA bukan bagian daftar link adaptif. (2) Hamburger mobile hilang hanya bila tak ada link nav DAN applyForm nonaktif. (3) Bila SEMUA section disembunyikan, halaman tetap valid: navbar + footer tampil, main kosong tanpa error/area aneh. (4) JSON-LD JobPosting dan view embed (?embed=1) tidak disentuh; catatan: tombol embed "Lamar di Situs Utama" masih menuju /#lamar permanen — potensi tindak lanjut bila applyForm disembunyikan.
+- Lint 0 error; tsc bersih di src/.
+
+---
+Task ID: 9 (+9-b, 9-c)
+Agent: orchestrator (Z.ai Code) + 2 subagent paralel
+Task: Fitur sembunyikan/tampilkan per bagian halaman publik
+
+Work Log:
+- Fondasi (orchestrator): types.ts + SectionKey/SECTION_KEYS/SECTION_LABELS/SectionVisibility, SiteContent.sections; defaults.ts + DEFAULT_SECTIONS (semua true); seed.ts + sanitizeSections() di-wire ke sanitizeSiteContent (merge per kunci, fallback per nilai) — TANPA ubah skema DB (sections tersimpan di JSON Setting "site"); PUT /api/admin/settings otomatis mendukung karena merge lewat sanitize.
+- 9-b (frontend-styling-expert): landing-page.tsx render kondisional 11 section (hero/positions/about/benefits/steps/applyForm/statusCheck/testimonials/faq/subscribe/finalCta); chat widget hanya bila chatbotEnabled && sections.chatbot; useNavLinks(sections) dipakai Navbar+Sheet+Footer (tanpa anchor ke section tersembunyi); hero CTA "Lamar Sekarang" & "Lihat Posisi" adaptif; positions-section.tsx + prop canApply (tombol "Lamar Posisi Ini" kartu & dialog detail disembunyikan bila applyForm=false); strings.ts tak berubah (kamus cukup).
+- 9-c (full-stack-developer): section-visibility-card.tsx (baru) — kartu "Tampilan Halaman Publik" berisi 12 Switch (SECTION_LABELS + ikon lucide), grid 1/2 kolom, hint amber untuk positions/applyForm/chatbot nonaktif, helper normalizeSections (lengkapi kunci hilang dari data lama); settings-tab.tsx — sections dinormalisasi saat load, ikut terkirim di PUT { site }, sinkron dari respons; kartu disisipkan setelah "Integrasi & Otomasi".
+- Verifikasi Agent Browser: login OWNER → tab Pengaturan → kartu visibilitas 12 switch tampil; toggle + Simpan → tersimpan (terbukti persist lintas reload); landing menyembunyikan section nonaktif + nav link adaptif (hanya 3 link tersisa saat 5 section off); applyForm=false → kartu posisi tetap tampil (5 kartu), TANPA tombol "Lamar Posisi Ini" (kartu & dialog detail), TANPA CTA "Lamar Sekarang" (nav & hero), dialog detail tetap punya tombol WhatsApp; chatbot off → widget hilang; restore semua true → landing penuh kembali (11 heading + tombol lamar + widget chat).
+- Insiden data (dipulihkan): semua posisi ditemukan isActive=false (kombinasi otomasi menutup Video Editor dengan closesAt kedaluwarsa 2026-09-11T08:31Z + 5 PATCH toggle posisi sisa uji subagent); pulihkan via Prisma: hapus 2 posisi "(Salinan)", aktifkan 5 posisi seed, closesAt=null. API publik kembali 5 posisi aktif.
+- Catatan penggunaan UI: mengubah satu switch memunculkan hint amber yang menggeser elemen di bawahnya → klik switch berikutnya dengan ref lama bisa salah sasaran (stale ref). Pola aman: snapshot ulang setiap kali sebelum klik. Tidak memengaruhi pengguna mouse asli.
+- bun run lint: 0 error; tsc --noEmit: 0 error di src/; console browser & dev.log bersih.
+
+Stage Summary:
+- Fitur visibilitas per section SELESAI & terverifikasi end-to-end: 12 bagian halaman publik dapat disembunyikan/ditampilkan dari tab Pengaturan (khusus OWNER), berlaku setelah simpan, nav adaptif, dependensi lamar ditangani otomatis.
+- Kontrak baru: SiteContent.sections (Record<SectionKey, boolean>) — data lama aman dua lapis (sanitize server + normalize client).
+- Data demo dipulihkan: 5 posisi aktif, 2 duplikat uji dihapus; chatbotEnabled=true.

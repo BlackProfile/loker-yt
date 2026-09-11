@@ -30,10 +30,12 @@ import { formatDateId, waShareHref } from "@/components/landing/landing-utils";
 
 function PositionCard({
   position,
+  canApply,
   onApply,
   onOpenDetail,
 }: {
   position: Position;
+  canApply: boolean; // false = sections.applyForm nonaktif, tombol lamar disembunyikan
   onApply: (positionId: string) => void;
   onOpenDetail: (position: Position) => void;
 }) {
@@ -99,15 +101,17 @@ function PositionCard({
             <Eye className="h-4 w-4" aria-hidden="true" />
             {t.positions.detail}
           </Button>
-          <Button
-            size="sm"
-            onClick={(event) => {
-              event.stopPropagation();
-              onApply(position.id);
-            }}
-          >
-            {t.positions.apply}
-          </Button>
+          {canApply ? (
+            <Button
+              size="sm"
+              onClick={(event) => {
+                event.stopPropagation();
+                onApply(position.id);
+              }}
+            >
+              {t.positions.apply}
+            </Button>
+          ) : null}
         </div>
       </div>
     </Card>
@@ -117,11 +121,13 @@ function PositionCard({
 function PositionDetailDialog({
   position,
   siteName,
+  canApply,
   onClose,
   onApply,
 }: {
   position: Position | null;
   siteName: string;
+  canApply: boolean;
   onClose: () => void;
   onApply: (positionId: string) => void;
 }) {
@@ -210,11 +216,13 @@ function PositionDetailDialog({
                   {t.positions.dialogShare}
                 </a>
               </Button>
-              <DialogClose asChild>
-                <Button onClick={() => onApply(position.id)}>
-                  {t.positions.apply}
-                </Button>
-              </DialogClose>
+              {canApply ? (
+                <DialogClose asChild>
+                  <Button onClick={() => onApply(position.id)}>
+                    {t.positions.apply}
+                  </Button>
+                </DialogClose>
+              ) : null}
             </DialogFooter>
           </>
         ) : null}
@@ -251,10 +259,12 @@ function FilterChip({
 export function PositionsSection({
   positions,
   siteName,
+  canApply,
   onApply,
 }: {
   positions: Position[];
   siteName: string;
+  canApply: boolean; // false = sections.applyForm nonaktif, semua tombol lamar disembunyikan
   onApply: (positionId: string) => void;
 }) {
   const { t } = useLang();
@@ -378,6 +388,7 @@ export function PositionsSection({
                     >
                       <PositionCard
                         position={position}
+                        canApply={canApply}
                         onApply={onApply}
                         onOpenDetail={setDetail}
                       />
@@ -393,6 +404,7 @@ export function PositionsSection({
       <PositionDetailDialog
         position={detail}
         siteName={siteName}
+        canApply={canApply}
         onClose={() => setDetail(null)}
         onApply={onApply}
       />

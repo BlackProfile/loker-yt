@@ -13,7 +13,11 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import type { Position, SiteContent } from "@/lib/types";
+import type {
+  Position,
+  SectionVisibility,
+  SiteContent,
+} from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -63,15 +67,17 @@ type LandingPageProps = {
   onOpenAdmin: () => void;
 };
 
-function useNavLinks() {
+// Link nav/footer mengikuti visibilitas section terkait —
+// anchor menuju section yang disembunyikan tidak boleh dirender.
+function useNavLinks(sections: SectionVisibility) {
   const { t } = useLang();
   return [
-    { href: "#posisi", label: t.nav.positions },
-    { href: "#benefit", label: t.nav.benefits },
-    { href: "#cara-lamar", label: t.nav.howToApply },
-    { href: "#status", label: t.nav.status },
-    { href: "#faq", label: t.nav.faq },
-  ];
+    { key: "positions" as const, href: "#posisi", label: t.nav.positions },
+    { key: "benefits" as const, href: "#benefit", label: t.nav.benefits },
+    { key: "steps" as const, href: "#cara-lamar", label: t.nav.howToApply },
+    { key: "statusCheck" as const, href: "#status", label: t.nav.status },
+    { key: "faq" as const, href: "#faq", label: t.nav.faq },
+  ].filter((link) => sections[link.key]);
 }
 
 const TRUST_ICONS = [ShieldCheck, Clock, MessageCircle];
@@ -79,13 +85,17 @@ const TRUST_ICONS = [ShieldCheck, Clock, MessageCircle];
 function Navbar({
   siteName,
   tagline,
+  sections,
 }: {
   siteName: string;
   tagline: string;
+  sections: SectionVisibility;
 }) {
   const { t } = useLang();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const navLinks = useNavLinks();
+  const navLinks = useNavLinks(sections);
+  // Hamburger seluler hanya bila isinya ada: link nav atau CTA lamaran.
+  const hasMobileMenu = navLinks.length > 0 || sections.applyForm;
 
   return (
     <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur">
@@ -100,83 +110,91 @@ function Navbar({
           </div>
         </div>
 
-        <nav
-          aria-label={t.nav.mainNav}
-          className="hidden items-center gap-1 lg:flex"
-        >
-          {navLinks.map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              {link.label}
-            </a>
-          ))}
-        </nav>
+        {navLinks.length > 0 ? (
+          <nav
+            aria-label={t.nav.mainNav}
+            className="hidden items-center gap-1 lg:flex"
+          >
+            {navLinks.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
+        ) : null}
 
         <div className="flex items-center gap-2">
           <div className="hidden items-center gap-2 md:flex">
             <LangToggle />
             <ThemeToggle />
           </div>
-          <Button size="sm" asChild className="hidden md:inline-flex">
-            <a href="#lamar">{t.nav.applyNow}</a>
-          </Button>
+          {sections.applyForm ? (
+            <Button size="sm" asChild className="hidden md:inline-flex">
+              <a href="#lamar">{t.nav.applyNow}</a>
+            </Button>
+          ) : null}
 
-          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-            <SheetTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 md:hidden"
-                aria-label={t.nav.openMenu}
-              >
-                <Menu className="h-5 w-5" aria-hidden="true" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-80">
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2 text-base">
-                  <BrandMark size="sm" />
-                  {siteName}
-                </SheetTitle>
-                <SheetDescription className="sr-only">
-                  {t.nav.mobileNav}
-                </SheetDescription>
-              </SheetHeader>
-              <nav
-                aria-label={t.nav.mobileNav}
-                className="flex flex-col gap-1 px-4"
-              >
-                {navLinks.map((link) => (
-                  <a
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => setMobileOpen(false)}
-                    className="flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    {link.label}
-                  </a>
-                ))}
-                <Button asChild className="mt-3">
-                  <a href="#lamar" onClick={() => setMobileOpen(false)}>
-                    {t.nav.applyNow}
-                  </a>
+          {hasMobileMenu ? (
+            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 md:hidden"
+                  aria-label={t.nav.openMenu}
+                >
+                  <Menu className="h-5 w-5" aria-hidden="true" />
                 </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-80">
+                <SheetHeader>
+                  <SheetTitle className="flex items-center gap-2 text-base">
+                    <BrandMark size="sm" />
+                    {siteName}
+                  </SheetTitle>
+                  <SheetDescription className="sr-only">
+                    {t.nav.mobileNav}
+                  </SheetDescription>
+                </SheetHeader>
+                <nav
+                  aria-label={t.nav.mobileNav}
+                  className="flex flex-col gap-1 px-4"
+                >
+                  {navLinks.map((link) => (
+                    <a
+                      key={link.href}
+                      href={link.href}
+                      onClick={() => setMobileOpen(false)}
+                      className="flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      {link.label}
+                    </a>
+                  ))}
+                  {sections.applyForm ? (
+                    <Button asChild className="mt-3">
+                      <a href="#lamar" onClick={() => setMobileOpen(false)}>
+                        {t.nav.applyNow}
+                      </a>
+                    </Button>
+                  ) : null}
 
-                <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4">
-                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {t.aria.langToggle} / {t.aria.themeToggle}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <LangToggle />
-                    <ThemeToggle />
+                  <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4">
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {t.aria.langToggle} / {t.aria.themeToggle}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <LangToggle />
+                      <ThemeToggle />
+                    </div>
                   </div>
-                </div>
-              </nav>
-            </SheetContent>
-          </Sheet>
+                </nav>
+              </SheetContent>
+            </Sheet>
+          ) : null}
         </div>
       </Container>
     </header>
@@ -186,9 +204,11 @@ function Navbar({
 function Hero({
   content,
   stats,
+  sections,
 }: {
   content: SiteContent;
   stats: LandingPageProps["stats"];
+  sections: SectionVisibility;
 }) {
   const { t } = useLang();
 
@@ -230,17 +250,21 @@ function Hero({
           ) : null}
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Button size="lg" className="h-11" asChild>
-              <a href="#lamar">{t.nav.applyNow}</a>
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
-              asChild
-            >
-              <a href="#posisi">{t.hero.viewPositions}</a>
-            </Button>
+            {sections.applyForm ? (
+              <Button size="lg" className="h-11" asChild>
+                <a href="#lamar">{t.nav.applyNow}</a>
+              </Button>
+            ) : null}
+            {sections.positions ? (
+              <Button
+                size="lg"
+                variant="outline"
+                className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                asChild
+              >
+                <a href="#posisi">{t.hero.viewPositions}</a>
+              </Button>
+            ) : null}
             <ShareMenu dark siteName={content.siteName} tagline={content.tagline} />
           </div>
         </FadeIn>
@@ -619,7 +643,13 @@ function FaqSection({ content }: { content: SiteContent }) {
   );
 }
 
-function FinalCtaSection({ content }: { content: SiteContent }) {
+function FinalCtaSection({
+  content,
+  sections,
+}: {
+  content: SiteContent;
+  sections: SectionVisibility;
+}) {
   const { t } = useLang();
 
   return (
@@ -638,9 +668,11 @@ function FinalCtaSection({ content }: { content: SiteContent }) {
               </h2>
               <p className="mt-4 text-zinc-400">{t.cta.desc}</p>
               <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-                <Button size="lg" className="h-11" asChild>
-                  <a href="#lamar">{t.cta.apply}</a>
-                </Button>
+                {sections.applyForm ? (
+                  <Button size="lg" className="h-11" asChild>
+                    <a href="#lamar">{t.cta.apply}</a>
+                  </Button>
+                ) : null}
                 <Button
                   size="lg"
                   variant="outline"
@@ -666,13 +698,15 @@ function FinalCtaSection({ content }: { content: SiteContent }) {
 
 function Footer({
   content,
+  sections,
   onOpenAdmin,
 }: {
   content: SiteContent;
+  sections: SectionVisibility;
   onOpenAdmin: () => void;
 }) {
   const { t } = useLang();
-  const navLinks = useNavLinks();
+  const navLinks = useNavLinks(sections);
 
   return (
     <footer className="mt-auto border-t bg-background">
@@ -691,21 +725,23 @@ function Footer({
             </p>
           </div>
 
-          <nav aria-label={t.footer.nav}>
-            <h3 className="text-sm font-semibold">{t.footer.nav}</h3>
-            <ul className="mt-4 space-y-1">
-              {navLinks.map((link) => (
-                <li key={link.href}>
-                  <a
-                    href={link.href}
-                    className="inline-flex min-h-11 items-center text-sm text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {link.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          {navLinks.length > 0 ? (
+            <nav aria-label={t.footer.nav}>
+              <h3 className="text-sm font-semibold">{t.footer.nav}</h3>
+              <ul className="mt-4 space-y-1">
+                {navLinks.map((link) => (
+                  <li key={link.href}>
+                    <a
+                      href={link.href}
+                      className="inline-flex min-h-11 items-center text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {link.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ) : null}
 
           <div>
             <h3 className="text-sm font-semibold">{t.footer.contact}</h3>
@@ -807,6 +843,8 @@ function LandingShell({
   onOpenAdmin,
 }: LandingPageProps) {
   const [selectedPositionId, setSelectedPositionId] = useState("");
+  // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin).
+  const sections = content.sections;
 
   useJobPostingJsonLd(positions, content.siteName);
 
@@ -817,31 +855,48 @@ function LandingShell({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <Navbar siteName={content.siteName} tagline={content.tagline} />
+      <Navbar
+        siteName={content.siteName}
+        tagline={content.tagline}
+        sections={sections}
+      />
       <main className="flex-1">
-        <Hero content={content} stats={stats} />
-        <PositionsSection
-          positions={positions}
-          siteName={content.siteName}
-          onApply={handleApplyPosition}
-        />
-        <AboutSection content={content} stats={stats} />
-        <BenefitsSection content={content} />
-        <HowToApplySection />
-        <ApplySection
-          content={content}
-          positions={positions}
-          positionId={selectedPositionId}
-          onPositionIdChange={setSelectedPositionId}
-        />
-        <StatusCheckSection />
-        <VoicesSection content={content} />
-        <FaqSection content={content} />
-        <FinalCtaSection content={content} />
-        <SubscribeSection />
+        {sections.hero ? (
+          <Hero content={content} stats={stats} sections={sections} />
+        ) : null}
+        {sections.positions ? (
+          <PositionsSection
+            positions={positions}
+            siteName={content.siteName}
+            canApply={sections.applyForm}
+            onApply={handleApplyPosition}
+          />
+        ) : null}
+        {sections.about ? <AboutSection content={content} stats={stats} /> : null}
+        {sections.benefits ? <BenefitsSection content={content} /> : null}
+        {sections.steps ? <HowToApplySection /> : null}
+        {sections.applyForm ? (
+          <ApplySection
+            content={content}
+            positions={positions}
+            positionId={selectedPositionId}
+            onPositionIdChange={setSelectedPositionId}
+          />
+        ) : null}
+        {sections.statusCheck ? <StatusCheckSection /> : null}
+        {sections.testimonials ? <VoicesSection content={content} /> : null}
+        {sections.faq ? <FaqSection content={content} /> : null}
+        {sections.finalCta ? (
+          <FinalCtaSection content={content} sections={sections} />
+        ) : null}
+        {sections.subscribe ? <SubscribeSection /> : null}
       </main>
-      <Footer content={content} onOpenAdmin={onOpenAdmin} />
-      {content.chatbotEnabled ? <ChatWidget /> : null}
+      <Footer
+        content={content}
+        sections={sections}
+        onOpenAdmin={onOpenAdmin}
+      />
+      {content.chatbotEnabled && sections.chatbot ? <ChatWidget /> : null}
     </div>
   );
 }

@@ -55,12 +55,14 @@ import { toast } from "sonner";
 import {
   BENEFIT_ICONS,
   type FaqItem,
+  type SectionKey,
   type SiteContent,
   type Subscriber,
   type TeamMember,
 } from "@/lib/types";
 import { apiGet, apiPost, apiPut } from "./api";
 import { copyText } from "./format";
+import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
 
 // Peta ikon lucide untuk benefit (fallback Sparkles).
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -130,7 +132,9 @@ export function SettingsTab() {
     setLoadError(null);
     try {
       const data = await apiGet<{ site: SiteContent }>("/api/admin/settings");
-      setSite(JSON.parse(JSON.stringify(data.site)) as SiteContent);
+      const raw = JSON.parse(JSON.stringify(data.site)) as SiteContent;
+      // Lengkapi sections dari data lama agar Switch terkontrol penuh.
+      setSite({ ...raw, sections: normalizeSections(raw.sections) });
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
     } finally {
@@ -163,6 +167,12 @@ export function SettingsTab() {
 
   function updateField<K extends keyof SiteContent>(key: K, value: SiteContent[K]) {
     setSite((prev) => (prev ? { ...prev, [key]: value } : prev));
+  }
+
+  function updateSection(key: SectionKey, value: boolean) {
+    setSite((prev) =>
+      prev ? { ...prev, sections: { ...prev.sections, [key]: value } } : prev
+    );
   }
 
   function updateBenefit(index: number, patch: Partial<SiteContent["benefits"][number]>) {
@@ -206,9 +216,10 @@ export function SettingsTab() {
     try {
       const res = await apiPut<{ ok: boolean; site: SiteContent }>(
         "/api/admin/settings",
-        { site }
+        { site } // sections ikut terkirim sebagai bagian dari site
       );
-      setSite(JSON.parse(JSON.stringify(res.site)) as SiteContent);
+      const saved = JSON.parse(JSON.stringify(res.site)) as SiteContent;
+      setSite({ ...saved, sections: normalizeSections(saved.sections) });
       toast.success("Pengaturan disimpan");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
@@ -832,6 +843,9 @@ export function SettingsTab() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Tampilan Halaman Publik (visibilitas tiap bagian) */}
+      <SectionVisibilityCard sections={site.sections} onChange={updateSection} />
 
       {/* Pelanggan Notifikasi */}
       <Card className="gap-4 rounded-2xl p-6">

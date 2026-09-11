@@ -1,8 +1,24 @@
 // Nilai default aplikasi rekrutmen konten kreator.
 // File ini murni konstanta (tanpa import server), aman diimpor dari klien maupun server.
-import type { Role, SiteContent } from "@/lib/types";
+import type { Role, SectionVisibility, SiteContent } from "@/lib/types";
 
 export const DEFAULT_ADMIN_PASSWORD = "admin123";
+
+// Semua bagian halaman publik tampil secara default.
+export const DEFAULT_SECTIONS: SectionVisibility = {
+  hero: true,
+  positions: true,
+  about: true,
+  benefits: true,
+  steps: true,
+  applyForm: true,
+  statusCheck: true,
+  testimonials: true,
+  faq: true,
+  subscribe: true,
+  finalCta: true,
+  chatbot: true,
+};
 
 export const DEFAULT_SITE: SiteContent = {
   siteName: "Lumina Studio",
@@ -104,6 +120,7 @@ export const DEFAULT_SITE: SiteContent = {
   discordWebhookUrl: "",
   telegramBotToken: "",
   telegramChatId: "",
+  sections: { ...DEFAULT_SECTIONS },
 };
 
 export type DefaultUserSeed = {
