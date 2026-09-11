@@ -6,7 +6,12 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ensureUniqueSlug, parseRequirements, slugifyTitle } from "@/lib/seed";
 import { stagesForPosition } from "@/lib/stages";
-import { POSITION_TYPES, type StageKey } from "@/lib/types";
+import {
+  INTERVIEW_MODES,
+  INTERVIEW_PLATFORMS,
+  POSITION_TYPES,
+  type StageKey,
+} from "@/lib/types";
 
 export type Sanitized<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -62,6 +67,19 @@ export type PositionFields = {
   checklistTemplate?: string[];
   noteTemplates?: string[];
   coverFileId?: string | null;
+  // Wawancara per lowongan
+  interviewMode?: string; // ONLINE | ONSITE
+  interviewPlatform?: string; // GOOGLE_MEET | ...
+  interviewDuration?: number;
+  interviewCriteria?: string[];
+  interviewInviteTemplate?: string | null;
+  // Offer & onboarding per lowongan
+  offerTemplate?: string | null;
+  welcomeTemplate?: string | null;
+  probationMonths?: number;
+  onboardingDocs?: string[]; // label dokumen wajib
+  reapplyCooldownDays?: number;
+  autoCloseOnHired?: boolean;
 };
 
 /* ------------------------------- Field sederhana ------------------------------- */
@@ -485,6 +503,66 @@ export async function sanitizePositionInput(
   if (!coverFileId.ok) return coverFileId;
   if (coverFileId.value !== undefined) f.coverFileId = coverFileId.value;
 
+  // Wawancara per lowongan
+  if (data.interviewMode !== undefined) {
+    const mode = typeof data.interviewMode === "string" ? data.interviewMode.trim() : "";
+    if (!(INTERVIEW_MODES as string[]).includes(mode)) {
+      return err("Mode wawancara tidak valid.");
+    }
+    f.interviewMode = mode;
+  }
+
+  if (data.interviewPlatform !== undefined) {
+    const platform = typeof data.interviewPlatform === "string" ? data.interviewPlatform.trim() : "";
+    if (!(INTERVIEW_PLATFORMS as string[]).includes(platform)) {
+      return err("Platform wawancara tidak valid.");
+    }
+    f.interviewPlatform = platform;
+  }
+
+  const interviewDuration = sanitizeNullableInt(data.interviewDuration, "Durasi wawancara", 10, 480);
+  if (!interviewDuration.ok) return interviewDuration;
+  if (interviewDuration.value !== undefined) f.interviewDuration = interviewDuration.value;
+
+  const interviewCriteria = sanitizeStringList(data.interviewCriteria, {
+    name: "Kriteria scorecard", maxItems: 8, minLen: 1, maxLen: 60,
+  });
+  if (!interviewCriteria.ok) return interviewCriteria;
+  if (interviewCriteria.value !== undefined) f.interviewCriteria = interviewCriteria.value;
+
+  const interviewInviteTemplate = sanitizeNullableText(
+    data.interviewInviteTemplate, "Template undangan wawancara", 800,
+  );
+  if (!interviewInviteTemplate.ok) return interviewInviteTemplate;
+  if (interviewInviteTemplate.value !== undefined) f.interviewInviteTemplate = interviewInviteTemplate.value;
+
+  // Offer & onboarding per lowongan
+  const offerTemplate = sanitizeNullableText(data.offerTemplate, "Template penawaran", 800);
+  if (!offerTemplate.ok) return offerTemplate;
+  if (offerTemplate.value !== undefined) f.offerTemplate = offerTemplate.value;
+
+  const welcomeTemplate = sanitizeNullableText(data.welcomeTemplate, "Template sambutan", 800);
+  if (!welcomeTemplate.ok) return welcomeTemplate;
+  if (welcomeTemplate.value !== undefined) f.welcomeTemplate = welcomeTemplate.value;
+
+  const probationMonths = sanitizeNullableInt(data.probationMonths, "Masa percobaan (bulan)", 0, 12);
+  if (!probationMonths.ok) return probationMonths;
+  if (probationMonths.value !== undefined) f.probationMonths = probationMonths.value;
+
+  const onboardingDocs = sanitizeStringList(data.onboardingDocs, {
+    name: "Dokumen onboarding", maxItems: 10, minLen: 1, maxLen: 120,
+  });
+  if (!onboardingDocs.ok) return onboardingDocs;
+  if (onboardingDocs.value !== undefined) f.onboardingDocs = onboardingDocs.value;
+
+  const reapplyCooldownDays = sanitizeNullableInt(data.reapplyCooldownDays, "Jeda lamar ulang (hari)", 0, 365);
+  if (!reapplyCooldownDays.ok) return reapplyCooldownDays;
+  if (reapplyCooldownDays.value !== undefined) f.reapplyCooldownDays = reapplyCooldownDays.value;
+
+  const autoCloseOnHired = sanitizeBoolean(data.autoCloseOnHired, "autoCloseOnHired");
+  if (!autoCloseOnHired.ok) return autoCloseOnHired;
+  if (autoCloseOnHired.value !== undefined) f.autoCloseOnHired = autoCloseOnHired.value;
+
   // Slug: eksplisit divalidasi; bila tidak dikirim tapi judul BERUBA -> regenerate dari judul.
   const slug = await sanitizeSlug(data.slug, opts.excludeId);
   if (!slug.ok) return slug;
@@ -538,6 +616,19 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.rubricCriteria !== undefined) out.rubricCriteria = JSON.stringify(f.rubricCriteria);
   if (f.checklistTemplate !== undefined) out.checklistTemplate = JSON.stringify(f.checklistTemplate);
   if (f.noteTemplates !== undefined) out.noteTemplates = JSON.stringify(f.noteTemplates);
+  // Wawancara per lowongan
+  if (f.interviewMode !== undefined) out.interviewMode = f.interviewMode;
+  if (f.interviewPlatform !== undefined) out.interviewPlatform = f.interviewPlatform;
+  if (f.interviewDuration !== undefined) out.interviewDuration = f.interviewDuration;
+  if (f.interviewCriteria !== undefined) out.interviewCriteria = JSON.stringify(f.interviewCriteria);
+  if (f.interviewInviteTemplate !== undefined) out.interviewInviteTemplate = f.interviewInviteTemplate;
+  // Offer & onboarding per lowongan
+  if (f.offerTemplate !== undefined) out.offerTemplate = f.offerTemplate;
+  if (f.welcomeTemplate !== undefined) out.welcomeTemplate = f.welcomeTemplate;
+  if (f.probationMonths !== undefined) out.probationMonths = f.probationMonths;
+  if (f.onboardingDocs !== undefined) out.onboardingDocs = JSON.stringify(f.onboardingDocs);
+  if (f.reapplyCooldownDays !== undefined) out.reapplyCooldownDays = f.reapplyCooldownDays;
+  if (f.autoCloseOnHired !== undefined) out.autoCloseOnHired = f.autoCloseOnHired;
   // coverFileId hanya tersedia lewat relasi pada input update.
   if (f.coverFileId === null) out.coverFile = { disconnect: true };
   else if (f.coverFileId !== undefined) out.coverFile = { connect: { id: f.coverFileId } };
