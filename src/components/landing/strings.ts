@@ -71,6 +71,33 @@ const id = {
     emptyBody: "Pantau terus halaman ini.",
     filterEmptyTitle: "Tidak ada posisi yang cocok.",
     filterEmptyBody: "Coba ubah atau hapus filter yang aktif.",
+    featured: "Unggulan",
+    urgent: "Urgent",
+    baru: "Baru",
+    segeraDitutup: "Segera Ditutup",
+    kuotaPenuh: "Kuota Penuh",
+    sisaKuota: "Sisa {n} Kuota",
+    chipMore: "+{n}",
+    gaji: "Gaji",
+    benefitLainnya: "+{n} lainnya",
+    dialogBenefitTitle: "Benefit",
+    contohKarya: "Contoh Karya",
+    adaTes: "Ada tes seleksi",
+    bukaTautan: "Buka Tautan",
+    bagikan: "Bagikan Posisi",
+    bagikanWa: "WhatsApp",
+    bagikanSalin: "Salin Link",
+    bagikanQr: "QR Code",
+    qrTitle: "QR Code Posisi",
+    qrCaption: "Scan untuk membuka detail lowongan ini",
+    qrAlt: "Kode QR lowongan",
+    salinBerhasil: "Link posisi disalin ke clipboard",
+    salinGagal: "Gagal menyalin link",
+    waCaption: "Lowongan {title} di {siteName}",
+    waDaftar: "Daftar:",
+    lamarDitutup: "Ditutup",
+    tutup: "Tutup",
+    coverAlt: "Sampul lowongan {title}",
   },
   about: {
     badge: "Tentang Kami",
@@ -148,6 +175,8 @@ const id = {
       motivation: "Alasan Bergabung",
       motivationPh:
         "Contoh: Saya ingin bertumbuh bersama tim kreatif dan berkontribusi pada konten yang bermanfaat bagi banyak orang.",
+      source: "Dari mana kamu tahu lowongan ini?",
+      sourcePh: "Pilih sumber (opsional)",
     },
     errors: {
       name: "Nama lengkap wajib diisi.",
@@ -158,6 +187,10 @@ const id = {
       position: "Pilih posisi yang dilamar.",
       experience: "Ceritakan pengalamanmu minimal 10 karakter.",
       motivation: "Tulis alasanmu minimal 10 karakter.",
+      screeningRequired: "Jawaban \"{label}\" wajib diisi.",
+      portfolioRequired: "Portofolio atau link sosial media wajib untuk posisi ini.",
+      cvRequired: "CV wajib diunggah untuk posisi ini.",
+      introRequired: "Audio/video perkenalan wajib diunggah untuk posisi ini.",
       cvType: "CV harus berupa file PDF.",
       cvSize: "Ukuran CV maksimal 5 MB.",
       introType: "File harus berupa audio (mp3, wav, atau m4a).",
@@ -186,9 +219,11 @@ const id = {
       sectionPersonal: "Data Diri",
       sectionAnswers: "Pengalaman & Jawaban",
       sectionFiles: "Berkas Terlampir",
+      sectionScreening: "Jawaban Screening",
       edit: "Ubah",
       notFilled: "Tidak diisi",
       noFile: "Tidak diunggah",
+      notAnswered: "Tidak dijawab",
       agreeLabel:
         "Saya menyatakan bahwa data di atas benar, akurat, dan dapat dipertanggungjawabkan.",
       agreeRequired:
@@ -208,6 +243,14 @@ const id = {
       dropHint: "Klik atau seret file ke sini",
       remove: "Hapus file",
       optional: "Opsional",
+      required: "Wajib",
+      cvRequiredHint: "Posisi ini mewajibkan CV",
+      introRequiredHint: "Posisi ini mewajibkan audio/video perkenalan",
+    },
+    screening: {
+      sectionTitle: "Pertanyaan untuk Posisi Ini",
+      requiredMark: "(wajib)",
+      answerPh: "Tulis jawabanmu di sini...",
     },
     buttons: {
       back: "Kembali",
@@ -227,6 +270,10 @@ const id = {
         "Simpan kode ini untuk memantau status lamaranmu di bagian Cek Status.",
       checkStatus: "Cek Status Sekarang",
       another: "Kirim Lamaran Lain",
+      autoReplyTitle: "Pesan dari Tim",
+      nextStepsTitle: "Langkah Selanjutnya",
+      openBrief: "Buka Brief Tes",
+      assignmentFallback: "Tes Seleksi",
     },
   },
   status: {
@@ -243,6 +290,8 @@ const id = {
     submittedLabel: "Dikirim",
     accepted: "Diterima",
     rejected: "Tidak Lolos",
+    assignmentTitle: "Tes Seleksi",
+    openBrief: "Buka Brief Tes",
   },
   voices: {
     badge: "Suara Tim",
@@ -359,6 +408,33 @@ type idDictShape = {
     emptyBody: string;
     filterEmptyTitle: string;
     filterEmptyBody: string;
+    featured: string;
+    urgent: string;
+    baru: string;
+    segeraDitutup: string;
+    kuotaPenuh: string;
+    sisaKuota: string;
+    chipMore: string;
+    gaji: string;
+    benefitLainnya: string;
+    dialogBenefitTitle: string;
+    contohKarya: string;
+    adaTes: string;
+    bukaTautan: string;
+    bagikan: string;
+    bagikanWa: string;
+    bagikanSalin: string;
+    bagikanQr: string;
+    qrTitle: string;
+    qrCaption: string;
+    qrAlt: string;
+    salinBerhasil: string;
+    salinGagal: string;
+    waCaption: string;
+    waDaftar: string;
+    lamarDitutup: string;
+    tutup: string;
+    coverAlt: string;
   };
   about: {
     badge: string;
@@ -403,6 +479,8 @@ type idDictShape = {
       experiencePh: string;
       motivation: string;
       motivationPh: string;
+      source: string;
+      sourcePh: string;
     };
     errors: {
       name: string;
@@ -413,6 +491,10 @@ type idDictShape = {
       position: string;
       experience: string;
       motivation: string;
+      screeningRequired: string;
+      portfolioRequired: string;
+      cvRequired: string;
+      introRequired: string;
       cvType: string;
       cvSize: string;
       introType: string;
@@ -441,9 +523,11 @@ type idDictShape = {
       sectionPersonal: string;
       sectionAnswers: string;
       sectionFiles: string;
+      sectionScreening: string;
       edit: string;
       notFilled: string;
       noFile: string;
+      notAnswered: string;
       agreeLabel: string;
       agreeRequired: string;
       confirmTitle: string;
@@ -458,6 +542,14 @@ type idDictShape = {
       dropHint: string;
       remove: string;
       optional: string;
+      required: string;
+      cvRequiredHint: string;
+      introRequiredHint: string;
+    };
+    screening: {
+      sectionTitle: string;
+      requiredMark: string;
+      answerPh: string;
     };
     buttons: {
       back: string;
@@ -476,6 +568,10 @@ type idDictShape = {
       saveNote: string;
       checkStatus: string;
       another: string;
+      autoReplyTitle: string;
+      nextStepsTitle: string;
+      openBrief: string;
+      assignmentFallback: string;
     };
   };
   status: {
@@ -492,6 +588,8 @@ type idDictShape = {
     submittedLabel: string;
     accepted: string;
     rejected: string;
+    assignmentTitle: string;
+    openBrief: string;
   };
   voices: { badge: string; title: string; desc: string };
   subscribe: {
@@ -594,6 +692,33 @@ const en: Dict = {
     emptyBody: "Keep an eye on this page.",
     filterEmptyTitle: "No matching positions.",
     filterEmptyBody: "Try changing or clearing the active filters.",
+    featured: "Featured",
+    urgent: "Urgent",
+    baru: "New",
+    segeraDitutup: "Closing Soon",
+    kuotaPenuh: "Quota Full",
+    sisaKuota: "{n} Spots Left",
+    chipMore: "+{n}",
+    gaji: "Salary",
+    benefitLainnya: "+{n} more",
+    dialogBenefitTitle: "Benefits",
+    contohKarya: "Sample Work",
+    adaTes: "Selection test required",
+    bukaTautan: "Open Link",
+    bagikan: "Share Position",
+    bagikanWa: "WhatsApp",
+    bagikanSalin: "Copy Link",
+    bagikanQr: "QR Code",
+    qrTitle: "Position QR Code",
+    qrCaption: "Scan to open this position's details",
+    qrAlt: "Position QR code",
+    salinBerhasil: "Position link copied to clipboard",
+    salinGagal: "Failed to copy link",
+    waCaption: "Opening: {title} at {siteName}",
+    waDaftar: "Apply:",
+    lamarDitutup: "Closed",
+    tutup: "Close",
+    coverAlt: "Cover for {title}",
   },
   about: {
     badge: "About Us",
@@ -671,6 +796,8 @@ const en: Dict = {
       motivation: "Why You Want to Join",
       motivationPh:
         "Example: I want to grow with the creative team and contribute to content that benefits many people.",
+      source: "How did you hear about this opening?",
+      sourcePh: "Choose a source (optional)",
     },
     errors: {
       name: "Full name is required.",
@@ -681,6 +808,10 @@ const en: Dict = {
       position: "Choose the position you are applying for.",
       experience: "Describe your experience with at least 10 characters.",
       motivation: "Write your reason with at least 10 characters.",
+      screeningRequired: "The answer to \"{label}\" is required.",
+      portfolioRequired: "A portfolio or social media link is required for this position.",
+      cvRequired: "A CV is required for this position.",
+      introRequired: "An intro audio/video is required for this position.",
       cvType: "CV must be a PDF file.",
       cvSize: "CV size must be at most 5 MB.",
       introType: "File must be audio (mp3, wav, or m4a).",
@@ -709,9 +840,11 @@ const en: Dict = {
       sectionPersonal: "Personal Data",
       sectionAnswers: "Experience & Answers",
       sectionFiles: "Attached Files",
+      sectionScreening: "Screening Answers",
       edit: "Edit",
       notFilled: "Not filled in",
       noFile: "Not uploaded",
+      notAnswered: "Not answered",
       agreeLabel:
         "I declare that the information above is true, accurate, and verifiable.",
       agreeRequired:
@@ -731,6 +864,14 @@ const en: Dict = {
       dropHint: "Click or drag a file here",
       remove: "Remove file",
       optional: "Optional",
+      required: "Required",
+      cvRequiredHint: "This position requires a CV",
+      introRequiredHint: "This position requires an intro audio/video",
+    },
+    screening: {
+      sectionTitle: "Questions for This Position",
+      requiredMark: "(required)",
+      answerPh: "Write your answer here...",
     },
     buttons: {
       back: "Back",
@@ -750,6 +891,10 @@ const en: Dict = {
         "Save this code to monitor your application status in the Track Status section.",
       checkStatus: "Track Status Now",
       another: "Send Another Application",
+      autoReplyTitle: "Message from the Team",
+      nextStepsTitle: "Next Steps",
+      openBrief: "Open Test Brief",
+      assignmentFallback: "Selection Test",
     },
   },
   status: {
@@ -766,6 +911,8 @@ const en: Dict = {
     submittedLabel: "Submitted",
     accepted: "Accepted",
     rejected: "Not Selected",
+    assignmentTitle: "Selection Test",
+    openBrief: "Open Test Brief",
   },
   voices: {
     badge: "Team Voices",

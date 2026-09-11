@@ -6,17 +6,27 @@ import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   CheckCircle2,
+  ClipboardList,
   Copy,
+  ExternalLink,
   Eye,
   FileText,
+  Info,
   Loader2,
+  MessageSquareText,
   Mic,
   PencilLine,
   ShieldCheck,
   Upload,
   X,
 } from "lucide-react";
-import { CV_MAX_BYTES, INTRO_MAX_BYTES, type Position } from "@/lib/types";
+import {
+  APPLICATION_SOURCES,
+  CV_MAX_BYTES,
+  INTRO_MAX_BYTES,
+  type ApplySuccessResponse,
+  type Position,
+} from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -42,12 +52,14 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useLang } from "@/components/landing/lang-context";
-import { formatMb } from "@/components/landing/landing-utils";
+import { fillTemplate, formatMb, safeExternalUrl } from "@/components/landing/landing-utils";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DRAFT_KEY = "lumina-draft";
 const AUTOSAVE_DELAY_MS = 500;
 const MIN_TEXT_LENGTH = 10;
+const SCREENING_MAX = 500; // batas karakter tiap jawaban screening (sinkron dengan server)
+const SCREENING_KEY_PREFIX = "screening:";
 
 /* ------------------------- Komponen pratinjau lamaran ------------------------- */
 
@@ -119,7 +131,7 @@ type FormValues = {
   motivation: string;
 };
 
-type FieldKey = keyof FormValues | "positionId";
+type FieldKey = keyof FormValues | "positionId" | `screening:${string}`;
 type FormErrors = Partial<Record<FieldKey, string>>;
 
 const INITIAL_VALUES: FormValues = {
@@ -168,9 +180,41 @@ export function ApplyWizard({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [direction, setDirection] = useState(1);
-  const [success, setSuccess] = useState<{ name: string; trackingCode: string } | null>(
-    null,
-  );
+  const [success, setSuccess] = useState<{
+    name: string;
+    trackingCode: string;
+    autoReply: string | null;
+    assignment: ApplySuccessResponse["assignment"];
+  } | null>(null);
+
+  // Jawaban pertanyaan screening posisi: {questionId: jawaban}
+  const [screeningAnswers, setScreeningAnswers] = useState<Record<string, string>>({});
+  // Sumber pelamar ("dari mana tahu lowongan ini") — opsional.
+  const [source, setSource] = useState("");
+  // UTM dibaca SEKALI saat mount via useState initializer (aman SSR; tidak dirender).
+  const [utm] = useState(() => {
+    if (typeof window === "undefined") {
+      return { source: "", medium: "", campaign: "" };
+    }
+    const params = new URLSearchParams(window.location.search);
+    const pick = (key: string) => (params.get(key) ?? "").trim().slice(0, 60);
+    return {
+      source: pick("utm_source"),
+      medium: pick("utm_medium"),
+      campaign: pick("utm_campaign"),
+    };
+  });
+
+  const selectedPosition = positions.find((p) => p.id === positionId);
+  const screeningQuestions = selectedPosition?.screeningQuestions ?? [];
+
+  // Reset jawaban screening saat posisi berubah (termasuk perubahan dari luar
+  // wizard lewat dialog posisi) — pola "adjust state during render", tanpa effect.
+  const [lastPositionId, setLastPositionId] = useState(positionId);
+  if (lastPositionId !== positionId) {
+    setLastPositionId(positionId);
+    setScreeningAnswers({});
+  }
 
   // File unggahan (tidak masuk draft).
   const [cvFile, setCvFile] = useState<File | null>(null);
@@ -219,6 +263,14 @@ export function ApplyWizard({
     setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
   };
 
+  /** Simpan jawaban screening (dipotong 500 karakter) + hapus error saat diketik. */
+  const setAnswer = (questionId: string, value: string) => {
+    const clipped = value.slice(0, SCREENING_MAX);
+    setScreeningAnswers((prev) => ({ ...prev, [questionId]: clipped }));
+    const key = `${SCREENING_KEY_PREFIX}${questionId}` as FieldKey;
+    setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+  };
+
   const clearPositionError = () => {
     setErrors((prev) =>
       prev.positionId ? { ...prev, positionId: undefined } : prev,
@@ -243,7 +295,40 @@ export function ApplyWizard({
       next.experience = t.apply.errors.experience;
     if (values.motivation.trim().length < MIN_TEXT_LENGTH)
       next.motivation = t.apply.errors.motivation;
+    // Pertanyaan screening wajib milik posisi terpilih.
+    for (const question of screeningQuestions) {
+      if (question.required && !(screeningAnswers[question.id] ?? "").trim()) {
+        next[`${SCREENING_KEY_PREFIX}${question.id}`] = fillTemplate(
+          t.apply.errors.screeningRequired,
+          { label: question.label },
+        );
+      }
+    }
+    // Posisi tertentu mewajibkan portofolio ATAU link sosial media.
+    if (
+      selectedPosition?.requirePortfolio &&
+      !values.portfolioUrl.trim() &&
+      !values.socialLinks.trim()
+    ) {
+      next.portfolioUrl = t.apply.errors.portfolioRequired;
+    }
     return next;
+  }
+
+  function scrollToScreening(questionId: string) {
+    document
+      .getElementById(`apply-screening-${questionId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  /** Error screening pertama dari peta error (untuk scroll + toast). */
+  function firstScreeningErrorOf(next: FormErrors): { id: string; message: string } | null {
+    for (const [key, message] of Object.entries(next)) {
+      if (key.startsWith(SCREENING_KEY_PREFIX) && message) {
+        return { id: key.slice(SCREENING_KEY_PREFIX.length), message };
+      }
+    }
+    return null;
   }
 
   function goToStep(next: number) {
@@ -254,7 +339,17 @@ export function ApplyWizard({
   function goNext() {
     const next = step === 0 ? validateStep1() : validateStep2();
     setErrors((prev) => ({ ...prev, ...next }));
-    if (Object.values(next).some(Boolean)) return;
+    if (Object.values(next).some(Boolean)) {
+      if (step === 1) {
+        // Screening wajib kosong: sorot + scroll + toast (pola error wizard).
+        const screeningError = firstScreeningErrorOf(next);
+        if (screeningError) {
+          scrollToScreening(screeningError.id);
+          toast.error(screeningError.message);
+        }
+      }
+      return;
+    }
     goToStep(Math.min(2, step + 1));
   }
 
@@ -273,6 +368,28 @@ export function ApplyWizard({
     }
     if (Object.values({ ...e1, ...e2 }).some(Boolean)) {
       goToStep(1);
+      // Konten langkah 1 baru muncul setelah transisi AnimatePresence selesai —
+      // scroll ke pertanyaan screening bermasalah dengan sedikit jeda.
+      const screeningError = firstScreeningErrorOf(e2);
+      if (screeningError) {
+        window.setTimeout(() => scrollToScreening(screeningError.id), 400);
+        toast.error(screeningError.message);
+      }
+      return false;
+    }
+    return true;
+  }
+
+  /** Berkas wajib per posisi (CV/audio intro) — dipakai sebelum masuk pratinjau. */
+  function validateRequiredFiles(): boolean {
+    if (selectedPosition?.requireCv && !cvFile) {
+      setCvError(t.apply.errors.cvRequired);
+      toast.error(t.apply.errors.cvRequired);
+      return false;
+    }
+    if (selectedPosition?.requireIntro && !introFile) {
+      setIntroError(t.apply.errors.introRequired);
+      toast.error(t.apply.errors.introRequired);
       return false;
     }
     return true;
@@ -351,12 +468,27 @@ export function ApplyWizard({
         fd.append("socialLinks", values.socialLinks.trim());
       fd.append("experience", values.experience.trim());
       fd.append("motivation", values.motivation.trim());
+      // Jawaban screening posisi (JSON {questionId: jawaban}) — hanya yang terisi.
+      if (screeningQuestions.length > 0) {
+        const record: Record<string, string> = {};
+        for (const question of screeningQuestions) {
+          const answer = (screeningAnswers[question.id] ?? "").trim();
+          if (answer) record[question.id] = answer.slice(0, SCREENING_MAX);
+        }
+        fd.append("screeningAnswers", JSON.stringify(record));
+      }
+      // Sumber pelamar + UTM dari URL saat halaman dibuka.
+      if (source) fd.append("source", source);
+      if (utm.source) fd.append("utmSource", utm.source);
+      if (utm.medium) fd.append("utmMedium", utm.medium);
+      if (utm.campaign) fd.append("utmCampaign", utm.campaign);
       if (cvFile) fd.append("cvFile", cvFile);
       if (introFile) fd.append("introFile", introFile);
 
       const res = await fetch("/api/applications", { method: "POST", body: fd });
       const data: unknown = await res.json().catch(() => null);
       if (!res.ok) {
+        // Termasuk 409 kuota penuh — pesan spesifik dari server ditampilkan apa adanya.
         const serverError =
           typeof data === "object" &&
           data !== null &&
@@ -367,13 +499,14 @@ export function ApplyWizard({
         toast.error(serverError ?? t.apply.errors.submitFailed);
         return;
       }
-      const trackingCode =
+      const successData: ApplySuccessResponse | null =
         typeof data === "object" &&
         data !== null &&
-        "trackingCode" in data &&
-        typeof (data as { trackingCode: unknown }).trackingCode === "string"
-          ? (data as { trackingCode: string }).trackingCode
-          : "";
+        "ok" in data &&
+        (data as { ok: unknown }).ok === true
+          ? (data as ApplySuccessResponse)
+          : null;
+      const trackingCode = successData?.trackingCode ?? "";
 
       submittedRef.current = true;
       try {
@@ -381,7 +514,12 @@ export function ApplyWizard({
       } catch {
         // abaikan
       }
-      setSuccess({ name: values.name.trim(), trackingCode });
+      setSuccess({
+        name: values.name.trim(),
+        trackingCode,
+        autoReply: successData?.autoReply ?? null,
+        assignment: successData?.assignment ?? null,
+      });
       toast.success(t.apply.success.title);
     } catch {
       toast.error(t.apply.errors.submitFailed);
@@ -400,9 +538,11 @@ export function ApplyWizard({
       return;
     }
 
-    // Langkah 2 (Berkas): validasi semuanya, lalu tampilkan pratinjau.
+    // Langkah 3 (Berkas): validasi semuanya (termasuk berkas wajib), lalu pratinjau.
     if (step === 2) {
-      if (validateAllAndJump()) goToStep(3);
+      if (!validateAllAndJump()) return;
+      if (!validateRequiredFiles()) return;
+      goToStep(3);
       return;
     }
 
@@ -428,6 +568,8 @@ export function ApplyWizard({
     setAgreed(false);
     setConfirmOpen(false);
     setDirection(1);
+    setSource("");
+    setScreeningAnswers({});
     onPositionIdChange("");
     try {
       window.localStorage.removeItem(DRAFT_KEY);
@@ -480,6 +622,7 @@ export function ApplyWizard({
   }
 
   if (success) {
+    const briefUrl = safeExternalUrl(success.assignment?.url ?? "");
     return (
       <motion.div
         role="status"
@@ -526,6 +669,61 @@ export function ApplyWizard({
           <p className="text-xs text-muted-foreground">{t.apply.success.saveNote}</p>
         </div>
 
+        {/* Pesan balasan otomatis dari template posisi (bila diatur admin) */}
+        {success.autoReply && success.autoReply.trim() ? (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: 0.15, ease: "easeOut" }}
+            className="w-full max-w-md rounded-2xl border border-rose-200 bg-rose-50/70 p-5 text-left dark:border-rose-500/30 dark:bg-rose-500/10"
+          >
+            <p className="flex items-center gap-2 text-sm font-semibold text-rose-800 dark:text-rose-300">
+              <MessageSquareText className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {t.apply.success.autoReplyTitle}
+            </p>
+            <blockquote className="mt-2 border-l-2 border-rose-400/60 pl-3 text-sm leading-relaxed text-rose-900 dark:border-rose-400/40 dark:text-rose-200">
+              {success.autoReply}
+            </blockquote>
+          </motion.div>
+        ) : null}
+
+        {/* Info tes/brief dari posisi (bila diatur admin) */}
+        {success.assignment &&
+        (success.assignment.title || success.assignment.note || success.assignment.url) ? (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: 0.25, ease: "easeOut" }}
+            className="w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50/70 p-5 text-left dark:border-amber-500/30 dark:bg-amber-500/10"
+          >
+            <p className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+              <ClipboardList className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {t.apply.success.nextStepsTitle}
+            </p>
+            <p className="mt-2 text-sm font-medium text-foreground">
+              {success.assignment.title || t.apply.success.assignmentFallback}
+            </p>
+            {success.assignment.note ? (
+              <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-amber-800/90 dark:text-amber-200/80">
+                {success.assignment.note}
+              </p>
+            ) : null}
+            {briefUrl ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 h-11 border-amber-300 bg-transparent text-amber-800 hover:bg-amber-100 hover:text-amber-900 sm:h-9 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+                asChild
+              >
+                <a href={briefUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                  {t.apply.success.openBrief}
+                </a>
+              </Button>
+            ) : null}
+          </motion.div>
+        ) : null}
+
         <div className="mt-2 flex flex-col gap-3 sm:flex-row">
           <Button onClick={goToStatus}>{t.apply.success.checkStatus}</Button>
           <Button variant="outline" onClick={resetForm}>
@@ -537,7 +735,6 @@ export function ApplyWizard({
   }
 
   const stepLabels = t.apply.steps;
-  const selectedPosition = positions.find((p) => p.id === positionId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -752,6 +949,26 @@ export function ApplyWizard({
                 ) : null}
               </div>
             </div>
+
+            {/* Sumber pelamar (opsional) — membantu pemilik melacak kanal rekrutmen */}
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="apply-source">{t.apply.fields.source}</Label>
+              <Select
+                value={source || undefined}
+                onValueChange={(value) => setSource(value)}
+              >
+                <SelectTrigger id="apply-source" className="h-11 w-full">
+                  <SelectValue placeholder={t.apply.fields.sourcePh} />
+                </SelectTrigger>
+                <SelectContent>
+                  {APPLICATION_SOURCES.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         )}
 
@@ -804,6 +1021,68 @@ export function ApplyWizard({
               ) : null}
             </div>
 
+            {/* Pertanyaan screening khusus posisi terpilih (v3) */}
+            {screeningQuestions.length > 0 ? (
+              <div className="flex flex-col gap-4 rounded-xl border bg-muted/40 p-4">
+                <p className="flex items-center gap-2 text-sm font-semibold">
+                  <ClipboardList
+                    className="h-4 w-4 text-rose-600 dark:text-rose-400"
+                    aria-hidden="true"
+                  />
+                  {t.apply.screening.sectionTitle}
+                </p>
+                {screeningQuestions.map((question, index) => {
+                  const errorKey =
+                    `${SCREENING_KEY_PREFIX}${question.id}` as FieldKey;
+                  const error = errors[errorKey];
+                  return (
+                    <div
+                      key={question.id}
+                      id={`apply-screening-${question.id}`}
+                      className="flex scroll-mt-24 flex-col gap-2"
+                    >
+                      <Label htmlFor={`apply-screening-${question.id}-input`}>
+                        {index + 1}. {question.label}{" "}
+                        {question.required ? (
+                          <span className="font-normal text-rose-600">
+                            {t.apply.screening.requiredMark}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-normal text-muted-foreground">
+                            ({t.apply.uploads.optional})
+                          </span>
+                        )}
+                      </Label>
+                      <Textarea
+                        id={`apply-screening-${question.id}-input`}
+                        rows={2}
+                        value={screeningAnswers[question.id] ?? ""}
+                        onChange={(e) => setAnswer(question.id, e.target.value)}
+                        maxLength={SCREENING_MAX}
+                        placeholder={t.apply.screening.answerPh}
+                        aria-invalid={error ? true : undefined}
+                        aria-describedby={
+                          error ? `apply-screening-${question.id}-error` : undefined
+                        }
+                        className={cn(
+                          error &&
+                            "border-rose-400 focus-visible:ring-rose-400/40 dark:border-rose-500",
+                        )}
+                      />
+                      {error ? (
+                        <p
+                          id={`apply-screening-${question.id}-error`}
+                          className="text-sm text-rose-600"
+                        >
+                          {error}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-portfolio">{t.apply.fields.portfolio}</Label>
@@ -815,6 +1094,10 @@ export function ApplyWizard({
                   onChange={(e) => setField("portfolioUrl", e.target.value)}
                   placeholder="https://..."
                   className="h-11"
+                  aria-invalid={errors.portfolioUrl ? true : undefined}
+                  aria-describedby={
+                    errors.portfolioUrl ? "apply-portfolio-error" : undefined
+                  }
                 />
               </div>
 
@@ -830,6 +1113,16 @@ export function ApplyWizard({
                   className="h-11"
                 />
               </div>
+
+              {/* Posisi tertentu mewajibkan salah satu diisi */}
+              {errors.portfolioUrl ? (
+                <p
+                  id="apply-portfolio-error"
+                  className="text-sm text-rose-600 sm:col-span-2"
+                >
+                  {errors.portfolioUrl}
+                </p>
+              ) : null}
             </div>
           </div>
         )}
@@ -842,10 +1135,23 @@ export function ApplyWizard({
             <div className="flex flex-col gap-2">
               <Label htmlFor="apply-cv" className="gap-2">
                 {t.apply.uploads.cvLabel}
-                <span className="text-xs font-normal text-muted-foreground">
-                  ({t.apply.uploads.optional})
+                <span
+                  className={cn(
+                    "text-xs font-normal",
+                    selectedPosition?.requireCv
+                      ? "text-rose-600"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  ({selectedPosition?.requireCv ? t.apply.uploads.required : t.apply.uploads.optional})
                 </span>
               </Label>
+              {selectedPosition?.requireCv ? (
+                <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+                  <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  {t.apply.uploads.cvRequiredHint}
+                </p>
+              ) : null}
               <label
                 htmlFor="apply-cv"
                 onDragOver={(e) => {
@@ -906,10 +1212,23 @@ export function ApplyWizard({
             <div className="flex flex-col gap-2">
               <Label htmlFor="apply-intro" className="gap-2">
                 {t.apply.uploads.introLabel}
-                <span className="text-xs font-normal text-muted-foreground">
-                  ({t.apply.uploads.optional})
+                <span
+                  className={cn(
+                    "text-xs font-normal",
+                    selectedPosition?.requireIntro
+                      ? "text-rose-600"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  ({selectedPosition?.requireIntro ? t.apply.uploads.required : t.apply.uploads.optional})
                 </span>
               </Label>
+              {selectedPosition?.requireIntro ? (
+                <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+                  <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  {t.apply.uploads.introRequiredHint}
+                </p>
+              ) : null}
               <label
                 htmlFor="apply-intro"
                 onDragOver={(e) => {
@@ -1016,6 +1335,14 @@ export function ApplyWizard({
                 value={selectedPosition?.title ?? ""}
                 fallback={t.apply.summary.notChosen}
               />
+              {/* Sumber pelamar — tampil hanya bila diisi */}
+              {source ? (
+                <PreviewRow
+                  label={t.apply.fields.source}
+                  value={source}
+                  fallback={t.apply.preview.notFilled}
+                />
+              ) : null}
             </PreviewSection>
 
             <PreviewSection
@@ -1045,6 +1372,24 @@ export function ApplyWizard({
               />
             </PreviewSection>
 
+            {/* Jawaban screening posisi — hanya bila posisi punya pertanyaan */}
+            {screeningQuestions.length > 0 ? (
+              <PreviewSection
+                title={t.apply.preview.sectionScreening}
+                editLabel={t.apply.preview.edit}
+                onEdit={() => goToStep(1)}
+              >
+                {screeningQuestions.map((question) => (
+                  <PreviewRow
+                    key={question.id}
+                    label={question.label}
+                    value={screeningAnswers[question.id] ?? ""}
+                    fallback={t.apply.preview.notAnswered}
+                  />
+                ))}
+              </PreviewSection>
+            ) : null}
+
             <PreviewSection
               title={t.apply.preview.sectionFiles}
               editLabel={t.apply.preview.edit}
@@ -1072,6 +1417,9 @@ export function ApplyWizard({
                     {t.apply.preview.noFile}
                   </span>
                 )}
+                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                  ({selectedPosition?.requireCv ? t.apply.uploads.required : t.apply.uploads.optional})
+                </span>
               </div>
               <div className="flex items-center gap-2.5 text-sm">
                 <Mic
@@ -1095,6 +1443,9 @@ export function ApplyWizard({
                     {t.apply.preview.noFile}
                   </span>
                 )}
+                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                  ({selectedPosition?.requireIntro ? t.apply.uploads.required : t.apply.uploads.optional})
+                </span>
               </div>
             </PreviewSection>
 

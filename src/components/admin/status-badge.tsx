@@ -1,57 +1,52 @@
 "use client";
 
-import { STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
+import type { ApplicationStatus, StageKey } from "@/lib/types";
+import { stageBadgeClass, stageLabel, stageMeta } from "@/lib/stages";
 import { cn } from "@/lib/utils";
 
-// Warna badge per status (netral zinc, aksen rose — tanpa biru/indigo),
-// dengan varian dark mode agar tetap terbaca.
-const BADGE_STYLES: Record<ApplicationStatus, string> = {
-  NEW: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-900",
-  REVIEWED:
-    "bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700",
-  INTERVIEW:
-    "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-400 dark:border-orange-900",
-  ACCEPTED:
-    "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-900",
-  REJECTED:
-    "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-400 dark:border-rose-900",
-};
-
-// Warna segmen bar distribusi & dot legend (via Tailwind bg classes).
-export const STATUS_BAR_COLORS: Record<ApplicationStatus, string> = {
-  NEW: "bg-amber-400",
-  REVIEWED: "bg-zinc-400",
-  INTERVIEW: "bg-orange-500",
-  ACCEPTED: "bg-emerald-500",
-  REJECTED: "bg-rose-500",
-};
-
-export const STATUS_DOT_COLORS: Record<ApplicationStatus, string> = {
-  NEW: "bg-amber-400",
-  REVIEWED: "bg-zinc-400",
-  INTERVIEW: "bg-orange-500",
-  ACCEPTED: "bg-emerald-500",
-  REJECTED: "bg-rose-500",
-};
-
+/**
+ * Badge tahap pipeline: label & warna diambil dari @/lib/stages.
+ * 5 tahap bawaan tampil persis seperti sebelumnya; tahap kustom
+ * mendapat palet hash konsisten (tanpa biru/indigo/violet).
+ */
 export function StatusBadge({
   status,
   className,
 }: {
-  status: ApplicationStatus;
+  status: StageKey;
   className?: string;
 }) {
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
-        BADGE_STYLES[status],
+        stageBadgeClass(status),
         className
       )}
     >
-      {STATUS_LABELS[status]}
+      {stageLabel(status)}
     </span>
   );
+}
+
+/**
+ * Warna segmen bar distribusi dashboard — berbasis fungsi tahap.
+ * Menerima bucket dashboard: 5 status bawaan atau "CUSTOM" (agregat
+ * seluruh tahap kustom, ditampilkan teal agar berbeda dari bawaan).
+ */
+export function statusBarColor(bucket: ApplicationStatus | "CUSTOM"): string {
+  if (bucket === "CUSTOM") return "bg-teal-500";
+  return stageMeta(bucket).palette.bar;
+}
+
+/** Warna dot legend/stepper — berbasis fungsi tahap (bucket sama seperti statusBarColor). */
+export function stageDotColor(stage: StageKey): string {
+  return stageMeta(stage).palette.dot;
+}
+
+/** Warna latar lembut untuk section/kolom bertahap. */
+export function stageSoftBg(stage: StageKey): string {
+  return stageMeta(stage).palette.soft;
 }
 
 // Badge skor AI: >=75 emerald, >=50 amber, 0-49 rose, null -> zinc "Belum".

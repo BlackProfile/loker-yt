@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
-import { APPLICATION_STATUSES, STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
+import { stageLabel } from "@/lib/stages";
 
 export const dynamic = "force-dynamic";
 
@@ -42,13 +42,14 @@ export async function POST(req: NextRequest) {
     let logDetail = "";
 
     if (action === "status") {
-      const status = typeof data.status === "string" ? data.status : "";
-      if (!(APPLICATION_STATUSES as string[]).includes(status)) {
+      // Status/tahap menerima string apa pun (5 status bawaan ATAU tahap kustom posisi).
+      const status = typeof data.status === "string" ? data.status.trim() : "";
+      if (!status || status.length > 40) {
         return NextResponse.json({ error: "Status tidak valid." }, { status: 400 });
       }
       const result = await db.application.updateMany({ where: { id: { in: ids } }, data: { status } });
       affected = result.count;
-      const label = STATUS_LABELS[status as ApplicationStatus];
+      const label = stageLabel(status);
       logAction = "BULK_STATUS";
       logDetail = `${affected} lamaran diubah status menjadi ${label}`;
     } else if (action === "talentPool") {

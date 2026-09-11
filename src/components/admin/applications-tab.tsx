@@ -35,12 +35,18 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  APPLICATION_STATUSES,
-  STATUS_LABELS,
+  APPLICATION_SOURCES,
   type Application,
-  type ApplicationStatus,
   type Position,
+  type StageKey,
 } from "@/lib/types";
+import {
+  DEFAULT_STAGES,
+  OTHER_STAGE_KEY,
+  isBuiltInStage,
+  stageLabel,
+  stagesForPosition,
+} from "@/lib/stages";
 import { apiDelete, apiGet, apiPatch, apiPost, buildQuery } from "./api";
 import { useAdminSession } from "./admin-context";
 import { ApplicationDetailDialog } from "./application-detail-dialog";
@@ -52,7 +58,7 @@ import { cn } from "@/lib/utils";
 
 const ALL = "ALL";
 
-const FILTER_TRIGGER_CLASS = "h-10 w-full rounded-xl sm:w-40";
+const FILTER_TRIGGER_CLASS = "h-10 w-full rounded-xl";
 
 const SORT_OPTIONS = [
   { value: "newest", label: "Terbaru" },
@@ -73,6 +79,7 @@ export function ApplicationsTab() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
   const [positionFilter, setPositionFilter] = useState<string>(ALL);
+  const [sourceFilter, setSourceFilter] = useState<string>(ALL);
   const [sort, setSort] = useState<string>("newest");
   const [ratingMin, setRatingMin] = useState<string>("");
   const [tag, setTag] = useState<string>(ALL);
@@ -93,23 +100,67 @@ export function ApplicationsTab() {
   const [deleting, setDeleting] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
 
+  // Posisi terpilih menentukan opsi tahap (pipeline kustom vs bawaan).
+  const selectedPosition = useMemo(
+    () =>
+      positionFilter !== ALL
+        ? positions.find((p) => p.id === positionFilter) ?? null
+        : null,
+    [positions, positionFilter]
+  );
+
+  // Opsi filter tahap: dengan posisi -> tahap milik posisi;
+  // tanpa posisi -> 5 bawaan + "Lainnya" (tahap kustom, disaring client-side).
+  const stageOptions = useMemo<StageKey[]>(
+    () =>
+      selectedPosition
+        ? stagesForPosition(selectedPosition.stages)
+        : [...DEFAULT_STAGES, OTHER_STAGE_KEY],
+    [selectedPosition]
+  );
+
+  // Tahap nyata untuk bulk change (tanpa opsi "Lainnya").
+  const bulkStageOptions = useMemo<StageKey[]>(
+    () =>
+      selectedPosition ? stagesForPosition(selectedPosition.stages) : [...DEFAULT_STAGES],
+    [selectedPosition]
+  );
+
+  const isOtherStageFilter = statusFilter === OTHER_STAGE_KEY;
+
   const activeQuery = useMemo(() => {
     return buildQuery({
       q: q || undefined,
-      status: statusFilter !== ALL ? statusFilter : undefined,
+      // "Lainnya" tidak dikirim ke server: fetch tanpa filter status,
+      // lalu disaring client-side (status bukan 5 bawaan).
+      status:
+        statusFilter !== ALL && !isOtherStageFilter ? statusFilter : undefined,
       positionId: positionFilter !== ALL ? positionFilter : undefined,
+      source: sourceFilter !== ALL ? sourceFilter : undefined,
       sort: sort !== "newest" ? sort : undefined,
       ratingMin: ratingMin !== "" ? ratingMin : undefined,
       tag: tag !== ALL ? tag : undefined,
       talentPool: talentPool ? "1" : undefined,
       hasInterview: hasInterview ? "1" : undefined,
     });
-  }, [q, statusFilter, positionFilter, sort, ratingMin, tag, talentPool, hasInterview]);
+  }, [
+    q,
+    statusFilter,
+    isOtherStageFilter,
+    positionFilter,
+    sourceFilter,
+    sort,
+    ratingMin,
+    tag,
+    talentPool,
+    hasInterview,
+  ]);
 
   const hasActiveFilter =
     q !== "" ||
     statusFilter !== ALL ||
     positionFilter !== ALL ||
+    sourceFilter !== ALL ||
     sort !== "newest" ||
     ratingMin !== "" ||
     tag !== ALL ||
@@ -157,11 +208,30 @@ export function ApplicationsTab() {
     setQ(searchInput.trim());
   }
 
+  // Saat konteks posisi berubah, buang filter tahap yang tak berlaku lagi
+  // (mis. tahap kustom posisi lain atau opsi "Lainnya").
+  function changePositionFilter(value: string) {
+    setPositionFilter(value);
+    if (value === ALL) {
+      // Kembali ke semua posisi: hanya tahap bawaan yang tetap berlaku.
+      if (statusFilter !== ALL && !isBuiltInStage(statusFilter)) {
+        setStatusFilter(ALL);
+      }
+      return;
+    }
+    const position = positions.find((p) => p.id === value);
+    const options = position ? stagesForPosition(position.stages) : [];
+    if (statusFilter !== ALL && !options.includes(statusFilter)) {
+      setStatusFilter(ALL);
+    }
+  }
+
   function resetFilters() {
     setSearchInput("");
     setQ("");
     setStatusFilter(ALL);
     setPositionFilter(ALL);
+    setSourceFilter(ALL);
     setSort("newest");
     setRatingMin("");
     setTag(ALL);
@@ -178,13 +248,19 @@ export function ApplicationsTab() {
     });
   }
 
+  // Lamaran tampil: dengan filter "Lainnya", sisakan yang tahapnya di luar 5 bawaan.
+  const displayedApplications = useMemo(() => {
+    if (!isOtherStageFilter) return applications;
+    return applications.filter((a) => !isBuiltInStage(a.status));
+  }, [applications, isOtherStageFilter]);
+
   function toggleSelectAll(checked: boolean) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (checked) {
-        for (const app of applications) next.add(app.id);
+        for (const app of displayedApplications) next.add(app.id);
       } else {
-        for (const app of applications) next.delete(app.id);
+        for (const app of displayedApplications) next.delete(app.id);
       }
       return next;
     });
@@ -222,9 +298,9 @@ export function ApplicationsTab() {
   }
 
   // Pindah kolom kanban: optimistik + PATCH, revert bila gagal.
-  function handleKanbanMove(id: string, status: ApplicationStatus) {
+  function handleKanbanMove(id: string, status: StageKey) {
     const previous = applications;
-    const target = STATUS_LABELS[status];
+    const target = stageLabel(status);
     setApplications((prev) =>
       prev.map((a) => (a.id === id ? { ...a, status } : a))
     );
@@ -280,9 +356,9 @@ export function ApplicationsTab() {
   const comparedApps = useMemo(
     () =>
       compareIds
-        .map((id) => applications.find((a) => a.id === id))
+        .map((id) => displayedApplications.find((a) => a.id === id))
         .filter((a): a is Application => Boolean(a)),
-    [compareIds, applications]
+    [compareIds, displayedApplications]
   );
 
   return (
@@ -344,22 +420,25 @@ export function ApplicationsTab() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter status">
-              <SelectValue placeholder="Semua Status" />
+            <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter tahap">
+              <SelectValue placeholder="Semua Tahap" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>Semua Status</SelectItem>
-              {APPLICATION_STATUSES.map((s) => (
+              <SelectItem value={ALL}>Semua Tahap</SelectItem>
+              {stageOptions.map((s) => (
                 <SelectItem key={s} value={s}>
-                  {STATUS_LABELS[s]}
+                  {s === OTHER_STAGE_KEY ? "Lainnya (tahap kustom)" : stageLabel(s)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
 
-          <Select value={positionFilter} onValueChange={setPositionFilter}>
+          <Select
+            value={positionFilter}
+            onValueChange={changePositionFilter}
+          >
             <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter posisi">
               <SelectValue placeholder="Semua Posisi" />
             </SelectTrigger>
@@ -368,6 +447,20 @@ export function ApplicationsTab() {
               {positions.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+            <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter sumber pelamar">
+              <SelectValue placeholder="Semua Sumber" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Semua Sumber</SelectItem>
+              {APPLICATION_SOURCES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -447,7 +540,9 @@ export function ApplicationsTab() {
             </Button>
           ) : null}
           <p className="ml-auto text-xs text-muted-foreground">
-            {loading ? "Memuat..." : `${applications.length} lamaran ditampilkan`}
+            {loading
+              ? "Memuat..."
+              : `${displayedApplications.length} lamaran ditampilkan`}
           </p>
         </div>
       </div>
@@ -470,7 +565,7 @@ export function ApplicationsTab() {
         </Card>
       ) : view === "table" ? (
         <ApplicationsTable
-          applications={applications}
+          applications={displayedApplications}
           canMutate={canMutate}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
@@ -483,8 +578,10 @@ export function ApplicationsTab() {
         />
       ) : (
         <KanbanBoard
-          apps={applications}
+          apps={displayedApplications}
           canMutate={canMutate}
+          stages={selectedPosition?.stages}
+          hasPositionFilter={positionFilter !== ALL}
           onMove={handleKanbanMove}
           onOpenDetail={setDetail}
         />
@@ -504,17 +601,17 @@ export function ApplicationsTab() {
           <Select value={bulkStatus || "bulk-empty"} onValueChange={setBulkStatus}>
             <SelectTrigger
               className="h-9 w-full rounded-lg bg-background sm:w-48"
-              aria-label="Ubah status terpilih"
+              aria-label="Ubah tahap terpilih"
             >
-              <SelectValue placeholder="Ubah status ke..." />
+              <SelectValue placeholder="Ubah tahap ke..." />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="bulk-empty" disabled>
-                Ubah status ke...
+                Ubah tahap ke...
               </SelectItem>
-              {APPLICATION_STATUSES.map((s) => (
+              {bulkStageOptions.map((s) => (
                 <SelectItem key={s} value={s}>
-                  {STATUS_LABELS[s]}
+                  {stageLabel(s)}
                 </SelectItem>
               ))}
             </SelectContent>

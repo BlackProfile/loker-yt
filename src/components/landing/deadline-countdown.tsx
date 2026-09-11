@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Calendar } from "lucide-react";
+import { Calendar, Clock } from "lucide-react";
 import { useLang } from "@/components/landing/lang-context";
 import { parseDeadlineDate } from "@/components/landing/landing-utils";
 
@@ -105,5 +105,47 @@ export function DeadlineCountdown({ deadline }: { deadline: string }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * Varian ringkas satu baris untuk kartu posisi: "Ditutup: 2 hari 14:03:22".
+ * Render null bila belum mount, deadline tidak valid, atau sudah terlewat.
+ */
+export function DeadlineCountdownCompact({ deadline }: { deadline: string }) {
+  const { t } = useLang();
+  const mounted = useMounted();
+  const target = useMemo(() => parseDeadlineDate(deadline), [deadline]);
+  const targetMs = target?.getTime() ?? 0;
+  const [now, setNow] = useState(() => Date.now());
+
+  const isFuture = target !== null && targetMs > Date.now();
+
+  // Tick tiap detik hanya bila deadline valid & di masa depan; bersih saat unmount.
+  useEffect(() => {
+    if (!isFuture) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isFuture, targetMs]);
+
+  if (!mounted || !target || targetMs <= now) return null;
+
+  const parts = diffParts(targetMs, now);
+  const clock = `${parts.days > 0 ? `${parts.days} ${t.hero.countdown.days.toLowerCase()} ` : ""}${pad(parts.hours)}:${pad(parts.minutes)}:${pad(parts.seconds)}`;
+
+  return (
+    <p
+      className="flex items-center gap-1.5 text-xs text-muted-foreground"
+      role="timer"
+      aria-label={t.hero.countdown.aria}
+    >
+      <Clock
+        className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+        aria-hidden="true"
+      />
+      <span className="tabular-nums">
+        {t.positions.closesPrefix}: {clock}
+      </span>
+    </p>
   );
 }

@@ -6,6 +6,8 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -24,6 +26,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertTriangle,
+  BarChart3,
   CalendarClock,
   CheckCircle2,
   Eye,
@@ -39,16 +42,17 @@ import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
   type AdminOverviewResponse,
+  type AdminPositionStatsResponse,
   type Application,
   type ApplicationStatus,
+  type PositionStatsRow,
 } from "@/lib/types";
 import { apiGet } from "./api";
 import { useAdminSession } from "./admin-context";
 import { formatDate, formatDateTime, formatRelative, initialsOf } from "./format";
 import {
   StatusBadge,
-  STATUS_BAR_COLORS,
-  STATUS_DOT_COLORS,
+  statusBarColor,
   aiScoreStyle,
 } from "./status-badge";
 import { ApplicationDetailDialog } from "./application-detail-dialog";
@@ -95,12 +99,58 @@ function ChartTooltip({
   );
 }
 
+// Tooltip Perbandingan Lowongan: lamaran, views, dan konversi.
+function CompareTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: {
+    payload?: {
+      fullTitle?: string;
+      applications?: number;
+      views?: number;
+      conversion?: number | null;
+    };
+  }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  return (
+    <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-sm">
+      <p className="max-w-48 truncate font-medium">{row?.fullTitle ?? "-"}</p>
+      <p className="text-muted-foreground">
+        Lamaran: <span className="font-medium text-foreground">{row?.applications ?? 0}</span>
+      </p>
+      <p className="text-muted-foreground">
+        Views: <span className="font-medium text-foreground">{row?.views ?? 0}</span>
+      </p>
+      <p className="text-muted-foreground">
+        Konversi:{" "}
+        <span className="font-medium text-foreground">
+          {row?.conversion != null ? `${row.conversion}%` : "-"}
+        </span>
+      </p>
+    </div>
+  );
+}
+
+// Judul pendek untuk sumbu X grafik perbandingan lowongan.
+function shortTitle(title: string): string {
+  const clean = title.trim();
+  return clean.length > 10 ? `${clean.slice(0, 10).trimEnd()}…` : clean;
+}
+
 export function DashboardTab() {
   const { reportError } = useAdminSession();
   const reducedMotion = useReducedMotion();
   const [overview, setOverview] = useState<AdminOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Application | null>(null);
+
+  // Perbandingan lowongan (GET /api/admin/position-stats).
+  const [posStats, setPosStats] = useState<PositionStatsRow[]>([]);
+  const [posStatsLoading, setPosStatsLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -114,19 +164,55 @@ export function DashboardTab() {
     }
   }, [reportError]);
 
+  const loadPosStats = useCallback(async () => {
+    setPosStatsLoading(true);
+    try {
+      const data = await apiGet<AdminPositionStatsResponse>("/api/admin/position-stats");
+      setPosStats(data.rows);
+    } catch {
+      // Grafik pelengkap; tampilkan kosong tanpa toast agar tidak berisik.
+      setPosStats([]);
+    } finally {
+      setPosStatsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    void loadPosStats();
+  }, [loadPosStats]);
+
   const stats = overview?.stats;
   const total = stats?.total ?? 0;
 
-  const segments = APPLICATION_STATUSES.map((status) => {
-    const value = stats?.[status] ?? 0;
-    return { status, value, pct: total > 0 ? (value / total) * 100 : 0 };
-  }).filter((s) => s.value > 0);
+  // Distribusi: 5 tahap bawaan + bucket CUSTOM (agregat tahap kustom).
+  type DistributionBucket = ApplicationStatus | "CUSTOM";
+  const buckets: DistributionBucket[] = [...APPLICATION_STATUSES, "CUSTOM"];
+  const segments = buckets
+    .map((bucket) => {
+      const value =
+        bucket === "CUSTOM" ? (stats?.CUSTOM ?? 0) : (stats?.[bucket] ?? 0);
+      return {
+        bucket,
+        label: bucket === "CUSTOM" ? "Tahap Kustom" : STATUS_LABELS[bucket],
+        value,
+        pct: total > 0 ? (value / total) * 100 : 0,
+      };
+    })
+    .filter((s) => s.value > 0);
 
   const daily = overview?.daily ?? [];
+
+  const compareData = posStats.map((row) => ({
+    title: shortTitle(row.title),
+    fullTitle: row.title,
+    applications: row.applications,
+    views: row.views,
+    conversion: row.conversion,
+  }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -267,6 +353,76 @@ export function DashboardTab() {
         </CardContent>
       </Card>
 
+      {/* Perbandingan Lowongan */}
+      <Card className="rounded-2xl p-6">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <BarChart3 className="size-4 text-rose-500" aria-hidden="true" />
+          Perbandingan Lowongan
+        </CardTitle>
+        <CardDescription className="mt-1">
+          Jumlah lamaran masuk dibanding tampilan halaman (views) per posisi.
+        </CardDescription>
+        <CardContent className="mt-4 px-0">
+          {posStatsLoading ? (
+            <Skeleton className="h-[280px] w-full rounded-xl" />
+          ) : compareData.length === 0 ? (
+            <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
+              Belum ada data posisi.
+            </div>
+          ) : (
+            <div className="h-[280px] w-full">
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={compareData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="title"
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    tickLine={false}
+                    axisLine={{ stroke: "var(--border)" }}
+                    interval={0}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={40}
+                  />
+                  <Tooltip
+                    content={<CompareTooltip />}
+                    cursor={{ fill: "var(--muted)", fillOpacity: 0.5 }}
+                  />
+                  <Bar
+                    dataKey="applications"
+                    name="Lamaran"
+                    fill="#f43f5e"
+                    radius={[4, 4, 0, 0]}
+                    barSize={26}
+                  />
+                  <Bar
+                    dataKey="views"
+                    name="Views"
+                    fill="#f59e0b"
+                    radius={[4, 4, 0, 0]}
+                    barSize={10}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+              <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1.5">
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="size-2 rounded-full bg-[#f43f5e]" aria-hidden="true" />
+                  Lamaran
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="size-2 rounded-full bg-[#f59e0b]" aria-hidden="true" />
+                  Views
+                </span>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Wawancara mendatang + perlu ditindaklanjuti */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card className="gap-0 rounded-2xl py-6">
@@ -391,12 +547,12 @@ export function DashboardTab() {
             <div
               className="flex h-3 w-full overflow-hidden rounded-full"
               role="img"
-              aria-label="Bar distribusi status lamaran"
+              aria-label="Bar distribusi tahap lamaran"
             >
               {segments.map((s) => (
                 <div
-                  key={s.status}
-                  className={STATUS_BAR_COLORS[s.status]}
+                  key={s.bucket}
+                  className={statusBarColor(s.bucket)}
                   style={{ width: `${s.pct}%` }}
                 />
               ))}
@@ -405,19 +561,17 @@ export function DashboardTab() {
             <p className="text-sm text-muted-foreground">Belum ada data lamaran.</p>
           )}
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
-            {APPLICATION_STATUSES.map((status: ApplicationStatus) => (
+            {segments.map((s) => (
               <span
-                key={status}
+                key={s.bucket}
                 className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
               >
                 <span
-                  className={`size-2 rounded-full ${STATUS_DOT_COLORS[status]}`}
+                  className={`size-2 rounded-full ${statusBarColor(s.bucket)}`}
                   aria-hidden="true"
                 />
-                {STATUS_LABELS[status]}
-                <span className="font-medium text-foreground">
-                  {stats?.[status] ?? 0}
-                </span>
+                {s.label}
+                <span className="font-medium text-foreground">{s.value}</span>
               </span>
             ))}
           </div>
@@ -437,7 +591,10 @@ export function DashboardTab() {
             variant="outline"
             size="sm"
             className="h-10 active:scale-[0.99] sm:h-9"
-            onClick={() => void load()}
+            onClick={() => {
+              void load();
+              void loadPosStats();
+            }}
             disabled={loading}
             aria-label="Segarkan data dashboard"
           >

@@ -1,4 +1,6 @@
-// GET /api/files/[id] — unduh/pratinjau aset file (CV, audio intro). Butuh login admin (semua role).
+// GET /api/files/[id] — unduh/pratinjau aset file (CV, audio intro, cover posisi).
+// Cover posisi (dipakai sebagai relasi coverFile di Position) bersifat PUBLIK agar
+// gambar banner tampil di landing & metadata OG tanpa login. Berkas lain butuh login admin.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
@@ -15,15 +17,23 @@ function asciiFilename(name: string): string {
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await getSession();
-    if (!session) {
-      return NextResponse.json(UNAUTHORIZED, { status: 401 });
-    }
     const { id } = await params;
 
     const asset = await db.fileAsset.findUnique({ where: { id } });
     if (!asset) {
       return NextResponse.json({ error: "File tidak ditemukan" }, { status: 404 });
+    }
+
+    // File cover posisi bersifat publik (dipakai landing & OpenGraph); lainnya butuh sesi admin.
+    const isCover = await db.position.findFirst({
+      where: { coverFileId: asset.id },
+      select: { id: true },
+    });
+    if (!isCover) {
+      const session = await getSession();
+      if (!session) {
+        return NextResponse.json(UNAUTHORIZED, { status: 401 });
+      }
     }
 
     const absolutePath = path.join(process.cwd(), asset.path);
@@ -34,8 +44,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "File tidak ditemukan di server" }, { status: 404 });
     }
 
-    const isAudio = asset.mimeType.startsWith("audio/");
-    const disposition = isAudio ? "inline" : "attachment";
+    const isInline = asset.mimeType.startsWith("audio/") || asset.mimeType.startsWith("image/");
+    const disposition = isInline ? "inline" : "attachment";
     return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {

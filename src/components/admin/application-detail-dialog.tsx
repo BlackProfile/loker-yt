@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,21 +39,30 @@ import {
   AudioLines,
   CalendarClock,
   ChevronDown,
+  ClipboardCheck,
+  ClipboardList,
   Copy,
   FileText,
+  Globe,
   Link2,
+  ListChecks,
   Loader2,
+  Megaphone,
+  MessageSquareText,
+  Share2,
+  Tag,
   Trash2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  APPLICATION_STATUSES,
-  STATUS_LABELS,
   type Application,
-  type ApplicationStatus,
+  type Position,
+  type StageKey,
   type LogEntry,
 } from "@/lib/types";
+import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
+import { fillTemplate } from "@/components/landing/landing-utils";
 import { apiDelete, apiGet, apiPatch } from "./api";
 import {
   actionLabel,
@@ -69,6 +79,7 @@ import { StatusBadge } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 import { AiPanel } from "./ai-panel";
 import { useAdminSession } from "./admin-context";
+import { cn } from "@/lib/utils";
 
 function InfoItem({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -155,6 +166,25 @@ function ActivityTimeline({ applicationId }: { applicationId: string }) {
   );
 }
 
+// Baris kecil sumber/UTM dengan ikon.
+function SourceRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Share2;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className="shrink-0 font-medium text-muted-foreground">{label}</span>
+      <span className="truncate text-foreground">{value}</span>
+    </div>
+  );
+}
+
 export function ApplicationDetailDialog({
   application,
   onOpenChange,
@@ -167,7 +197,7 @@ export function ApplicationDetailDialog({
   onDeleted: (id: string) => void;
 }) {
   const { canMutate, reportError } = useAdminSession();
-  const [editStatus, setEditStatus] = useState<ApplicationStatus>("NEW");
+  const [editStatus, setEditStatus] = useState<StageKey>("NEW");
   const [editNotes, setEditNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -180,6 +210,13 @@ export function ApplicationDetailDialog({
   const [tagsSaving, setTagsSaving] = useState(false);
   const [ratingSaving, setRatingSaving] = useState(false);
 
+  // Evaluasi v3: posisi terkait (rubrik/checklist/template) + state lokal.
+  const [position, setPosition] = useState<Position | null>(null);
+  const [rubricValues, setRubricValues] = useState<Record<string, number>>({});
+  const [rubricSaving, setRubricSaving] = useState(false);
+  const [checkedItems, setCheckedItems] = useState<string[]>([]);
+  const [checklistSaving, setChecklistSaving] = useState(false);
+
   useEffect(() => {
     if (application) {
       setEditStatus(application.status);
@@ -189,12 +226,72 @@ export function ApplicationDetailDialog({
       setSaving(false);
       setDeleting(false);
       setConfirmOpen(false);
+      setRubricValues(application.rubricScores ?? {});
+      setCheckedItems(application.checklistState ?? []);
     }
   }, [application]);
+
+  const applicationId = application?.id ?? null;
+  const positionId = application?.positionId ?? null;
+
+  // Muat posisi terkait untuk rubrik/checklist/pertanyaan screening/template.
+  useEffect(() => {
+    if (!positionId) {
+      setPosition(null);
+      return;
+    }
+    let cancelled = false;
+    apiGet<Position[]>("/api/admin/positions")
+      .then((rows) => {
+        if (!cancelled) {
+          setPosition(rows.find((p) => p.id === positionId) ?? null);
+        }
+      })
+      .catch(() => {
+        // Bagian berbasis posisi bersifat pelengkap; abaikan kegagalan.
+        if (!cancelled) setPosition(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applicationId, positionId]);
 
   if (!application) return null;
 
   const app = application;
+  const pos = position;
+
+  // Opsi tahap mengikuti pipeline posisi terkait; fallback ke 5 bawaan.
+  const positionStages = pos ? stagesForPosition(pos.stages) : [...DEFAULT_STAGES];
+  const stageChoices =
+    editStatus && !positionStages.includes(editStatus)
+      ? [editStatus, ...positionStages]
+      : positionStages;
+
+  const screeningQuestions = pos?.screeningQuestions ?? [];
+  const screeningAnswers = app.screeningAnswers ?? {};
+  const showScreening = screeningQuestions.length > 0 && app.screeningAnswers != null;
+
+  const rubricCriteria = pos?.rubricCriteria ?? [];
+  const checklistTemplate = pos?.checklistTemplate ?? [];
+  const noteTemplates = pos?.noteTemplates ?? [];
+  const replyTemplates = pos?.replyTemplates ?? null;
+
+  const rubricScoresCount = rubricCriteria.filter(
+    (c) => typeof rubricValues[c] === "number"
+  ).length;
+  const rubricAverage =
+    rubricScoresCount > 0
+      ? rubricCriteria.reduce((sum, c) => sum + (rubricValues[c] ?? 0), 0) /
+        rubricScoresCount
+      : null;
+
+  const utmRows = [
+    app.utmSource ? { icon: Globe, label: "UTM Source", value: app.utmSource } : null,
+    app.utmMedium ? { icon: Tag, label: "UTM Medium", value: app.utmMedium } : null,
+    app.utmCampaign ? { icon: Megaphone, label: "UTM Campaign", value: app.utmCampaign } : null,
+  ].filter((r): r is { icon: typeof Globe; label: string; value: string } => r !== null);
+  const showSourceBlock = Boolean(app.source) || utmRows.length > 0;
 
   async function patch(
     body: Record<string, unknown>,
@@ -313,6 +410,61 @@ export function ApplicationDetailDialog({
     );
   }
 
+  async function handleSaveRubric() {
+    if (rubricSaving) return;
+    // Kirim hanya kriteria yang bernilai (int 1..5 disanitasi server).
+    const payload: Record<string, number> = {};
+    for (const c of rubricCriteria) {
+      const v = rubricValues[c];
+      if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 5) {
+        payload[c] = v;
+      }
+    }
+    setRubricSaving(true);
+    const updated = await patch(
+      { rubricScores: JSON.stringify(payload) },
+      rubricScoresCount > 0
+        ? `Rubrik disimpan (rata-rata ${rubricAverage?.toFixed(1) ?? "-"})`
+        : "Rubrik dikosongkan"
+    );
+    if (updated) setRubricValues(updated.rubricScores ?? {});
+    setRubricSaving(false);
+  }
+
+  async function handleToggleChecklist(item: string) {
+    if (!canMutate || checklistSaving) return;
+    const next = checkedItems.includes(item)
+      ? checkedItems.filter((i) => i !== item)
+      : [...checkedItems, item];
+    setCheckedItems(next);
+    setChecklistSaving(true);
+    const updated = await patch(
+      { checklistState: JSON.stringify(next) },
+      `Checklist diperbarui (${next.length}/${checklistTemplate.length})`
+    );
+    if (!updated) setCheckedItems(app.checklistState ?? []);
+    setChecklistSaving(false);
+  }
+
+  function appendNoteTemplate(template: string) {
+    const text = template.trim();
+    if (!text) return;
+    setEditNotes((prev) => (prev.trimEnd().length > 0 ? `${prev.trimEnd()}\n${text}` : text));
+  }
+
+  async function handleCopyReply(kind: "apply" | "accept" | "reject", label: string) {
+    const template = replyTemplates?.[kind];
+    if (!template) return;
+    const message = fillTemplate(template, {
+      nama: app.name,
+      posisi: app.positionTitle ?? "-",
+      kode: app.trackingCode,
+    });
+    const ok = await copyText(message);
+    if (ok) toast.success(`Pesan ${label} disalin ke clipboard`);
+    else toast.error("Gagal menyalin ke clipboard");
+  }
+
   async function handleCopyTracking() {
     const ok = await copyText(app.trackingCode);
     if (ok) toast.success("Kode pelacakan disalin");
@@ -412,6 +564,19 @@ export function ApplicationDetailDialog({
                 )}
               </InfoItem>
             </div>
+
+            {/* Sumber & atribusi UTM */}
+            {showSourceBlock ? (
+              <div className="flex flex-col gap-1.5 rounded-lg border p-3">
+                <p className="text-sm font-semibold">Sumber Pelamar</p>
+                {app.source ? (
+                  <SourceRow icon={Share2} label="Sumber" value={app.source} />
+                ) : null}
+                {utmRows.map((row) => (
+                  <SourceRow key={row.label} icon={row.icon} label={row.label} value={row.value} />
+                ))}
+              </div>
+            ) : null}
 
             {/* Jadwal wawancara */}
             <div className="rounded-lg border p-3">
@@ -528,6 +693,40 @@ export function ApplicationDetailDialog({
 
             <Separator />
 
+            {/* Jawaban screening */}
+            {showScreening ? (
+              <div className="flex flex-col gap-2 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <ClipboardList className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Jawaban Screening</p>
+                </div>
+                <div className="flex flex-col gap-2.5">
+                  {screeningQuestions.map((q) => {
+                    const answer = screeningAnswers[q.id]?.trim() ?? "";
+                    return (
+                      <div key={q.id} className="rounded-lg bg-muted/50 p-2.5">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {q.label}
+                          {q.required ? (
+                            <span className="ml-1 text-rose-500" aria-hidden="true">
+                              *
+                            </span>
+                          ) : null}
+                        </p>
+                        {answer ? (
+                          <p className="mt-0.5 text-sm whitespace-pre-wrap">{answer}</p>
+                        ) : (
+                          <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+                            Tidak dijawab
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             {/* Pengalaman & Alasan */}
             <div className="flex flex-col gap-4">
               <div>
@@ -543,6 +742,108 @@ export function ApplicationDetailDialog({
                 </p>
               </div>
             </div>
+
+            {/* Rubrik evaluasi */}
+            {rubricCriteria.length > 0 ? (
+              <div className="flex flex-col gap-3 rounded-lg border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <ListChecks className="size-4 text-teal-600 dark:text-teal-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Rubrik Evaluasi</p>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    Rata-rata{" "}
+                    <span className="text-sm font-semibold tabular-nums text-foreground">
+                      {rubricAverage != null ? rubricAverage.toFixed(1) : "-"}
+                    </span>
+                  </span>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {rubricCriteria.map((criterion) => {
+                    const value = rubricValues[criterion];
+                    return (
+                      <div key={criterion} className="flex flex-col gap-1.5">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {criterion}
+                        </p>
+                        <div
+                          className="flex flex-wrap items-center gap-1.5"
+                          role="group"
+                          aria-label={`Nilai rubrik ${criterion}`}
+                        >
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              disabled={!canMutate || rubricSaving}
+                              onClick={() =>
+                                setRubricValues((prev) => ({ ...prev, [criterion]: n }))
+                              }
+                              aria-label={`${criterion}: nilai ${n} dari 5`}
+                              aria-pressed={value === n}
+                              className={cn(
+                                "flex size-11 items-center justify-center rounded-lg border text-sm font-semibold tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 sm:size-9",
+                                value === n
+                                  ? "border-rose-600 bg-rose-600 text-white hover:bg-rose-700"
+                                  : "bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
+                              )}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {canMutate ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-11 w-fit active:scale-[0.99] sm:h-9"
+                    onClick={() => void handleSaveRubric()}
+                    disabled={rubricSaving}
+                  >
+                    {rubricSaving ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : null}
+                    Simpan Rubrik
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Checklist evaluasi */}
+            {checklistTemplate.length > 0 ? (
+              <div className="flex flex-col gap-2 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <ClipboardCheck className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Checklist Evaluasi</p>
+                  <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-secondary-foreground">
+                    {checkedItems.length}/{checklistTemplate.length}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  {checklistTemplate.map((item) => {
+                    const checked = checkedItems.includes(item);
+                    return (
+                      <label
+                        key={item}
+                        className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 text-sm hover:bg-accent/50"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          disabled={!canMutate || checklistSaving}
+                          onCheckedChange={() => void handleToggleChecklist(item)}
+                          aria-label={`Checklist: ${item}`}
+                        />
+                        <span className={cn(checked && "text-muted-foreground line-through")}>
+                          {item}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
 
             <Separator />
 
@@ -617,6 +918,27 @@ export function ApplicationDetailDialog({
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="admin-notes">Catatan Admin</Label>
+                {noteTemplates.length > 0 && canMutate ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">Template:</span>
+                    {noteTemplates.map((tpl, i) => {
+                      const text = tpl.trim();
+                      if (!text) return null;
+                      return (
+                        <button
+                          key={`${i}-${text.slice(0, 12)}`}
+                          type="button"
+                          onClick={() => appendNoteTemplate(text)}
+                          className="max-w-full truncate rounded-full border px-2.5 py-1 text-xs outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+                          title={text}
+                          aria-label={`Sisipkan template catatan: ${text}`}
+                        >
+                          {text}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
                 <Textarea
                   id="admin-notes"
                   value={editNotes}
@@ -626,20 +948,69 @@ export function ApplicationDetailDialog({
                   disabled={!canMutate}
                 />
               </div>
+
+              {/* Template balasan */}
+              {replyTemplates && (replyTemplates.apply || replyTemplates.accept || replyTemplates.reject) ? (
+                <div className="flex flex-col gap-2 rounded-lg border p-3">
+                  <div className="flex items-center gap-2">
+                    <MessageSquareText className="size-4 text-rose-500" aria-hidden="true" />
+                    <p className="text-sm font-semibold">Template Balasan</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Pesan siap kirim dengan variabel {"{nama}"}, {"{posisi}"}, dan {"{kode}"} yang sudah diisi.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {replyTemplates.apply ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() => void handleCopyReply("apply", "Konfirmasi")}
+                      >
+                        <Copy className="size-4" aria-hidden="true" />
+                        Salin pesan Konfirmasi
+                      </Button>
+                    ) : null}
+                    {replyTemplates.accept ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700 sm:h-9 dark:border-emerald-900 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                        onClick={() => void handleCopyReply("accept", "Diterima")}
+                      >
+                        <Copy className="size-4" aria-hidden="true" />
+                        Salin pesan Diterima
+                      </Button>
+                    ) : null}
+                    {replyTemplates.reject ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() => void handleCopyReply("reject", "Ditolak")}
+                      >
+                        <Copy className="size-4" aria-hidden="true" />
+                        Salin pesan Ditolak
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex flex-col gap-2">
-                <Label>Ubah Status</Label>
+                <Label>Ubah Tahap</Label>
                 <Select
                   value={editStatus}
-                  onValueChange={(v) => setEditStatus(v as ApplicationStatus)}
+                  onValueChange={(v) => setEditStatus(v)}
                   disabled={!canMutate}
                 >
-                  <SelectTrigger className="w-full sm:w-56" aria-label="Ubah status lamaran">
-                    <SelectValue placeholder="Pilih status" />
+                  <SelectTrigger className="w-full sm:w-56" aria-label="Ubah tahap lamaran">
+                    <SelectValue placeholder="Pilih tahap" />
                   </SelectTrigger>
                   <SelectContent>
-                    {APPLICATION_STATUSES.map((s) => (
+                    {stageChoices.map((s) => (
                       <SelectItem key={s} value={s}>
-                        {STATUS_LABELS[s]}
+                        {stageLabel(s)}
                       </SelectItem>
                     ))}
                   </SelectContent>

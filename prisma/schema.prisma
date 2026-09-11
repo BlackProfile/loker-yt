@@ -27,10 +27,11 @@ model AdminUser {
   updatedAt    DateTime @updatedAt
 }
 
-// Posisi lowongan yang dibuka
+// Posisi lowongan yang dibuka — v3: fitur lengkap per lowongan
 model Position {
   id           String        @id @default(cuid())
   title        String
+  slug         String?       @unique // untuk URL deep link /?posisi=slug
   department   String        @default("Umum")
   type         String        @default("Remote")
   location     String        @default("Remote")
@@ -42,6 +43,44 @@ model Position {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   applications Application[]
+
+  // Tampilan & konten per lowongan
+  coverFileId  String?
+  coverFile    FileAsset?    @relation("coverFile", fields: [coverFileId], references: [id], onDelete: SetNull)
+  salaryText   String? // teks bebas, mis. "Rp 3-5 juta/bulan"
+  salaryVisible Boolean      @default(false)
+  benefits     String        @default("[]") // JSON string[]
+  examples     String        @default("[]") // JSON string[] URL contoh karya (YouTube/TikTok/IG)
+  urgent       Boolean       @default(false) // badge "Urgent"
+  featured     Boolean       @default(false) // pin di urutan atas
+
+  // Formulir & screening per lowongan
+  screeningQuestions String  @default("[]") // JSON {id,label,required}[]
+  requireCv    Boolean       @default(false)
+  requireIntro Boolean       @default(false)
+  requirePortfolio Boolean   @default(false)
+  maxApplicants Int? // kuota pelamar; null = tanpa kuota
+
+  // Publikasi & jadwal
+  publishAt    DateTime? // tayang otomatis setelah tanggal ini (terjadwal)
+
+  // Pipeline & otomasi per lowongan
+  stages               String  @default("[]") // JSON string[]; [] = pipeline default (5 status bawaan)
+  aiCriteria           String? // kriteria AI khusus posisi (pelengkap prompt screening)
+  autoShortlistScore   Int? // skor AI minimal untuk auto-shortlist
+  autoShortlistStage   String? // tahap tujuan auto-shortlist (harus ada di stages posisi)
+  applyTemplate        String? // template pesan konfirmasi lamaran ({nama},{posisi},{kode})
+  acceptTemplate       String? // template pesan diterima
+  rejectTemplate       String? // template pesan ditolak
+  assignmentTitle      String? // tes/brief untuk pelamar posisi ini
+  assignmentUrl        String?
+  assignmentNote       String?
+
+  // Evaluasi & kolaborasi tim
+  rubricCriteria     String  @default("[]") // JSON string[] kriteria penilaian per lowongan
+  checklistTemplate  String  @default("[]") // JSON string[] checklist evaluasi
+  noteTemplates      String  @default("[]") // JSON string[] template catatan admin
+  views              Int     @default(0) // jumlah view dialog detail (publik)
 }
 
 // Aset file yang diunggah pelamar (CV, audio intro)
@@ -54,6 +93,7 @@ model FileAsset {
   createdAt      DateTime      @default(now())
   cvApplications Application[] @relation("cvFile")
   introApp       Application[] @relation("introFile")
+  coverPositions Position[]    @relation("coverFile")
 }
 
 // Lamaran yang masuk dari form publik
@@ -68,7 +108,7 @@ model Application {
   portfolioUrl     String?
   experience       String
   motivation       String
-  status           String     @default("NEW") // NEW | REVIEWED | INTERVIEW | ACCEPTED | REJECTED
+  status           String     @default("NEW") // tahap pipeline: 5 status bawaan ATAU tahap kustom per posisi
   adminNotes       String?
   trackingCode     String?    @unique // kode pelacakan untuk pelamar, mis. LM-ABC123
   rating           Int        @default(0) // 0-5 bintang dari admin
@@ -80,6 +120,13 @@ model Application {
   aiRecommendation String? // rekomendasi AI (LAYAK_WAWANCARA | PERTIMBANGKAN | TIDAK_COCCOK)
   aiAnalyzedAt     DateTime?
   transcript       String? // hasil transkripsi ASR audio intro
+  source           String? // jawaban "dari mana tahu lowongan ini"
+  utmSource        String?
+  utmMedium        String?
+  utmCampaign      String?
+  screeningAnswers String? // JSON {questionId: jawaban}
+  rubricScores     String? // JSON {kriteria: 1-5}
+  checklistState   String  @default("[]") // JSON string[] item checklist yang dicentang
   cvFileId         String?
   cvFile           FileAsset? @relation("cvFile", fields: [cvFileId], references: [id], onDelete: SetNull)
   introFileId      String?

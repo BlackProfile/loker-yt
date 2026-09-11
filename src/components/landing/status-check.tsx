@@ -8,33 +8,30 @@ import {
   BadgeCheck,
   BadgeX,
   CheckCircle2,
+  ClipboardList,
+  ExternalLink,
   Loader2,
   Search,
 } from "lucide-react";
 import {
   STATUS_FLOW,
-  STATUS_LABELS,
-  type ApplicationStatus,
+  type StageKey,
   type TrackResponse,
 } from "@/lib/types";
+import { stageLabel } from "@/lib/stages";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useLang } from "@/components/landing/lang-context";
 import { Container, FadeIn, ROSE_BADGE } from "@/components/landing/primitives";
-import { formatDateTimeId } from "@/components/landing/landing-utils";
+import { formatDateTimeId, safeExternalUrl } from "@/components/landing/landing-utils";
 import { Badge } from "@/components/ui/badge";
 
 type StepView = { key: string; label: string; done: boolean; at: string | null };
 
-function labelFor(step: StepView): string {
-  if (step.label) return step.label;
-  const mapped = STATUS_LABELS[step.key as ApplicationStatus];
-  return mapped ?? step.key;
-}
-
-function isFinalStatus(status?: ApplicationStatus): status is "ACCEPTED" | "REJECTED" {
+/** Tahap terminal bawaan (label tahap kustom bisa apa saja — tak dianggap final). */
+function isFinalStatus(status?: StageKey): boolean {
   return status === "ACCEPTED" || status === "REJECTED";
 }
 
@@ -79,13 +76,17 @@ export function StatusCheckSection() {
     ? (result.steps ??
       STATUS_FLOW.map((key) => ({
         key,
-        label: STATUS_LABELS[key],
+        label: stageLabel(key),
         done: false,
         at: null,
       })))
     : [];
   const finalStatus = isFinalStatus(result?.status) ? result?.status : undefined;
   const currentKey = !finalStatus ? result?.status : undefined;
+  // URL brief tes posisi (disanitasi — hanya http/https).
+  const assignmentUrl = result?.assignment?.url
+    ? safeExternalUrl(result.assignment.url)
+    : null;
 
   return (
     <section id="status" className="scroll-mt-24 bg-muted/40 py-16 md:py-24">
@@ -214,7 +215,7 @@ export function StatusCheckSection() {
                                   : "text-sm text-muted-foreground"
                               }
                             >
-                              {labelFor(step)}
+                              {step.label || step.key}
                             </p>
                             {step.at ? (
                               <p className="text-xs text-muted-foreground">
@@ -227,6 +228,47 @@ export function StatusCheckSection() {
                     })}
                   </ol>
                 </div>
+
+                {/* Info tes seleksi posisi (bila posisi punya assignment) */}
+                {result.assignment &&
+                (result.assignment.title || result.assignment.note || result.assignment.url) ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+                    <div className="flex items-start gap-2.5">
+                      <ClipboardList
+                        className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
+                        aria-hidden="true"
+                      />
+                      <div className="min-w-0 text-sm">
+                        <p className="font-medium text-amber-800 dark:text-amber-300">
+                          {t.status.assignmentTitle}
+                          {result.assignment.title ? `: ${result.assignment.title}` : ""}
+                        </p>
+                        {result.assignment.note ? (
+                          <p className="mt-1 whitespace-pre-line leading-relaxed text-amber-700/90 dark:text-amber-200/80">
+                            {result.assignment.note}
+                          </p>
+                        ) : null}
+                        {assignmentUrl ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-2 h-11 border-amber-300 bg-transparent text-amber-800 hover:bg-amber-100 hover:text-amber-900 sm:h-9 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+                            asChild
+                          >
+                            <a
+                              href={assignmentUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                              {t.status.openBrief}
+                            </a>
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
                 {finalStatus === "ACCEPTED" ? (
                   <div

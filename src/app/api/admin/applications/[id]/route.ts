@@ -1,11 +1,18 @@
-// PATCH  /api/admin/applications/[id] — update status/catatan/rating/tags/wawancara/talent pool (OWNER/HR).
+// PATCH  /api/admin/applications/[id] — update status/catatan/rating/tags/wawancara/talent pool/rubrik/checklist (OWNER/HR).
 // DELETE /api/admin/applications/[id] — hapus lamaran (OWNER/HR).
 // Setiap perubahan dicatat ke ActivityLog.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
-import { APPLICATION_INCLUDE, parseTags, serializeApplication } from "@/lib/seed";
-import { APPLICATION_STATUSES, STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
+import {
+  APPLICATION_INCLUDE,
+  parseRequirements,
+  parseScoreRecord,
+  parseTags,
+  serializeApplication,
+} from "@/lib/seed";
+import { isBuiltInStage } from "@/lib/stages";
+import { STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +21,7 @@ const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
 const NOT_FOUND = { error: "Lamaran tidak ditemukan" };
 
 function labelOf(status: string): string {
-  return (APPLICATION_STATUSES as string[]).includes(status) ? STATUS_LABELS[status as ApplicationStatus] : status;
+  return isBuiltInStage(status) ? STATUS_LABELS[status as ApplicationStatus] : status;
 }
 
 function formatDateTimeId(value: Date): string {
@@ -45,13 +52,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       tags?: string;
       interviewAt?: Date | null;
       talentPool?: boolean;
+      rubricScores?: string | null;
+      checklistState?: string;
     } = {};
 
     if (data.status !== undefined) {
-      if (typeof data.status !== "string" || !(APPLICATION_STATUSES as string[]).includes(data.status)) {
+      // Status/tahap menerima string apa pun (5 status bawaan ATAU tahap kustom posisi).
+      if (typeof data.status !== "string") {
         return NextResponse.json({ error: "Status tidak valid." }, { status: 400 });
       }
-      updateData.status = data.status;
+      const status = data.status.trim();
+      if (!status || status.length > 40) {
+        return NextResponse.json({ error: "Status tidak valid." }, { status: 400 });
+      }
+      updateData.status = status;
     }
 
     if (data.adminNotes !== undefined) {
@@ -102,6 +116,75 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ error: "talentPool harus berupa boolean." }, { status: 400 });
       }
       updateData.talentPool = data.talentPool;
+    }
+
+    // Rubrik evaluasi: terima JSON string ATAU object {kriteria: nilai}.
+    // Disanitasi: nilai integer 1..5, kriteria non-kosong maks 120 karakter, maks 8 entri.
+    if (data.rubricScores !== undefined) {
+      let raw: unknown = data.rubricScores;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          return NextResponse.json(
+            { error: "Rubrik tidak valid (JSON tidak bisa dibaca)." },
+            { status: 400 }
+          );
+        }
+      }
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        return NextResponse.json(
+          { error: "Rubrik harus berupa objek {kriteria: nilai}." },
+          { status: 400 }
+        );
+      }
+      const scores: Record<string, number> = {};
+      for (const [rawKey, rawValue] of Object.entries(raw as Record<string, unknown>)) {
+        const key = rawKey.trim().slice(0, 120);
+        if (!key || scores[key] !== undefined) continue;
+        if (
+          typeof rawValue !== "number" ||
+          !Number.isInteger(rawValue) ||
+          rawValue < 1 ||
+          rawValue > 5
+        ) {
+          continue;
+        }
+        scores[key] = rawValue;
+        if (Object.keys(scores).length >= 8) break;
+      }
+      updateData.rubricScores = Object.keys(scores).length > 0 ? JSON.stringify(scores) : null;
+    }
+
+    // Checklist evaluasi: terima JSON string ATAU array teks.
+    // Disanitasi: maks 8 item, tiap item maks 120 karakter, tanpa duplikat.
+    if (data.checklistState !== undefined) {
+      let raw: unknown = data.checklistState;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          return NextResponse.json(
+            { error: "Checklist tidak valid (JSON tidak bisa dibaca)." },
+            { status: 400 }
+          );
+        }
+      }
+      if (!Array.isArray(raw)) {
+        return NextResponse.json(
+          { error: "Checklist harus berupa array teks." },
+          { status: 400 }
+        );
+      }
+      const seen = new Set<string>();
+      for (const item of raw) {
+        if (typeof item !== "string") continue;
+        const clean = item.trim().slice(0, 120);
+        if (!clean || seen.has(clean)) continue;
+        seen.add(clean);
+        if (seen.size >= 8) break;
+      }
+      updateData.checklistState = JSON.stringify(Array.from(seen));
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -158,6 +241,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         actor: session.name,
         action: "TALENT_POOL",
         detail: updateData.talentPool ? "Ditambahkan ke talent pool" : "Dikeluarkan dari talent pool",
+      });
+    }
+    if (updateData.rubricScores !== undefined && updateData.rubricScores !== existing.rubricScores) {
+      const newScores = parseScoreRecord(updateData.rubricScores);
+      logs.push({
+        actor: session.name,
+        action: "RUBRIC",
+        detail: `Rubrik evaluasi diperbarui (${Object.keys(newScores ?? {}).length} kriteria dinilai)`,
+      });
+    }
+    if (updateData.checklistState !== undefined && updateData.checklistState !== existing.checklistState) {
+      const newItems = parseRequirements(updateData.checklistState);
+      logs.push({
+        actor: session.name,
+        action: "CHECKLIST",
+        detail: `Checklist evaluasi: ${newItems.length} item tercentang`,
       });
     }
     if (logs.length > 0) {

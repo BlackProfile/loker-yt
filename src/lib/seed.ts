@@ -17,15 +17,17 @@ import { hashPassword } from "@/lib/server-auth";
 import { generateUniqueTrackingCode } from "@/lib/tracking";
 import {
   AI_RECOMMENDATION_LABELS,
-  APPLICATION_STATUSES,
   SECTION_KEYS,
   type AdminUser,
   type AiRecommendation,
   type Application,
   type ApplicationStatus,
+  type AssignmentInfo,
   type BenefitItem,
   type FaqItem,
   type Position,
+  type ReplyTemplates,
+  type ScreeningQuestion,
   type SectionVisibility,
   type SiteContent,
   type TeamMember,
@@ -46,7 +48,7 @@ export const APPLICATION_INCLUDE = {
   introFile: { select: { filename: true } },
 } satisfies Prisma.ApplicationInclude;
 
-/** Parse requirements dari JSON string menjadi string[]. */
+/** Parse requirements / daftar string dari JSON string menjadi string[]. */
 export function parseRequirements(raw: string): string[] {
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -60,6 +62,93 @@ export function parseRequirements(raw: string): string[] {
   }
 }
 
+/** Parse daftar pertanyaan screening dari JSON string (aman terhadap nilai rusak). */
+export function parseScreeningQuestions(raw: string): ScreeningQuestion[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const result: ScreeningQuestion[] = [];
+    for (let i = 0; i < parsed.length; i++) {
+      const obj = (parsed[i] && typeof parsed[i] === "object" ? parsed[i] : {}) as Record<string, unknown>;
+      const label = typeof obj.label === "string" ? obj.label.trim() : "";
+      if (!label) continue;
+      const id = typeof obj.id === "string" && obj.id.trim() ? obj.id.trim() : `q${i + 1}`;
+      result.push({ id, label, required: obj.required === true });
+    }
+    return result.slice(0, 10);
+  } catch {
+    return [];
+  }
+}
+
+/** Parse objek string sederhana dari JSON (jawaban screening). */
+export function parseStringRecord(raw: string | null | undefined): Record<string, string> | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof key === "string" && key && typeof value === "string") result[key] = value;
+      else if (typeof key === "string" && key && typeof value === "number") result[key] = String(value);
+    }
+    return Object.keys(result).length > 0 ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse objek angka sederhana dari JSON (skor rubrik 1-5). */
+export function parseScoreRecord(raw: string | null | undefined): Record<string, number> | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const result: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const num = typeof value === "number" ? value : Number(value);
+      if (key && Number.isFinite(num)) result[key] = Math.min(5, Math.max(1, Math.round(num)));
+    }
+    return Object.keys(result).length > 0 ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Normalisasi template balasan dari record (kolom terpisah -> objek). */
+function parseReplyTemplates(apply: string | null, accept: string | null, reject: string | null): ReplyTemplates {
+  return { apply: apply ?? null, accept: accept ?? null, reject: reject ?? null };
+}
+
+function parseAssignment(title: string | null, url: string | null, note: string | null): AssignmentInfo {
+  return { title: title ?? null, url: url ?? null, note: note ?? null };
+}
+
+/** Ubah judul menjadi slug URL-aman: huruf kecil, tanda hubung, tanpa karakter aneh. */
+export function slugifyTitle(title: string): string {
+  const base = title
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
+  return base || "posisi";
+}
+
+/** Cari slug unik (tambah -2, -3, ... bila sudah dipakai posisi lain). */
+export async function ensureUniqueSlug(title: string, excludeId?: string): Promise<string> {
+  const base = slugifyTitle(title);
+  let candidate = base;
+  let counter = 2;
+  for (;;) {
+    const existing = await db.position.findUnique({ where: { slug: candidate }, select: { id: true } });
+    if (!existing || existing.id === excludeId) return candidate;
+    candidate = `${base}-${counter}`;
+    counter += 1;
+  }
+}
 /** Parse tags dari JSON string menjadi string[] (aman terhadap nilai rusak). */
 export function parseTags(raw: string | null | undefined): string[] {
   if (!raw) return [];
@@ -75,11 +164,12 @@ export function parseTags(raw: string | null | undefined): string[] {
   }
 }
 
-/** Ubah record Prisma Position menjadi bentuk tipe `Position` (requirements: string[]). */
+/** Ubah record Prisma Position menjadi bentuk tipe `Position` v3 (JSON fields terurai). */
 export function serializePosition(record: PositionRecordModel): Position {
   return {
     id: record.id,
     title: record.title,
+    slug: record.slug,
     department: record.department,
     type: record.type,
     location: record.location,
@@ -89,16 +179,42 @@ export function serializePosition(record: PositionRecordModel): Position {
     closesAt: record.closesAt ? record.closesAt.toISOString() : null,
     order: record.order,
     createdAt: record.createdAt.toISOString(),
+
+    coverFileId: record.coverFileId,
+    salaryText: record.salaryText,
+    salaryVisible: record.salaryVisible,
+    benefits: parseRequirements(record.benefits),
+    examples: parseRequirements(record.examples),
+    urgent: record.urgent,
+    featured: record.featured,
+
+    screeningQuestions: parseScreeningQuestions(record.screeningQuestions),
+    requireCv: record.requireCv,
+    requireIntro: record.requireIntro,
+    requirePortfolio: record.requirePortfolio,
+    maxApplicants: record.maxApplicants,
+
+    publishAt: record.publishAt ? record.publishAt.toISOString() : null,
+
+    stages: parseRequirements(record.stages),
+    aiCriteria: record.aiCriteria,
+    autoShortlistScore: record.autoShortlistScore,
+    autoShortlistStage: record.autoShortlistStage,
+    replyTemplates: parseReplyTemplates(record.applyTemplate, record.acceptTemplate, record.rejectTemplate),
+    assignment: parseAssignment(record.assignmentTitle, record.assignmentUrl, record.assignmentNote),
+
+    rubricCriteria: parseRequirements(record.rubricCriteria),
+    checklistTemplate: parseRequirements(record.checklistTemplate),
+    noteTemplates: parseRequirements(record.noteTemplates),
+    views: record.views,
   };
 }
 
 const AI_RECOMMENDATION_VALUES = Object.keys(AI_RECOMMENDATION_LABELS);
 
-/** Ubah record Prisma Application (include relasi) menjadi tipe `Application` v2. */
+/** Ubah record Prisma Application (include relasi) menjadi tipe `Application` v3. */
 export function serializeApplication(record: ApplicationRecord): Application {
-  const status: ApplicationStatus = (APPLICATION_STATUSES as string[]).includes(record.status)
-    ? (record.status as ApplicationStatus)
-    : "NEW";
+  const status = record.status && record.status.trim().length > 0 ? record.status.trim() : "NEW";
   const aiRecommendation =
     record.aiRecommendation && AI_RECOMMENDATION_VALUES.includes(record.aiRecommendation)
       ? (record.aiRecommendation as AiRecommendation)
@@ -126,6 +242,13 @@ export function serializeApplication(record: ApplicationRecord): Application {
     aiRecommendation,
     aiAnalyzedAt: record.aiAnalyzedAt ? record.aiAnalyzedAt.toISOString() : null,
     transcript: record.transcript,
+    source: record.source,
+    utmSource: record.utmSource,
+    utmMedium: record.utmMedium,
+    utmCampaign: record.utmCampaign,
+    screeningAnswers: parseStringRecord(record.screeningAnswers),
+    rubricScores: parseScoreRecord(record.rubricScores),
+    checklistState: parseRequirements(record.checklistState),
     cvFileId: record.cvFileId,
     cvFileName: record.cvFile?.filename ?? null,
     introFileId: record.introFileId,
@@ -271,12 +394,14 @@ export function parseApplicationFilters(searchParams: URLSearchParams): ParsedAp
 
   const status = searchParams.get("status");
   if (status) {
-    if ((APPLICATION_STATUSES as string[]).includes(status)) {
-      where.status = status;
-    } else {
-      valid = false;
-    }
+    // Tahap bisa berupa 5 status bawaan ATAU label tahap kustom milik posisi.
+    const clean = status.trim().slice(0, 40);
+    if (clean) where.status = clean;
+    else valid = false;
   }
+
+  const source = searchParams.get("source")?.trim();
+  if (source) where.source = { contains: source.slice(0, 40) };
 
   const positionId = searchParams.get("positionId");
   if (positionId) where.positionId = positionId;
@@ -331,6 +456,9 @@ type SampleApplication = {
   tags: string[];
   talentPool: boolean;
   interviewInDays: number | null;
+  source: string | null;
+  utmSource: string | null;
+  utmCampaign: string | null;
 };
 
 const SAMPLE_APPLICATIONS: SampleApplication[] = [
@@ -352,6 +480,9 @@ const SAMPLE_APPLICATIONS: SampleApplication[] = [
     tags: [],
     talentPool: false,
     interviewInDays: null,
+    source: "YouTube",
+    utmSource: "youtube",
+    utmCampaign: "video-editor",
   },
   {
     name: "Anisa Rahma",
@@ -371,6 +502,9 @@ const SAMPLE_APPLICATIONS: SampleApplication[] = [
     tags: ["desain", "detailis"],
     talentPool: false,
     interviewInDays: null,
+    source: "Instagram",
+    utmSource: "instagram",
+    utmCampaign: "story",
   },
   {
     name: "Bagas Saputra",
@@ -390,6 +524,9 @@ const SAMPLE_APPLICATIONS: SampleApplication[] = [
     tags: ["menulis", "komedi"],
     talentPool: false,
     interviewInDays: 2,
+    source: "TikTok",
+    utmSource: "tiktok",
+    utmCampaign: "bio",
   },
   {
     name: "Dewi Lestari",
@@ -409,6 +546,9 @@ const SAMPLE_APPLICATIONS: SampleApplication[] = [
     tags: ["sosial media", "komunitas"],
     talentPool: true,
     interviewInDays: null,
+    source: "Instagram",
+    utmSource: "instagram",
+    utmCampaign: "story",
   },
   {
     name: "Fajar Nugroho",
@@ -426,6 +566,9 @@ const SAMPLE_APPLICATIONS: SampleApplication[] = [
     tags: ["fresh graduate"],
     talentPool: true,
     interviewInDays: null,
+    source: "Teman/Rekan",
+    utmSource: null,
+    utmCampaign: null,
   },
 ];
 
@@ -471,14 +614,16 @@ async function runSeed(): Promise<void> {
     await db.setting.create({ data: { key: "admin_password", value: hashPassword(DEFAULT_ADMIN_PASSWORD) } });
   }
 
-  // 4. Posisi lowongan default
+  // 4. Posisi lowongan default (dengan seluruh fitur per lowongan v3)
   const positionCount = await db.position.count();
   if (positionCount === 0) {
     const defaultPositions: DefaultPositionSeed[] = DEFAULT_POSITIONS;
     for (const position of defaultPositions) {
+      const slug = await ensureUniqueSlug(position.title);
       await db.position.create({
         data: {
           title: position.title,
+          slug,
           department: position.department,
           type: position.type,
           location: position.location,
@@ -486,9 +631,37 @@ async function runSeed(): Promise<void> {
           requirements: JSON.stringify(position.requirements),
           isActive: true,
           order: position.order,
+          salaryText: position.salaryText ?? null,
+          salaryVisible: position.salaryVisible ?? false,
+          benefits: JSON.stringify(position.benefits ?? []),
+          examples: JSON.stringify(position.examples ?? []),
+          urgent: position.urgent ?? false,
+          featured: position.featured ?? false,
+          screeningQuestions: JSON.stringify(position.screeningQuestions ?? []),
+          requireCv: position.requireCv ?? false,
+          requireIntro: position.requireIntro ?? false,
+          requirePortfolio: position.requirePortfolio ?? false,
+          maxApplicants: position.maxApplicants ?? null,
+          aiCriteria: position.aiCriteria ?? null,
+          applyTemplate: position.applyTemplate ?? null,
+          acceptTemplate: position.acceptTemplate ?? null,
+          rejectTemplate: position.rejectTemplate ?? null,
+          assignmentTitle: position.assignmentTitle ?? null,
+          assignmentUrl: position.assignmentUrl ?? null,
+          assignmentNote: position.assignmentNote ?? null,
+          rubricCriteria: JSON.stringify(position.rubricCriteria ?? []),
+          checklistTemplate: JSON.stringify(position.checklistTemplate ?? []),
+          noteTemplates: JSON.stringify(position.noteTemplates ?? []),
         },
       });
     }
+  }
+
+  // 4b. Backfill slug untuk posisi lama yang belum punya (idempoten).
+  const missingSlug = await db.position.findMany({ where: { slug: null }, select: { id: true, title: true } });
+  for (const position of missingSlug) {
+    const slug = await ensureUniqueSlug(position.title);
+    await db.position.update({ where: { id: position.id }, data: { slug } });
   }
 
   // 5. Lamaran contoh
@@ -517,6 +690,9 @@ async function runSeed(): Promise<void> {
               ? new Date(Date.now() + sample.interviewInDays * 24 * 60 * 60 * 1000)
               : null,
           createdAt: new Date(Date.now() - sample.createdAtOffsetHours * 60 * 60 * 1000),
+          source: sample.source,
+          utmSource: sample.utmSource,
+          utmCampaign: sample.utmCampaign,
         },
       });
     }
@@ -550,10 +726,47 @@ export async function ensureSeeded(): Promise<void> {
   return seedPromise;
 }
 
-/** Auto-tutup posisi yang closesAt-nya sudah lewat (dipanggil lazy dari route GET). */
+/**
+ * Auto-tutup posisi (dipanggil lazy dari route GET):
+ * 1. closesAt sudah lewat, atau
+ * 2. kuota maxApplicants tercapai (lamaran non-ditolak >= kuota).
+ * Setiap penutupan dicatat di ActivityLog (actor "Sistem", action AUTO_CLOSE).
+ */
 export async function closeExpiredPositions(): Promise<void> {
-  await db.position.updateMany({
-    where: { isActive: true, closesAt: { lt: new Date() } },
-    data: { isActive: false },
+  const now = new Date();
+
+  const expired = await db.position.findMany({
+    where: { isActive: true, closesAt: { lt: now } },
+    select: { id: true, title: true },
   });
+  for (const position of expired) {
+    await db.position.update({ where: { id: position.id }, data: { isActive: false } });
+    await db.activityLog.create({
+      data: {
+        applicationId: null,
+        actor: "Sistem",
+        action: "AUTO_CLOSE",
+        detail: `Posisi "${position.title}" ditutup otomatis karena melewati batas waktu pendaftaran.`,
+      },
+    });
+  }
+
+  const withQuota = await db.position.findMany({
+    where: { isActive: true, maxApplicants: { not: null } },
+    select: { id: true, title: true, maxApplicants: true, _count: { select: { applications: { where: { status: { not: "REJECTED" } } } } } },
+  });
+  for (const position of withQuota) {
+    const quota = position.maxApplicants ?? 0;
+    if (quota > 0 && position._count.applications >= quota) {
+      await db.position.update({ where: { id: position.id }, data: { isActive: false } });
+      await db.activityLog.create({
+        data: {
+          applicationId: null,
+          actor: "Sistem",
+          action: "AUTO_CLOSE",
+          detail: `Posisi "${position.title}" ditutup otomatis karena kuota pelamar (${quota}) sudah penuh.`,
+        },
+      });
+    }
+  }
 }

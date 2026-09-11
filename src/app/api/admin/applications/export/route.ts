@@ -4,9 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { APPLICATION_INCLUDE, parseApplicationFilters } from "@/lib/seed";
+import { stageLabel } from "@/lib/stages";
 import {
   AI_RECOMMENDATION_LABELS,
-  APPLICATION_STATUSES,
   STATUS_LABELS,
   type AiRecommendation,
   type ApplicationStatus,
@@ -85,9 +85,7 @@ export async function GET(req: NextRequest) {
         row.email,
         row.phone,
         row.position?.title ?? "",
-        STATUS_LABELS[(APPLICATION_STATUSES as string[]).includes(row.status)
-          ? (row.status as ApplicationStatus)
-          : "NEW"],
+        stageLabel(row.status.trim() || "NEW"),
         row.aiScore === null ? "" : String(row.aiScore),
         recommendation,
         String(row.rating),

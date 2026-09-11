@@ -17,27 +17,46 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
+import { toast } from "sonner";
+import type { Application, StageKey } from "@/lib/types";
 import {
-  APPLICATION_STATUSES,
-  STATUS_LABELS,
-  type Application,
-  type ApplicationStatus,
-} from "@/lib/types";
+  DEFAULT_STAGES,
+  OTHER_STAGE_KEY,
+  kanbanColumns,
+  stageMeta,
+} from "@/lib/stages";
 import { formatRelative, initialsOf } from "./format";
-import { STATUS_DOT_COLORS, AiScoreBadge } from "./status-badge";
+import { AiScoreBadge } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 import { cn } from "@/lib/utils";
 
 const COLUMN_ID_PREFIX = "col-";
 
-function emptyOrder(): Record<ApplicationStatus, string[]> {
-  return { NEW: [], REVIEWED: [], INTERVIEW: [], ACCEPTED: [], REJECTED: [] };
+/** Meta tampilan kolom; kolom "Lainnya" (tahap kustom agregat) memakai tampilan zinc khusus. */
+function columnMeta(column: StageKey): { label: string; dot: string; soft: string } {
+  if (column === OTHER_STAGE_KEY) {
+    return {
+      label: "Lainnya",
+      dot: "bg-zinc-400",
+      soft: "bg-zinc-50 dark:bg-zinc-900/60",
+    };
+  }
+  const meta = stageMeta(column);
+  return { label: meta.label, dot: meta.palette.dot, soft: meta.palette.soft };
 }
 
-function buildOrder(apps: Application[]): Record<ApplicationStatus, string[]> {
-  const order = emptyOrder();
+function columnOf(status: StageKey, columns: StageKey[]): StageKey | null {
+  if (columns.includes(status)) return status;
+  // Tahap di luar daftar kolom (mis. tahap kustom tanpa filter posisi) masuk "Lainnya".
+  return columns.includes(OTHER_STAGE_KEY) ? OTHER_STAGE_KEY : null;
+}
+
+function buildOrder(apps: Application[], columns: StageKey[]): Record<string, string[]> {
+  const order: Record<string, string[]> = {};
+  for (const col of columns) order[col] = [];
   for (const app of apps) {
-    if (order[app.status]) order[app.status].push(app.id);
+    const col = columnOf(app.status, columns);
+    if (col) order[col].push(app.id);
   }
   return order;
 }
@@ -109,31 +128,32 @@ function KanbanCard({
 }
 
 function KanbanColumn({
-  status,
+  column,
+  isOther,
   apps,
   canMutate,
   onOpenDetail,
 }: {
-  status: ApplicationStatus;
+  column: StageKey;
+  isOther: boolean;
   apps: Application[];
   canMutate: boolean;
   onOpenDetail: (app: Application) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `${COLUMN_ID_PREFIX}${status}` });
+  const { setNodeRef, isOver } = useDroppable({ id: `${COLUMN_ID_PREFIX}${column}` });
+  const meta = columnMeta(column);
 
   return (
     <div
       className={cn(
         "flex w-[280px] shrink-0 flex-col rounded-xl border transition-colors duration-150",
-        isOver ? "border-primary/40 bg-muted/70" : "bg-muted/40"
+        isOther && "border-dashed",
+        isOver ? "border-primary/50 bg-muted/70" : meta.soft
       )}
     >
       <div className="flex items-center gap-2 border-b px-3 py-2.5">
-        <span
-          className={`size-2 rounded-full ${STATUS_DOT_COLORS[status]}`}
-          aria-hidden="true"
-        />
-        <p className="text-sm font-semibold">{STATUS_LABELS[status]}</p>
+        <span className={cn("size-2 rounded-full", meta.dot)} aria-hidden="true" />
+        <p className="truncate text-sm font-semibold">{meta.label}</p>
         <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-secondary-foreground">
           {apps.length}
         </span>
@@ -148,7 +168,7 @@ function KanbanColumn({
             "flex max-h-[70vh] min-h-24 flex-col gap-2 overflow-y-auto rounded-b-xl p-2 transition-colors duration-150 nice-scrollbar",
             isOver && "bg-accent/60"
           )}
-          aria-label={`Kolom ${STATUS_LABELS[status]}`}
+          aria-label={`Kolom ${meta.label}`}
         >
           {apps.length === 0 ? (
             <div
@@ -178,27 +198,44 @@ function KanbanColumn({
 }
 
 // Papan Kanban pipeline dengan drag & drop (dnd-kit).
+// Kolom mengikuti konteks: satu posisi dipilih -> tahap milik posisi;
+// tanpa filter posisi -> 5 tahap bawaan + kolom "Lainnya" (tahap kustom).
 export function KanbanBoard({
   apps,
   canMutate,
+  stages,
+  hasPositionFilter,
   onMove,
   onOpenDetail,
 }: {
   apps: Application[];
   canMutate: boolean;
-  onMove: (id: string, status: ApplicationStatus) => void;
+  stages: string[] | null | undefined;
+  hasPositionFilter: boolean;
+  onMove: (id: string, status: StageKey) => void;
   onOpenDetail: (app: Application) => void;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
+  // Kolom nyata + kolom "Lainnya".
+  const columns = useMemo<StageKey[]>(() => {
+    const base = kanbanColumns(stages, hasPositionFilter);
+    if (!hasPositionFilter) return [...base, OTHER_STAGE_KEY];
+    // Jaga-jaga: ada lamaran dengan tahap di luar daftar tahap posisi.
+    const hasOutside = apps.some((a) => !base.includes(a.status));
+    return hasOutside ? [...base, OTHER_STAGE_KEY] : base;
+  }, [stages, hasPositionFilter, apps]);
+
   const appsKey = useMemo(
     () => apps.map((a) => `${a.id}:${a.status}`).join("|"),
     [apps]
   );
 
-  const baseOrder = useMemo(() => buildOrder(apps), [apps]);
+  const columnsKey = useMemo(() => columns.join("|"), [columns]);
+
+  const baseOrder = useMemo(() => buildOrder(apps, columns), [apps, columns]);
 
   const appMap = useMemo(() => {
     const map = new Map<string, Application>();
@@ -207,14 +244,13 @@ export function KanbanBoard({
   }, [apps]);
 
   // Override urutan lokal (reorder dalam kolom yang sama, tidak dipersist).
-  const [overrides, setOverrides] = useState<
-    Partial<Record<ApplicationStatus, string[]>>
-  >({});
-  // Reset override saat data dari server berubah (pola resmi React:
+  const [overrides, setOverrides] = useState<Record<string, string[]>>({});
+  // Reset override saat data dari server atau kolom berubah (pola resmi React:
   // menyesuaikan state saat props berubah, tanpa efek samping).
-  const [prevAppsKey, setPrevAppsKey] = useState(appsKey);
-  if (prevAppsKey !== appsKey) {
-    setPrevAppsKey(appsKey);
+  const [prevKey, setPrevKey] = useState(`${columnsKey}#${appsKey}`);
+  const stateKey = `${columnsKey}#${appsKey}`;
+  if (prevKey !== stateKey) {
+    setPrevKey(stateKey);
     setOverrides({});
   }
 
@@ -234,29 +270,41 @@ export function KanbanBoard({
 
     if (!overId) return;
 
-    const sourceStatus = appMap.get(activeId)?.status;
-    let targetStatus: ApplicationStatus | null = null;
+    const activeApp = appMap.get(activeId);
+    if (!activeApp) return;
+    const sourceColumn = columnOf(activeApp.status, columns);
+
+    let targetColumn: StageKey | null = null;
     if (overId.startsWith(COLUMN_ID_PREFIX)) {
-      targetStatus = overId.slice(COLUMN_ID_PREFIX.length) as ApplicationStatus;
+      targetColumn = overId.slice(COLUMN_ID_PREFIX.length);
     } else {
-      targetStatus = appMap.get(overId)?.status ?? null;
+      const overApp = appMap.get(overId);
+      targetColumn = overApp ? columnOf(overApp.status, columns) : null;
     }
 
-    if (!sourceStatus || !targetStatus) return;
+    if (!sourceColumn || !targetColumn) return;
 
-    if (targetStatus !== sourceStatus) {
+    // Drop ke kolom "Lainnya" tidak diizinkan: tahap kustom hanya berasal
+    // dari pipeline posisi, bukan tujuan pemindahan manual.
+    if (targetColumn === OTHER_STAGE_KEY && sourceColumn !== OTHER_STAGE_KEY) {
+      toast.info("Tahap kustom tidak bisa dituju — pindahkan ke tahap pipeline yang tersedia.");
+      return;
+    }
+
+    if (targetColumn !== sourceColumn) {
       // Pindah kolom: parent melakukan update optimistik + PATCH.
-      onMove(activeId, targetStatus);
+      if (targetColumn === OTHER_STAGE_KEY) return;
+      onMove(activeId, targetColumn);
     } else {
       // Reorder dalam kolom yang sama (visual saja).
-      const current = overrides[sourceStatus] ?? baseOrder[sourceStatus];
+      const current = overrides[sourceColumn] ?? baseOrder[sourceColumn] ?? [];
       const from = current.indexOf(activeId);
       const to = current.indexOf(overId);
       if (from < 0 || to < 0) return;
       const next = [...current];
       next.splice(from, 1);
       next.splice(to, 0, activeId);
-      setOverrides((prev) => ({ ...prev, [sourceStatus]: next }));
+      setOverrides((prev) => ({ ...prev, [sourceColumn]: next }));
     }
   }
 
@@ -274,8 +322,8 @@ export function KanbanBoard({
       onDragCancel={handleDragCancel}
     >
       <div className="flex gap-3 overflow-x-auto pb-2 nice-scrollbar">
-        {APPLICATION_STATUSES.map((status) => {
-          const ids = overrides[status] ?? baseOrder[status];
+        {columns.map((column) => {
+          const ids = overrides[column] ?? baseOrder[column] ?? [];
           const columnApps: Application[] = [];
           for (const id of ids) {
             const app = appMap.get(id);
@@ -283,14 +331,15 @@ export function KanbanBoard({
           }
           // Jaga-jaga: app yang belum tercatat di urutan lokal.
           for (const app of apps) {
-            if (app.status === status && !ids.includes(app.id)) {
+            if (columnOf(app.status, columns) === column && !ids.includes(app.id)) {
               columnApps.push(app);
             }
           }
           return (
             <KanbanColumn
-              key={status}
-              status={status}
+              key={column}
+              column={column}
+              isOther={column === OTHER_STAGE_KEY}
               apps={columnApps}
               canMutate={canMutate}
               onOpenDetail={(app) => {

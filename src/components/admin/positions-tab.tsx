@@ -1,6 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+// Tab Posisi — pusat kendali per lowongan: daftar posisi dengan badge status
+// publikasi, flag unggulan/urgent/kuota/tes, mini-statistik, share kit (QR +
+// salin link), statistik per posisi, dan form lengkap v3.
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -8,17 +12,8 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,55 +24,72 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import {
+  BarChart3,
   Briefcase,
+  ClipboardList,
   Copy,
+  Eye,
+  FileText,
+  Flame,
   GripVertical,
+  Link2,
   Loader2,
   MapPin,
   Pencil,
+  Pin,
   Plus,
+  QrCode,
+  RefreshCw,
+  TrendingUp,
   Trash2,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
-import { POSITION_TYPES, type Position } from "@/lib/types";
+import type { Position, PositionStatsRow } from "@/lib/types";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
-import { localInputToIso, isoToLocalInput } from "./format";
+import { copyText } from "./format";
+import { useAdminSession } from "./admin-context";
+import { Reveal } from "./motion-primitives";
+import { PositionFormDialog } from "./position-form-dialog";
+import { PositionStatsDialog } from "./position-stats-dialog";
+import { PositionQrDialog } from "./position-qr-dialog";
 
-type PositionForm = {
-  title: string;
-  department: string;
-  type: string;
-  location: string;
-  description: string;
-  requirementsText: string;
-  closesAtLocal: string;
-  isActive: boolean;
+/* ------------------------------ Status publikasi ------------------------------ */
+
+type PublicationStatus = "tayang" | "terjadwal" | "draft" | "tutup";
+
+const PUBLICATION_BADGE: Record<PublicationStatus, string> = {
+  tayang:
+    "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400",
+  terjadwal:
+    "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400",
+  draft:
+    "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  tutup:
+    "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400",
 };
 
-const EMPTY_FORM: PositionForm = {
-  title: "",
-  department: "",
-  type: "Full-time",
-  location: "Remote",
-  description: "",
-  requirementsText: "",
-  closesAtLocal: "",
-  isActive: true,
+const PUBLICATION_LABEL: Record<PublicationStatus, string> = {
+  tayang: "Tayang",
+  terjadwal: "Terjadwal",
+  draft: "Draft",
+  tutup: "Tutup",
 };
+
+function publicationStatus(position: Position): PublicationStatus {
+  if (!position.isActive) return "draft";
+  const now = Date.now();
+  const publishAt = position.publishAt ? new Date(position.publishAt).getTime() : null;
+  if (publishAt != null && !Number.isNaN(publishAt) && publishAt > now)
+    return "terjadwal";
+  const closesAt = position.closesAt ? new Date(position.closesAt).getTime() : null;
+  if (closesAt != null && !Number.isNaN(closesAt) && closesAt <= now) return "tutup";
+  return "tayang";
+}
 
 function isExpired(closesAt: string | null): boolean {
   if (!closesAt) return false;
@@ -85,37 +97,47 @@ function isExpired(closesAt: string | null): boolean {
   return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
 }
 
-function parseRequirements(text: string): string[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
+/* ---------------------------------- Komponen ---------------------------------- */
 
 export function PositionsTab() {
+  const { canMutate, reportError } = useAdminSession();
   const [positions, setPositions] = useState<Position[]>([]);
+  const [statsMap, setStatsMap] = useState<Record<string, PositionStatsRow>>({});
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [formSession, setFormSession] = useState(0); // reset state form tiap buka
   const [editing, setEditing] = useState<Position | null>(null);
-  const [form, setForm] = useState<PositionForm>(EMPTY_FORM);
-  const [errors, setErrors] = useState<Partial<Record<"title" | "department" | "description", string>>>({});
-  const [saving, setSaving] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<Position | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await apiGet<Position[]>("/api/admin/positions");
-      setPositions(data);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [statsTarget, setStatsTarget] = useState<Position | null>(null);
+  const [qrTarget, setQrTarget] = useState<Position | null>(null);
+
+  const load = useCallback(
+    async (silent = false) => {
+      if (silent) setRefreshing(true);
+      else setLoading(true);
+      try {
+        const [data, stats] = await Promise.all([
+          apiGet<Position[]>("/api/admin/positions"),
+          apiGet<{ rows: PositionStatsRow[] }>("/api/admin/position-stats"),
+        ]);
+        const map: Record<string, PositionStatsRow> = {};
+        for (const row of stats.rows) map[row.positionId] = row;
+        setPositions(data);
+        setStatsMap(map);
+      } catch (err) {
+        reportError(err);
+      } finally {
+        if (silent) setRefreshing(false);
+        else setLoading(false);
+      }
+    },
+    [reportError]
+  );
 
   useEffect(() => {
     void load();
@@ -123,67 +145,14 @@ export function PositionsTab() {
 
   function openCreate() {
     setEditing(null);
-    setForm(EMPTY_FORM);
-    setErrors({});
-    setDialogOpen(true);
+    setFormSession((s) => s + 1);
+    setFormOpen(true);
   }
 
   function openEdit(position: Position) {
     setEditing(position);
-    setForm({
-      title: position.title,
-      department: position.department,
-      type: POSITION_TYPES.includes(position.type as (typeof POSITION_TYPES)[number])
-        ? position.type
-        : POSITION_TYPES[0],
-      location: position.location || "Remote",
-      description: position.description,
-      requirementsText: position.requirements.join("\n"),
-      closesAtLocal: isoToLocalInput(position.closesAt),
-      isActive: position.isActive,
-    });
-    setErrors({});
-    setDialogOpen(true);
-  }
-
-  function validate(): boolean {
-    const next: typeof errors = {};
-    if (!form.title.trim()) next.title = "Nama posisi wajib diisi.";
-    if (!form.department.trim()) next.department = "Departemen wajib diisi.";
-    if (!form.description.trim()) next.description = "Deskripsi wajib diisi.";
-    setErrors(next);
-    return Object.keys(next).length === 0;
-  }
-
-  async function handleSave() {
-    if (saving) return;
-    if (!validate()) return;
-    setSaving(true);
-    const payload = {
-      title: form.title.trim(),
-      department: form.department.trim(),
-      type: form.type,
-      location: form.location.trim() || "Remote",
-      description: form.description.trim(),
-      requirements: parseRequirements(form.requirementsText),
-      closesAt: localInputToIso(form.closesAtLocal),
-      isActive: form.isActive,
-    };
-    try {
-      if (editing) {
-        await apiPatch<Position>(`/api/admin/positions/${editing.id}`, payload);
-        toast.success("Posisi diperbarui");
-      } else {
-        await apiPost<Position>("/api/admin/positions", payload);
-        toast.success("Posisi ditambahkan");
-      }
-      setDialogOpen(false);
-      await load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
-    } finally {
-      setSaving(false);
-    }
+    setFormSession((s) => s + 1);
+    setFormOpen(true);
   }
 
   async function handleToggle(position: Position, isActive: boolean) {
@@ -204,7 +173,7 @@ export function PositionsTab() {
           p.id === position.id ? { ...p, isActive: position.isActive } : p
         )
       );
-      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+      reportError(err);
     }
   }
 
@@ -212,11 +181,9 @@ export function PositionsTab() {
     try {
       await apiPost<Position>(`/api/admin/positions/${position.id}/duplicate`);
       toast.success("Posisi disalin (nonaktif)");
-      await load();
+      await load(true);
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi."
-      );
+      reportError(err);
     }
   }
 
@@ -227,33 +194,74 @@ export function PositionsTab() {
       await apiDelete<{ ok: boolean }>(`/api/admin/positions/${deleteTarget.id}`);
       toast.success("Posisi dihapus");
       setPositions((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+      setStatsMap((prev) => {
+        const next = { ...prev };
+        delete next[deleteTarget.id];
+        return next;
+      });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+      reportError(err);
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
     }
   }
 
+  async function handleCopyLink(position: Position) {
+    const key = position.slug ?? position.id;
+    const link = `${window.location.origin}/?posisi=${encodeURIComponent(key)}`;
+    const ok = await copyText(link);
+    if (ok) toast.success("Tautan posisi disalin");
+    else toast.error("Gagal menyalin tautan");
+  }
+
+  const totalApplications = useMemo(
+    () =>
+      Object.values(statsMap).reduce((sum, row) => sum + row.applications, 0),
+    [statsMap]
+  );
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <Reveal className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle className="text-lg">Kelola Posisi</CardTitle>
           <CardDescription className="mt-1">
-            Kelola posisi lowongan yang tampil di halaman publik.
+            Pusat kendali per lowongan — status, kuota, pipeline, dan performa.
+            {positions.length > 0
+              ? ` ${positions.length} posisi · ${totalApplications} lamaran.`
+              : ""}
           </CardDescription>
         </div>
-        <Button onClick={openCreate} className="h-11 active:scale-[0.99] sm:h-10">
-          <Plus className="size-4" aria-hidden="true" />
-          Tambah Posisi
-        </Button>
-      </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => void load(true)}
+            disabled={refreshing}
+            className="h-11 active:scale-[0.99] sm:h-10"
+            aria-label="Segarkan daftar posisi"
+          >
+            <RefreshCw
+              className={`size-4 ${refreshing ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+            <span className="sm:hidden">Segarkan</span>
+          </Button>
+          <Button
+            onClick={openCreate}
+            disabled={!canMutate}
+            className="h-11 active:scale-[0.99] sm:h-10"
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            Tambah Posisi
+          </Button>
+        </div>
+      </Reveal>
 
       {loading ? (
         <div className="flex flex-col gap-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-2xl" />
+            <Skeleton key={i} className="h-24 w-full rounded-2xl" />
           ))}
         </div>
       ) : positions.length === 0 ? (
@@ -267,260 +275,237 @@ export function PositionsTab() {
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
-          {positions.map((position) => (
-            <Card
-              key={position.id}
-              className="gap-0 rounded-2xl p-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md"
-            >
-              <CardContent className="flex flex-wrap items-center gap-3 px-0">
-                <GripVertical
-                  className="hidden size-5 shrink-0 text-muted-foreground/40 sm:block"
-                  aria-hidden="true"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{position.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {position.department}
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <Badge variant="secondary">{position.type || "-"}</Badge>
-                    <Badge variant="secondary" className="gap-1">
-                      <MapPin className="size-3" aria-hidden="true" />
-                      {position.location || "-"}
-                    </Badge>
-                    {position.closesAt ? (
-                      isExpired(position.closesAt) ? (
-                        <Badge className="border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400">
-                          Kedaluwarsa
-                        </Badge>
-                      ) : (
-                        <Badge className="border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
-                          Tutup otomatis{" "}
-                          {format(new Date(position.closesAt), "dd MMM", { locale: localeId })}
-                        </Badge>
-                      )
-                    ) : null}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={position.isActive}
-                    onCheckedChange={(checked) => void handleToggle(position, checked)}
-                    aria-label={`Aktifkan posisi ${position.title}`}
+          {positions.map((position) => {
+            const stats = statsMap[position.id] ?? null;
+            const pub = publicationStatus(position);
+            const hasQuota = position.maxApplicants != null;
+            const hasTest =
+              position.assignment.title != null ||
+              position.assignment.url != null;
+            return (
+              <Card
+                key={position.id}
+                className="gap-0 rounded-2xl p-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <CardContent className="flex flex-wrap items-start gap-x-4 gap-y-3 px-0">
+                  <GripVertical
+                    className="hidden size-5 shrink-0 translate-y-1 text-muted-foreground/40 sm:block"
+                    aria-hidden="true"
                   />
-                  <span className="hidden text-xs text-muted-foreground lg:block">
-                    {position.isActive ? "Aktif" : "Nonaktif"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-11 sm:size-9"
-                    onClick={() => void handleDuplicate(position)}
-                    aria-label={`Duplikat posisi ${position.title}`}
-                  >
-                    <Copy className="size-4" aria-hidden="true" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-11 sm:size-9"
-                    onClick={() => openEdit(position)}
-                    aria-label={`Edit posisi ${position.title}`}
-                  >
-                    <Pencil className="size-4" aria-hidden="true" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-11 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9"
-                    onClick={() => setDeleteTarget(position)}
-                    aria-label={`Hapus posisi ${position.title}`}
-                  >
-                    <Trash2 className="size-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+
+                  {/* Identitas + badge */}
+                  <div className="min-w-0 flex-1 basis-64">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <p className="truncate text-sm font-semibold">{position.title}</p>
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        {position.featured ? (
+                          <Pin
+                            className="size-3.5 text-amber-600 dark:text-amber-400"
+                            aria-label="Posisi unggulan"
+                            role="img"
+                          />
+                        ) : null}
+                        {position.urgent ? (
+                          <Flame
+                            className="size-3.5 text-rose-600 dark:text-rose-400"
+                            aria-label="Posisi urgent"
+                            role="img"
+                          />
+                        ) : null}
+                        {hasQuota ? (
+                          <Users
+                            className="size-3.5"
+                            aria-label={`Kuota ${position.maxApplicants} pelamar`}
+                            role="img"
+                          />
+                        ) : null}
+                        {hasTest ? (
+                          <ClipboardList
+                            className="size-3.5"
+                            aria-label="Memiliki tes seleksi"
+                            role="img"
+                          />
+                        ) : null}
+                      </span>
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {position.department}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <Badge
+                        variant="outline"
+                        className={PUBLICATION_BADGE[pub]}
+                        title={`Status publikasi: ${PUBLICATION_LABEL[pub]}`}
+                      >
+                        {PUBLICATION_LABEL[pub]}
+                      </Badge>
+                      <Badge variant="secondary">{position.type || "-"}</Badge>
+                      <Badge variant="secondary" className="gap-1">
+                        <MapPin className="size-3" aria-hidden="true" />
+                        {position.location || "-"}
+                      </Badge>
+                      {position.closesAt ? (
+                        isExpired(position.closesAt) ? (
+                          <Badge
+                            variant="outline"
+                            className={PUBLICATION_BADGE.tutup}
+                          >
+                            Kedaluwarsa
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                          >
+                            Tutup otomatis{" "}
+                            {format(new Date(position.closesAt), "dd MMM", {
+                              locale: localeId,
+                            })}
+                          </Badge>
+                        )
+                      ) : null}
+                      {hasQuota ? (
+                        <Badge variant="secondary" className="gap-1">
+                          <Users className="size-3" aria-hidden="true" />
+                          Kuota {position.maxApplicants}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Mini-statistik */}
+                  <div className="flex items-center gap-3 rounded-lg border bg-zinc-50/60 px-3 py-2 text-xs text-muted-foreground dark:bg-zinc-900/40">
+                    <span className="flex items-center gap-1" title="Dilihat">
+                      <Eye className="size-3.5" aria-hidden="true" />
+                      <span className="tabular-nums">{stats?.views ?? 0}</span>
+                    </span>
+                    <span className="flex items-center gap-1" title="Lamaran masuk">
+                      <FileText className="size-3.5" aria-hidden="true" />
+                      <span className="tabular-nums">{stats?.applications ?? 0}</span>
+                    </span>
+                    <span className="flex items-center gap-1" title="Konversi lamaran per view">
+                      <TrendingUp className="size-3.5" aria-hidden="true" />
+                      <span className="tabular-nums">
+                        {stats?.conversion != null ? `${stats.conversion}%` : "-"}
+                      </span>
+                    </span>
+                  </div>
+
+                  {/* Aksi */}
+                  <div className="flex flex-wrap items-center gap-1">
+                    <div className="mr-1 flex items-center gap-2">
+                      <Switch
+                        checked={position.isActive}
+                        onCheckedChange={(checked) => {
+                          if (!canMutate) return;
+                          void handleToggle(position, checked);
+                        }}
+                        disabled={!canMutate}
+                        aria-label={`Aktifkan posisi ${position.title}`}
+                      />
+                      <span className="hidden text-xs text-muted-foreground lg:block">
+                        {position.isActive ? "Aktif" : "Nonaktif"}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 sm:size-9"
+                      onClick={() => setStatsTarget(position)}
+                      aria-label={`Statistik posisi ${position.title}`}
+                      title="Statistik"
+                    >
+                      <BarChart3 className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 sm:size-9"
+                      onClick={() => setQrTarget(position)}
+                      aria-label={`QR posisi ${position.title}`}
+                      title="QR Code"
+                    >
+                      <QrCode className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 sm:size-9"
+                      onClick={() => void handleCopyLink(position)}
+                      aria-label={`Salin tautan posisi ${position.title}`}
+                      title="Salin Link"
+                    >
+                      <Link2 className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 sm:size-9"
+                      onClick={() => void handleDuplicate(position)}
+                      disabled={!canMutate}
+                      aria-label={`Duplikat posisi ${position.title}`}
+                      title="Duplikat"
+                    >
+                      <Copy className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 sm:size-9"
+                      onClick={() => openEdit(position)}
+                      disabled={!canMutate}
+                      aria-label={`Edit posisi ${position.title}`}
+                      title="Edit"
+                    >
+                      <Pencil className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
+                      onClick={() => setDeleteTarget(position)}
+                      disabled={!canMutate}
+                      aria-label={`Hapus posisi ${position.title}`}
+                      title="Hapus"
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      {/* Dialog tambah/edit */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-hidden rounded-2xl sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>
-              {editing ? "Edit Posisi" : "Tambah Posisi"}
-            </DialogTitle>
-            <DialogDescription>
-              {editing
-                ? "Perbarui informasi posisi lowongan."
-                : "Tambahkan posisi lowongan baru untuk halaman publik."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="-mr-2 max-h-[70vh] overflow-y-auto pr-2 nice-scrollbar">
-            <form
-              className="flex flex-col gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void handleSave();
-              }}
-            >
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="pos-title">Nama Posisi *</Label>
-                <Input
-                  id="pos-title"
-                  value={form.title}
-                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                  placeholder="mis. Content Video Creator"
-                  className="h-10"
-                />
-                {errors.title ? (
-                  <p className="text-xs text-rose-600" role="alert">{errors.title}</p>
-                ) : null}
-              </div>
+      {/* Dialog form posisi lengkap (key memaksa state bersih tiap dibuka) */}
+      <PositionFormDialog
+        key={`${editing?.id ?? "new"}-${formSession}`}
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        editing={editing}
+        statsRow={editing ? statsMap[editing.id] ?? null : null}
+        onSaved={() => void load(true)}
+      />
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="pos-department">Departemen *</Label>
-                  <Input
-                    id="pos-department"
-                    value={form.department}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, department: e.target.value }))
-                    }
-                    placeholder="mis. Produksi"
-                    className="h-10"
-                  />
-                  {errors.department ? (
-                    <p className="text-xs text-rose-600" role="alert">{errors.department}</p>
-                  ) : null}
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label>Jenis</Label>
-                  <Select
-                    value={form.type}
-                    onValueChange={(v) => setForm((f) => ({ ...f, type: v }))}
-                  >
-                    <SelectTrigger className="h-10 w-full" aria-label="Jenis pekerjaan">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {POSITION_TYPES.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+      {/* Dialog statistik per posisi */}
+      <PositionStatsDialog
+        open={!!statsTarget}
+        onOpenChange={(open) => {
+          if (!open) setStatsTarget(null);
+        }}
+        position={statsTarget}
+        stats={statsTarget ? statsMap[statsTarget.id] ?? null : null}
+      />
 
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="pos-location">Lokasi</Label>
-                <Input
-                  id="pos-location"
-                  value={form.location}
-                  onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-                  placeholder="Remote"
-                  className="h-10"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="pos-closesAt">Tanggal Penutupan (opsional)</Label>
-                <Input
-                  id="pos-closesAt"
-                  type="datetime-local"
-                  value={form.closesAtLocal}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, closesAtLocal: e.target.value }))
-                  }
-                  className="h-10"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Posisi berhenti tampil di halaman publik setelah waktu ini.
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="pos-description">Deskripsi *</Label>
-                <Textarea
-                  id="pos-description"
-                  value={form.description}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, description: e.target.value }))
-                  }
-                  placeholder="Jelaskan tanggung jawab dan gambaran umum posisi..."
-                  rows={4}
-                />
-                {errors.description ? (
-                  <p className="text-xs text-rose-600" role="alert">{errors.description}</p>
-                ) : null}
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="pos-requirements">Persyaratan</Label>
-                <Textarea
-                  id="pos-requirements"
-                  value={form.requirementsText}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, requirementsText: e.target.value }))
-                  }
-                  placeholder={"Satu persyaratan per baris, mis.:\nMenguasai editing video\nPunya portofolio konten"}
-                  rows={4}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Satu persyaratan per baris.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                <div>
-                  <p className="text-sm font-medium">Aktifkan posisi</p>
-                  <p className="text-xs text-muted-foreground">
-                    Tampil di halaman publik
-                  </p>
-                </div>
-                <Switch
-                  checked={form.isActive}
-                  onCheckedChange={(checked) =>
-                    setForm((f) => ({ ...f, isActive: checked }))
-                  }
-                  aria-label="Aktifkan posisi (tampil di halaman publik)"
-                />
-              </div>
-
-              {/* Tombol submit tersembunyi agar Enter mensubmit form */}
-              <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
-            </form>
-          </div>
-          <DialogFooter className="gap-2 border-t pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              disabled={saving}
-              className="h-10"
-            >
-              Batal
-            </Button>
-            <Button onClick={() => void handleSave()} disabled={saving} className="h-10">
-              {saving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  Menyimpan...
-                </>
-              ) : editing ? (
-                "Simpan Perubahan"
-              ) : (
-                "Tambah Posisi"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Dialog QR deep link */}
+      <PositionQrDialog
+        open={!!qrTarget}
+        onOpenChange={(open) => {
+          if (!open) setQrTarget(null);
+        }}
+        position={qrTarget}
+      />
 
       {/* Konfirmasi hapus posisi */}
       <AlertDialog
@@ -548,7 +533,14 @@ export function PositionsTab() {
               className="bg-rose-600 text-white hover:bg-rose-700"
               disabled={deleting}
             >
-              {deleting ? "Menghapus..." : "Ya, Hapus"}
+              {deleting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menghapus...
+                </>
+              ) : (
+                "Ya, Hapus"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

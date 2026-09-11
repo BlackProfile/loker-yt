@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Eye, Trash2 } from "lucide-react";
+import { Eye, Share2, Trash2 } from "lucide-react";
 import type { Application } from "@/lib/types";
 import { formatDate, initialsOf } from "./format";
 import { StatusBadge, AiScoreBadge } from "./status-badge";
@@ -52,7 +52,7 @@ export function ApplicationsTable({
     <>
       {/* Desktop: table */}
       <Card className="hidden gap-0 overflow-hidden rounded-2xl py-0 md:block">
-        <Table className="min-w-[920px]">
+        <Table className="min-w-[1020px]">
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
               <TableHead className="w-10 px-4 py-3">
@@ -68,6 +68,7 @@ export function ApplicationsTable({
               </TableHead>
               <TableHead className="px-4 py-3">Pelamar</TableHead>
               <TableHead className="px-4 py-3">Posisi</TableHead>
+              <TableHead className="px-4 py-3">Sumber</TableHead>
               <TableHead className="px-4 py-3">Skor AI</TableHead>
               <TableHead className="px-4 py-3">Rating</TableHead>
               <TableHead className="px-4 py-3">Tags</TableHead>
@@ -115,8 +116,21 @@ export function ApplicationsTable({
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="px-4 py-3 text-sm">
+                  <TableCell className="max-w-36 px-4 py-3 text-sm">
                     {app.positionTitle ?? "-"}
+                  </TableCell>
+                  <TableCell className="max-w-32 px-4 py-3">
+                    {app.source ? (
+                      <span
+                        className="inline-flex max-w-28 items-center gap-1.5 text-xs text-muted-foreground"
+                        title={`Sumber: ${app.source}`}
+                      >
+                        <Share2 className="size-3.5 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{app.source}</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                   <TableCell className="px-4 py-3">
                     <AiScoreBadge score={app.aiScore} />
@@ -220,6 +234,12 @@ export function ApplicationsTable({
                     <p className="mt-1 truncate text-xs text-muted-foreground">
                       {app.positionTitle ?? "-"} · {formatDate(app.createdAt)}
                     </p>
+                    {app.source ? (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        <Share2 className="size-3 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{app.source}</span>
+                      </p>
+                    ) : null}
                   </div>
                   <StatusBadge status={app.status} />
                 </div>

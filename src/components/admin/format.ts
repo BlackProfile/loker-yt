@@ -133,6 +133,10 @@ export const ACTION_LABELS: Record<string, string> = {
   RATING: "Rating",
   TAGS: "Tags",
   TALENT_POOL: "Talent Pool",
+  RUBRIC: "Rubrik Evaluasi",
+  CHECKLIST: "Checklist Evaluasi",
+  AUTO_CLOSE: "Tutup Otomatis",
+  AUTO_SHORTLIST: "Shortlist Otomatis",
 };
 
 export function actionLabel(action: string): string {

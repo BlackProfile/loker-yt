@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type {
   Position,
+  PositionPublicStats,
   SectionVisibility,
   SiteContent,
 } from "@/lib/types";
@@ -49,6 +50,7 @@ import {
   StaggerItem,
 } from "@/components/landing/primitives";
 import {
+  buildPositionUrl,
   employmentTypeOf,
   instagramHref,
   whatsappHref,
@@ -68,6 +70,10 @@ type LandingPageProps = {
   content: SiteContent;
   positions: Position[];
   stats: { openRoles: number; totalApplications: number };
+  /** Kuota & jumlah lamaran per posisi (dari PublicContentResponse.positionStats) untuk badge publik. */
+  positionStats?: Record<string, PositionPublicStats>;
+  /** Slug posisi dari deep link /?posisi=slug — dipakai untuk membuka dialog detail posisi otomatis. */
+  initialPosisiSlug?: string | null;
 };
 
 // Link nav/footer mengikuti visibilitas section terkait —
@@ -863,20 +869,46 @@ function Footer({
   );
 }
 
-/** JSON-LD JobPosting untuk SEO (dipasang/dibongkar sesuai perubahan positions). */
-function useJobPostingJsonLd(positions: Position[], siteName: string) {
+/**
+ * JSON-LD JobPosting untuk SEO (dipasang/dibongkar sesuai perubahan positions).
+ * Bila focusSlug cocok dengan sebuah posisi (deep link /?posisi=slug), emit SATU
+ * schema JobPosting posisi tersebut — lengkap dengan url deep link — else semua posisi.
+ */
+function useJobPostingJsonLd(
+  positions: Position[],
+  siteName: string,
+  focusSlug?: string | null,
+) {
   useEffect(() => {
-    const jobPostings = positions.map((position) => ({
-      "@context": "https://schema.org",
-      "@type": "JobPosting",
-      title: position.title,
-      description: position.description,
-      hiringOrganization: { "@type": "Organization", name: siteName },
-      jobLocationType: "TELECOMMUTE",
-      employmentType: employmentTypeOf(position.type),
-      datePosted: position.createdAt,
-      ...(position.closesAt ? { validThrough: position.closesAt } : {}),
-    }));
+    const focused = focusSlug
+      ? (positions.find((position) => position.slug === focusSlug) ?? null)
+      : null;
+    const jobPostings = focused
+      ? [
+          {
+            "@context": "https://schema.org",
+            "@type": "JobPosting",
+            title: focused.title,
+            description: focused.description.trim().slice(0, 300),
+            hiringOrganization: { "@type": "Organization", name: siteName },
+            jobLocationType: "TELECOMMUTE",
+            employmentType: employmentTypeOf(focused.type),
+            datePosted: focused.createdAt,
+            ...(focused.closesAt ? { validThrough: focused.closesAt } : {}),
+            ...(focused.slug ? { url: buildPositionUrl(focused) } : {}),
+          },
+        ]
+      : positions.map((position) => ({
+          "@context": "https://schema.org",
+          "@type": "JobPosting",
+          title: position.title,
+          description: position.description,
+          hiringOrganization: { "@type": "Organization", name: siteName },
+          jobLocationType: "TELECOMMUTE",
+          employmentType: employmentTypeOf(position.type),
+          datePosted: position.createdAt,
+          ...(position.closesAt ? { validThrough: position.closesAt } : {}),
+        }));
     const script = document.createElement("script");
     script.id = "jobposting-ld";
     script.type = "application/ld+json";
@@ -885,15 +917,21 @@ function useJobPostingJsonLd(positions: Position[], siteName: string) {
     return () => {
       document.getElementById("jobposting-ld")?.remove();
     };
-  }, [positions, siteName]);
+  }, [positions, siteName, focusSlug]);
 }
 
-function LandingShell({ content, positions, stats }: LandingPageProps) {
+function LandingShell({
+  content,
+  positions,
+  stats,
+  positionStats,
+  initialPosisiSlug,
+}: LandingPageProps) {
   const [selectedPositionId, setSelectedPositionId] = useState("");
   // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin).
   const sections = content.sections;
 
-  useJobPostingJsonLd(positions, content.siteName);
+  useJobPostingJsonLd(positions, content.siteName, initialPosisiSlug);
 
   const handleApplyPosition = (positionId: string) => {
     setSelectedPositionId(positionId);
@@ -918,6 +956,8 @@ function LandingShell({ content, positions, stats }: LandingPageProps) {
               siteName={content.siteName}
               canApply={sections.applyForm}
               onApply={handleApplyPosition}
+              positionStats={positionStats}
+              initialSlug={initialPosisiSlug}
             />
           ) : null}
           {sections.about ? <AboutSection content={content} stats={stats} /> : null}

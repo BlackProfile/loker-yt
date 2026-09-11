@@ -76,10 +76,13 @@ export async function GET() {
       INTERVIEW: 0,
       ACCEPTED: 0,
       REJECTED: 0,
+      CUSTOM: 0, // lamaran pada tahap kustom (di luar 5 status bawaan)
     };
     for (const group of statusGroups) {
       if ((APPLICATION_STATUSES as string[]).includes(group.status)) {
         stats[group.status as ApplicationStatus] = group._count._all;
+      } else {
+        stats.CUSTOM += group._count._all;
       }
     }
 

@@ -1,6 +1,11 @@
 // Nilai default aplikasi rekrutmen konten kreator.
 // File ini murni konstanta (tanpa import server), aman diimpor dari klien maupun server.
-import type { Role, SectionVisibility, SiteContent } from "@/lib/types";
+import type {
+  Role,
+  ScreeningQuestion,
+  SectionVisibility,
+  SiteContent,
+} from "@/lib/types";
 
 export const DEFAULT_ADMIN_PASSWORD = "admin123";
 
@@ -145,6 +150,28 @@ export type DefaultPositionSeed = {
   description: string;
   requirements: string[];
   order: number;
+  // Fitur per lowongan (v3) — opsional, hanya untuk memperkaya data demo
+  salaryText?: string;
+  salaryVisible?: boolean;
+  benefits?: string[];
+  examples?: string[];
+  urgent?: boolean;
+  featured?: boolean;
+  screeningQuestions?: ScreeningQuestion[];
+  requireCv?: boolean;
+  requireIntro?: boolean;
+  requirePortfolio?: boolean;
+  maxApplicants?: number;
+  aiCriteria?: string;
+  applyTemplate?: string;
+  acceptTemplate?: string;
+  rejectTemplate?: string;
+  assignmentTitle?: string;
+  assignmentUrl?: string;
+  assignmentNote?: string;
+  rubricCriteria?: string[];
+  checklistTemplate?: string[];
+  noteTemplates?: string[];
 };
 
 export const DEFAULT_POSITIONS: DefaultPositionSeed[] = [
@@ -162,6 +189,47 @@ export const DEFAULT_POSITIONS: DefaultPositionSeed[] = [
       "Mampu bekerja dengan deadline ketat dan revisi cepat",
       "Memiliki portofolio video yang bisa ditunjukkan",
     ],
+    salaryText: "Rp 3,5 - 5 juta/bulan",
+    salaryVisible: true,
+    benefits: [
+      "Peralatan editing disediakan (lisensi & workspace)",
+      "Bonus performa per video yang melewati target views",
+      "Jam fleksibel — deliverable berbasis deadline mingguan",
+      "Akses arsip footage eksklusif untuk latihan gaya editing",
+    ],
+    examples: [
+      "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "https://www.youtube.com/watch?v=9bZkp7q19f0",
+    ],
+    featured: true,
+    requirePortfolio: true,
+    screeningQuestions: [
+      { id: "q1", label: "Berapa lama pengalamanmu editing video pendek (short-form)?", required: true },
+      { id: "q2", label: "Software editing apa yang paling kamu kuasai dan kenapa?", required: true },
+      { id: "q3", label: "Berapa video yang biasanya kamu selesaikan per minggu?", required: false },
+    ],
+    aiCriteria:
+      "Utamakan kandidat dengan pengalaman short-form (TikTok/Reels/Shorts), paham ritme hook 3 detik pertama, dan mencantumkan portofolio nyata. Pengalaman di channel gaming/vlog bernilai plus.",
+    applyTemplate:
+      "Hai {nama}, lamaranmu untuk posisi {posisi} sudah kami terima. Gunakan kode {kode} untuk memantau progres seleksi di halaman ini. Tim kami meninjau lamaran 1-3 hari kerja — pantau terus yaa!",
+    acceptTemplate:
+      "Selamat {nama}! Kamu lolos seleksi untuk posisi {posisi} di Lumina Studio. Tim HR akan menghubungimu via WhatsApp untuk onboarding. Sampai jumpa di tim!",
+    rejectTemplate:
+      "Hai {nama}, terima kasih sudah melamar posisi {posisi}. Setelah meninjau lamaranmu, tim kami memutuskan untuk tidak melanjutkan ke tahap berikutnya. Jangan bersemangatmu padam — kamu dipersilakan melamar lagi di batch berikutnya!",
+    assignmentTitle: "Tes Editing: Potong 1 video pendek 60 detik",
+    assignmentUrl: "https://drive.google.com/lumina-tes-editing",
+    assignmentNote:
+      "Brief, footage mentah, dan referensi gaya ada di folder tes. Deadline 3 hari setelah brief dikirim. Fokus pada hook 3 detik pertama dan ritme cut.",
+    rubricCriteria: ["Teknis editing", "Ritme storytelling", "Ketepatan deadline"],
+    checklistTemplate: [
+      "Sudah cek portofolio/video showreel",
+      "Sudah cek jawaban pertanyaan screening",
+      "Sudah cek referensi/link sosial media",
+    ],
+    noteTemplates: [
+      "Portofolio sudah dilihat: ",
+      "Catatan tes editing: ",
+    ],
   },
   {
     title: "Thumbnail Designer",
@@ -177,6 +245,20 @@ export const DEFAULT_POSITIONS: DefaultPositionSeed[] = [
       "Sensitif terhadap tren visual di YouTube dan TikTok",
       "Mampu menghasilkan minimal 10 thumbnail per bulan",
     ],
+    salaryText: "Rp 250-400 ribu/thumbnail",
+    salaryVisible: true,
+    benefits: [
+      "Brief jelas dengan referensi gaya dari tim riset",
+      "Pembayaran per batch, tepat waktu",
+      "Nama kamu tertera di credits video performa tinggi",
+    ],
+    urgent: true,
+    screeningQuestions: [
+      { id: "q1", label: "Tautkan 3 thumbnail terbaikmu yang sudah tayang.", required: true },
+    ],
+    rubricCriteria: ["Daya tarik visual", "Kesesuaian gaya channel", "Kecepatan eksekusi"],
+    checklistTemplate: ["Sudah cek 3 thumbnail yang dilampirkan"],
+    noteTemplates: ["Hasil review thumbnail: "],
   },
   {
     title: "Penulis Naskah",
@@ -192,6 +274,24 @@ export const DEFAULT_POSITIONS: DefaultPositionSeed[] = [
       "Terbiasa menulis naskah untuk konten pendek dan panjang",
       "Punya portofolio tulisan (blog, naskah, atau skrip video)",
     ],
+    salaryText: "Rp 2,5 - 4 juta/bulan",
+    salaryVisible: true,
+    benefits: [
+      "Akses riset tren premium (alat riset topik)",
+      "Naskah diproduksi jadi video — lihat tulisanmu hidup",
+      "Sesi brainstorming mingguan bersama kreator",
+    ],
+    requirePortfolio: true,
+    screeningQuestions: [
+      { id: "q1", label: "Tulis 1 hook (maks 15 kata) untuk video berjudul 'Kebiasaan kreator sukses yang jarang dibahas'.", required: true },
+      { id: "q2", label: "Genre konten apa yang paling kamu kuasai risetnya?", required: false },
+    ],
+    assignmentTitle: "Tes Naskah: 1 outline video + 1 naskah 90 detik",
+    assignmentNote:
+      "Pilih satu topik tren terkini, buat outline 5 poin dan naskah lengkap 90 detik. Kirim saat diminta tim HR.",
+    rubricCriteria: ["Kekuatan hook", "Struktur naskah", "Kesesuaian gaya suara"],
+    checklistTemplate: ["Sudah cek portofolio tulisan", "Sudah cek jawaban tes hook"],
+    noteTemplates: ["Catatan tes naskah: "],
   },
   {
     title: "Social Media Officer",
@@ -207,6 +307,20 @@ export const DEFAULT_POSITIONS: DefaultPositionSeed[] = [
       "Terbiasa menyusun kalender konten mingguan",
       "Komunikatif dan cepat tanggap terhadap tren",
     ],
+    salaryText: "Rp 5 - 7 juta/bulan",
+    salaryVisible: true,
+    benefits: [
+      "Full-time remote dengan jam fleksibel",
+      "Anggaran bulanan untuk eksperimen konten & ads",
+      "Peluang menghadiri event komunitas kreator",
+    ],
+    maxApplicants: 10,
+    screeningQuestions: [
+      { id: "q1", label: "Akun sosial media apa yang pernah kamu kelola? Sebutkan hasilnya.", required: true },
+    ],
+    rubricCriteria: ["Pemahaman platform", "Bukti pertumbuhan akun", "Kemampuan komunitas"],
+    checklistTemplate: ["Sudah cek akun yang dikelola", "Sudah verifikasi data pertumbuhan"],
+    noteTemplates: ["Ringkasan interview HR: ", "Hasil cek akun: "],
   },
   {
     title: "Content Strategist",
@@ -222,5 +336,15 @@ export const DEFAULT_POSITIONS: DefaultPositionSeed[] = [
       "Terbiasa memimpin diskusi kreatif tim kecil",
       "Memahami lanskap konten YouTube, TikTok, dan Instagram",
     ],
+    salaryText: "Rp 6 - 9 juta/bulan",
+    salaryVisible: true,
+    benefits: [
+      "Kepemilikan penuh atas roadmap konten bulanan",
+      "Anggaran riset audiens & tools analitik",
+      "Kolaborasi langsung dengan kreator utama",
+    ],
+    rubricCriteria: ["Kemampuan analitik", "Visi konten", "Pengalaman memimpin"],
+    checklistTemplate: ["Sudah review ide konten yang diusulkan", "Sudah cek studi kasus pertumbuhan"],
+    noteTemplates: ["Catatan sesi brainstorming: "],
   },
 ];

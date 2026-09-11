@@ -2,7 +2,8 @@
 // SERVER-ONLY — jangan pernah diimpor dari komponen klien.
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
-import { parseRequirements } from "@/lib/seed";
+import { parseRequirements, parseScreeningQuestions, parseStringRecord } from "@/lib/seed";
+import { stagesForPosition } from "@/lib/stages";
 import { AI_RECOMMENDATION_LABELS, type AiRecommendation } from "@/lib/types";
 
 const AI_TIMEOUT_MS = 60_000; // 60 detik
@@ -161,6 +162,7 @@ type ApplicationForPrompt = {
   motivation: string;
   portfolioUrl: string | null;
   socialLinks: string | null;
+  screeningAnswers: string | null; // JSON {questionId: jawaban}
   position: {
     title: string;
     department: string;
@@ -168,6 +170,8 @@ type ApplicationForPrompt = {
     location: string;
     description: string;
     requirements: string;
+    aiCriteria: string | null; // kriteria AI khusus posisi
+    screeningQuestions: string; // JSON {id,label,required}[]
   } | null;
 };
 
@@ -185,14 +189,34 @@ function buildPositionSection(app: ApplicationForPrompt): string {
   if (!app.position) return "Posisi: (tidak diketahui — evaluasi berdasarkan data kandidat saja)";
   const requirements = parseRequirements(app.position.requirements);
   const requirementLines = requirements.length > 0 ? requirements.map((r) => `- ${r}`).join("\n") : "- (tidak dirinci)";
-  return [
+  const lines = [
     `Posisi: ${app.position.title}`,
     `Departemen: ${app.position.department}`,
     `Jenis: ${app.position.type} — Lokasi: ${app.position.location}`,
     `Deskripsi: ${app.position.description}`,
     "Persyaratan:",
     requirementLines,
-  ].join("\n");
+  ];
+  const criteria = app.position.aiCriteria?.trim();
+  if (criteria) {
+    lines.push("Kriteria khusus posisi ini (bobot utama):", criteria);
+  }
+  return lines.join("\n");
+}
+
+/** Bagian jawaban screening kandidat (null bila tidak ada yang bisa dipetakan). */
+function buildScreeningSection(app: ApplicationForPrompt): string | null {
+  const answers = parseStringRecord(app.screeningAnswers);
+  if (!answers || !app.position) return null;
+  const questions = parseScreeningQuestions(app.position.screeningQuestions);
+  if (questions.length === 0) return null;
+  const lines: string[] = [];
+  for (const question of questions) {
+    const answer = (answers[question.id] ?? "").trim();
+    if (!answer) continue;
+    lines.push(`- ${question.label}: ${answer}`);
+  }
+  return lines.length > 0 ? ["Jawaban screening kandidat:", ...lines].join("\n") : null;
 }
 
 /* --------------------------------- Fungsi utama AI --------------------------------- */
@@ -217,6 +241,7 @@ export async function analyzeApplication(applicationId: string): Promise<Screeni
 
     const systemPrompt =
       "Kamu adalah HR screening assistant untuk studio konten kreator. Jawab HANYA JSON valid tanpa teks lain.";
+    const screeningSection = buildScreeningSection(application);
     const userPrompt = [
       "Evaluasi kecocokan kandidat berikut untuk posisi yang dilamar.",
       "",
@@ -224,6 +249,7 @@ export async function analyzeApplication(applicationId: string): Promise<Screeni
       "",
       "Data kandidat:",
       buildCandidateSection(application),
+      ...(screeningSection ? ["", screeningSection] : []),
       "",
       'Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan format:',
       '{"score": <0-100 integer>, "summary": "<maksimal 2 kalimat bahasa Indonesia>", "recommendation": "LAYAK_WAWANCARA" | "PERTIMBANGKAN" | "TIDAK_COCCOK"}',
@@ -266,6 +292,37 @@ export async function analyzeApplication(applicationId: string): Promise<Screeni
         detail: `Skor ${result.score}/100 — ${AI_RECOMMENDATION_LABELS[result.recommendation]}`,
       },
     });
+
+    // Auto-shortlist: pindahkan lamaran BARU otomatis bila skor melewati ambang posisi
+    // dan tahap tujuan valid pada pipeline posisi.
+    const position = application.position;
+    const targetStage = position?.autoShortlistStage ?? null;
+    if (
+      position &&
+      targetStage &&
+      position.autoShortlistScore != null &&
+      result.score >= position.autoShortlistScore &&
+      application.status.trim() === "NEW" &&
+      stagesForPosition(parseRequirements(position.stages)).includes(targetStage)
+    ) {
+      try {
+        await db.application.update({
+          where: { id: applicationId },
+          data: { status: targetStage },
+        });
+        await db.activityLog.create({
+          data: {
+            applicationId,
+            actor: "Sistem",
+            action: "AUTO_SHORTLIST",
+            detail: `Skor AI ${result.score} >= ambang ${position.autoShortlistScore} — dipindah otomatis ke tahap '${targetStage}'`,
+          },
+        });
+      } catch (error) {
+        console.error("[ai] auto-shortlist gagal:", errorMessage(error));
+      }
+    }
+
     return result;
   } catch (error) {
     console.error("[ai] analyzeApplication gagal:", errorMessage(error));

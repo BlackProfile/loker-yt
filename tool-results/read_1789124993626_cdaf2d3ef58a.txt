@@ -1,0 +1,467 @@
+     1→# Worklog — Proyek Halaman Rekrutmen Konten Kreator
+     2→
+     3→Proyek: Halaman rekrutmen publik + panel admin (Next.js 16, TS, Tailwind v4, shadcn/ui, Prisma/SQLite).
+     4→
+     5→---
+     6→Task ID: 1
+     7→Agent: orchestrator (Z.ai Code)
+     8→Task: Eksplorasi proyek & verifikasi dev server
+     9→
+    10→Work Log:
+    11→- Verifikasi dev server berjalan di port 3000 (HTTP 200).
+    12→- Memeriksa package.json, prisma/schema.prisma, globals.css, layout.tsx, dan daftar komponen shadcn/ui.
+    13→- Konfirmasi dependensi: framer-motion, sonner, lucide-react, zod tersedia; seluruh komponen ui ada (accordion, tabs, dialog, select, switch, table, alert-dialog, sheet, dll).
+    14→
+    15→Stage Summary:
+    16→- Stack: Next.js 16 + TypeScript + Tailwind v4 + shadcn/ui (New York) + Prisma/SQLite (db/custom.db).
+    17→- Desain: tema terang, aksen rose-600 + amber, netral zinc, hero gelap (zinc-950). DILARANG pakai warna biru/indigo.
+    18→- Kontrak data & API di src/lib/types.ts (SUMBER TUNGGAL tipe).
+    19→- Password admin default: admin123 (disimpan hash SHA-256 di Setting key "admin_password").
+    20→- Pembagian kerja: 3-a backend API (subagent), 3-b landing publik (subagent), 3-c panel admin (subagent), integrasi page.tsx oleh orchestrator.
+    21→
+    22→---
+    23→Task ID: 2
+    24→Agent: orchestrator (Z.ai Code)
+    25→Task: Skema Prisma, kontrak tipe, tema, layout
+    26→
+    27→Work Log:
+    28→- Mengganti prisma/schema.prisma dengan model: Setting (key-value JSON), Position (lowongan), Application (lamaran).
+    29→- Menjalankan `bun run db:push` — sukses, Prisma Client di-generate (v6.19.2).
+    30→- Menulis src/lib/types.ts: SiteContent, Position, Application, PublicContentResponse, AdminOverviewResponse, STATUS_LABELS, BENEFIT_ICONS, POSITION_TYPES.
+    31→- globals.css: primary -> rose-600 (oklch 0.586 0.242 17.952), ring rose, util `.nice-scrollbar`, `.text-gradient`, `.dot-pulse`, `.bg-grid-pattern`, html smooth scroll.
+    32→- layout.tsx: lang="id", metadata rekrutmen "Lumina Studio", Toaster sonner (position top-center, richColors, closeButton).
+    33→
+    34→Stage Summary:
+    35→- Database siap dengan 3 model; Prisma Client ter-generate.
+    36→- Util CSS siap dipakai subagent frontend (nice-scrollbar, text-gradient, dot-pulse, bg-grid-pattern).
+    37→- File yang DIPEGANG orchestrator (jangan diubah subagent): prisma/schema.prisma, src/app/page.tsx, src/app/layout.tsx, src/app/globals.css, src/lib/types.ts.
+    38→
+    39→---
+    40→Task ID: 3-c
+    41→Agent: full-stack-developer
+    42→Task: Panel admin rekrutmen
+    43→
+    44→Work Log:
+    45→- Membaca worklog.md dan src/lib/types.ts sebagai kontrak tipe; semua tipe diimport dari @/lib/types (tanpa duplikasi).
+    46→- Membuat folder src/components/admin/ berisi 10 file (lihat Stage Summary).
+    47→- Helper fetch terpusat (api.ts): apiGet/apiPost/apiPatch/apiPut/apiDelete + buildQuery; semua error dilempar sebagai Error berbahasa Indonesia dengan fallback "Terjadi kesalahan. Coba lagi."
+    48→- Gate sesi: AdminApp cek GET /api/admin/session saat mount (loading spinner "Memeriksa sesi..."), fallback ke LoginCard jika !authenticated, login via POST /api/admin/login (toggle lihat password, error 401 inline, alert password default admin123), logout via POST /api/admin/logout.
+    49→- Header sticky (bg-background/80 backdrop-blur border-b): logo gradient rose-600→amber-500 + LayoutDashboard, "Panel Admin" + siteName dari GET /api/admin/settings, tombol "Lihat Halaman Publik" (onExit) dan "Keluar".
+    50→- Dashboard: 6 kartu statistik (grid-cols-2 md:3 lg:6, border-t-2 + ikon berwarna), bar distribusi status (segmen % + legend dot), daftar 5 lamaran terbaru (avatar inisial rose, StatusBadge, tombol Detail membuka dialog detail bersama), tombol segarkan.
+    51→- Pelamar: filter q (Enter/blur), Select status & posisi, tombol reset muncul saat filter aktif; tabel shadcn untuk md+, card list untuk mobile; dialog detail (max-w-2xl, max-h-[70vh] nice-scrollbar) berisi info kontak (mailto, wa.me tanpa +), link portofolio/sosmed (target _blank rel noopener), pengalaman & motivasi (whitespace-pre-line), Textarea catatan admin, Select ubah status, footer Hapus (AlertDialog) + Simpan Perubahan (PATCH). Hapus baris juga pakai AlertDialog. Toast: "Perubahan disimpan", "Lamaran dihapus".
+    52→- Posisi: daftar card (GripVertical, judul+departemen, Badge type+lokasi, Switch aktif dengan PATCH optimistik + toast "Posisi diaktifkan/dinonaktifkan", edit, hapus AlertDialog); dialog tambah/edit (validasi inline title/department/description wajib, jenis dari POSITION_TYPES, lokasi default "Remote", persyaratan satu per baris di-split on save dan di-join "\n" saat edit, Switch aktifkan posisi).
+    53→- Pengaturan: load GET /api/admin/settings → deep-copy ke form; Card Identitas & Hero (semua field + hint heroHighlight & deadline), Card Kontak & Footer (hint format WhatsApp), editor Benefit (Select ikon BENEFIT_ICONS + preview ikon lucide fallback Sparkles, naik/turun/hapus, "Tambah Benefit" default Sparkles/"Benefit Baru"), editor FAQ (naik/turun/hapus, "Tambah FAQ"), bar simpan sticky bottom-4 (PUT { site }, toast "Pengaturan disimpan"), Card Keamanan (3 password field dengan toggle Eye, validasi client min 6 & konfirmasi sama, PUT { currentPassword, newPassword } terpisah dari site, toast "Password berhasil diganti").
+    54→- StatusBadge komponen kecil dengan warna per status sesuai spesifikasi (amber/zinc/orange/emerald/rose).
+    55→- bun run lint: bersih (0 error, 0 warning). tsc --noEmit: tidak ada error pada file milik task ini (error tsc hanya di folder examples/ & skills/ yang pre-existing, tidak disentuh).
+    56→- Tidak menyentuh file di luar src/components/admin/. Tidak menjalankan dev server/build/prisma.
+    57→
+    58→Stage Summary:
+    59→- File dibuat (semua di src/components/admin/, semuanya "use client"):
+    60→  - admin-app.tsx → export function AdminApp({ onExit }: { onExit: () => void }) — self-contained: gate sesi, login, header, Tabs (dashboard/applications/positions/settings), transisi framer-motion FadeIn.
+    61→  - api.ts → apiFetch, apiGet, apiPost, apiPatch, apiPut, apiDelete, jsonInit, buildQuery (helper fetch JSON + error { error: string }).
+    62→  - format.ts → formatDate, formatDateTime (Intl id-ID), initialsOf, waHref, normalizeUrl.
+    63→  - status-badge.tsx → StatusBadge({ status }) + STATUS_BAR_COLORS, STATUS_DOT_COLORS.
+    64→  - login-card.tsx → LoginCard({ onSuccess }).
+    65→  - dashboard-tab.tsx → DashboardTab() (overview + dialog detail sendiri).
+    66→  - applications-tab.tsx → ApplicationsTab() (filter, tabel/card, dialog detail bersama, hapus).
+    67→  - positions-tab.tsx → PositionsTab() (CRUD posisi).
+    68→  - settings-tab.tsx → SettingsTab() (site content, benefit, FAQ, keamanan).
+    69→  - application-detail-dialog.tsx → ApplicationDetailDialog({ application, onOpenChange, onSaved, onDeleted }).
+    70→- Integrator cukup: import { AdminApp } from "@/components/admin/admin-app" dan render <AdminApp onExit={() => ...} /> dari page.tsx.
+    71→- Catatan: semua endpoint dikonsumsi sesuai kontrak (sudah terverifikasi hidup di dev.log: PATCH/DELETE /api/admin/applications/... berespon 200/400/404); tidak ada API baru dibuat; toast memakai sonner; tanpa emoji; tanpa warna biru/indigo.
+    72→
+    73→---
+    74→Task ID: 3-b
+    75→Agent: frontend-styling-expert
+    76→Task: Halaman landing rekrutmen publik
+    77→
+    78→Work Log:
+    79→- Membaca worklog.md (desain: tema terang, aksen rose-600/amber, hero & CTA gelap zinc-950) dan kontrak tipe di src/lib/types.ts.
+    80→- Membaca API komponen ui yang dipakai: button, badge, card, input, textarea, label, select, accordion, sheet (tanpa membuat komponen ui baru, tanpa CLI shadcn).
+    81→- Membuat folder src/components/landing/ berisi 3 file 'use client':
+    82→  - benefit-icon.tsx: pemetaan string benefit.icon -> komponen lucide, dibatasi & divalidasi terhadap BENEFIT_ICONS dari @/lib/types, fallback Sparkles.
+    83→  - apply-form.tsx: form lamaran terkontrol (nama, email, WhatsApp, posisi via Select, portofolio, sosmed, pengalaman, alasan) + validasi inline (wajib isi, regex email, phone min 8 digit, pengalaman & alasan min 10 karakter), submit POST /api/applications (sukses 201 -> toast.success + panel sukses "Lamaran Terkirim!" + tombol "Kirim Lamaran Lain" reset; gagal -> toast.error pesan server/default, tetap di form), loading Loader2 + "Mengirim...".
+    84→  - landing-page.tsx: komponen utama LandingPage sesuai kontrak props (content, positions, stats, onOpenAdmin) + subkomponen internal (Container, FadeIn, BrandMark, Navbar+Sheet mobile, Hero, PositionCard, Sections posisi/tentang/benefit/cara-lamar/form/FAQ/CTA akhir, Footer).
+    85→- Memverifikasi `bun run lint` (0 error/warning) dan `bunx tsc --noEmit` (0 error di src/ proyek; error yang muncul hanya di folder sandbox examples/ & skills/ di luar proyek). Dev server tetap 200, tidak ada file di luar src/components/landing/ yang disentuh.
+    86→
+    87→Stage Summary:
+    88→- File baru (HANYA di src/components/landing/):
+    89→  - landing-page.tsx -> export function LandingPage({ content, positions, stats, onOpenAdmin }) — 'use client'; import tipe `import type { SiteContent, Position } from "@/lib/types"`.
+    90→  - apply-form.tsx -> export function ApplyForm({ positions, positionId, onPositionIdChange }) — menangani submit sendiri via fetch POST /api/applications, body: { name, email, phone, positionId|null, portfolioUrl|null, socialLinks|null, experience, motivation }.
+    91→  - benefit-icon.tsx -> export function BenefitIcon({ name, className }) — fallback Sparkles.
+    92→- Integrator hanya perlu: fetch /api/public/content -> render <LandingPage content={site} positions={positions} stats={stats} onOpenAdmin={...} />; onOpenAdmin dipanggil dari tombol Lock "Admin" di footer.
+    93→- Interaksi "Lamar Posisi Ini": setState selectedPositionId di LandingPage (preselect di Select formulir) + scrollIntoView #lamar.
+    94→- Anchor id wajib tersedia: #posisi, #benefit, #cara-lamar, #faq, #lamar (semua scroll-mt-24); root <div className="flex min-h-screen flex-col">, footer mt-auto.
+    95→- Gaya sesuai desain: hero & CTA akhir bg-zinc-950 + glow radial rose + .bg-grid-pattern, .text-gradient di heroHighlight (dilewati bila kosong), .dot-pulse pada badge hero; netral zinc + aksen rose/amber, tanpa biru/indigo, tanpa emoji; target sentuh form/nav min-h-11; animasi framer-motion fade-up whileInView (once, margin -80px) — input form tidak dianimasikan; a11y: label-htmlFor terhubung, aria-invalid/describedby error inline, nav aria-label, ikon dekoratif aria-hidden.
+    96→- Catatan: bila positions kosong, Select disabled dengan placeholder "Belum ada posisi tersedia" dan validasi positionId dilewati; faqs/benefits kosong punya fallback teks; deadline kosong tidak dirender.
+    97→
+    98→---
+    99→Task ID: 3-a
+   100→Agent: full-stack-developer
+   101→Task: Backend API rekrutmen
+   102→
+   103→Work Log:
+   104→- Membaca worklog.md + src/lib/types.ts sebagai kontrak, lalu membuat src/lib/defaults.ts: DEFAULT_ADMIN_PASSWORD ("admin123"), DEFAULT_SITE (SiteContent lengkap Lumina Studio), DEFAULT_POSITIONS (5 posisi, requirements sebagai string[]).
+   105→- Membuat src/lib/server-auth.ts (server-only): cookie "admin_session" berisi `${expiresAtMs}.${HMAC-SHA256(expiresAtMs, ADMIN_SECRET ?? "lumina-studio-secret-key")}`; fungsi createSessionToken (expired 7 hari), verifySessionToken (timing-safe), getSessionTokenFromRequest (await cookies()), requireAdmin, hashPassword/verifyPassword (SHA-256 hex via node:crypto).
+   106→- Membuat src/lib/seed.ts: ensureSeeded() idempoten dengan cache promise module-level (reset jika gagal agar bisa retry); seed Setting "site", Setting "admin_password" (hash), 5 Position (requirements di-JSON.stringify), 5 Application contoh (positionId di-resolve by title; createdAt disebar 12 jam-8 hari ke belakang agar daftar "terbaru" realistis). File ini juga menampung helper serialisasi server yang dipakai lintas route: serializePosition (parse requirements), serializeApplication (menambah positionTitle, status dikunci ke ApplicationStatus), parseSiteContent/sanitizeSiteContent/sanitizeBenefits/sanitizeFaqs (fallback ke DEFAULT_SITE untuk field hilang/tak valid).
+   107→- Membuat 11 route API (semua `export const dynamic = "force-dynamic"`, NextResponse.json, try/catch, pesan error bahasa Indonesia, params sebagai Promise pada route dinamis):
+   108→  - GET /api/public/content → ensureSeeded, site+positions(isActive, order asc→createdAt asc)+stats {openRoles, totalApplications}.
+   109→  - POST /api/applications → validasi nama≥3, email regex, telepon≥8 digit, positionId harus Position aktif ("Posisi tidak ditemukan atau sudah ditutup"), pengalaman & motivasi≥10; 201 {ok:true,id}.
+   110→  - POST /api/admin/login → cek vs Setting "admin_password"; sukses set cookie httpOnly path "/" sameSite lax maxAge 604800; gagal 401 "Password salah". (ensureSeeded dipanggil agar login jalan di DB kosong.)
+   111→  - POST /api/admin/logout → hapus cookie (maxAge 0).
+   112→  - GET /api/admin/session → { authenticated }.
+   113→  - GET /api/admin/overview → 401 jika bukan admin; stats per status via groupBy + 5 lamaran terbaru.
+   114→  - GET /api/admin/applications → filter opsional status (divalidasi), positionId, q (LIKE name/email); urut terbaru.
+   115→  - PATCH /api/admin/applications/[id] → update status (valid) dan/atau adminNotes (string|null, string kosong→null); 404 jika tidak ada.
+   116→  - DELETE /api/admin/applications/[id] → 404 jika tidak ada, else {ok:true}.
+   117→  - GET /api/admin/positions (semua termasuk nonaktif), POST (validasi title≥3, department wajib, description≥10, type∈POSITION_TYPES default "Remote", location default "Remote", requirements array difilter kosong, order default max+1, isActive default true) → 201.
+   118→  - PATCH/DELETE /api/admin/positions/[id] → validasi partial sama; 404 jika tidak ada; delete aman (onDelete SetNull).
+   119→  - GET /api/admin/settings → { site } tanpa password; PUT → simpan site (validasi siteName non-kosong, benefits & faqs harus array bila dikirim; merge/sanitize dengan nilai lama) dan/atau ganti password (currentPassword harus cocok "Password saat ini salah", newPassword min 6 "Password baru minimal 6 karakter"); return {ok:true, site terbaru}.
+   120→- Uji menyeluruh via curl: seed sukses; submit lamaran valid (201) + semua cabang validasi (400); login salah (401)/benar (200+cookie); semua endpoint admin 401 tanpa cookie; filter & CRUD applications/positions; ubah password lalu login password lama 401; data uji dihapus dan password/tagline dikembalikan ke default. `bun run lint` bersih (0 error/warning), dev.log tanpa error.
+   121→
+   122→Stage Summary:
+   123→- 14 file backend selesai: lib/defaults.ts, lib/server-auth.ts, lib/seed.ts + 11 route handler. Lint bersih, semua endpoint teruji 200/201/400/401/404 sesuai desain.
+   124→- KONTRAK UNTUK FRONTEND (3-b & 3-c): base URL relatif "/api/..."; GET /api/public/content mengembalikan PublicContentResponse; Application selalu memuat positionTitle; Position.requirements berupa string[]; auth admin = POST /api/admin/login {password:"admin123"} → cookie httpOnly otomatis disimpan browser, cek via GET /api/admin/session, logout via POST /api/admin/logout; endpoint admin lain 401 {error:"Tidak diizinkan. Silakan login terlebih dahulu."} saat belum login — tangani dengan redirect ke form login.
+   125→- Catatan: src/lib/seed.ts SERVER-ONLY (jangan diimpor dari komponen klien); SETelan PUT password, cookie lama tetap valid sampai expired (verify hanya cek tanda tangan+expiry); admin_password disimpan sebagai hash SHA-256, ADMIN_SECRET bisa dioverride via env.
+   126→
+   127→---
+   128→Task ID: 4, 5, 6
+   129→Agent: orchestrator (Z.ai Code)
+   130→Task: Integrasi page.tsx, lint, dan verifikasi end-to-end dengan Agent Browser
+   131→
+   132→Work Log:
+   133→- Menulis src/app/page.tsx: LandingView (fetch /api/public/content + skeleton + error state dengan retry) dan view switching landing <-> admin via hash #admin + tombol Admin di footer.
+   134→- Lint seluruh proyek: bersih, 0 error/warning.
+   135→- Verifikasi Agent Browser (semua LULUS):
+   136→  - Landing: navbar sticky, hero gelap + badge dot-pulse + text-gradient, deadline, 5 kartu posisi, section Tentang + statistik real-time, 6 benefit, 4 langkah, formulir, FAQ accordion, CTA akhir, footer mt-auto + tombol Admin.
+   137→  - Submit lamaran: POST /api/applications -> 201, toast sukses, panel "Lamaran Terkirim!" dengan nama pelamar.
+   138→  - Admin: tombol footer Admin -> #admin -> login gate; password salah -> "Password salah"; admin123 -> dashboard.
+   139→  - Dashboard: 6 kartu statistik akurat (total 6 = 5 seed + 1 uji), bar distribusi status, lamaran terbaru.
+   140→  - Pelamar: tabel + filter, dialog detail lengkap, ubah status Baru->Ditinjau + catatan tersimpan (PATCH), tabel ter-refresh.
+   141→  - Posisi: switch nonaktif Content Strategist -> langsung hilang dari /api/public/content; diaktifkan kembali.
+   142→  - Pengaturan: edit Judul Hero + Kata Highlight -> simpan -> langsung tampil di landing (sync terverifikasi); judul dikembalikan ke default.
+   143→  - FAQ accordion, tombol "Lamar Posisi Ini" (preselect Video Editor + scroll ke form).
+   144→  - Mobile 390px: hamburger Sheet + navigasi anchor, admin grid 2 kolom, form responsif.
+   145→  - Logout: toast "Anda telah keluar" + kembali ke login gate.
+   146→  - Console bersih tanpa error; satu warning React (Select uncontrolled->controlled pada form) bersifat kosmetik dan tidak memengaruhi fungsi.
+   147→
+   148→Stage Summary:
+   149→- Aplikasi rekrutmen konten kreator SELESAI dan terverifikasi end-to-end di browser (desktop + mobile).
+   150→- Cara akses admin: tombol "Admin" di footer halaman publik, atau tambahkan #admin pada URL. Password default: admin123 (hash SHA-256 di DB).
+   151→- Artefak: src/app/page.tsx (integrasi), tema rose/amber di globals.css, layout metadata Indonesia + Toaster sonner.
+   152→
+   153→---
+   154→Task ID: 5-fondasi
+   155→Agent: orchestrator (Z.ai Code)
+   156→Task: Fondasi fitur lengkap v2 (skema DB, tipe, tema, dependensi)
+   157→
+   158→Work Log:
+   159→- Membaca skill LLM & ASR (z-ai-web-dev-sdk: zai.chat.completions.create, zai.audio.asr.create).
+   160→- Skema v2: Position+closesAt; Application+trackingCode(unik,nullable di DB)/rating/tags/interviewAt/talentPool/aiScore/aiSummary/aiRecommendation/aiAnalyzedAt/transcript/cvFileId/introFileId; model baru AdminUser, FileAsset, ActivityLog, Subscriber. db:push sukses.
+   161→- src/lib/types.ts v2: TeamMember, Role/AdminUser/AdminSession/Subscriber/LogEntry, TrackResponse, ChatResponse, AiRecommendation, STATUS_FLOW, AdminOverviewResponse diperluas (daily/upcomingInterviews/stale/subscriberCount/avgAiScore), batas upload CV 5MB & audio 10MB.
+   162→- layout.tsx: ThemeProvider (next-themes, class, default light) + Toaster sonner.
+   163→- Install qrcode + @types/qrcode. Folder uploads/ dibuat.
+   164→
+   165→Stage Summary:
+   166→- Kontrak API v2 SIAP di src/lib/types.ts — semua subagent WAJIB import dari sana.
+   167→- Pembagian: 5-a Backend Core, 5-d Backend AI, 5-b Landing v2, 5-c Admin v2 (paralel), lalu orchestrator integrasi + verifikasi.
+   168→- Kontrak lintas-agent yang terkunci:
+   169→  * server-auth.ts (milik 5-a): getSession(): Promise<AdminSession|null>, requireRole(roles: Role[]): Promise<AdminSession|null>, createSessionToken(userId), setSessionCookie(res,userId), clearSessionCookie(res), hashPassword, verifyPassword. Cookie "admin_session" = `${userId}.${expMs}.${hmac}`.
+   170→  * src/lib/ai.ts (milik 5-d): export async function startBackgroundProcessing(applicationId: string): Promise<void> (AI screening + ASR + webhook + log; fire-and-forget aman).
+   171→  * GET /api/admin/session -> { authenticated: boolean; session: AdminSession | null }.
+   172→  * Login demo: admin@lumina.id / admin123 (OWNER), hr@lumina.id / admin123 (HR), viewer@lumina.id / admin123 (VIEWER).
+   173→- File yang DIPEGANG orchestrator: prisma/schema.prisma, src/app/page.tsx, src/app/layout.tsx, src/app/globals.css, src/lib/types.ts.
+   174→
+   175→---
+   176→Task ID: 5-d
+   177→Agent: full-stack-developer
+   178→Task: Backend AI — AI screening, chatbot, ASR audio intro, notifikasi Discord/Telegram
+   179→
+   180→Work Log:
+   181→- Membaca worklog.md (kontrak terkunci 5-fondasi) + src/lib/types.ts (semua tipe diimport dari @/lib/types, tanpa duplikasi); PATUHI kontrak server-auth v2 milik 5-a: `requireRole(roles: Role[]): Promise<AdminSession|null>` & `getSession(): Promise<AdminSession|null>` (file sudah ter-update saat pengecekan; tidak diedit).
+   182→- Membuat src/lib/ai.ts (SERVER-ONLY):
+   183→  * `getZai()` — cache instance z-ai-web-dev-sdk di level modul; `withTimeout(promise, label, timeoutMs=60s)` diexport untuk dipakai lintas modul AI.
+   184→  * `analyzeApplication(applicationId)` → prompt system "Kamu adalah HR screening assistant... Jawab HANYA JSON valid tanpa teks lain." + user prompt (posisi: judul/departemen/jenis/lokasi/deskripsi + requirements di-parse dari JSON via parseRequirements seed.ts; kandidat: nama, pengalaman, alasan, portofolio, sosmed). Parsing aman 3 lapis: strip markdown fence → JSON.parse + validasi rentang (clamp 0-100, rekomendasi harus enum) → fallback regex (angka + kata kunci LAYAK_WAWANCARA/PERTIMBANGKAN/TIDAK_COCCOK, rekomendasi diturunkan dari skor bila kata kunci absen) → null bila benar-benar gagal. Sukses: simpan aiScore/aiSummary/aiRecommendation/aiAnalyzedAt + ActivityLog {actor:"AI", action:"AI_SCREENING", detail:"Skor X/100 — <label>"}.
+   185→  * `generateInterviewQuestions(applicationId)` → 5 pertanyaan wawancara personal (bahasa Indonesia, daftar bernomor 1-5, tanpa markdown bold), return teks, TIDAK disimpan DB.
+   186→  * `generateReplyDraft(applicationId)` → draft balasan sesuai status (Diterima=unduhan onboarding, Wawancara=undangan jadwal, Ditolak=apresiasi+ajakan daftar lagi, Baru/Ditinjau=konfirmasi proses), tanda tangan "Tim HR Lumina Studio", tanpa markdown, return teks.
+   187→  * Semua fungsi: try/catch → return null + console.error ringkas (tanpa stack); Promise.race timeout 60s.
+   188→- Membuat src/lib/notify.ts (SERVER-ONLY):
+   189→  * `getAutomationSettings()` — baca Setting "site" dengan parse defensif (chatbotEnabled default true; URL/token string kosong bila rusak) — tidak bergantung pada sanitizeSiteContent seed.ts.
+   190→  * `sendNewApplicationNotifications({id,name,positionTitle,trackingCode})` — Discord webhook hanya bila URL diawali https://discord.com/api/webhooks atau https://discordapp.com/api/webhooks; POST {content:"", embeds:[{title:"Lamaran Baru Masuk", description:"**Nama** melamar posisi **X**.\nKode: `LM-XXXXXX`", color:15158332}]} timeout 8s (AbortController). Telegram GET sendMessage (token & chatId wajib terisi) timeout 8s. Try/catch per channel terpisah; TIDAK pernah me-log token; SATU ActivityLog {actor:"Sistem", action:"WEBHOOK", detail:"Discord: ok/gagal/nonaktif; Telegram: ..."}.
+   191→  * Juga diexport: sendDiscordNotification/sendTelegramNotification/isValidDiscordWebhook + tipe NotifyChannelResult ("ok"|"gagal"|"nonaktif") untuk dipakai route webhook-test.
+   192→- Membuat src/lib/transcribe.ts — `transcribeIntroAudio(applicationId)`: baca Application+introFile → validasi mimeType audio → resolve path (absolut, atau relatif dari process.cwd(); file di <root>/uploads) → fs.readFile → base64 → zai.audio.asr.create({file_base64}) → simpan transcript + ActivityLog {actor:"AI", action:"TRANSCRIPTION", detail:"Audio intro ditranskripsi (N kata)"}; gagal → ActivityLog detail "Gagal transkripsi audio intro."; tanpa audio → silent no-op. Tidak pernah throw.
+   193→- Membuat src/lib/processing.ts — `startBackgroundProcessing(applicationId)`: DIJAMIN TIDAK THROW; urutan (1) analyzeApplication, (2) transcribeIntroAudio, (3) fetch data lamaran → sendNewApplicationNotifications; tiap langkah try/catch sendiri; guard module-level Set mencegah duplikasi per applicationId (hapus di finally).
+   194→- 5 route baru (semua `export const dynamic = "force-dynamic"`, NextResponse.json, try/catch, params Promise di-await, pesan error Indonesia):
+   195→  * POST /api/chat (publik): validasi message 1..500 char, history disanitasi (hanya user/assistant, konten ≤1000 char, dipotong 8 item terakhir); chatbotEnabled=false → 403 "Chatbot sedang nonaktif."; ambil posisi aktif (isActive & closesAt>null, urut order) → system prompt Lumina Bot sesuai spesifikasi → LLM → {reply}; gagal/LLM kosong → 500 "Bot sedang sibuk, coba lagi sebentar."
+   196→  * POST /api/admin/applications/[id]/ai — requireRole(["OWNER","HR"]); null → dibedakan via getSession(): 403 (login tapi role kurang) / 401 (belum login) — sesuai saran docstring server-auth 5-a; 404 bila lamaran tak ada; analyzeApplication null → 502 "Analisis AI gagal, coba lagi."; sukses → {score, summary, recommendation, aiAnalyzedAt}.
+   197→  * POST /api/admin/applications/[id]/ai-questions — pola sama → {questions} | 502 "Gagal membuat pertanyaan wawancara, coba lagi."
+   198→  * POST /api/admin/applications/[id]/ai-reply — pola sama → {draft} | 502 "Gagal membuat draft balasan, coba lagi."
+   199→  * POST /api/admin/webhook-test — requireRole(["OWNER"]); kirim "Tes konfigurasi notifikasi Lumina Studio - berhasil" ke Discord (content polos) & Telegram yang terkonfigurasi → {discord:"ok"|"gagal"|"nonaktif", telegram:...}; detail hanya ke console (tanpa token).
+   200→- Verifikasi:
+   201→  * `bunx z-ai chat -p "tes"` — SDK siap (GLM menjawab).
+   202→  * Unit parseScreeningResult: JSON bersih, JSON dalam fence ```json, teks berantakan "score: 30/100 ... TIDAK COCCOK", angka saja (rekomendasi diturunkan), sampah total→null, score 250→clamp 100, "Layak Wawancara"→dinormalisasi ke enum. Semua benar.
+   203→  * E2E nyata (bun script langsung, DB + LLM hidup) pada lamaran seed "Rizky Pratama": analyzeApplication → skor 85/LAYAK_WAWANCARA + ringkasan ID tersimpan + ActivityLog AI_SCREENING; generateInterviewQuestions → 5 pertanyaan personal bernomor; generateReplyDraft → draft hangat "Halo Rizky Pratama..."; transcribeIntroAudio tanpa audio → no-op (transcript tetap null); sendNewApplicationNotifications tanpa webhook → ActivityLog "Discord: nonaktif; Telegram: nonaktif", tanpa throw; startBackgroundProcessing dipanggil 2x beruntun → guard anti-duplikasi bekerja (pipeline hanya jalan sekali).
+   204→  * Handler POST /api/chat diuji langsung (di luar dev server): valid+history → 200 {reply} berbahasa Indonesia menyebut lowongan aktif; pesan kosong → 400; >500 char → 400; history 12 item dipotong → 200.
+   205→  * `bun run lint`: 0 error pada 9 file milik 5-d (error lint yang tersisa hanya di file milik agent lain yang sedang dikerjakan: src/components/landing/lang-context.tsx, share-menu.tsx, theme-toggle.tsx (5-b), src/components/admin/application-detail-dialog.tsx, kanban-board.tsx (5-c)). `tsc --noEmit`: 0 error di file-mu; error tersisa milik agent lain (seed.ts/login 5-a mid-flight, admin-tab 5-c, strings.ts 5-b) + folder examples/skills pre-existing.
+   206→  * CATATAN: uji HTTP lewat dev server (port 3000) sempat 500 untuk SEMUA route — penyebabnya build global dev server gagal karena modul milik agent lain belum ada (admin-app.tsx mengimpor ./interview-tab, ./logs-tab, ./users-tab yang belum dibuat 5-c). Bukan berasal dari file 5-d. Logika route sudah terverifikasi via pemanggilan handler langsung (lihat atas).
+   207→
+   208→Stage Summary:
+   209→- 9 file selesai (sesuai batas, tidak ada file lain disentuh):
+   210→  - src/lib/ai.ts → getZai, withTimeout, parseScreeningResult, analyzeApplication, generateInterviewQuestions, generateReplyDraft, type ScreeningResult.
+   211→  - src/lib/notify.ts → getAutomationSettings, isValidDiscordWebhook, sendDiscordNotification, sendTelegramNotification, sendNewApplicationNotifications, tipe NotifyChannelResult/NotifyResult/AutomationSettings.
+   212→  - src/lib/transcribe.ts → transcribeIntroAudio.
+   213→  - src/lib/processing.ts → startBackgroundProcessing (GUARANTEED no-throw + guard Set).
+   214→  - src/app/api/chat/route.ts; src/app/api/admin/applications/[id]/ai/route.ts; .../ai-questions/route.ts; .../ai-reply/route.ts; src/app/api/admin/webhook-test/route.ts.
+   215→- CATATAN INTEGRATOR:
+   216→  1. startBackgroundProcessing ada di `@/lib/processing` (bukan ai.ts seperti tertulis di worklog 5-fondasi). 5-a WAJIB memanggilnya fire-and-forget di akhir POST /api/applications saat sukses create: `void startBackgroundProcessing(created.id)` (import dari "@/lib/processing") — jangan await agar respons tetap cepat.
+   217→  2. Kontrak respons admin AI untuk 5-c: POST ai → {score:number, summary:string, recommendation:AiRecommendation, aiAnalyzedAt:ISO}; ai-questions → {questions:string}; ai-reply → {draft:string}; error {error:string} dengan 401 (belum login), 403 (role kurang — tangani VIEWER), 404 (lamaran tak ada), 502 (AI gagal), 500 (tak terduga). webhook-test → {discord, telegram} masing-masing "ok"|"gagal"|"nonaktif".
+   218→  3. Kontrak /api/chat untuk 5-b: body {message, history?}; sukses 200 {reply} (tipe ChatResponse); error {error} 400/403 (chatbotEnabled=false)/500.
+   219→  4. getAutomationSettings() membaca field otomasi (chatbotEnabled, discordWebhookUrl, telegramBotToken, telegramChatId) dari Setting "site" secara defensif — aman dipakai sebelum/belum ada field tsb di seed.
+   220→  5. Setelah SEMUA agent selesai (khususnya 5-c melengkapi interview-tab/logs-tab/users-tab), verifikasi ulang HTTP end-to-end: POST /api/admin/webhook-test dengan login OWNER (admin@lumina.id/admin123) → {discord:"nonaktif",telegram:"nonaktif"}; isi webhook Discord palsu di Pengaturan → "gagal"; chat publik; tombol AI di panel.
+   221→  6. Isi DB hasil uji 5-d yang sengaja dipertahankan sebagai demo: lamaran pertama (Rizky Pratama) kini punya aiScore 85/aiSummary/aiRecommendation LAYAK_WAWANCARA + beberapa ActivityLog (AI_SCREENING, WEBHOOK). Transkrip & onboarding lain tidak diubah.
+   222→
+   223→---
+   224→Task ID: 5-a, 5-b, 5-c (integrasi & verifikasi oleh orchestrator)
+   225→Agent: orchestrator (Z.ai Code)
+   226→Task: Integrasi lintas-agent + verifikasi end-to-end fitur lengkap v2
+   227→
+   228→Work Log:
+   229→- Ketiga subagent (5-a Backend Core, 5-b Landing v2, 5-c Admin v2) sempat timeout pada laporan akhir Task tool, NAMUN seluruh file mereka tertulis lengkap (16 file landing, 20 file admin, 29 route API) dan lint bersih. 5-d (Backend AI) selesai penuh dengan laporan.
+   230→- Integrasi oleh orchestrator:
+   231→  * Trigger pipeline AI di POST /api/applications: `void startBackgroundProcessing(created.id)` (import dari @/lib/processing).
+   232→  * page.tsx v2: mode embed (?embed=1) dengan EmbedJobs, hook usePublicContent bersama, view landing/admin/embed.
+   233→- Insiden infrastruktur: dev server mati (proses hilang + cache .next korup menyebabkan compile hang 2.1GB RAM). Fix: pkill next, rm -rf .next, restart via .zscripts/dev.sh resmi -> server stabil 200.
+   234→- Verifikasi Agent Browser (SEMUA LULUS):
+   235→  * Landing v2: toggle dark mode (nav gelap), toggle bahasa ID/EN, filter posisi per departemen+jenis, dialog detail posisi (deskripsi+penuh persyaratan+WhatsApp), wizard 3 langkah (stepper Data Diri/Pengalaman/File & Kirim) -> submit -> KODE PELACAKAN LM-E6CUFZ ditampilkan + tombol salin, Cek Status (kode lowercase dinormalisasi, stepper progres + posisi + tanggal), chatbot Lumina Bot (LLM REAL menjawab dari data posisi: "part-time dan remote, boleh dari kota lain"), section subscribe (validasi email bekerja; API 201), RSS XML valid, embed widget (?embed=1) tampil + tombol ke situs utama, JSON-LD, mobile 390px responsif.
+   236→  * Background processing: lamaran Bayu otomatis dianalisis AI (skor 85, ringkasan, Layak Wawancara) + log Notifikasi + log Lamaran Masuk -> timeline riwayat terisi otomatis.
+   237→  * Admin: login email+password (admin@lumina.id/admin123), badge role, 7 tab; dashboard (8 kartu stats termasuk Rata-rata Skor AI 85 & Pelanggan, AreaChart recharts 30 hari, Wawancara Mendatang, Perlu Ditindaklanjuti); tabel pelamar (skor AI badge emerald 85, rating bintang, tag, filter+sort, export CSV 9 baris valid); KANBAN dnd-kit drag-drop BEKERJA (Rizky NEW->REVIEWED via mouse drag, DB ter-update); detail dialog (panel AI Screening + Analisis Ulang, generator Pertanyaan Wawancara AI REAL (personal menyebut portofolio & target video/bulan), Draft Balasan AI, jadwal wawancara tersimpan 2026-09-18T14:00Z, kode pelacakan, catatan, ubah status); kalender wawancara (18 Sep dot+nama, panel jadwal 14.00); Log audit (Pemilik Studio/Sistem/AI + aksi + kandidat); Posisi (duplikat -> "Content Strategist (Salinan)" nonaktif); Pengguna (3 akun seed + switch/edit/hapus + Ganti Password Saya); Pengaturan (integrasi Discord/Telegram + Kirim Pesan Uji -> "Telegram: nonaktif", Pelanggan Notifikasi 1 email, embed code).
+   238→  * Role: HR -> 5 tab (tanpa Pengguna/Pengaturan); VIEWER -> 4 tab + banner "Mode Pengamat"; stats konsisten (7 total, Pelanggan 1).
+   239→- Catatan kecil: countdown hero tidak tampil karena deadline seed (30 Sep 2025) sudah lewat vs tanggal sandbox (Sep 2026) -> fallback teks deadline bekerja sesuai spec. Upload file di wizard tidak diuji visual (artefak automation), namun endpoint multipart tervalidasi dan submit tanpa file sukses.
+   240→
+   241→Stage Summary:
+   242→- PLATFORM REKRUTMEN LENGKAP: 30+ fitur baru terpasang dan terverifikasi end-to-end (AI screening otomatis, chatbot LLM, kalender wawancara, kanban drag-drop, multi-user role, export CSV, tracking pelamar, RSS, embed, dark mode, bilingual, subscribe, webhook notifikasi, audit log, auto-close posisi, dsb).
+   243→- Akun demo: admin@lumina.id (Owner), hr@lumina.id (HR), viewer@lumina.id (Pengamat) — semua password admin123.
+   244→- Lint bersih; server 200 stabil; worklog lengkap.
+   245→
+   246→---
+   247→Task ID: 8
+   248→Agent: orchestrator (Z.ai Code)
+   249→Task: Pasca-verifikasi "tambahkan semuanya" — perbaikan chatbot 401 X-Token & finalisasi
+   250→
+   251→Work Log:
+   252→- Menemukan dua masalah saat pemeriksaan ulang dev.log: (1) POST /api/chat 500 karena SDK AI mengembalikan 401 "missing X-Token header"; (2) chatbotEnabled=false di Setting "site" sehingga chat menolak (403).
+   253→- Diagnosis: z-ai CLI (instance baru per proses) berhasil, sementara server memakai instance ZAI yang di-cache di level modul ai.ts — token instance cache sudah stale dan tidak pernah di-reset.
+   254→- Fix di src/lib/ai.ts: tambah resetZai() + withZaiRetry(operation) — eksekusi operasi SDK dengan maksimal 2 percobaan; antar percobaan instance cache dibuang (resetZai) agar dibuat segar.
+   255→- Patch 5 titik pemanggilan SDK ke withZaiRetry: ai.ts (analyzeApplication, generateInterviewQuestions, generateReplyDraft), transcribe.ts (ASR), api/chat/route.ts; import getZai yang tak terpakai dihapus.
+   256→- Aktifkan kembali chatbotEnabled=true via Prisma (DB).
+   257→- Verifikasi: curl POST /api/chat → 200 reply LLM nyata; POST /api/admin/applications/[id]/ai → skor 85 + ringkasan + LAYAK_WAWANCARA; Agent Browser: landing penuh (filter, wizard, tracking, subscribe, FAQ, share), widget chat kirim pesan → balasan bot nyata ("Iya, posisi Video Editor (Part-time, Remote) masih buka..."), login admin@lumina.id → 7 tab lengkap, tab Pelamar (filter/kanban/CSV/checkbox bulk+bandingkan) tampil data; console browser bersih; dev.log bersih tanpa 500; bun run lint 0 error.
+   258→
+   259→Stage Summary:
+   260→- Penyebab root 401 X-Token = instance SDK stale yang di-cache permanen; kini semua panggilan AI resilient (auto-retry dengan instance segar).
+   261→- Chatbot & seluruh platform v2 terverifikasi hidup end-to-end kembali setelah perbaikan.
+   262→- Tidak ada perubahan skema/tipe/kontrak; hanya hardening src/lib/ai.ts, transcribe.ts, api/chat/route.ts.
+   263→
+   264→---
+   265→Task ID: 9-c
+   266→Agent: full-stack-developer
+   267→Task: Kartu visibilitas section di tab Pengaturan admin
+   268→
+   269→Work Log:
+   270→- Membaca worklog.md (jurnal proyek) untuk konteks, src/lib/types.ts (kontrak SECTION_KEYS/SECTION_LABELS/SectionVisibility), settings-tab.tsx penuh (926 baris) untuk memahami pola state form, bar simpan sticky, dan toast, serta src/app/api/admin/settings/route.ts (read-only) untuk memastikan bentuk respons PUT { ok, site } dan merge server-side.
+   271→- Membuat file baru src/components/admin/section-visibility-card.tsx: Card "Tampilan Halaman Publik" dengan deskripsi "Atur bagian mana yang tampil di halaman publik. Perubahan berlaku setelah disimpan.", grid responsif 1 kolom mobile / 2 kolom md+, 12 baris Switch terkontrol (kiri: ikon lucide kecil per kunci dalam badge rose + label SECTION_LABELS; kanan: Switch shadcn dengan aria-label Indonesia).
+   272→- Peta ikon per kunci: hero=Sparkles, positions=Briefcase, about=Info, benefits=Gift, steps=ListOrdered, applyForm=FileText, statusCheck=Search, testimonials=MessagesSquare, faq=CircleHelp, subscribe=Bell, finalCta=Flag, chatbot=Bot (semua terverifikasi tersedia di lucide-react 0.525.0).
+   273→- Hint amber tampil hanya saat bagian NONAKTIF untuk 3 kasus penting: positions ("Posisi tetap terbuka di dashboard & RSS/embed..."), applyForm ("Pelamar tidak dapat mengirim lamaran..."), chatbot ("Widget disembunyikan; saklar utama chatbot tetap di atas.").
+   274→- Mengekspor helper normalizeSections(input): lengkapi kunci yang hilang dari data lama dengan nilai true agar Switch terkontrol penuh (typeof boolean check, fallback true).
+   275→- Mengedit settings-tab.tsx: import SectionVisibilityCard + normalizeSections + type SectionKey; load() kini menormalisasi sections setelah deep-copy GET; handleSaveSite() menormalisasi sections dari respons PUT sebelum sinkron state; fungsi updateSection(key, value) menyebar sections di state site; kartu baru disisipkan setelah card "Integrasi & Otomasi" (sehingga hint "saklar utama chatbot tetap di atas" akurat secara spasial) dan sebelum "Pelanggan Notifikasi".
+   276→- Verifikasi: bun run lint 0 error; bunx tsc --noEmit 0 error di src/ (4 error pre-existing hanya di examples/ & skills/ yang diabaikan sesuai instruksi); dev.log menunjukkan recompile sukses tanpa error. Tidak menjalankan dev server/build/prisma; tidak mengubah API, src/app/**, src/lib/**, landing, ui, prisma.
+   277→
+   278→Stage Summary:
+   279→- Fitur selesai: kartu "Tampilan Halaman Publik" di tab Pengaturan admin dengan 12 Switch visibilitas bagian halaman publik, tersimpan lewat PUT /api/admin/settings yang sudah ada (sections terkirim sebagai bagian dari objek site, merge + sanitize tetap di server, OWNER-only tetap ditangani backend).
+   280→- File diubah: src/components/admin/settings-tab.tsx (state load/save/updateSection + penempatan kartu); file baru: src/components/admin/section-visibility-card.tsx (kartu + SECTION_ICONS + SECTION_HINTS + normalizeSections).
+   281→- Keputusan penting: normalisasi sections dilakukan di sisi client pada load() dan sinkronisasi setelah simpan (bukan di API, yang tak boleh disentuh); hint hanya muncul saat bagian off; gaya konsisten pola tab (rounded-2xl p-6, px-0 header/content, badge rose, hint amber) tanpa biru/indigo dan tanpa emoji.
+   282→- Catatan integrator: bila data Setting "site" lama belum punya sections, GET mengembalikan sections dari parseSiteContent (fallback semua true server-side) dan normalizeSections di client menjamin 12 kunci lengkap; landing sudah membaca site.sections di task lain (9-a/9-b), tidak ada perubahan kontrak.
+   283→
+   284→---
+   285→Task ID: 9-b
+   286→Agent: frontend-styling-expert
+   287→Task: Render kondisional per section di halaman publik
+   288→
+   289→Work Log:
+   290→- Membaca worklog.md (konteks & gaya), src/lib/types.ts (kontrak SectionKey/SECTION_KEYS/SectionVisibility/SiteContent.sections), lalu memverifikasi read-only bahwa server selalu mengirim `sections` lengkap (src/lib/seed.ts: sanitizeSections + fallback semua true; src/app/api/public/content/route.ts memakai parseSiteContent) sehingga tidak perlu fetch tambahan; src/app/page.tsx dikonfirmasi (props LandingPage tetap { content, positions, stats, onOpenAdmin }).
+   291→- landing-page.tsx — LandingShell: `const sections = content.sections`; tiap section dirender hanya bila flag-nya true: hero, positions (canApply=sections.applyForm), about, benefits, steps, applyForm (id #lamar), statusCheck, testimonials, faq (id #faq), subscribe, finalCta; widget chat hanya bila `content.chatbotEnabled && sections.chatbot`.
+   292→- landing-page.tsx — useNavLinks(sections) kini difilter per kunci section: positions→#posisi, benefits→#benefit, steps→#cara-lamar, statusCheck→#status, faq→#faq; hasil dipakai Navbar desktop, Sheet mobile, dan Footer sehingga tidak ada anchor nav ke section tersembunyi. Nav desktop dan kolom "Navigasi" footer tidak dirender bila daftar kosong; hamburger mobile disembunyikan bila navLinks kosong DAN applyForm nonaktif (sheet masih tampil bila ada CTA/toggle yang berguna).
+   293→- landing-page.tsx — dependensi applyForm=false: CTA "Lamar Sekarang" hero disembunyikan ("Lihat Posisi" tetap bila sections.positions; keduanya hilang bila positions juga nonaktif; ShareMenu tetap); tombol "Lamar Sekarang" di finalCta disembunyikan (section tetap tampil, tombol WhatsApp tetap); CTA navbar desktop + item CTA di Sheet mobile (anchor #lamar) disembunyikan; section #lamar tak dirender.
+   294→- positions-section.tsx — prop baru `canApply: boolean` pada PositionsSection → PositionCard & PositionDetailDialog: semua tombol "Lamar Posisi Ini" (kartu + footer dialog) tidak dirender bila canApply=false; tombol Detail & share WhatsApp tetap.
+   295→- Navbar, Hero, FinalCtaSection, Footer menerima prop internal `sections: SectionVisibility`; tidak ada perubahan pada wizard, autosave, tracking, share, countdown, dark mode, i18n.
+   296→- strings.ts tidak diubah — semua label yang dibutuhkan sudah ada di kamus ID/EN (nav.*, hero.viewPositions, positions.apply, cta.apply).
+   297→- Verifikasi: `bun run lint` 0 error; `bunx tsc --noEmit` 0 error di src/ (sisa 4 error pre-existing hanya di examples/ & skills/, diabaikan sesuai instruksi). Tidak menjalankan dev server/build/prisma.
+   298→
+   299→Stage Summary:
+   300→- Halaman publik kini sepenuhnya mengikuti konfigurasi `sections` dari SiteContent: 11 bagian konten + widget chatbot bisa dinyalakan/matikan dari panel admin tanpa meninggalkan anchor mati (#posisi/#benefit/#cara-lamar/#faq/#lamar/#status hanya ada saat section-nya tampil).
+   301→- File diubah: src/components/landing/landing-page.tsx (render kondisional per section, navbar/Sheet/footer adaptif, CTA dependen applyForm, kondisi chatbot ganda) dan src/components/landing/positions-section.tsx (prop canApply). strings.ts tidak perlu perubahan.
+   302→- Keputusan penting untuk integrator: (1) CTA "Lamar Sekarang" di navbar ikut disembunyikan saat sections.applyForm=false — menindaklanjuti aturan poin 5 "anchor nav yang merujuk section tersembunyi tidak boleh ada"; kalimat "CTA tetap" (poin 2) ditafsirkan sebagai CTA bukan bagian daftar link adaptif. (2) Hamburger mobile hilang hanya bila tak ada link nav DAN applyForm nonaktif. (3) Bila SEMUA section disembunyikan, halaman tetap valid: navbar + footer tampil, main kosong tanpa error/area aneh. (4) JSON-LD JobPosting dan view embed (?embed=1) tidak disentuh; catatan: tombol embed "Lamar di Situs Utama" masih menuju /#lamar permanen — potensi tindak lanjut bila applyForm disembunyikan.
+   303→- Lint 0 error; tsc bersih di src/.
+   304→
+   305→---
+   306→Task ID: 9 (+9-b, 9-c)
+   307→Agent: orchestrator (Z.ai Code) + 2 subagent paralel
+   308→Task: Fitur sembunyikan/tampilkan per bagian halaman publik
+   309→
+   310→Work Log:
+   311→- Fondasi (orchestrator): types.ts + SectionKey/SECTION_KEYS/SECTION_LABELS/SectionVisibility, SiteContent.sections; defaults.ts + DEFAULT_SECTIONS (semua true); seed.ts + sanitizeSections() di-wire ke sanitizeSiteContent (merge per kunci, fallback per nilai) — TANPA ubah skema DB (sections tersimpan di JSON Setting "site"); PUT /api/admin/settings otomatis mendukung karena merge lewat sanitize.
+   312→- 9-b (frontend-styling-expert): landing-page.tsx render kondisional 11 section (hero/positions/about/benefits/steps/applyForm/statusCheck/testimonials/faq/subscribe/finalCta); chat widget hanya bila chatbotEnabled && sections.chatbot; useNavLinks(sections) dipakai Navbar+Sheet+Footer (tanpa anchor ke section tersembunyi); hero CTA "Lamar Sekarang" & "Lihat Posisi" adaptif; positions-section.tsx + prop canApply (tombol "Lamar Posisi Ini" kartu & dialog detail disembunyikan bila applyForm=false); strings.ts tak berubah (kamus cukup).
+   313→- 9-c (full-stack-developer): section-visibility-card.tsx (baru) — kartu "Tampilan Halaman Publik" berisi 12 Switch (SECTION_LABELS + ikon lucide), grid 1/2 kolom, hint amber untuk positions/applyForm/chatbot nonaktif, helper normalizeSections (lengkapi kunci hilang dari data lama); settings-tab.tsx — sections dinormalisasi saat load, ikut terkirim di PUT { site }, sinkron dari respons; kartu disisipkan setelah "Integrasi & Otomasi".
+   314→- Verifikasi Agent Browser: login OWNER → tab Pengaturan → kartu visibilitas 12 switch tampil; toggle + Simpan → tersimpan (terbukti persist lintas reload); landing menyembunyikan section nonaktif + nav link adaptif (hanya 3 link tersisa saat 5 section off); applyForm=false → kartu posisi tetap tampil (5 kartu), TANPA tombol "Lamar Posisi Ini" (kartu & dialog detail), TANPA CTA "Lamar Sekarang" (nav & hero), dialog detail tetap punya tombol WhatsApp; chatbot off → widget hilang; restore semua true → landing penuh kembali (11 heading + tombol lamar + widget chat).
+   315→- Insiden data (dipulihkan): semua posisi ditemukan isActive=false (kombinasi otomasi menutup Video Editor dengan closesAt kedaluwarsa 2026-09-11T08:31Z + 5 PATCH toggle posisi sisa uji subagent); pulihkan via Prisma: hapus 2 posisi "(Salinan)", aktifkan 5 posisi seed, closesAt=null. API publik kembali 5 posisi aktif.
+   316→- Catatan penggunaan UI: mengubah satu switch memunculkan hint amber yang menggeser elemen di bawahnya → klik switch berikutnya dengan ref lama bisa salah sasaran (stale ref). Pola aman: snapshot ulang setiap kali sebelum klik. Tidak memengaruhi pengguna mouse asli.
+   317→- bun run lint: 0 error; tsc --noEmit: 0 error di src/; console browser & dev.log bersih.
+   318→
+   319→Stage Summary:
+   320→- Fitur visibilitas per section SELESAI & terverifikasi end-to-end: 12 bagian halaman publik dapat disembunyikan/ditampilkan dari tab Pengaturan (khusus OWNER), berlaku setelah simpan, nav adaptif, dependensi lamar ditangani otomatis.
+   321→- Kontrak baru: SiteContent.sections (Record<SectionKey, boolean>) — data lama aman dua lapis (sanitize server + normalize client).
+   322→- Data demo dipulihkan: 5 posisi aktif, 2 duplikat uji dihapus; chatbotEnabled=true.
+   323→
+   324→---
+   325→Task ID: 10-c
+   326→Agent: full-stack-developer
+   327→Task: Animasi & polesan responsif panel admin
+   328→
+   329→Work Log:
+   330→- Membaca worklog.md (2 task terakhir), memindai seluruh 20 file src/components/admin, verifikasi dependensi (framer-motion 12.26.2, @dnd-kit, recharts), memastikan 0 kelas blue/indigo/violet sebelum mulai.
+   331→- File baru src/components/admin/motion-primitives.tsx: primitif animasi bersama — Reveal (entrance fade+slide, hormati prefers-reduced-motion via useReducedMotion), CountUp (angka hitung-naik useInView + animate, tanpa setState sinkron di effect body agar lolos aturan react-hooks/set-state-in-effect, langsung tampil nilai akhir saat reduced motion), STAGGER_CONTAINER/STAGGER_ITEM (varian stagger kartu). Semua animasi hanya transform/opacity.
+   332→- admin-app.tsx: FadeIn (y:8) diganti TabReveal (fade + slide x:12, 0.2s, easeOut) pada 7 TabsContent — Radix Tabs melepas konten nonaktif sehingga animasi entrance berjalan tiap pergantian tab; AnimatePresence mode="wait" dievaluasi dan TIDAK dipakai karena kombinasi forceMount/Radix menyebabkan konten baru ter-render ganda selama exit (risiko flash); tombol header mencapai target sentuh >=44px di mobile (ThemeToggle size-11 sm:size-9, tombol Publik/Keluar h-11 sm:h-10), active:scale-[0.99] di tombol "Lihat Halaman Publik"; TabsList horizontal-scroll overflow-x-auto + nice-scrollbar dipertahankan.
+   333→- dashboard-tab.tsx: grid statistik jadi stagger entrance (staggerChildren 0.045, item fade+y:10, dilewati saat reduced motion); semua angka besar (6 kartu status, rata-rata skor AI, pelanggan) pakai CountUp tabular-nums; hover lift halus pada 8 kartu statistik (CSS transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-md — tanpa motion wrapper agar tidak konflik dengan grid); tombol Segarkan active:scale-[0.99] + h-11 sm:h-9; tombol Detail daftar h-11 sm:h-8. Recharts tidak disentuh.
+   334→- login-card.tsx: entrance lembut fade + naik (slideY:16, 0.35s) pada kartu via Reveal, tanpa shake; tombol Masuk h-11 active:scale-[0.99].
+   335→- applications-tab.tsx: bulk bar sticky kini dibungkus Reveal (motion.div JADI elemen sticky agar sticky tetap bekerja) dengan entrance slideY:8; FAB "Bandingkan (n)" entrance slideY:10 + whileHover scale 1.03 / whileTap 0.97; tombol Terapkan active:scale-[0.99]; baris toggle+export diberi flex-wrap; toolbar/filter grid grid-cols-2 sm:3 lg:5 sudah aman, tidak diubah datanya.
+   336→- applications-table.tsx: tabel desktop diberi min-w-[920px] (container shadcn Table sudah overflow-x-auto sehingga kolom tidak remuk di ~768px); kartu mobile hover lift + shadow; tombol Detail/Hapus mobile h-11 (>=44px).
+   337→- kanban-board.tsx: polish drop-zone — kolom keseluruhan + placeholder "Kosong" kini ikut ter-highlight saat isOver (border-primary/40-50, bg accent, transition-colors 150ms), kartu diberi hover:shadow-md (transition-shadow; tidak menyentuh transform/inline style dnd-kit, drag & drop utuh).
+   338→- positions-tab.tsx & users-tab.tsx: kartu/row hover lift + shadow / border zinc hover; tombol utama (Tambah Posisi/Pengguna) h-11 sm:h-10 + active:scale-[0.99]; ikon aksi baris (duplikat/edit/hapus) size-11 sm:size-9 untuk target sentuh >=44px.
+   339→- logs-tab.tsx: tombol Segarkan active:scale-[0.99] + h-11 sm:h-9.
+   340→- interview-tab.tsx + interview-calendar.tsx: tombol nav bulan & "Hari Ini" size-11/h-11 sm:size-9/sm:h-9; sel tanggal kalender tambah active:scale-[0.97]; tombol Detail h-11 sm:h-8.
+   341→- settings-tab.tsx: bar simpan sticky dibungkus Reveal (motion.div sebagai elemen sticky; sticky bottom-4 z-10 tak terganggu) + tombol "Simpan Perubahan" h-11 sm:h-10 active:scale-[0.99] — pola simpan handleSaveSite/normalizeSections/SectionVisibilityCard TIDAK disentuh sama sekali.
+   342→- application-detail-dialog.tsx: tombol "Simpan Jadwal", ikon hapus jadwal, "Hapus", dan "Simpan Perubahan" dinaikkan ke >=44px di mobile (h-11 sm:h-9 / size-11 sm:size-9) + active:scale pada simpan; dialog sudah max-h-[92vh] + scroll internal, tidak diubah lainnya.
+   343→- Verifikasi: bun run lint 0 error; bunx tsc --noEmit 0 error di src/ (4 error pre-existing hanya di examples/ & skills/, diabaikan); dev.log "Compiled" sukses + GET / 200 tanpa error/500; tidak menjalankan dev server/build/prisma; tidak mengubah src/lib/**, src/app/**, api, prisma, landing, ui.
+   344→
+   345→Stage Summary:
+   346→- Panel admin kini terasa hidup: konten tab masuk fade+slide horizontal (x:12, 0.2s) tiap pergantian tab, dashboard punya stagger entrance + angka count-up (useInView, sekali animasi, tabular-nums), kartu/bottom bar/FAB punya entrance & hover/tap feedback halus (scale/lift/shadow), login card fade+rise bersih.
+   347→- Semua animasi transform/opacity saja, hormat prefers-reduced-motion (useReducedMotion → offset/skip), tidak ada double-animate pada dialog shadcn, recharts dibiarkan bawaan.
+   348→- Responsif diperkuat tanpa redesign: TabsList tetap scroll horizontal (7 tab terjangkau), tabel desktop min-w + overflow-x-auto bawaan shadcn, toolbar flex-wrap, kanban tetap scroll horizontal, dialog max-h + internal scroll, grid statistik grid-cols-2 → md:grid-cols-4, tombol/ikon primer >=44px di mobile.
+   349→- Perilaku terjaga 100%: alur API, state, role-gating OWNER/HR/VIEWER, drag dnd-kit, bulk action, CSV export, compare, AI panel, kalender, pola simpan Pengaturan (normalizeSections + PUT settings) tidak berubah; palet tetap zinc/rose/amber/emerald tanpa biru/indigo, tanpa emoji, teks Indonesia, light & dark mode aman.
+   350→- Catatan keputusan: AnimatePresence mode="wait" untuk tab sengaja tidak dipakai (Radix + forceMount menyebabkan render ganda saat exit); penggantinya entrance-on-mount per TabsContent dengan efek visual setara dan risiko nol. Hover lift kartu memakai CSS transition (bukan framer) agar tidak bentrok dengan transform grid/dnd-kit.
+   351→
+   352→---
+   353→Task ID: 10-b
+   354→Agent: frontend-styling-expert
+   355→Task: Animasi & polesan responsif halaman publik (landing)
+   356→
+   357→Work Log:
+   358→- Membaca worklog.md (konteks task 9/9-b/9-c: render kondisional sections, canApply, dsb) lalu seluruh file landing yang boleh diedit.
+   359→- primitives.tsx — menambah 4 primitif motion baru (FadeIn/Container/BrandMark/ROSE_BADGE/ICON_TILE dipertahankan): Stagger (kontainer whileInView staggerChildren), StaggerItem (fade-up per anak), HoverLift (whileHover y:-4 spring, GPU transform-only), AnimatedNumber (count-up integer via useInView + useMotionValue + useTransform + animate; render motion value sebagai anak motion.span tanpa setState-per-frame; suffix opsional; tabular-nums; skip animasi bila useReducedMotion).
+   360→- landing-page.tsx — (1) Hero: entrance berurutan badge→judul→deskripsi→countdown→CTA→statistik via Stagger/StaggerItem; 2 glow blob (rose & amber) kini loop pelan y+opacity (durasi 9-11s; blob -translate-x-1/2 dipindah ke wrapper agar tidak ditimpa transform framer); statistik hero memakai AnimatedNumber (5, 8+, 100%). (2) Navbar: hook useScrolled via useSyncExternalStore (listener scroll pasif, tanpa setState di effect) → shadow-sm + h-16→h-14 transisi saat scrollY>8; brand siteName/tagline diberi min-w-0 + truncate (aman siteName panjang di 360px). (3) LandingShell dibungkus <MotionConfig reducedMotion="user"> sehingga seluruh animasi framer menghormati preferensi reduce-motion. (4) Grid benefit/steps/testimonial diganti Stagger+StaggerItem+HoverLift+Card hover:shadow-md; kartu statistik About diberi HoverLift+AnimatedNumber. (5) FinalCtaSection: blob rose ikut dianimasikan loop pelan. (6) Responsif: angka hero stats text-2xl→text-xl sm:text-2xl md:text-3xl + padding samping pr/px/pl-4→pr/px/pl-3 di xs + min-w-0 tiap sel; stats About p-4→p-3 sm:p-4, gap-4→gap-2 sm:gap-4, angka text-lg sm:text-xl md:text-2xl; grid-cols-1 eksplisit pada grid benefit/steps/testimonial/apply (clamp minmax(0,1fr) mencegah track melebihi kontainer di <sm).
+   361→- positions-section.tsx — kartu posisi dibungkus HoverLift (di dalam wrapper AnimatePresence motion.div, diberi h-full agar tinggi kolom tetap) + Card hover:shadow-lg hover:shadow-rose-600/10 dark:hover:shadow-black/30; tombol "Lamar Posisi Ini" diberi hover:scale-[1.04] active:scale-95; FIX overflow: grid md:grid-cols-2 lg:grid-cols-3 diberi grid-cols-1 eksplisit (track implisit 'auto' membiarkan min-content kartu ±361px melebihi kontainer 328px pada viewport 360px → scrollWidth 377; terverifikasi 360 setelah fix).
+   362→- deadline-countdown.tsx — kotak DETIK diberi denyut halus tiap pergantian detik (motion.p key={value} remount → initial scale 1.16/opacity .55 → 1; dimatikan bila useReducedMotion); kotak lain statis.
+   363→- chat-widget.tsx — panel dibungkus AnimatePresence + motion.div spring (stiffness 380/damping 32, y+scale+opacity, transformOrigin bottom right) untuk buka/tutup pegas; launcher memunculkan ring ping idle halus saat tertutup (motion-safe:animate-ping, border rose); bubble pesan user/bot diberi entrance fade-up 0.2s.
+   364→- status-check.tsx — blok hasil pelacakan (stepper + status akhir) diberi entrance fade-up saat muncul.
+   365→- subscribe-section.tsx — 2 glow dekoratif mengambang pelan (rose & amber, blur-3xl, di dalam panel overflow-hidden) sebagai aksen premium; konten form tidak berubah.
+   366→- embed-jobs.tsx — kartu posisi embed diberi HoverLift + hover:shadow-md.
+   367→- theme-toggle/lang-toggle/share-menu — active:scale-95 pada tombol ikon (Button base sudah transition-all; lang button transition-colors→transition-all).
+   368→- globals.css — hanya additive: blok @media (prefers-reduced-motion: reduce) menonaktifkan animasi CSS murni .dot-pulse::after (framer ditangani MotionConfig). Tidak ada utilitas lama yang diubah.
+   369→- Verifikasi browser (agent-browser): GET / 200; console & page errors bersih; count-up stats bekerja setelah scroll (0→5, 0→8+, 100%); navbar shadow+h-14 aktif saat digulir; chat panel buka/tutup via AnimatePresence OK; dark mode OK; ?embed=1 tampil 5 kartu tanpa overflow; JSON-LD jobposting-ld tetap terpasang; semua anchor section ada; footer mt-auto & tanpa link admin; overflowX=false di 360px, 1280px.
+   370→- bun run lint: 0 error (exit 0). bunx tsc --noEmit: 0 error di src/ (4 error pre-existing hanya di examples/ & skills/). dev.log: "✓ Compiled" tanpa error setelah hot reload, GET / 200. CATATAN: selama pengerjaan sempat muncul 1 error lint dari src/components/admin/motion-primitives.tsx (file agent lain yang dikerjakan paralel — tidak disentuh; error hilang sendiri setelah agent tersebut memperbaiki file-nya).
+   371→
+   372→Stage Summary:
+   373→- Landing publik kini terasa hidup & premium: staggered hero (badge→title→desc→countdown→CTA→stats dengan angka count-up), glow blob mengambang pelan (hero, final CTA, subscribe), hover-lift + shadow pada semua kartu grid (benefit/steps/testimoni/statistik/posisi/embed), micro-interaction scale pada tombol lamar & toggle, countdown detik berdenyut, chat panel springy + ring ping launcher, navbar menyusut + shadow saat scroll, hasil cek status fade-in.
+   374→- Primitif baru yang bisa dipakai ulang di src/components/landing/primitives.tsx: Stagger, StaggerItem, HoverLift, AnimatedNumber. Semua GPU-friendly (transform/opacity saja) dan reduce-motion aman: root LandingShell memakai <MotionConfig reducedMotion="user">, AnimatedNumber skip count-up via useReducedMotion, ping CSS memakai motion-safe:animate-ping, dot-pulse dimatikan via media query di globals.css.
+   375→- Perilaku lama dipertahankan penuh: render kondisional sections + canApply, useNavLinks adaptif, CTA adaptif, JSON-LD hook, embed view, lang/theme toggle, sticky footer (min-h-screen flex-col + footer mt-auto), tanpa entry admin di footer, wizard/strings/lib/API tidak disentuh.
+   376→- Fix responsif konkret: overflow horizontal 17px di viewport 360px (track grid posisi implisit melebihi kontainer) → grid-cols-1 eksplisit pada 4 grid; angka hero/stats About diskalakan turun di xs; brand navbar truncate; padding stats hero/about dikencangkan di layar sangat kecil. Tidak ada horizontal overflow di 360px/1280px (diverifikasi via scrollWidth).
+   377→
+   378→---
+   379→Task ID: 10
+   380→Agent: orchestrator (Z.ai Code) + 2 subagent paralel (10-b, 10-c)
+   381→Task: Hapus tombol/link admin dari publik, pratinjau & konfirmasi sebelum kirim lamaran, polesan animasi + responsif landing & admin
+   382→
+   383→Work Log:
+   384→- Hapus akses admin dari publik: tombol "Admin" (Lock) di Footer dibuang bersama prop onOpenAdmin (landing-page.tsx, Footer, LandingShell) dan callback openAdmin di page.tsx; hak akses admin kini hanya lewat URL langsung #admin (hashchange listener tetap). Hack pe-20 di footer diganti bar hak cipta simetris + tagline. Key strings footer.admin/adminAria dihapus dari kamus ID/EN + tipe Dict.
+   385→- Pratinjau & konfirmasi lamaran (apply-wizard.tsx + strings.ts): alur wizard jadi 4 langkah (Data Diri, Pengalaman, Berkas, Pratinjau & Kirim). Tombol langkah berkas kini "Pratinjau Lamaran" (validasi semua langkah, lompat ke langkah bermasalah bila galat). Langkah 4 menampilkan seluruh data (PreviewSection/PreviewRow: data diri, jawaban, berkas dengan nama+ukuran, fallback "Tidak diisi/Tidak diunggah") + tombol "Ubah" per bagian + checkbox pernyataan kebenaran data (wajib; toast penolakan bila kosong) + catatan privasi. "Kirim Lamaran" membuka AlertDialog konfirmasi; doSubmit() hanya jalan setelah "Ya, Kirim Lamaran". Ringkasan mini lama di langkah 3 dihapus (digantikan pratinjau penuh).
+   386→- Animasi wizard: AnimatePresence mode="wait" + motion.div per langkah (slide arah maju/mundur via direction), sukses = fade-rise + ikon centang spring pop.
+   387→- 10-b (frontend-styling-expert, landing): primitives baru Stagger/StaggerItem/HoverLift/AnimatedNumber (reduced-motion aware); hero stagger + blob glow loop + angka statistik count-up; navbar shrink+shadow saat scroll (useSyncExternalStore); pulse countdown per detik; chat widget spring open/close + ping ring; hover-lift kartu posisi/benefit/langkah/testimoni; MotionConfig reducedMotion="user"; perbaikan overflow horizontal 17px di 360px (grid-cols-1 eksplisit), teks statistik skala di layar kecil, truncation brand navbar; globals.css tambah guard prefers-reduced-motion untuk .dot-pulse.
+   388→- 10-c (full-stack-developer, admin): motion-primitives.tsx baru (Reveal/CountUp/STAGGER); transisi masuk per tab, dashboard stagger + CountUp + hover lift, login fade+rise, toolbar flex-wrap, tabel min-w + overflow, Kanban drop-zone highlight (dnd-kit utuh), sticky save bar Pengaturan beranimasi (pola simpan & normalizeSections tidak diutak-atik), tombol >= 44px di mobile; keputusan desain: tanpa AnimatePresence double-render pada Radix Tabs, hover lift via CSS agar tak bentrok transform dnd-kit.
+   389→- Verifikasi Agent Browser end-to-end: landing penuh TANPA tombol/link admin (footer.innerTanpa "Admin", 0 elemen cocok /admin/i); alur lamaran baru lengkap: isi data -> pilih Video Editor -> pengalaman -> berkas -> "Pratinjau Lamaran" -> pratinjau tampil rapi -> kirim tanpa centang DITOLAK (toast "Centang pernyataan...") -> centang -> dialog "Kirim lamaran sekarang?" -> "Ya, Kirim Lamaran" -> sukses + kode LM-49LRHB -> lacak status menemukan lamaran (Posisi: Video Editor, progres tampil). Login admin @#admin tetap berfungsi (Dashboard, tab Pelamar menampilkan data uji), tab admin bisa digeser horizontal di 375px (wrapper overflow-x-auto 616px>343px), tombol Keluar = logout ke form login (perilaku bawaan), "Lihat Halaman Publik" kembali ke landing. Mobile 375px: scrollWidth==clientWidth (tanpa overflow) di landing & admin; console hanya warning lama "Select uncontrolled->controlled" (pra-eksisting).
+   390→- Pembersihan: aplikasi uji LM-49LRHB dihapus dari DB (sisa 8 lamaran demo); browser ditutup; bun run lint 0 error; tsc 0 error di src/ (4 error pra-eksisting di examples/ & skills/); dev.log bersih tanpa 500.
+   391→
+   392→Stage Summary:
+   393→- Halaman publik kini sepenuhnya bebas jejak admin: tidak ada tombol/link/tautan ke panel; pemilik mengakses via URL #admin langsung.
+   394→- Pengiriman lamaran tidak pernah otomatis: wajib melewati langkah pratinjau penuh, mencentang pernyataan kebenaran data, lalu mengonfirmasi di dialog; baru FormData dikirim ke /api/applications.
+   395→- Landing & admin kini beranimasi halus (stagger, hover-lift, count-up, transisi langkah/tab, spring chat) dengan penghormatan prefers-reduced-motion, dan responsif terverifikasi 375px-1280px tanpa overflow.
+   396→- Kontrak tidak berubah: tidak ada perubahan skema DB, API, tipe SiteContent; hanya strings kamus (preview, buttons.review, steps[4]) yang bertambah.
+   397→
+   398→---
+   399→Task ID: 11-A
+   400→Agent: orchestrator (Z.ai Code)
+   401→Task: Fase A fitur per lowongan v3 — skema DB, tipe, seed, util stage, split page.tsx server/client
+   402→
+   403→Work Log:
+   404→- prisma/schema.prisma: Position +25 field baru (slug unique nullable, coverFileId->FileAsset "coverFile", salaryText/salaryVisible, benefits/examples JSON, urgent/featured, screeningQuestions JSON, requireCv/requireIntro/requirePortfolio, maxApplicants, publishAt, stages JSON, aiCriteria, autoShortlistScore/Stage, applyTemplate/acceptTemplate/rejectTemplate, assignmentTitle/Url/Note, rubricCriteria/checklistTemplate/noteTemplates JSON, views Int). Application +7 field (source, utmSource/utmMedium/utmCampaign, screeningAnswers JSON, rubricScores JSON, checklistState JSON). FileAsset +coverPositions. `bun run db:push` sukses tanpa data loss.
+   405→- src/lib/types.ts: StageKey, ScreeningQuestion, ReplyTemplates, AssignmentInfo; Position v3 lengkap; Application.status -> StageKey (bisa tahap kustom), +source/utm/screeningAnswers/rubricScores/checklistState; PublicContentResponse +positionStats; TrackResponse +positionSlug/assignment, status StageKey; ApplySuccessResponse baru; AdminPositionStatsResponse/PositionStatsRow/PositionViewResponse/AdminUploadResponse/AiCoverResponse baru; APPLICATION_SOURCES; AdminOverviewResponse.stats +CUSTOM.
+   406→- src/lib/stages.ts (BARU, client-safe): DEFAULT_STAGES, stagesForPosition, stageLabel, stageMeta/stageBadgeClass/stageDotClass/stageSoftClass (palet zinc/rose/amber/emerald/orange/teal/pink/yellow/lime TANPA biru), kanbanColumns + OTHER_STAGE_KEY, dashboardBucket.
+   407→- src/lib/defaults.ts: DefaultPositionSeed + field v3 opsional; 5 posisi demo diperkaya (gaji visible, benefits, examples YouTube, screeningQuestions, requirePortfolio di Video Editor & Penulis Naskah, maxApplicants=10 di SMO, urgent Thumbnail, featured Video Editor, aiCriteria Video Editor, template apply/accept/reject, assignment Video Editor & Penulis Naskah, rubric/checklist/noteTemplates).
+   408→- src/lib/seed.ts: parseScreeningQuestions/parseStringRecord/parseScoreRecord/parseReplyTemplates/parseAssignment; slugifyTitle + ensureUniqueSlug; serializePosition v3; serializeApplication v3 (status string, +field baru); parseApplicationFilters: status kustom diterima + filter source; runSeed: create posisi dengan semua field + slug, backfill slug posisi lama (idempoten), sample applications +source/utm; closeExpiredPositions: auto-close juga saat kuota penuh + ActivityLog AUTO_CLOSE.
+   409→- page.tsx dipecah: src/app/page.tsx kini SERVER component + generateMetadata dinamis per ?posisi=slug (title/desc/OG image dari cover, twitter card) + render HomeView; src/components/home-view.tsx (BARU, client) berisi seluruh logic view lama + props initialPosisiSlug + positionStats diteruskan ke LandingPage.
+   410→- landing-page.tsx: LandingPageProps + positionStats?: Record<string, PositionPublicStats> + initialPosisiSlug (TODO 11-b untuk auto-open).
+   411→- Backfill demo DB: script sekali-pakai mengisi 5 posisi eksisting dengan data demo v3 + slug (video-editor, thumbnail-designer, penulis-naskah, social-media-officer, content-strategist); script dihapus setelah jalan.
+   412→- Verifikasi: bunx tsc --noEmit tersisa 9 error di file milik subagent (application-detail-dialog, applications-table, comparison-dialog, dashboard-tab, kanban-board, status-check — semua ApplicationStatus vs StageKey); lint bersih; API belum diubah (tugas 11-a).
+   413→
+   414→Stage Summary:
+   415→- Fondasi data v3 SIAP: skema + tipe + seed + util stage tersinkron; DB berisi 5 posisi demo kaya fitur dengan slug.
+   416→- Kontrak untuk subagent: Application.status = StageKey (string, 5 bawaan atau tahap kustom posisi); label/warna tahap WAJIB lewat src/lib/stages.ts; positions publik akan mengirim positionStats; deep link /?posisi=slug sudah menagih metadata SEO di server.
+   417→- RESTRIKSI: 11-a/11-b/11-c/11-d/11-e TIDAK BOLEH mengubah skema prisma, types.ts, defaults.ts, seed.ts (kecuali instruksi eksplisit), dan TIDAK boleh db push.
+   418→---
+   419→Task ID: 11-b
+   420→Agent: frontend-styling-expert
+   421→Task: Landing posisi v3 — kartu posisi kaya konten, dialog detail lengkap (share kit/QR/views), deep link auto-open, JSON-LD fokus, embed filter ?posisi=
+   422→
+   423→Work Log:
+   424→- Membaca worklog.md (task 9/10/10-b/11-A), types.ts (Position v3 + PositionPublicStats + AssignmentInfo), page.tsx/home-view.tsx (plumbing initialPosisiSlug + positionStats), dan semua file scope.
+   425→- strings.ts — 28 kunci baru di bawah positions.* di KEDUA kamus id & en + tipe idDictShape: featured/urgent/baru/segeraDitutup/kuotaPenuh/sisaKuota ("Sisa {n} Kuota")/chipMore ("+{n}")/gaji/benefitLainnya ("+{n} lainnya")/dialogBenefitTitle/contohKarya/adaTes/bukaTautan/bagikan/bagikanWa/bagikanSalin/bagikanQr/qrTitle/qrCaption/qrAlt/salinBerhasil/salinGagal/waCaption ("Lowongan {title} di {siteName}")/waDaftar/lamarDitutup/tutup/coverAlt. Kunci lama tidak disentuh.
+   426→- landing-utils.ts — helper baru: buildPositionUrl(position, source?) deep link {origin}/?posisi={slug} (fallback /#posisi) + UTM utm_source/utm_medium=share/utm_campaign={slug} bila source ada (whatsapp/copy), aman SSR (return "" di server); youtubeEmbedId (watch?v=/youtu.be/shorts/embed/live, guard protokol); safeExternalUrl (hanya http/https); isWithinDaysBack/isWithinDaysAhead/isPastIso untuk badge "Baru"/"Segera Ditutup"/posisi tertutup; fillTemplate pengganti {placeholder} kamus.
+   427→- deadline-countdown.tsx — ekspor baru DeadlineCountdownCompact: timer satu baris "Ditutup: 2 hari 14:03:22" (Clock amber, tabular-nums, role=timer, reuse t.hero.countdown.days + t.positions.closesPrefix), tick interval 1 detik, render null bila belum mount/gagal parse/sudah lewat. Komponen lama tidak diubah.
+   428→- positions-section.tsx (rewrite) — (1) Kartu: cover image <img loading=lazy alt deskriptif aspect-[2/1] object-cover> full-bleed di atas kartu (Card p-0 + overflow-hidden, konten dibungkus div p-6) atau tampilan lama tanpa cover; sort featured dulu (stable sort Number(b.featured)-Number(a.featured)); kartu featured dapat ring-1 ring-rose-600/30 + badge Pin amber "Unggulan" (di luar cap chip). (2) PositionBadges komponen bersama kartu+dialog: chip otomatis Urgent (Flame, rose solid), Baru (Sparkles, amber, createdAt<7 hari), Segera Ditutup (Timer, orange, closesAt<3 hari), Kuota Penuh (Users, zinc, remainingQuota===0), Sisa {n} Kuota (Users, amber, 1<=remaining<=3) — maks 3 chip + "+n" (chipMore); chip flex-wrap. (3) SalaryBadge: Wallet + salaryText bila salaryVisible, title/aria "Gaji". (4) Benefit preview maks 2 chip pertama + "+n lainnya". (5) Countdown deadline di kartu via DeadlineCountdownCompact (bila closesAt valid & belum lewat); tombol Detail & Lamar tetap, Lamar disabled + label "Kuota Penuh"/"Ditutup" bila quota full/closed, tetap hormati canApply. (6) Dialog detail: max-h-[92vh] p-0 gap-0 overflow-y-auto, header cover full-bleed + tombol close kustom (DialogClose, bg-background/80 backdrop-blur, aria-label "Tutup"), badges + gaji + badge deadline; kartu amber "Ada tes seleksi: {title}" (ClipboardList) + note + tombol "Buka Tautan" (URL disanitasi); Benefit lengkap (Check emerald); Contoh Karya — YouTube -> iframe youtube-nocookie (aspect-video w-full, title deskriptif, loading lazy, rel=0), platform lain -> chip link eksternal (ExternalLink + hostname, URL disanitasi), hanya render bila examples>0; share kit: baris "Bagikan Posisi" — WhatsApp (caption "Lowongan {title} di {siteName} — {gaji bila visible}. Daftar: {link}" + UTM whatsapp), Salin Link (clipboard + toast, UTM copy), QR Code (dialog QR lib qrcode pola share-menu, URL deep link posisi tanpa UTM); views POST /api/positions/{id}/view fire-and-forget saat dialog dibuka (guard sessionStorage viewed-{id} 1x per sesi, try-catch diam); tombol "Lamar Posisi Ini" disabled "Kuota Penuh"/"Ditutup" + hover:scale. (7) PositionsSection: prop baru positionStats (default {}) + initialSlug; deep link auto-open via useState initializer (positions.find slug === initialSlug) — perilaku buka manual setDetail tetap; stats diteruskan ke kartu & dialog. Animasi: AnimatePresence popLayout existing tetap satu-satunya entrance (tidak ada Stagger dobel), HoverLift tetap.
+   429→- landing-page.tsx — useJobPostingJsonLd(positions, siteName, focusSlug): bila focusSlug cocok -> emit SATU JobPosting (description trim 300, datePosted, validThrough, employmentType, hiringOrganization, url=buildPositionUrl); else perilaku lama (array semua posisi). LandingShell menerima positionStats + initialPosisiSlug, meneruskan ke PositionsSection (positionStats, initialSlug); TODO void di LandingPage dihapus (plumbing lewat spread props). Import buildPositionUrl.
+   430→- embed-jobs.tsx — baca ?posisi= via useSyncExternalStore (emptySubscribe pola share-menu, aman SSR); filter slug (fallback id); tanpa param perilaku lama; empty state pakai filterEmptyTitle/Body bila filter aktif; tombol Lamar kartu kini deep-link ?posisi={slug}#lamar per posisi; badge Urgent rose ditambah; HoverLift + hover:shadow-md dipastikan tetap.
+   431→- Verifikasi: bun run lint 0 error; bunx tsc --noEmit 0 error di 6 file milikku (13 error sisa semuanya milik pihak lain: examples/skills infra, admin/* ApplicationStatus vs StageKey, status-check.tsx milik 11-c); dev.log hanya "✓ Compiled" tanpa error baru. CATATAN infra: GET /api/public/content sempat 500 "Unknown argument slug" dari seed.ts — Prisma client di disk SUDAH punya slug (terverifikasi di node_modules/.prisma) tapi proses dev server berjalan dengan client lama; hilang setelah restart dev server (di luar wewenang task ini, tidak dijalankan).
+   432→
+   433→Stage Summary:
+   434→- Kartu posisi v3 hidup & informatif: cover 2:1, badge Unggulan (Pin amber + ring rose), chip otomatis Urgent/Baru/Segera Ditutup/kuota (maks 3 + "+n"), chip gaji (Wallet), preview 2 benefit + "+n lainnya", countdown deadline ringkas berdetik, tombol lamar otomatis disabled "Kuota Penuh"/"Ditutup"; sort featured di depan.
+   435→- Dialog detail jadi halaman penjualan posisi: cover header, semua badge + gaji + deadline, deskripsi, peringatan tes seleksi (amber), persyaratan, benefit penuh, Contoh Karya (YouTube nocookie embed responsif / chip domain), share kit (WhatsApp ber-UTM, Salin Link, QR deep link), pelacakan views 1x/sesi; max-h 92vh scroll internal, konten menumpuk rapi di mobile, target sentuh >=44px (h-11 sm:h-9) pada tombol baru.
+   436→- Deep link /?posisi=slug kini end-to-end: metadata SEO server (11-A) + auto-open dialog detail (client) + JSON-LD JobPosting tunggal posisi tersebut dengan url deep link; embed ?embed=1&posisi=slug memfilter daftar & menautkan lamaran per posisi.
+   437→- Palet zinc/rose/amber/orange/zinc saja (tanpa biru/indigo/violet), tanpa emoji (semua ikon lucide), teks Indonesia via strings.ts (kunci baru tersedia di kamus EN juga), reduce-motion tetap ditangani MotionConfig + primitif yang ada; tidak ada file di luar scope yang disentuh (types/seed/defaults/stages/api/wizard/status-check/admin tidak disentuh).
+   438→
+   439→---
+   440→Task ID: 11-a
+   441→Agent: full-stack-developer
+   442→Task: Seluruh perubahan BACKEND fitur per lowongan v3 (API publik, API admin, AI, upload, view, statistik posisi)
+   443→
+   444→Work Log:
+   445→- Membaca worklog.md (Task 9, 10, 11-A), prisma/schema.prisma, src/lib/types.ts, stages.ts, seed.ts, defaults.ts, lalu seluruh route API terkait (applications, public/content, public/track, admin/positions & [id] & duplicate, admin/applications [id] & bulk & export, admin/overview, files/[id]) serta lib ai.ts/processing.ts/server-auth.ts sebelum coding.
+   446→- BARU src/lib/position-input.ts (server-only): helper sanitasi bersama POST+PATCH posisi — sanitizePositionInput(data, {mode, excludeId, current}) memvalidasi semua field v3 (slug eksplisit/regenerate dari judul yang BERUBA via ensureUniqueSlug, salaryText ≤80, benefits ≤10 item 1..120, examples ≤6 URL http(s) ≤300, screeningQuestions maks 10 label 3..200 dengan id stabil "q<n>" berdasar urutan + dedupe id, maxApplicants 1..10000|null, publishAt ISO|null, stages maks 12 unik 1..40 tanpa substring "__", aiCriteria ≤600, autoShortlistScore 0..100|null, autoShortlistStage wajib ada di tahap efektif, template ≤500, assignment ≤120/300(http(s))/400, rubric/checklist/noteTemplates maks 8, coverFileId divalidasi ke FileAsset) + positionFieldsToDb() mengubah hasil ke Prisma.PositionUpdateInput (coverFileId lewat relasi connect/disconnect). Konvensi: undefined=tidak dikirim, null=kosongkan; input admin melebihi batas = 400.
+   447→- GET /api/public/content: filter tayang ditambah publishAt<=now, urutan featured desc → order asc → createdAt asc, ditambah positionStats (groupBy lamaran status!=REJECTED per posisi tayang; remainingQuota=null bila tanpa kuota, else max(0, kuota-applications)); respons tetap PublicContentResponse lengkap.
+   448→- POST /api/applications: cek kuota (maxApplicants != null && count non-REJECTED >= kuota → 409 "Kuota pelamar untuk posisi ini sudah penuh."), posisi terbuka kini juga menolak publishAt di masa depan; validasi berkas wajib per posisi (requireCv/requireIntro/requirePortfolio dengan pesan sesuai spesifikasi); parsing screeningAnswers (JSON string) via parseStringRecord + parseScreeningQuestions — jawaban required kosong → 400 menyebut label pertanyaan pertama yang kosong, tiap jawaban ≤500 karakter, disimpan JSON string (null bila posisi tanpa pertanyaan); field baru source ≤40 & utmSource/utmMedium/utmCampaign ≤60 (trim, dipotong bila lebih — metadata non-kritis); respons 201 ApplySuccessResponse { ok, id, trackingCode, autoReply (substitusi {nama}/{posisi}/{kode} via regex), assignment {title,url,note}|null }.
+   449→- POST /api/public/track: rewrite tahap-aware — include position (title, slug, stages, assignment*); langkah pertama "Lamaran Diterima" (at=createdAt); pipeline bawaan mempertahankan perilaku lama persis (STATUS_FLOW NEW→REVIEWED→INTERVIEW + langkah terminal "Diterima"/"Tidak Lolos" at=updatedAt); pipeline kustom = satu langkah per tahap, label = tahap apa adanya, done = index tahap saat ini >= i ATAU status ACCEPTED/REJECTED, tanpa langkah terminal tambahan; tambah positionSlug & assignment (null bila semua kosong).
+   450→- BARU POST /api/positions/[id]/view: publik tanpa auth, param menerima id ATAU slug (findUnique berlapis), increment views, return { ok, views }; 404 bila tidak ketemu.
+   451→- BARU GET /api/admin/position-stats: auth semua role; rows SEMUA posisi urut order; per posisi views, applications (semua), conversion=round(app/views*100)|null, avgAiScore 1 desimal|null, funnel dari stagesForPosition, sources agregasi source (trim, buang kosong) urut count desc lalu abjad, topSource.
+   452→- POST /api/admin/positions + PATCH /api/admin/positions/[id]: rewrite penuh memakai sanitizePositionInput; PATCH find existing dulu (current dipakai untuk tahap efektif & deteksi perubahan judul), tolak body kosong; POST mengisi default (isActive true, closesAt null, order max+1, type Full-time, location Remote, sisanya false/null/"[]").
+   453→- duplicate route: salin SEMUA field v3, slug baru unik dari "judul (Salinan)", isActive=false, closesAt=null, views=0 (penghitung direset; publishAt ikut tersalin sebagai konfigurasi).
+   454→- BARU POST /api/admin/upload: OWNER/HR (VIEWER 403), multipart "file", hanya image/png|jpeg|webp maks 3 MB (fallback mime dari ekstensi bila kosong), simpan pola route applications (uploads/ + prefiks cuidLike + FileAsset), return AdminUploadResponse { ok, fileId, url: "/api/files/{id}" }.
+   455→- BARU POST /api/admin/ai/cover: OWNER/HR, body { positionId }; prompt banner bahasa Inggris sesuai spesifikasi dengan imagery adaptif per judul (editing→timeline video, desain→pen tablet, penulis→mesin tik, sosmed→phone/like, strategist→chart/roadmap, default→peralatan studio); panggil withTimeout(withZaiRetry((zai) => zai.images.generations.create({ prompt, size: "1344x768" })), "Generate cover AI", 120_000); base64 → Buffer → uploads/ + FileAsset (image/png) → update position.coverFileId; gagal SDK → 502 { ok:false, error: "Gagal membuat cover. Coba lagi." } tanpa crash.
+   456→- src/lib/ai.ts (analyzeApplication): ApplicationForPrompt +screeningAnswers & position.aiCriteria/screeningQuestions; buildPositionSection menambahkan "Kriteria khusus posisi ini (bobot utama):" bila aiCriteria ada; buildScreeningSection baru memetakan jawaban (parseStringRecord) ke label pertanyaan (parseScreeningQuestions) sebagai "Jawaban screening kandidat:" + "- {label}: {answer}"; AUTO-SHORTLIST setelah log AI_SCREENING: bila autoShortlistScore != null && score >= ambang && autoShortlistStage valid di stagesForPosition(parseRequirements(stages)) && status saat ini NEW → update status + ActivityLog { actor "Sistem", action AUTO_SHORTLIST, detail "Skor AI {score} >= ambang {threshold} — dipindah otomatis ke tahap '{stage}'" }.
+   457→- PATCH /api/admin/applications/[id] & bulk route: perubahan status kini menerima string tahap apa pun (trim, wajib 1..40 karakter, bukan hanya 5 bawaan); label log memakai isBuiltInStage/stageLabel agar tahap kustom tampil apa adanya; export CSV kini menampilkan label tahap kustom via stageLabel (sebelumnya dipaksa "Baru").
+   458→- GET /api/admin/overview: stats +CUSTOM (jumlah lamaran berstatus di luar 5 bawaan, diakumulasi dari groupBy else-branch); key lain dipertahankan.
+   459→- /api/files/[id]: file yang dipakai sebagai cover posisi (coverFileId di Position) kini PUBLIK (dibutuhkan landing & OG image); file lain tetap wajib login; gambar kini Content-Disposition inline (sebelumnya attachment).
+   460→- Verifikasi: bun run lint 0 error; bunx tsc --noEmit hanya menyisakan error pra-eksisting milik agent lain (application-detail-dialog, applications-table, comparison-dialog, dashboard-tab, kanban-board, status-check — 9 error ApplicationStatus) + 4 di examples/ & skills/; NOL error baru dari file backend yang saya ubah; tidak menyentuh skema prisma/types.ts/defaults.ts/seed.ts/frontend; tidak menjalankan dev server/build/db push.
+   461→
+   462→Stage Summary:
+   463→- Seluruh kontrak API v3 siap dipakai frontend (11-b/11-c/11-d): PublicContentResponse +positionStats, ApplySuccessResponse +autoReply/assignment, TrackResponse +positionSlug/assignment & steps tahap-aware, PositionViewResponse, AdminPositionStatsResponse, AdminUploadResponse, AiCoverResponse, AdminOverviewResponse.stats.CUSTOM.
+   464→- Endpoint baru: POST /api/positions/[id]/view (publik, id|slug), GET /api/admin/position-stats, POST /api/admin/upload, POST /api/admin/ai/cover. Perilaku berubah: /api/public/content (publishAt + featured + positionStats), POST /api/applications (kuota 409, berkas wajib, screening wajib ≤500 char, source/utm, autoReply+assignment), POST /api/public/track (tahap kustom), PATCH/POST positions (field v3 + slug otomatis), duplicate (salin penuh v3), status-change & bulk & export (terima tahap kustom), overview (+CUSTOM), /api/files/[id] (cover publik & image inline).
+   465→- Keputusan penting: (1) input admin melebihi batas karakter → 400 dengan pesan jelas (sanitasi ketat), kecuali source/utm pelamar yang dipotong diam-diam; (2) slug hanya di-regenerate saat judul BENAR-BENAR berubah atau slug dikirim eksplisit (slug null/kosong = mengosongkan); (3) id screening dijamin unik (duplikat eksplisit di-generate ulang q<n> berdasar urutan); (4) posisi terjadwal (publishAt di masa depan) tidak menerima lamaran; (5) duplikat menyalin publishAt (konfigurasi) tapi mereset views & closesAt; (6) cover file bersifat publik lewat pengecekan relasi coverFileId di /api/files/[id] — file CV/audio tetap terlindungi.
+   466→- CATATAN LINGKUNGAN: dev server TIDAK berjalan saat pemeriksaan akhir (port 3000 connection refused, tanpa proses next; bukan karena perubahan saya — saya tidak pernah menjalankan/menghentikannya). dev.log terakhir hanya "✓ Compiled" tanpa error kompilasi setelah semua edit saya. Error runtime lama "Unknown argument `slug`" pada /api/public/content berasal dari proses server lama yang masih memegang Prisma Client pra-db:push di memori (client di disk sudah punya slug — terverifikasi di node_modules/.prisma/client/index.d.ts); restart dev server (dilakukan supervisor/orchestrator) akan memuat client baru dan menghilangkan error tersebut.
+   467→

@@ -1,0 +1,773 @@
+     1→// Seed data awal + helper serialisasi & filter (SERVER-ONLY — jangan diimpor dari komponen klien).
+     2→import type {
+     3→  Application as ApplicationRecordModel,
+     4→  Prisma,
+     5→  Position as PositionRecordModel,
+     6→  AdminUser as AdminUserRecordModel,
+     7→} from "@prisma/client";
+     8→import { db } from "@/lib/db";
+     9→import {
+    10→  DEFAULT_ADMIN_PASSWORD,
+    11→  DEFAULT_POSITIONS,
+    12→  DEFAULT_SITE,
+    13→  DEFAULT_USERS,
+    14→  type DefaultPositionSeed,
+    15→} from "@/lib/defaults";
+    16→import { hashPassword } from "@/lib/server-auth";
+    17→import { generateUniqueTrackingCode } from "@/lib/tracking";
+    18→import {
+    19→  AI_RECOMMENDATION_LABELS,
+    20→  SECTION_KEYS,
+    21→  type AdminUser,
+    22→  type AiRecommendation,
+    23→  type Application,
+    24→  type ApplicationStatus,
+    25→  type AssignmentInfo,
+    26→  type BenefitItem,
+    27→  type FaqItem,
+    28→  type Position,
+    29→  type ReplyTemplates,
+    30→  type ScreeningQuestion,
+    31→  type SectionVisibility,
+    32→  type SiteContent,
+    33→  type TeamMember,
+    34→} from "@/lib/types";
+    35→
+    36→/* ---------------------------------- Serialisasi ---------------------------------- */
+    37→
+    38→type ApplicationRecord = ApplicationRecordModel & {
+    39→  position: { title: string } | null;
+    40→  cvFile?: { filename: string } | null;
+    41→  introFile?: { filename: string } | null;
+    42→};
+    43→
+    44→/** Include standar untuk query Application agar serialisasi lengkap. */
+    45→export const APPLICATION_INCLUDE = {
+    46→  position: { select: { title: true } },
+    47→  cvFile: { select: { filename: true } },
+    48→  introFile: { select: { filename: true } },
+    49→} satisfies Prisma.ApplicationInclude;
+    50→
+    51→/** Parse requirements / daftar string dari JSON string menjadi string[]. */
+    52→export function parseRequirements(raw: string): string[] {
+    53→  try {
+    54→    const parsed: unknown = JSON.parse(raw);
+    55→    if (!Array.isArray(parsed)) return [];
+    56→    return parsed
+    57→      .filter((item): item is string => typeof item === "string")
+    58→      .map((item) => item.trim())
+    59→      .filter((item) => item.length > 0);
+    60→  } catch {
+    61→    return [];
+    62→  }
+    63→}
+    64→
+    65→/** Parse daftar pertanyaan screening dari JSON string (aman terhadap nilai rusak). */
+    66→export function parseScreeningQuestions(raw: string): ScreeningQuestion[] {
+    67→  try {
+    68→    const parsed: unknown = JSON.parse(raw);
+    69→    if (!Array.isArray(parsed)) return [];
+    70→    const result: ScreeningQuestion[] = [];
+    71→    for (let i = 0; i < parsed.length; i++) {
+    72→      const obj = (parsed[i] && typeof parsed[i] === "object" ? parsed[i] : {}) as Record<string, unknown>;
+    73→      const label = typeof obj.label === "string" ? obj.label.trim() : "";
+    74→      if (!label) continue;
+    75→      const id = typeof obj.id === "string" && obj.id.trim() ? obj.id.trim() : `q${i + 1}`;
+    76→      result.push({ id, label, required: obj.required === true });
+    77→    }
+    78→    return result.slice(0, 10);
+    79→  } catch {
+    80→    return [];
+    81→  }
+    82→}
+    83→
+    84→/** Parse objek string sederhana dari JSON (jawaban screening). */
+    85→export function parseStringRecord(raw: string | null | undefined): Record<string, string> | null {
+    86→  if (!raw) return null;
+    87→  try {
+    88→    const parsed: unknown = JSON.parse(raw);
+    89→    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    90→    const result: Record<string, string> = {};
+    91→    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    92→      if (typeof key === "string" && key && typeof value === "string") result[key] = value;
+    93→      else if (typeof key === "string" && key && typeof value === "number") result[key] = String(value);
+    94→    }
+    95→    return Object.keys(result).length > 0 ? result : null;
+    96→  } catch {
+    97→    return null;
+    98→  }
+    99→}
+   100→
+   101→/** Parse objek angka sederhana dari JSON (skor rubrik 1-5). */
+   102→export function parseScoreRecord(raw: string | null | undefined): Record<string, number> | null {
+   103→  if (!raw) return null;
+   104→  try {
+   105→    const parsed: unknown = JSON.parse(raw);
+   106→    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+   107→    const result: Record<string, number> = {};
+   108→    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+   109→      const num = typeof value === "number" ? value : Number(value);
+   110→      if (key && Number.isFinite(num)) result[key] = Math.min(5, Math.max(1, Math.round(num)));
+   111→    }
+   112→    return Object.keys(result).length > 0 ? result : null;
+   113→  } catch {
+   114→    return null;
+   115→  }
+   116→}
+   117→
+   118→/** Normalisasi template balasan dari record (kolom terpisah -> objek). */
+   119→function parseReplyTemplates(apply: string | null, accept: string | null, reject: string | null): ReplyTemplates {
+   120→  return { apply: apply ?? null, accept: accept ?? null, reject: reject ?? null };
+   121→}
+   122→
+   123→function parseAssignment(title: string | null, url: string | null, note: string | null): AssignmentInfo {
+   124→  return { title: title ?? null, url: url ?? null, note: note ?? null };
+   125→}
+   126→
+   127→/** Ubah judul menjadi slug URL-aman: huruf kecil, tanda hubung, tanpa karakter aneh. */
+   128→export function slugifyTitle(title: string): string {
+   129→  const base = title
+   130→    .toLowerCase()
+   131→    .normalize("NFKD")
+   132→    .replace(/[\u0300-\u036f]/g, "")
+   133→    .replace(/[^a-z0-9]+/g, "-")
+   134→    .replace(/^-+|-+$/g, "")
+   135→    .slice(0, 60)
+   136→    .replace(/-+$/g, "");
+   137→  return base || "posisi";
+   138→}
+   139→
+   140→/** Cari slug unik (tambah -2, -3, ... bila sudah dipakai posisi lain). */
+   141→export async function ensureUniqueSlug(title: string, excludeId?: string): Promise<string> {
+   142→  const base = slugifyTitle(title);
+   143→  let candidate = base;
+   144→  let counter = 2;
+   145→  for (;;) {
+   146→    const existing = await db.position.findUnique({ where: { slug: candidate }, select: { id: true } });
+   147→    if (!existing || existing.id === excludeId) return candidate;
+   148→    candidate = `${base}-${counter}`;
+   149→    counter += 1;
+   150→  }
+   151→}
+   152→/** Parse tags dari JSON string menjadi string[] (aman terhadap nilai rusak). */
+   153→export function parseTags(raw: string | null | undefined): string[] {
+   154→  if (!raw) return [];
+   155→  try {
+   156→    const parsed: unknown = JSON.parse(raw);
+   157→    if (!Array.isArray(parsed)) return [];
+   158→    return parsed
+   159→      .filter((item): item is string => typeof item === "string")
+   160→      .map((item) => item.trim())
+   161→      .filter((item) => item.length > 0);
+   162→  } catch {
+   163→    return [];
+   164→  }
+   165→}
+   166→
+   167→/** Ubah record Prisma Position menjadi bentuk tipe `Position` v3 (JSON fields terurai). */
+   168→export function serializePosition(record: PositionRecordModel): Position {
+   169→  return {
+   170→    id: record.id,
+   171→    title: record.title,
+   172→    slug: record.slug,
+   173→    department: record.department,
+   174→    type: record.type,
+   175→    location: record.location,
+   176→    description: record.description,
+   177→    requirements: parseRequirements(record.requirements),
+   178→    isActive: record.isActive,
+   179→    closesAt: record.closesAt ? record.closesAt.toISOString() : null,
+   180→    order: record.order,
+   181→    createdAt: record.createdAt.toISOString(),
+   182→
+   183→    coverFileId: record.coverFileId,
+   184→    salaryText: record.salaryText,
+   185→    salaryVisible: record.salaryVisible,
+   186→    benefits: parseRequirements(record.benefits),
+   187→    examples: parseRequirements(record.examples),
+   188→    urgent: record.urgent,
+   189→    featured: record.featured,
+   190→
+   191→    screeningQuestions: parseScreeningQuestions(record.screeningQuestions),
+   192→    requireCv: record.requireCv,
+   193→    requireIntro: record.requireIntro,
+   194→    requirePortfolio: record.requirePortfolio,
+   195→    maxApplicants: record.maxApplicants,
+   196→
+   197→    publishAt: record.publishAt ? record.publishAt.toISOString() : null,
+   198→
+   199→    stages: parseRequirements(record.stages),
+   200→    aiCriteria: record.aiCriteria,
+   201→    autoShortlistScore: record.autoShortlistScore,
+   202→    autoShortlistStage: record.autoShortlistStage,
+   203→    replyTemplates: parseReplyTemplates(record.applyTemplate, record.acceptTemplate, record.rejectTemplate),
+   204→    assignment: parseAssignment(record.assignmentTitle, record.assignmentUrl, record.assignmentNote),
+   205→
+   206→    rubricCriteria: parseRequirements(record.rubricCriteria),
+   207→    checklistTemplate: parseRequirements(record.checklistTemplate),
+   208→    noteTemplates: parseRequirements(record.noteTemplates),
+   209→    views: record.views,
+   210→  };
+   211→}
+   212→
+   213→const AI_RECOMMENDATION_VALUES = Object.keys(AI_RECOMMENDATION_LABELS);
+   214→
+   215→/** Ubah record Prisma Application (include relasi) menjadi tipe `Application` v3. */
+   216→export function serializeApplication(record: ApplicationRecord): Application {
+   217→  const status = record.status && record.status.trim().length > 0 ? record.status.trim() : "NEW";
+   218→  const aiRecommendation =
+   219→    record.aiRecommendation && AI_RECOMMENDATION_VALUES.includes(record.aiRecommendation)
+   220→      ? (record.aiRecommendation as AiRecommendation)
+   221→      : null;
+   222→  return {
+   223→    id: record.id,
+   224→    name: record.name,
+   225→    email: record.email,
+   226→    phone: record.phone,
+   227→    positionId: record.positionId,
+   228→    positionTitle: record.position?.title ?? null,
+   229→    socialLinks: record.socialLinks,
+   230→    portfolioUrl: record.portfolioUrl,
+   231→    experience: record.experience,
+   232→    motivation: record.motivation,
+   233→    status,
+   234→    adminNotes: record.adminNotes,
+   235→    trackingCode: record.trackingCode ?? "",
+   236→    rating: record.rating,
+   237→    tags: parseTags(record.tags),
+   238→    interviewAt: record.interviewAt ? record.interviewAt.toISOString() : null,
+   239→    talentPool: record.talentPool,
+   240→    aiScore: record.aiScore,
+   241→    aiSummary: record.aiSummary,
+   242→    aiRecommendation,
+   243→    aiAnalyzedAt: record.aiAnalyzedAt ? record.aiAnalyzedAt.toISOString() : null,
+   244→    transcript: record.transcript,
+   245→    source: record.source,
+   246→    utmSource: record.utmSource,
+   247→    utmMedium: record.utmMedium,
+   248→    utmCampaign: record.utmCampaign,
+   249→    screeningAnswers: parseStringRecord(record.screeningAnswers),
+   250→    rubricScores: parseScoreRecord(record.rubricScores),
+   251→    checklistState: parseRequirements(record.checklistState),
+   252→    cvFileId: record.cvFileId,
+   253→    cvFileName: record.cvFile?.filename ?? null,
+   254→    introFileId: record.introFileId,
+   255→    introFileName: record.introFile?.filename ?? null,
+   256→    createdAt: record.createdAt.toISOString(),
+   257→  };
+   258→}
+   259→
+   260→/** Ubah record Prisma AdminUser menjadi tipe `AdminUser`. */
+   261→export function serializeAdminUser(record: AdminUserRecordModel): AdminUser {
+   262→  return {
+   263→    id: record.id,
+   264→    name: record.name,
+   265→    email: record.email,
+   266→    role: (record.role as AdminUser["role"]) ?? "VIEWER",
+   267→    isActive: record.isActive,
+   268→    createdAt: record.createdAt.toISOString(),
+   269→  };
+   270→}
+   271→
+   272→/* ------------------------------ Parsing konten situs ------------------------------ */
+   273→
+   274→function pickString(source: Record<string, unknown>, key: keyof SiteContent, fallback: string): string {
+   275→  const value = source[key];
+   276→  return typeof value === "string" ? value : fallback;
+   277→}
+   278→
+   279→function pickBoolean(source: Record<string, unknown>, key: keyof SiteContent, fallback: boolean): boolean {
+   280→  const value = source[key];
+   281→  return typeof value === "boolean" ? value : fallback;
+   282→}
+   283→
+   284→export function sanitizeBenefits(value: unknown, fallback: BenefitItem[]): BenefitItem[] {
+   285→  if (!Array.isArray(value)) return fallback;
+   286→  return value.map((item) => {
+   287→    const obj = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+   288→    return {
+   289→      icon: typeof obj.icon === "string" && obj.icon ? obj.icon : "Sparkles",
+   290→      title: typeof obj.title === "string" ? obj.title : "",
+   291→      description: typeof obj.description === "string" ? obj.description : "",
+   292→    };
+   293→  });
+   294→}
+   295→
+   296→export function sanitizeFaqs(value: unknown, fallback: FaqItem[]): FaqItem[] {
+   297→  if (!Array.isArray(value)) return fallback;
+   298→  return value.map((item) => {
+   299→    const obj = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+   300→    return {
+   301→      question: typeof obj.question === "string" ? obj.question : "",
+   302→      answer: typeof obj.answer === "string" ? obj.answer : "",
+   303→    };
+   304→  });
+   305→}
+   306→
+   307→export function sanitizeTeamMembers(value: unknown, fallback: TeamMember[]): TeamMember[] {
+   308→  if (!Array.isArray(value)) return fallback;
+   309→  return value.map((item) => {
+   310→    const obj = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+   311→    return {
+   312→      name: typeof obj.name === "string" ? obj.name : "",
+   313→      role: typeof obj.role === "string" ? obj.role : "",
+   314→      quote: typeof obj.quote === "string" ? obj.quote : "",
+   315→    };
+   316→  });
+   317→}
+   318→
+   319→/**
+   320→ * Normalisasi konfigurasi visibilitas bagian halaman publik.
+   321→ * Kunci tak dikenal diabaikan; kunci hilang/tidak boolean diambil dari fallback.
+   322→ */
+   323→export function sanitizeSections(value: unknown, fallback: SectionVisibility): SectionVisibility {
+   324→  const result = { ...fallback };
+   325→  if (!value || typeof value !== "object" || Array.isArray(value)) return result;
+   326→  const obj = value as Record<string, unknown>;
+   327→  for (const key of SECTION_KEYS) {
+   328→    const v = obj[key];
+   329→    if (typeof v === "boolean") result[key] = v;
+   330→  }
+   331→  return result;
+   332→}
+   333→
+   334→/**
+   335→ * Normalisasi objek konten situs menjadi `SiteContent` lengkap.
+   336→ * Field yang tidak valid/tidak ada diambil dari `fallback` — sehingga field baru
+   337→ * (teamMembers, chatbotEnabled, sections, dll) otomatis terisi dari default tanpa menimpa nilai lama.
+   338→ */
+   339→export function sanitizeSiteContent(value: unknown, fallback: SiteContent = DEFAULT_SITE): SiteContent {
+   340→  const obj = (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
+   341→  return {
+   342→    siteName: pickString(obj, "siteName", fallback.siteName),
+   343→    tagline: pickString(obj, "tagline", fallback.tagline),
+   344→    heroBadge: pickString(obj, "heroBadge", fallback.heroBadge),
+   345→    heroTitle: pickString(obj, "heroTitle", fallback.heroTitle),
+   346→    heroHighlight: pickString(obj, "heroHighlight", fallback.heroHighlight),
+   347→    heroDescription: pickString(obj, "heroDescription", fallback.heroDescription),
+   348→    deadline: pickString(obj, "deadline", fallback.deadline),
+   349→    aboutTitle: pickString(obj, "aboutTitle", fallback.aboutTitle),
+   350→    aboutDescription: pickString(obj, "aboutDescription", fallback.aboutDescription),
+   351→    benefits: sanitizeBenefits(obj.benefits, fallback.benefits),
+   352→    faqs: sanitizeFaqs(obj.faqs, fallback.faqs),
+   353→    teamMembers: sanitizeTeamMembers(obj.teamMembers, fallback.teamMembers),
+   354→    contactEmail: pickString(obj, "contactEmail", fallback.contactEmail),
+   355→    contactWhatsapp: pickString(obj, "contactWhatsapp", fallback.contactWhatsapp),
+   356→    instagram: pickString(obj, "instagram", fallback.instagram),
+   357→    footerText: pickString(obj, "footerText", fallback.footerText),
+   358→    chatbotEnabled: pickBoolean(obj, "chatbotEnabled", fallback.chatbotEnabled),
+   359→    discordWebhookUrl: pickString(obj, "discordWebhookUrl", fallback.discordWebhookUrl),
+   360→    telegramBotToken: pickString(obj, "telegramBotToken", fallback.telegramBotToken),
+   361→    telegramChatId: pickString(obj, "telegramChatId", fallback.telegramChatId),
+   362→    sections: sanitizeSections(obj.sections, fallback.sections),
+   363→  };
+   364→}
+   365→
+   366→/** Parse JSON string dari Setting "site" menjadi SiteContent (fallback ke DEFAULT_SITE). */
+   367→export function parseSiteContent(raw: string | null | undefined): SiteContent {
+   368→  if (!raw) {
+   369→    return JSON.parse(JSON.stringify(DEFAULT_SITE)) as SiteContent;
+   370→  }
+   371→  try {
+   372→    const parsed: unknown = JSON.parse(raw);
+   373→    return sanitizeSiteContent(parsed, DEFAULT_SITE);
+   374→  } catch {
+   375→    return JSON.parse(JSON.stringify(DEFAULT_SITE)) as SiteContent;
+   376→  }
+   377→}
+   378→
+   379→/* ------------------------- Filter & urutan daftar lamaran ------------------------- */
+   380→
+   381→export type ParsedApplicationFilters = {
+   382→  where: Prisma.ApplicationWhereInput;
+   383→  orderBy: Prisma.ApplicationOrderByWithRelationInput[];
+   384→  valid: boolean;
+   385→};
+   386→
+   387→/**
+   388→ * Bangun where/orderBy untuk GET /api/admin/applications & /export dari query params:
+   389→ * status, positionId, q, ratingMin, tag, talentPool ("1"/"true"), hasInterview ("1"), sort.
+   390→ */
+   391→export function parseApplicationFilters(searchParams: URLSearchParams): ParsedApplicationFilters {
+   392→  const where: Prisma.ApplicationWhereInput = {};
+   393→  let valid = true;
+   394→
+   395→  const status = searchParams.get("status");
+   396→  if (status) {
+   397→    // Tahap bisa berupa 5 status bawaan ATAU label tahap kustom milik posisi.
+   398→    const clean = status.trim().slice(0, 40);
+   399→    if (clean) where.status = clean;
+   400→    else valid = false;
+   401→  }
+   402→
+   403→  const source = searchParams.get("source")?.trim();
+   404→  if (source) where.source = { contains: source.slice(0, 40) };
+   405→
+   406→  const positionId = searchParams.get("positionId");
+   407→  if (positionId) where.positionId = positionId;
+   408→
+   409→  const q = searchParams.get("q")?.trim();
+   410→  if (q) {
+   411→    where.OR = [{ name: { contains: q } }, { email: { contains: q } }];
+   412→  }
+   413→
+   414→  const ratingMin = Number.parseInt(searchParams.get("ratingMin") ?? "", 10);
+   415→  if (Number.isInteger(ratingMin)) where.rating = { gte: ratingMin };
+   416→
+   417→  const tag = searchParams.get("tag")?.trim();
+   418→  if (tag) {
+   419→    where.tags = { contains: `"${tag.replace(/"/g, "")}"` };
+   420→  }
+   421→
+   422→  const talentPool = searchParams.get("talentPool");
+   423→  if (talentPool === "1" || talentPool === "true") where.talentPool = true;
+   424→
+   425→  const hasInterview = searchParams.get("hasInterview");
+   426→  if (hasInterview === "1" || hasInterview === "true") {
+   427→    where.NOT = { interviewAt: null };
+   428→  }
+   429→
+   430→  const sort = searchParams.get("sort") ?? "newest";
+   431→  let orderBy: Prisma.ApplicationOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];
+   432→  if (sort === "oldest") {
+   433→    orderBy = [{ createdAt: "asc" }, { id: "asc" }];
+   434→  } else if (sort === "aiScore") {
+   435→    orderBy = [{ aiScore: "desc" }, { createdAt: "desc" }];
+   436→  }
+   437→
+   438→  return { where, orderBy, valid };
+   439→}
+   440→
+   441→/* --------------------------------- Data contoh ---------------------------------- */
+   442→
+   443→type SampleApplication = {
+   444→  name: string;
+   445→  email: string;
+   446→  phone: string;
+   447→  positionTitle: string;
+   448→  portfolioUrl: string | null;
+   449→  socialLinks: string | null;
+   450→  experience: string;
+   451→  motivation: string;
+   452→  status: ApplicationStatus;
+   453→  adminNotes: string | null;
+   454→  createdAtOffsetHours: number;
+   455→  rating: number;
+   456→  tags: string[];
+   457→  talentPool: boolean;
+   458→  interviewInDays: number | null;
+   459→  source: string | null;
+   460→  utmSource: string | null;
+   461→  utmCampaign: string | null;
+   462→};
+   463→
+   464→const SAMPLE_APPLICATIONS: SampleApplication[] = [
+   465→  {
+   466→    name: "Rizky Pratama",
+   467→    email: "rizky.pratama@mail.com",
+   468→    phone: "6281234567891",
+   469→    positionTitle: "Video Editor",
+   470→    portfolioUrl: "https://youtu.be/rizky-showreel",
+   471→    socialLinks: "https://instagram.com/rizkyedits",
+   472→    experience:
+   473→      "2 tahun menjadi editor YouTube channel gaming dengan 300 ribu subscriber. Terbiasa memproduksi 15 video pendek per bulan.",
+   474→    motivation:
+   475→      "Saya ingin naik level dengan konten yang lebih kreatif dan tim yang solid. Saya mengikuti channel ini sejak awal dan paham gaya editingnya.",
+   476→    status: "NEW",
+   477→    adminNotes: null,
+   478→    createdAtOffsetHours: 30,
+   479→    rating: 0,
+   480→    tags: [],
+   481→    talentPool: false,
+   482→    interviewInDays: null,
+   483→    source: "YouTube",
+   484→    utmSource: "youtube",
+   485→    utmCampaign: "video-editor",
+   486→  },
+   487→  {
+   488→    name: "Anisa Rahma",
+   489→    email: "anisa.rahma@mail.com",
+   490→    phone: "6281234567892",
+   491→    positionTitle: "Thumbnail Designer",
+   492→    portfolioUrl: "https://behance.net/anisarahma",
+   493→    socialLinks: "https://instagram.com/anisadesign",
+   494→    experience:
+   495→      "Freelance desain grafis 3 tahun, fokus thumbnail untuk kreator edukasi. Rata-rata CTR klien naik 40%.",
+   496→    motivation:
+   497→      "Desain thumbnail adalah seni memancing rasa penasaran, dan itu yang paling saya nikmati. Saya ingin membantu channel ini bertumbuh lebih besar.",
+   498→    status: "REVIEWED",
+   499→    adminNotes: "Portofolio bagus, CTR terbukti. Jadwalkan tes desain.",
+   500→    createdAtOffsetHours: 72,
+   501→    rating: 4,
+   502→    tags: ["desain", "detailis"],
+   503→    talentPool: false,
+   504→    interviewInDays: null,
+   505→    source: "Instagram",
+   506→    utmSource: "instagram",
+   507→    utmCampaign: "story",
+   508→  },
+   509→  {
+   510→    name: "Bagas Saputra",
+   511→    email: "bagas.saputra@mail.com",
+   512→    phone: "6281234567893",
+   513→    positionTitle: "Penulis Naskah",
+   514→    portfolioUrl: "https://medium.com/@bagas",
+   515→    socialLinks: "https://twitter.com/bagasnulis",
+   516→    experience:
+   517→      "Penulis skrip podcast komedi selama 2 tahun dan penulis lepas untuk 5 channel YouTube.",
+   518→    motivation:
+   519→      "Menulis hook yang membuat orang berhenti scroll adalah tantangan favorit saya setiap hari.",
+   520→    status: "INTERVIEW",
+   521→    adminNotes: "Wawancara online Selasa 14.00 WIB via Google Meet.",
+   522→    createdAtOffsetHours: 120,
+   523→    rating: 5,
+   524→    tags: ["menulis", "komedi"],
+   525→    talentPool: false,
+   526→    interviewInDays: 2,
+   527→    source: "TikTok",
+   528→    utmSource: "tiktok",
+   529→    utmCampaign: "bio",
+   530→  },
+   531→  {
+   532→    name: "Dewi Lestari",
+   533→    email: "dewi.lestari@mail.com",
+   534→    phone: "6281234567894",
+   535→    positionTitle: "Social Media Officer",
+   536→    portfolioUrl: null,
+   537→    socialLinks: "https://instagram.com/dewismm",
+   538→    experience:
+   539→      "Mengelola sosial media brand F&B dengan pertumbuhan pengikut 80 ribu dalam 10 bulan.",
+   540→    motivation:
+   541→      "Saya suka membangun komunitas yang loyal dan interaktif. Data dan tren adalah alat kerja harian saya.",
+   542→    status: "ACCEPTED",
+   543→    adminNotes: "Mulai onboarding Senin depan. Tim HR mengirim kontrak.",
+   544→    createdAtOffsetHours: 192,
+   545→    rating: 5,
+   546→    tags: ["sosial media", "komunitas"],
+   547→    talentPool: true,
+   548→    interviewInDays: null,
+   549→    source: "Instagram",
+   550→    utmSource: "instagram",
+   551→    utmCampaign: "story",
+   552→  },
+   553→  {
+   554→    name: "Fajar Nugroho",
+   555→    email: "fajar.nugroho@mail.com",
+   556→    phone: "6281234567895",
+   557→    positionTitle: "Video Editor",
+   558→    portfolioUrl: "https://vimeo.com/fajarnugroho",
+   559→    socialLinks: null,
+   560→    experience: "Fresh graduate DKV, terbiasa editing video acara kampus dan iklan singkat.",
+   561→    motivation: "Saya ingin belajar produksi konten profesional dari tim yang berpengalaman.",
+   562→    status: "REJECTED",
+   563→    adminNotes: "Belum ada pengalaman short-form. Sarankan ikut program magang berikutnya.",
+   564→    createdAtOffsetHours: 12,
+   565→    rating: 2,
+   566→    tags: ["fresh graduate"],
+   567→    talentPool: true,
+   568→    interviewInDays: null,
+   569→    source: "Teman/Rekan",
+   570→    utmSource: null,
+   571→    utmCampaign: null,
+   572→  },
+   573→];
+   574→
+   575→/* ------------------------------------- Seed -------------------------------------- */
+   576→
+   577→async function runSeed(): Promise<void> {
+   578→  // 1. Akun admin multi-user (OWNER/HR/VIEWER) jika tabel masih kosong
+   579→  const userCount = await db.adminUser.count();
+   580→  if (userCount === 0) {
+   581→    for (const user of DEFAULT_USERS) {
+   582→      await db.adminUser.create({
+   583→        data: {
+   584→          name: user.name,
+   585→          email: user.email,
+   586→          passwordHash: hashPassword(user.password),
+   587→          role: user.role,
+   588→          isActive: true,
+   589→        },
+   590→      });
+   591→    }
+   592→  }
+   593→
+   594→  // 2. Konten situs: buat default atau MERGE dengan data lama
+   595→  //    (field baru yang hilang diisi dari DEFAULT_SITE, nilai lama tidak ditimpa)
+   596→  const siteSetting = await db.setting.findUnique({ where: { key: "site" } });
+   597→  if (!siteSetting) {
+   598→    await db.setting.create({ data: { key: "site", value: JSON.stringify(DEFAULT_SITE) } });
+   599→  } else {
+   600→    try {
+   601→      const parsed: unknown = JSON.parse(siteSetting.value);
+   602→      const merged = sanitizeSiteContent(parsed, DEFAULT_SITE);
+   603→      if (JSON.stringify(merged) !== siteSetting.value) {
+   604→        await db.setting.update({ where: { key: "site" }, data: { value: JSON.stringify(merged) } });
+   605→      }
+   606→    } catch {
+   607→      await db.setting.update({ where: { key: "site" }, data: { value: JSON.stringify(DEFAULT_SITE) } });
+   608→    }
+   609→  }
+   610→
+   611→  // 3. Password admin legacy (kompatibilitas v1, login v2 memakai AdminUser)
+   612→  const passwordSetting = await db.setting.findUnique({ where: { key: "admin_password" } });
+   613→  if (!passwordSetting) {
+   614→    await db.setting.create({ data: { key: "admin_password", value: hashPassword(DEFAULT_ADMIN_PASSWORD) } });
+   615→  }
+   616→
+   617→  // 4. Posisi lowongan default (dengan seluruh fitur per lowongan v3)
+   618→  const positionCount = await db.position.count();
+   619→  if (positionCount === 0) {
+   620→    const defaultPositions: DefaultPositionSeed[] = DEFAULT_POSITIONS;
+   621→    for (const position of defaultPositions) {
+   622→      const slug = await ensureUniqueSlug(position.title);
+   623→      await db.position.create({
+   624→        data: {
+   625→          title: position.title,
+   626→          slug,
+   627→          department: position.department,
+   628→          type: position.type,
+   629→          location: position.location,
+   630→          description: position.description,
+   631→          requirements: JSON.stringify(position.requirements),
+   632→          isActive: true,
+   633→          order: position.order,
+   634→          salaryText: position.salaryText ?? null,
+   635→          salaryVisible: position.salaryVisible ?? false,
+   636→          benefits: JSON.stringify(position.benefits ?? []),
+   637→          examples: JSON.stringify(position.examples ?? []),
+   638→          urgent: position.urgent ?? false,
+   639→          featured: position.featured ?? false,
+   640→          screeningQuestions: JSON.stringify(position.screeningQuestions ?? []),
+   641→          requireCv: position.requireCv ?? false,
+   642→          requireIntro: position.requireIntro ?? false,
+   643→          requirePortfolio: position.requirePortfolio ?? false,
+   644→          maxApplicants: position.maxApplicants ?? null,
+   645→          aiCriteria: position.aiCriteria ?? null,
+   646→          applyTemplate: position.applyTemplate ?? null,
+   647→          acceptTemplate: position.acceptTemplate ?? null,
+   648→          rejectTemplate: position.rejectTemplate ?? null,
+   649→          assignmentTitle: position.assignmentTitle ?? null,
+   650→          assignmentUrl: position.assignmentUrl ?? null,
+   651→          assignmentNote: position.assignmentNote ?? null,
+   652→          rubricCriteria: JSON.stringify(position.rubricCriteria ?? []),
+   653→          checklistTemplate: JSON.stringify(position.checklistTemplate ?? []),
+   654→          noteTemplates: JSON.stringify(position.noteTemplates ?? []),
+   655→        },
+   656→      });
+   657→    }
+   658→  }
+   659→
+   660→  // 4b. Backfill slug untuk posisi lama yang belum punya (idempoten).
+   661→  const missingSlug = await db.position.findMany({ where: { slug: null }, select: { id: true, title: true } });
+   662→  for (const position of missingSlug) {
+   663→    const slug = await ensureUniqueSlug(position.title);
+   664→    await db.position.update({ where: { id: position.id }, data: { slug } });
+   665→  }
+   666→
+   667→  // 5. Lamaran contoh
+   668→  const applicationCount = await db.application.count();
+   669→  if (applicationCount === 0) {
+   670→    const positions = await db.position.findMany({ select: { id: true, title: true } });
+   671→    const positionIdByTitle = new Map(positions.map((p) => [p.title, p.id]));
+   672→    for (const sample of SAMPLE_APPLICATIONS) {
+   673→      await db.application.create({
+   674→        data: {
+   675→          name: sample.name,
+   676→          email: sample.email,
+   677→          phone: sample.phone,
+   678→          positionId: positionIdByTitle.get(sample.positionTitle) ?? null,
+   679→          portfolioUrl: sample.portfolioUrl,
+   680→          socialLinks: sample.socialLinks,
+   681→          experience: sample.experience,
+   682→          motivation: sample.motivation,
+   683→          status: sample.status,
+   684→          adminNotes: sample.adminNotes,
+   685→          rating: sample.rating,
+   686→          tags: JSON.stringify(sample.tags),
+   687→          talentPool: sample.talentPool,
+   688→          interviewAt:
+   689→            sample.interviewInDays !== null
+   690→              ? new Date(Date.now() + sample.interviewInDays * 24 * 60 * 60 * 1000)
+   691→              : null,
+   692→          createdAt: new Date(Date.now() - sample.createdAtOffsetHours * 60 * 60 * 1000),
+   693→          source: sample.source,
+   694→          utmSource: sample.utmSource,
+   695→          utmCampaign: sample.utmCampaign,
+   696→        },
+   697→      });
+   698→    }
+   699→  }
+   700→
+   701→  // 6. Backfill: lamaran tanpa trackingCode mendapat kode unik "LM-XXXXXX"
+   702→  const missingCode = await db.application.findMany({
+   703→    where: { trackingCode: null },
+   704→    select: { id: true },
+   705→  });
+   706→  for (const app of missingCode) {
+   707→    const code = await generateUniqueTrackingCode();
+   708→    await db.application.update({ where: { id: app.id }, data: { trackingCode: code } });
+   709→  }
+   710→}
+   711→
+   712→let seedPromise: Promise<void> | null = null;
+   713→
+   714→/**
+   715→ * Pastikan data awal (AdminUser, Setting site, posisi, lamaran contoh, tracking code)
+   716→ * sudah ada. Idempoten — aman dipanggil di setiap request; pakai cache promise module-level
+   717→ * agar tidak race. Gagal me-reset cache agar bisa mencoba ulang.
+   718→ */
+   719→export async function ensureSeeded(): Promise<void> {
+   720→  if (!seedPromise) {
+   721→    seedPromise = runSeed().catch((error) => {
+   722→      seedPromise = null;
+   723→      throw error;
+   724→    });
+   725→  }
+   726→  return seedPromise;
+   727→}
+   728→
+   729→/**
+   730→ * Auto-tutup posisi (dipanggil lazy dari route GET):
+   731→ * 1. closesAt sudah lewat, atau
+   732→ * 2. kuota maxApplicants tercapai (lamaran non-ditolak >= kuota).
+   733→ * Setiap penutupan dicatat di ActivityLog (actor "Sistem", action AUTO_CLOSE).
+   734→ */
+   735→export async function closeExpiredPositions(): Promise<void> {
+   736→  const now = new Date();
+   737→
+   738→  const expired = await db.position.findMany({
+   739→    where: { isActive: true, closesAt: { lt: now } },
+   740→    select: { id: true, title: true },
+   741→  });
+   742→  for (const position of expired) {
+   743→    await db.position.update({ where: { id: position.id }, data: { isActive: false } });
+   744→    await db.activityLog.create({
+   745→      data: {
+   746→        applicationId: null,
+   747→        actor: "Sistem",
+   748→        action: "AUTO_CLOSE",
+   749→        detail: `Posisi "${position.title}" ditutup otomatis karena melewati batas waktu pendaftaran.`,
+   750→      },
+   751→    });
+   752→  }
+   753→
+   754→  const withQuota = await db.position.findMany({
+   755→    where: { isActive: true, maxApplicants: { not: null } },
+   756→    select: { id: true, title: true, maxApplicants: true, _count: { select: { applications: { where: { status: { not: "REJECTED" } } } } } },
+   757→  });
+   758→  for (const position of withQuota) {
+   759→    const quota = position.maxApplicants ?? 0;
+   760→    if (quota > 0 && position._count.applications >= quota) {
+   761→      await db.position.update({ where: { id: position.id }, data: { isActive: false } });
+   762→      await db.activityLog.create({
+   763→        data: {
+   764→          applicationId: null,
+   765→          actor: "Sistem",
+   766→          action: "AUTO_CLOSE",
+   767→          detail: `Posisi "${position.title}" ditutup otomatis karena kuota pelamar (${quota}) sudah penuh.`,
+   768→        },
+   769→      });
+   770→    }
+   771→  }
+   772→}
+   773→
