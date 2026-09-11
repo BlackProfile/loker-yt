@@ -146,9 +146,70 @@ model Application {
   cvFile           FileAsset? @relation("cvFile", fields: [cvFileId], references: [id], onDelete: SetNull)
   introFileId      String?
   introFile        FileAsset? @relation("introFile", fields: [introFileId], references: [id], onDelete: SetNull)
+
+  // Penolakan terstruktur (alasan + feedback ke pelamar)
+  rejectionReason  String? // KUALIFIKASI | PENGALAMAN | PORTOFOLIO | KUOTA | TIDAK_HADIR | MENARIK_DIRI | TIDAK_RESPON | LAINNYA
+  rejectionNote    String? // catatan/feedback penolakan (tampil ke pelamar bila mode feedback)
+  rejectedAt       DateTime?
+
+  // Penawaran (offer)
+  offerStatus        String? // PENDING | ACCEPTED | DECLINED | EXPIRED; null = belum ada offer
+  offerSalary        String? // teks bebas, mis. "Rp 4.500.000/bulan"
+  offerType          String? // Full-time | Part-time | Freelance | Kontrak
+  offerStartDate     DateTime?
+  offerNote          String? // benefit tambahan / catatan offer
+  offerDeadline      DateTime? // batas jawaban pelamar
+  offerSentAt        DateTime?
+  offerRespondedAt   DateTime?
+  offerDeclineReason String?
+
+  // Onboarding setelah diterima
+  hiredAt          DateTime? // saat pelamar menerima penawaran
+  probationEnd     DateTime? // akhir masa percobaan
+  onboardingDocs   String    @default("[]") // JSON {id,label,required,done,fileId}[]
+
+  interviews       Interview[]
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   activityLogs     ActivityLog[]
+}
+
+// Sesi wawancara per lamaran — mendukung multi-ronde (HR, user, final).
+model Interview {
+  id             String      @id @default(cuid())
+  applicationId  String
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  round          Int         @default(1) // ronde ke-n
+  mode           String      @default("ONLINE") // ONLINE | ONSITE
+  platform       String      @default("GOOGLE_MEET") // GOOGLE_MEET | ZOOM | MICROSOFT_TEAMS | WHATSAPP | TELEPON | LAINNYA
+  meetingLink    String? // link Zoom/Meet/Teams (untuk mode ONLINE)
+  address        String? // lokasi (untuk mode ONSITE)
+  scheduledAt    DateTime
+  durationMin    Int         @default(45)
+  interviewers   String      @default("[]") // JSON string[] nama pewawancara
+  status         String      @default("SCHEDULED") // SCHEDULED | CONFIRMED | RESCHEDULE_REQUESTED | COMPLETED | NO_SHOW | CANCELLED
+
+  // Hasil wawancara (scorecard)
+  scores         String? // JSON {kriteria: 1-5}
+  recommendation String? // LANJUT | CADANGAN | TOLAK
+  notes          String?
+  recordingUrl   String? // link rekaman Zoom/Meet (opsional)
+  completedAt    DateTime?
+
+  // Permintaan ubah jadwal dari pelamar
+  rescheduleReason     String?
+  rescheduleProposedAt DateTime?
+
+  // Penanda reminder terkirim (oleh scheduler)
+  reminderDaySent  Boolean @default(false)
+  reminderHourSent Boolean @default(false)
+
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([applicationId])
+  @@index([scheduledAt])
+  @@index([status])
 }
 
 // Log aktivitas: audit admin + timeline per kandidat + riwayat notifikasi
