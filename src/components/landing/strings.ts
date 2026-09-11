@@ -292,6 +292,90 @@ const id = {
     rejected: "Tidak Lolos",
     assignmentTitle: "Tes Seleksi",
     openBrief: "Buka Brief Tes",
+    rateLimited: "Aksi terlalu cepat. Tunggu sebentar, lalu coba lagi ya.",
+    actionFailed: "Terjadi kesalahan. Coba lagi sebentar lagi.",
+    formCancel: "Batal",
+    interview: {
+      title: "Jadwal Wawancara",
+      round: "Wawancara Ronde {n}",
+      whenLabel: "Waktu",
+      durationLabel: "Durasi",
+      durationValue: "{n} menit",
+      platformLabel: "Platform",
+      interviewersLabel: "Pewawancara",
+      addressLabel: "Alamat",
+      join: "Gabung Meeting",
+      joinAria: "Buka tautan meeting wawancara",
+      saveCalendar: "Simpan ke Kalender",
+      gcal: "Google Calendar",
+      gcalAria: "Tambahkan ke Google Calendar",
+      confirm: "Saya Hadir",
+      confirmToast: "Kehadiran dikonfirmasi",
+      confirmDone: "Kamu sudah mengonfirmasi kehadiran. Sampai jumpa!",
+      requestChange: "Minta Ubah Jadwal",
+      proposedLabel: "Usulan waktu baru",
+      proposedRequired: "Pilih usulan waktu baru terlebih dulu.",
+      reasonLabel: "Alasan (opsional)",
+      reasonPh: "Ceritakan singkat kenapa butuh ubah jadwal...",
+      sendRequest: "Kirim Usulan",
+      proposedPending: "Menunggu konfirmasi admin untuk usulan {time}",
+      cancelRequest: "Batalkan Usulan",
+      rescheduleSent: "Usulan ubah jadwal terkirim",
+      cancelRequestToast: "Usulan ubah jadwal dibatalkan",
+      tipsTitleOnline: "Tips wawancara online",
+      tipsTitleOnsite: "Tips wawancara onsite",
+      tipsOnline: [
+        "Pastikan kamera dan mikrofon berfungsi baik.",
+        "Gunakan koneksi internet yang stabil.",
+        "Pilih ruangan tenang dengan pencahayaan cukup.",
+        "Buka aplikasi meeting 10 menit lebih awal.",
+        "Siapkan portofolio terbaikmu untuk dibahas.",
+      ],
+      tipsOnsite: [
+        "Datang tepat waktu — lebih awal sedikit lebih baik.",
+        "Bawa berkas penting: CV, portofolio, dan identitas diri.",
+      ],
+    },
+    offer: {
+      title: "Kamu menerima penawaran!",
+      salary: "Gaji",
+      type: "Jenis",
+      start: "Mulai",
+      deadlineLabel: "Batas jawaban",
+      daysLeft: "tersisa {n} hari",
+      accept: "Terima Penawaran",
+      acceptTitle: "Yakin menerima penawaran?",
+      acceptDesc: "Setelah diterima, proses onboarding dimulai. Pastikan kamu siap bergabung.",
+      acceptYes: "Ya, Terima",
+      acceptToast: "Penawaran diterima! Selamat bergabung.",
+      decline: "Tolak",
+      declineReasonLabel: "Alasan menolak (opsional)",
+      declineReasonPh: "Ceritakan singkat kenapa kamu menolak...",
+      declineSend: "Kirim Jawaban",
+      declineToast: "Jawaban penawaran terkirim",
+      acceptedTitle: "Penawaran diterima",
+      respondedLabel: "Dijawab {time}",
+      declinedTitle: "Kamu menolak penawaran ini",
+      expiredTitle: "Batas jawaban penawaran terlewat",
+    },
+    onboarding: {
+      title: "Onboarding — Langkah Selanjutnya",
+      since: "Bergabung sejak {date}",
+      probation: "Masa percobaan s.d. {date}",
+      docsProgress: "{done}/{total} dokumen lengkap",
+      upload: "Unggah berkas",
+      download: "Unduh",
+      downloadAria: "Unduh dokumen {label}",
+      uploadAria: "Unggah dokumen {label}",
+      required: "wajib",
+      uploadedToast: "Dokumen terunggah",
+      uploadFailed: "Gagal mengunggah dokumen. Coba lagi ya.",
+    },
+    rejectedDetail: {
+      reasonLabel: "Alasan",
+      feedback: "Umpan balik untukmu",
+      otherPositions: "Lihat Lowongan Lain",
+    },
   },
   voices: {
     badge: "Suara Tim",
@@ -631,6 +715,77 @@ type idDictShape = {
     rejected: string;
     assignmentTitle: string;
     openBrief: string;
+    rateLimited: string;
+    actionFailed: string;
+    formCancel: string;
+    interview: {
+      title: string;
+      round: string;
+      whenLabel: string;
+      durationLabel: string;
+      durationValue: string;
+      platformLabel: string;
+      interviewersLabel: string;
+      addressLabel: string;
+      join: string;
+      joinAria: string;
+      saveCalendar: string;
+      gcal: string;
+      gcalAria: string;
+      confirm: string;
+      confirmToast: string;
+      confirmDone: string;
+      requestChange: string;
+      proposedLabel: string;
+      proposedRequired: string;
+      reasonLabel: string;
+      reasonPh: string;
+      sendRequest: string;
+      proposedPending: string;
+      cancelRequest: string;
+      rescheduleSent: string;
+      cancelRequestToast: string;
+      tipsTitleOnline: string;
+      tipsTitleOnsite: string;
+      tipsOnline: string[];
+      tipsOnsite: string[];
+    };
+    offer: {
+      title: string;
+      salary: string;
+      type: string;
+      start: string;
+      deadlineLabel: string;
+      daysLeft: string;
+      accept: string;
+      acceptTitle: string;
+      acceptDesc: string;
+      acceptYes: string;
+      acceptToast: string;
+      decline: string;
+      declineReasonLabel: string;
+      declineReasonPh: string;
+      declineSend: string;
+      declineToast: string;
+      acceptedTitle: string;
+      respondedLabel: string;
+      declinedTitle: string;
+      expiredTitle: string;
+    };
+    onboarding: {
+      title: string;
+      since: string;
+      probation: string;
+      docsProgress: string;
+      upload: string;
+      download: string;
+      downloadAria: string;
+      uploadAria: string;
+      required: string;
+      uploadedToast: string;
+      uploadFailed: string;
+    };
+    rejectedDetail: { reasonLabel: string; feedback: string; otherPositions: string };
   };
   voices: { badge: string; title: string; desc: string };
   subscribe: {
@@ -995,6 +1150,90 @@ const en: Dict = {
     rejected: "Not Selected",
     assignmentTitle: "Selection Test",
     openBrief: "Open Test Brief",
+    rateLimited: "That was a bit fast. Please wait a moment and try again.",
+    actionFailed: "Something went wrong. Please try again shortly.",
+    formCancel: "Cancel",
+    interview: {
+      title: "Interview Schedule",
+      round: "Interview Round {n}",
+      whenLabel: "Time",
+      durationLabel: "Duration",
+      durationValue: "{n} minutes",
+      platformLabel: "Platform",
+      interviewersLabel: "Interviewers",
+      addressLabel: "Address",
+      join: "Join Meeting",
+      joinAria: "Open the interview meeting link",
+      saveCalendar: "Save to Calendar",
+      gcal: "Google Calendar",
+      gcalAria: "Add to Google Calendar",
+      confirm: "I Will Attend",
+      confirmToast: "Attendance confirmed",
+      confirmDone: "You have confirmed your attendance. See you there!",
+      requestChange: "Request Reschedule",
+      proposedLabel: "Proposed new time",
+      proposedRequired: "Please pick a proposed new time first.",
+      reasonLabel: "Reason (optional)",
+      reasonPh: "Briefly tell us why you need a new time...",
+      sendRequest: "Send Request",
+      proposedPending: "Waiting for admin confirmation on your proposed time {time}",
+      cancelRequest: "Withdraw Request",
+      rescheduleSent: "Reschedule request sent",
+      cancelRequestToast: "Reschedule request withdrawn",
+      tipsTitleOnline: "Online interview tips",
+      tipsTitleOnsite: "Onsite interview tips",
+      tipsOnline: [
+        "Make sure your camera and microphone work well.",
+        "Use a stable internet connection.",
+        "Pick a quiet room with good lighting.",
+        "Open the meeting app 10 minutes early.",
+        "Have your best portfolio ready to discuss.",
+      ],
+      tipsOnsite: [
+        "Arrive on time — a few minutes early is even better.",
+        "Bring the essentials: CV, portfolio, and your ID.",
+      ],
+    },
+    offer: {
+      title: "You have received an offer!",
+      salary: "Salary",
+      type: "Type",
+      start: "Start",
+      deadlineLabel: "Reply by",
+      daysLeft: "{n} days left",
+      accept: "Accept Offer",
+      acceptTitle: "Sure you want to accept the offer?",
+      acceptDesc: "Once accepted, onboarding begins. Make sure you are ready to join.",
+      acceptYes: "Yes, Accept",
+      acceptToast: "Offer accepted! Welcome aboard.",
+      decline: "Decline",
+      declineReasonLabel: "Reason for declining (optional)",
+      declineReasonPh: "Briefly tell us why you are declining...",
+      declineSend: "Send Answer",
+      declineToast: "Your answer has been sent",
+      acceptedTitle: "Offer accepted",
+      respondedLabel: "Answered {time}",
+      declinedTitle: "You declined this offer",
+      expiredTitle: "The offer reply deadline has passed",
+    },
+    onboarding: {
+      title: "Onboarding — Next Steps",
+      since: "Joined since {date}",
+      probation: "Probation until {date}",
+      docsProgress: "{done}/{total} documents complete",
+      upload: "Upload file",
+      download: "Download",
+      downloadAria: "Download document {label}",
+      uploadAria: "Upload document {label}",
+      required: "required",
+      uploadedToast: "Document uploaded",
+      uploadFailed: "Failed to upload the document. Please try again.",
+    },
+    rejectedDetail: {
+      reasonLabel: "Reason",
+      feedback: "Feedback for you",
+      otherPositions: "Browse Other Openings",
+    },
   },
   voices: {
     badge: "Team Voices",
