@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { LangProvider, useLang } from "@/components/landing/lang-context";
 import { BrandMark, HoverLift, ROSE_BADGE } from "@/components/landing/primitives";
+import { buildPositionUrl } from "@/components/landing/landing-utils";
 
 // Langganan statis untuk useSyncExternalStore (nilai tidak pernah berubah).
 const emptySubscribe = () => () => {};
@@ -20,12 +21,6 @@ function EmbedJobsInner({
   positions: Position[];
 }) {
   const { t } = useLang();
-  // origin halaman utama dibaca via useSyncExternalStore (aman SSR).
-  const origin = useSyncExternalStore(
-    emptySubscribe,
-    () => window.location.origin,
-    () => "",
-  );
   // Filter deep link ?posisi=slug (slug posisi; fallback id) — tanpa param perilaku lama.
   const posisiParam = useSyncExternalStore(
     emptySubscribe,
@@ -64,10 +59,9 @@ function EmbedJobsInner({
             </Card>
           ) : (
             visiblePositions.map((position) => {
-              // Kartu posisi tertaut ke formulir dengan posisi terpilih via deep link.
-              const applyHref = position.slug
-                ? `${origin}/?posisi=${encodeURIComponent(position.slug)}#lamar`
-                : `${origin}/#lamar`;
+              // Tombol menuju HALAMAN DETAIL di situs utama (?posisi=slug) —
+              // bukan lagi embed/anchor formulir.
+              const applyHref = buildPositionUrl(position);
               return (
                 <HoverLift key={position.id}>
                   <Card className="gap-2 rounded-xl p-4 transition-shadow hover:shadow-md sm:p-5">

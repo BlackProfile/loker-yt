@@ -49,6 +49,7 @@ import {
 } from "@/lib/stages";
 import { apiDelete, apiGet, apiPatch, apiPost, buildQuery } from "./api";
 import { useAdminSession } from "./admin-context";
+import { useLiveRefresh } from "./use-live-refresh";
 import { ApplicationDetailDialog } from "./application-detail-dialog";
 import { ApplicationsTable } from "./applications-table";
 import { KanbanBoard } from "./kanban-board";
@@ -176,25 +177,30 @@ export function ApplicationsTab() {
     }
   }, []);
 
-  const loadApplications = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await apiGet<Application[]>(
-        `/api/admin/applications${activeQuery}`
-      );
-      setApplications(data);
-      // Kumpulkan tag unik untuk pilihan filter.
-      setAllTags((prev) => {
-        const set = new Set(prev);
-        for (const app of data) for (const t of app.tags) set.add(t);
-        return Array.from(set).sort((a, b) => a.localeCompare(b, "id"));
-      });
-    } catch (err) {
-      reportError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeQuery, reportError]);
+  // silent: refresh senyap (dipakai event realtime) — daftar lama tetap tampil
+  // sampai data baru siap, tanpa skeleton ulang dan tanpa flash kosong.
+  const loadApplications = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const data = await apiGet<Application[]>(
+          `/api/admin/applications${activeQuery}`
+        );
+        setApplications(data);
+        // Kumpulkan tag unik untuk pilihan filter.
+        setAllTags((prev) => {
+          const set = new Set(prev);
+          for (const app of data) for (const t of app.tags) set.add(t);
+          return Array.from(set).sort((a, b) => a.localeCompare(b, "id"));
+        });
+      } catch (err) {
+        reportError(err);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [activeQuery, reportError]
+  );
 
   useEffect(() => {
     void loadPositions();
@@ -203,6 +209,15 @@ export function ApplicationsTab() {
   useEffect(() => {
     void loadApplications();
   }, [loadApplications]);
+
+  // Realtime: lamaran baru/perubahan status/skor AI → segarkan daftar senyap.
+  useLiveRefresh("applications:changed", () => {
+    void loadApplications(true);
+  });
+  // Posisi baru/diubah/hapus → opsi filter posisi tetap segar (senyap).
+  useLiveRefresh("positions:changed", () => {
+    void loadPositions();
+  });
 
   function applySearch() {
     setQ(searchInput.trim());
@@ -547,8 +562,9 @@ export function ApplicationsTab() {
         </div>
       </div>
 
-      {/* Loading */}
-      {loading ? (
+      {/* Loading — skeleton hanya saat pemuatan pertama (belum ada data); saat
+          refresh (filter/event realtime) daftar lama tetap tampil. */}
+      {loading && applications.length === 0 ? (
         <div className="flex flex-col gap-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-14 w-full rounded-xl" />

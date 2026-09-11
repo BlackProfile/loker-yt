@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -26,7 +26,11 @@ import { Label } from "@/components/ui/label";
 import { useLang } from "@/components/landing/lang-context";
 import { Container, FadeIn, ROSE_BADGE } from "@/components/landing/primitives";
 import { formatDateTimeId, safeExternalUrl } from "@/components/landing/landing-utils";
+import { useLiveEvent } from "@/lib/live-client";
 import { Badge } from "@/components/ui/badge";
+
+// Debounce recheck realtime — endpoint track bisa punya rate-limit (min. 1 detik).
+const LIVE_RECHECK_DEBOUNCE_MS = 1000;
 
 type StepView = { key: string; label: string; done: boolean; at: string | null };
 
@@ -41,11 +45,20 @@ export function StatusCheckSection() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<TrackResponse | null>(null);
   const [notFound, setNotFound] = useState(false);
+  // Kode yang sedang dilacak (aktif di state) — dipakai untuk recheck realtime.
+  const [trackedCode, setTrackedCode] = useState("");
+  const recheckTimerRef = useRef<number | null>(null);
 
   async function handleTrack(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmed = code.trim().toUpperCase();
     if (!trimmed) return;
+    // Batalkan recheck realtime yang tertunda — pelacakan manual sedang berjalan.
+    if (recheckTimerRef.current) {
+      window.clearTimeout(recheckTimerRef.current);
+      recheckTimerRef.current = null;
+    }
+    setTrackedCode(trimmed);
     setLoading(true);
     try {
       const res = await fetch("/api/public/track", {
@@ -71,6 +84,49 @@ export function StatusCheckSection() {
       setLoading(false);
     }
   }
+
+  /**
+   * Pengecekan ulang SENYAP saat broadcast "applications:changed" masuk:
+   * tanpa spinner, data lama tetap tampil, dan state hanya di-swap bila isi
+   * benar-benar berubah (anti-flicker). Kegagalan jaringan diabaikan diam.
+   */
+  async function recheckSilently(codeValue: string) {
+    try {
+      const res = await fetch("/api/public/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: codeValue }),
+      });
+      if (!res.ok) return; // gagal senyap — pertahankan hasil terakhir
+      const data = (await res.json().catch(() => null)) as TrackResponse | null;
+      if (!data || !data.found) return; // lamaran tak ditemukan lagi — biarkan tampilan lama
+      setResult((prev) => {
+        if (prev && JSON.stringify(prev) === JSON.stringify(data)) return prev;
+        return data;
+      });
+      setNotFound(false);
+    } catch {
+      // senyap
+    }
+  }
+
+  // Realtime: lamaran berubah di admin -> perbarui status pelacakan secara senyap.
+  useLiveEvent("applications:changed", () => {
+    if (!trackedCode) return;
+    // Debounce >= 1 detik (rate-limit endpoint track) + gabungkan burst event.
+    if (recheckTimerRef.current) window.clearTimeout(recheckTimerRef.current);
+    recheckTimerRef.current = window.setTimeout(() => {
+      recheckTimerRef.current = null;
+      void recheckSilently(trackedCode);
+    }, LIVE_RECHECK_DEBOUNCE_MS);
+  });
+
+  // Bersihkan timer recheck saat komponen dilepas.
+  useEffect(() => {
+    return () => {
+      if (recheckTimerRef.current) window.clearTimeout(recheckTimerRef.current);
+    };
+  }, []);
 
   const steps: StepView[] = result
     ? (result.steps ??

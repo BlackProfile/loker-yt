@@ -11,6 +11,7 @@ import { generateUniqueTrackingCode } from "@/lib/tracking";
 import { parseScreeningQuestions, parseStringRecord } from "@/lib/seed";
 import { CV_MAX_BYTES, INTRO_MAX_BYTES, type ApplySuccessResponse } from "@/lib/types";
 import { startBackgroundProcessing } from "@/lib/processing";
+import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";
 
@@ -314,6 +315,8 @@ export async function POST(req: NextRequest) {
       autoReply,
       assignment,
     };
+    // Realtime: beri tahu semua client (panel admin) bahwa ada lamaran baru.
+    void emitRealtime(REALTIME_EVENTS.applications);
     return NextResponse.json(body, { status: 201 });
   } catch (error) {
     console.error("[POST /api/applications]", error);

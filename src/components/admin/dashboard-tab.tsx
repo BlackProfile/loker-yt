@@ -49,6 +49,7 @@ import {
 } from "@/lib/types";
 import { apiGet } from "./api";
 import { useAdminSession } from "./admin-context";
+import { useLiveRefresh } from "./use-live-refresh";
 import { formatDate, formatDateTime, formatRelative, initialsOf } from "./format";
 import {
   StatusBadge,
@@ -152,28 +153,31 @@ export function DashboardTab() {
   const [posStats, setPosStats] = useState<PositionStatsRow[]>([]);
   const [posStatsLoading, setPosStatsLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // silent: refresh senyap (dipakai event realtime) — data lama tetap tampil,
+  // state loading tidak disentuh sehingga skeleton tidak muncul ulang.
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await apiGet<AdminOverviewResponse>("/api/admin/overview");
       setOverview(data);
     } catch (err) {
       reportError(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [reportError]);
 
-  const loadPosStats = useCallback(async () => {
-    setPosStatsLoading(true);
+  const loadPosStats = useCallback(async (silent = false) => {
+    if (!silent) setPosStatsLoading(true);
     try {
       const data = await apiGet<AdminPositionStatsResponse>("/api/admin/position-stats");
       setPosStats(data.rows);
     } catch {
       // Grafik pelengkap; tampilkan kosong tanpa toast agar tidak berisik.
-      setPosStats([]);
+      // Saat senyap, data lama dipertahankan (tanpa flash kosong).
+      if (!silent) setPosStats([]);
     } finally {
-      setPosStatsLoading(false);
+      if (!silent) setPosStatsLoading(false);
     }
   }, []);
 
@@ -184,6 +188,16 @@ export function DashboardTab() {
   useEffect(() => {
     void loadPosStats();
   }, [loadPosStats]);
+
+  // Realtime: lamaran baru/perubahan status memengaruhi overview + statistik.
+  useLiveRefresh("applications:changed", () => {
+    void load(true);
+    void loadPosStats(true);
+  });
+  // Perubahan posisi memengaruhi grafik perbandingan (views/konversi/kuota).
+  useLiveRefresh("positions:changed", () => {
+    void loadPosStats(true);
+  });
 
   const stats = overview?.stats;
   const total = stats?.total ?? 0;
@@ -672,9 +686,9 @@ export function DashboardTab() {
                 }
               : prev
           );
-          void load();
+          void load(true);
         }}
-        onDeleted={() => void load()}
+        onDeleted={() => void load(true)}
       />
     </div>
   );

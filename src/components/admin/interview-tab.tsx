@@ -21,6 +21,7 @@ import { CalendarClock, Inbox } from "lucide-react";
 import type { Application } from "@/lib/types";
 import { apiGet } from "./api";
 import { useAdminSession } from "./admin-context";
+import { useLiveRefresh } from "./use-live-refresh";
 import { formatTime, initialsOf } from "./format";
 import { InterviewCalendar } from "./interview-calendar";
 import { ApplicationDetailDialog } from "./application-detail-dialog";
@@ -34,8 +35,10 @@ export function InterviewTab() {
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Application | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // silent: refresh senyap (dipakai event realtime) — jadwal lama tetap tampil
+  // sampai data baru siap, tanpa skeleton ulang.
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await apiGet<Application[]>(
         "/api/admin/applications?hasInterview=1"
@@ -44,7 +47,7 @@ export function InterviewTab() {
     } catch (err) {
       reportError(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [reportError]);
 
@@ -52,6 +55,11 @@ export function InterviewTab() {
   useEffect(() => {
     void load();
   }, [load, month]);
+
+  // Realtime: jadwal wawancara bisa berubah dari dialog detail pelamar.
+  useLiveRefresh("applications:changed", () => {
+    void load(true);
+  });
 
   const monthApps = apps.filter((app) => {
     if (!app.interviewAt) return false;
@@ -120,7 +128,9 @@ export function InterviewTab() {
             </CardDescription>
           </CardHeader>
           <CardContent className="px-6">
-            {loading ? (
+            {/* Skeleton hanya saat pemuatan pertama; refresh senyap tidak mengganti
+                panel dengan skeleton. */}
+            {loading && apps.length === 0 ? (
               <div className="flex flex-col gap-3">
                 {Array.from({ length: 2 }).map((_, i) => (
                   <Skeleton key={i} className="h-14 w-full rounded-lg" />

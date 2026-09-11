@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { serializePosition } from "@/lib/seed";
 import { positionFieldsToDb, sanitizePositionInput } from "@/lib/position-input";
+import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const updated = await db.position.update({ where: { id }, data: updateData });
 
+    // Realtime: perubahan posisi (edit/toggle/arsip) disebarkan ke publik & admin.
+    void emitRealtime(REALTIME_EVENTS.positions);
     return NextResponse.json(serializePosition(updated));
   } catch (error) {
     console.error("[PATCH /api/admin/positions/[id]]", error);
@@ -76,6 +79,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     await db.position.delete({ where: { id } });
 
+    // Realtime: posisi dihapus — segarkan daftar publik & admin.
+    void emitRealtime(REALTIME_EVENTS.positions);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[DELETE /api/admin/positions/[id]]", error);

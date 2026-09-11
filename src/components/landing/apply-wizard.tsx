@@ -164,12 +164,18 @@ type ApplyWizardProps = {
   positions: Position[];
   positionId: string;
   onPositionIdChange: (positionId: string) => void;
+  /**
+   * true = posisi terkunci (dipakai halaman detail per lowongan): pemilih posisi
+   * di langkah 1 disembunyikan dan positionId dianggap selalu valid.
+   */
+  lockPosition?: boolean;
 };
 
 export function ApplyWizard({
   positions,
   positionId,
   onPositionIdChange,
+  lockPosition = false,
 }: ApplyWizardProps) {
   const { t } = useLang();
   const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
@@ -285,7 +291,10 @@ export function ApplyWizard({
     if (!values.phone.trim()) next.phone = t.apply.errors.phoneRequired;
     else if (values.phone.replace(/\D/g, "").length < 8)
       next.phone = t.apply.errors.phoneMin;
-    if (positions.length > 0 && !positionId) next.positionId = t.apply.errors.position;
+    // Saat lockPosition, posisi tetap dari halaman detail — dianggap valid,
+    // error "pilih posisi" tidak perlu ditampilkan.
+    if (!lockPosition && positions.length > 0 && !positionId)
+      next.positionId = t.apply.errors.position;
     return next;
   }
 
@@ -570,7 +579,8 @@ export function ApplyWizard({
     setDirection(1);
     setSource("");
     setScreeningAnswers({});
-    onPositionIdChange("");
+    // Saat lockPosition, posisi milik halaman detail — jangan direset.
+    if (!lockPosition) onPositionIdChange("");
     try {
       window.localStorage.removeItem(DRAFT_KEY);
     } catch {
@@ -587,7 +597,10 @@ export function ApplyWizard({
     }
     setValues(restored);
     draftDismissedRef.current = false;
+    // Saat lockPosition, posisi tetap milik halaman detail (draft bisa dari
+    // posisi lain — jangan menimpa posisi terkunci).
     if (
+      !lockPosition &&
       typeof draft.positionId === "string" &&
       positions.some((p) => p.id === draft.positionId)
     ) {
@@ -906,48 +919,52 @@ export function ApplyWizard({
                 ) : null}
               </div>
 
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="apply-position">
-                  {t.apply.fields.position} <span className="text-rose-600">*</span>
-                </Label>
-                <Select
-                  value={positionId || undefined}
-                  onValueChange={(value) => {
-                    onPositionIdChange(value);
-                    clearPositionError();
-                  }}
-                  disabled={positions.length === 0}
-                >
-                  <SelectTrigger
-                    id="apply-position"
-                    className="h-11 w-full"
-                    aria-invalid={errors.positionId ? true : undefined}
-                    aria-describedby={
-                      errors.positionId ? "apply-position-error" : undefined
-                    }
+              {/* Pemilih posisi disembunyikan saat lockPosition — posisi tetap
+                  dari halaman detail (positionId sudah ditentukan di atas). */}
+              {!lockPosition ? (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="apply-position">
+                    {t.apply.fields.position} <span className="text-rose-600">*</span>
+                  </Label>
+                  <Select
+                    value={positionId || undefined}
+                    onValueChange={(value) => {
+                      onPositionIdChange(value);
+                      clearPositionError();
+                    }}
+                    disabled={positions.length === 0}
                   >
-                    <SelectValue
-                      placeholder={
-                        positions.length === 0
-                          ? t.apply.fields.positionEmpty
-                          : t.apply.fields.positionPh
+                    <SelectTrigger
+                      id="apply-position"
+                      className="h-11 w-full"
+                      aria-invalid={errors.positionId ? true : undefined}
+                      aria-describedby={
+                        errors.positionId ? "apply-position-error" : undefined
                       }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {positions.map((position) => (
-                      <SelectItem key={position.id} value={position.id}>
-                        {position.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.positionId ? (
-                  <p id="apply-position-error" className="text-sm text-rose-600">
-                    {errors.positionId}
-                  </p>
-                ) : null}
-              </div>
+                    >
+                      <SelectValue
+                        placeholder={
+                          positions.length === 0
+                            ? t.apply.fields.positionEmpty
+                            : t.apply.fields.positionPh
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {positions.map((position) => (
+                        <SelectItem key={position.id} value={position.id}>
+                          {position.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.positionId ? (
+                    <p id="apply-position-error" className="text-sm text-rose-600">
+                      {errors.positionId}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             {/* Sumber pelamar (opsional) — membantu pemilik melacak kanal rekrutmen */}

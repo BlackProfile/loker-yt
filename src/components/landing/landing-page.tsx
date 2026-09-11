@@ -3,14 +3,11 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { motion, MotionConfig } from "framer-motion";
 import {
-  Clock,
   Instagram,
   Mail,
   Menu,
-  MessageCircle,
   Phone,
   Quote,
-  ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import type {
@@ -60,7 +57,6 @@ import { ThemeToggle } from "@/components/landing/theme-toggle";
 import { DeadlineCountdown } from "@/components/landing/deadline-countdown";
 import { ShareMenu } from "@/components/landing/share-menu";
 import { PositionsSection } from "@/components/landing/positions-section";
-import { ApplyWizard } from "@/components/landing/apply-wizard";
 import { StatusCheckSection } from "@/components/landing/status-check";
 import { SubscribeSection } from "@/components/landing/subscribe-section";
 import { ChatWidget } from "@/components/landing/chat-widget";
@@ -72,8 +68,10 @@ type LandingPageProps = {
   stats: { openRoles: number; totalApplications: number };
   /** Kuota & jumlah lamaran per posisi (dari PublicContentResponse.positionStats) untuk badge publik. */
   positionStats?: Record<string, PositionPublicStats>;
-  /** Slug posisi dari deep link /?posisi=slug — dipakai untuk membuka dialog detail posisi otomatis. */
-  initialPosisiSlug?: string | null;
+  /** true saat data sedang dimuat ulang di latar belakang (realtime) — tanpa flicker. */
+  refreshing?: boolean;
+  /** Buka halaman detail lowongan (?posisi=slug) — persyaratan + formulir per lowongan. */
+  onOpenPosition: (slug: string) => void;
 };
 
 // Link nav/footer mengikuti visibilitas section terkait —
@@ -88,8 +86,6 @@ function useNavLinks(sections: SectionVisibility) {
     { key: "faq" as const, href: "#faq", label: t.nav.faq },
   ].filter((link) => sections[link.key]);
 }
-
-const TRUST_ICONS = [ShieldCheck, Clock, MessageCircle];
 
 // Status "halaman sudah digulir" via useSyncExternalStore (murah, tanpa setState di effect).
 function useScrolled(threshold = 8): boolean {
@@ -116,7 +112,7 @@ function Navbar({
   const [mobileOpen, setMobileOpen] = useState(false);
   const navLinks = useNavLinks(sections);
   // Hamburger seluler hanya bila isinya ada: link nav atau CTA lamaran.
-  const hasMobileMenu = navLinks.length > 0 || sections.applyForm;
+  const hasMobileMenu = navLinks.length > 0 || sections.positions;
   const scrolled = useScrolled();
 
   return (
@@ -164,9 +160,9 @@ function Navbar({
             <LangToggle />
             <ThemeToggle />
           </div>
-          {sections.applyForm ? (
+          {sections.positions ? (
             <Button size="sm" asChild className="hidden md:inline-flex">
-              <a href="#lamar">{t.nav.applyNow}</a>
+              <a href="#posisi">{t.nav.applyNow}</a>
             </Button>
           ) : null}
 
@@ -206,9 +202,9 @@ function Navbar({
                       {link.label}
                     </a>
                   ))}
-                  {sections.applyForm ? (
+                  {sections.positions ? (
                     <Button asChild className="mt-3">
-                      <a href="#lamar" onClick={() => setMobileOpen(false)}>
+                      <a href="#posisi" onClick={() => setMobileOpen(false)}>
                         {t.nav.applyNow}
                       </a>
                     </Button>
@@ -301,19 +297,9 @@ function Hero({
 
           <StaggerItem>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              {sections.applyForm ? (
-                <Button size="lg" className="h-11" asChild>
-                  <a href="#lamar">{t.nav.applyNow}</a>
-                </Button>
-              ) : null}
               {sections.positions ? (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
-                  asChild
-                >
-                  <a href="#posisi">{t.hero.viewPositions}</a>
+                <Button size="lg" className="h-11" asChild>
+                  <a href="#posisi">{t.nav.applyNow}</a>
                 </Button>
               ) : null}
               <ShareMenu dark siteName={content.siteName} tagline={content.tagline} />
@@ -502,105 +488,6 @@ function HowToApplySection() {
   );
 }
 
-function ApplySection({
-  content,
-  positions,
-  positionId,
-  onPositionIdChange,
-}: {
-  content: SiteContent;
-  positions: Position[];
-  positionId: string;
-  onPositionIdChange: (positionId: string) => void;
-}) {
-  const { t } = useLang();
-
-  return (
-    <section id="lamar" className="scroll-mt-24 bg-background py-16 md:py-24">
-      <Container>
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-5 lg:gap-10">
-          <FadeIn className="lg:col-span-2">
-            <Badge variant="outline" className={ROSE_BADGE}>
-              {t.apply.badge}
-            </Badge>
-            <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
-              {t.apply.title}
-            </h2>
-            <p className="mt-4 text-muted-foreground">{t.apply.desc}</p>
-
-            <ul className="mt-6 space-y-3">
-              {t.apply.trust.map((line, index) => {
-                const TrustIcon = TRUST_ICONS[index] ?? ShieldCheck;
-                return (
-                  <li key={line} className="flex items-start gap-3">
-                    <TrustIcon
-                      className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-400"
-                      aria-hidden="true"
-                    />
-                    <span className="text-sm text-muted-foreground">{line}</span>
-                  </li>
-                );
-              })}
-            </ul>
-
-            <Card className="mt-8 gap-3 rounded-2xl p-6">
-              <p className="text-sm font-semibold">{t.apply.contactTitle}</p>
-              <a
-                href={`mailto:${content.contactEmail}`}
-                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <Mail
-                  className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
-                  aria-hidden="true"
-                />
-                <span className="break-all">{content.contactEmail}</span>
-              </a>
-              <a
-                href={whatsappHref(content.contactWhatsapp)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <Phone
-                  className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
-                  aria-hidden="true"
-                />
-                <span>
-                  {t.apply.contactWhatsapp} {content.contactWhatsapp}
-                </span>
-              </a>
-              <a
-                href={instagramHref(content.instagram)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <Instagram
-                  className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
-                  aria-hidden="true"
-                />
-                <span className="break-all">
-                  {content.instagram || "Instagram"}
-                </span>
-              </a>
-            </Card>
-          </FadeIn>
-
-          <FadeIn delay={0.1} className="lg:col-span-3">
-            <Card className="rounded-2xl p-6 md:p-8">
-              <ApplyWizard
-                positions={positions}
-                positionId={positionId}
-                onPositionIdChange={onPositionIdChange}
-              />
-            </Card>
-          </FadeIn>
-        </div>
-      </Container>
-    </section>
-  );
-}
-
 function VoicesSection({ content }: { content: SiteContent }) {
   const { t } = useLang();
 
@@ -735,9 +622,9 @@ function FinalCtaSection({
               </h2>
               <p className="mt-4 text-zinc-400">{t.cta.desc}</p>
               <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-                {sections.applyForm ? (
+                {sections.positions ? (
                   <Button size="lg" className="h-11" asChild>
-                    <a href="#lamar">{t.cta.apply}</a>
+                    <a href="#posisi">{t.cta.apply}</a>
                   </Button>
                 ) : null}
                 <Button
@@ -925,18 +812,12 @@ function LandingShell({
   positions,
   stats,
   positionStats,
-  initialPosisiSlug,
+  onOpenPosition,
 }: LandingPageProps) {
-  const [selectedPositionId, setSelectedPositionId] = useState("");
   // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin).
   const sections = content.sections;
 
-  useJobPostingJsonLd(positions, content.siteName, initialPosisiSlug);
-
-  const handleApplyPosition = (positionId: string) => {
-    setSelectedPositionId(positionId);
-    document.getElementById("lamar")?.scrollIntoView({ behavior: "smooth" });
-  };
+  useJobPostingJsonLd(positions, content.siteName);
 
   return (
     <MotionConfig reducedMotion="user">
@@ -954,23 +835,13 @@ function LandingShell({
             <PositionsSection
               positions={positions}
               siteName={content.siteName}
-              canApply={sections.applyForm}
-              onApply={handleApplyPosition}
               positionStats={positionStats}
-              initialSlug={initialPosisiSlug}
+              onOpenPosition={onOpenPosition}
             />
           ) : null}
           {sections.about ? <AboutSection content={content} stats={stats} /> : null}
           {sections.benefits ? <BenefitsSection content={content} /> : null}
           {sections.steps ? <HowToApplySection /> : null}
-          {sections.applyForm ? (
-            <ApplySection
-              content={content}
-              positions={positions}
-              positionId={selectedPositionId}
-              onPositionIdChange={setSelectedPositionId}
-            />
-          ) : null}
           {sections.statusCheck ? <StatusCheckSection /> : null}
           {sections.testimonials ? <VoicesSection content={content} /> : null}
           {sections.faq ? <FaqSection content={content} /> : null}

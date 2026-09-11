@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { withTimeout, withZaiRetry } from "@/lib/ai";
 import type { AiCoverResponse } from "@/lib/types";
+import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +119,8 @@ export async function POST(req: NextRequest) {
     });
 
     const result: AiCoverResponse = { ok: true, fileId: asset.id, url: `/api/files/${asset.id}` };
+    // Realtime: cover posisi berubah — segarkan kartu publik & admin.
+    void emitRealtime(REALTIME_EVENTS.positions);
     return NextResponse.json(result);
   } catch (error) {
     console.error("[POST /api/admin/ai/cover]", error);

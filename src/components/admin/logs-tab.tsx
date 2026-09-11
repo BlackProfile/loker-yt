@@ -23,6 +23,7 @@ import { History, Loader2, RefreshCw, UserSearch } from "lucide-react";
 import type { Application, LogEntry } from "@/lib/types";
 import { apiGet } from "./api";
 import { useAdminSession } from "./admin-context";
+import { useLiveRefresh } from "./use-live-refresh";
 import {
   actionLabel,
   actorBadgeClass,
@@ -41,8 +42,10 @@ export function LogsTab() {
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
   const appCacheRef = useRef<Map<string, Application>>(new Map());
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // silent: refresh senyap (dipakai event realtime) — log lama tetap tampil
+  // sampai data baru siap, tanpa skeleton ulang.
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await apiGet<LogEntry[]>(
         `/api/admin/logs?limit=${LIMIT}`
@@ -51,13 +54,18 @@ export function LogsTab() {
     } catch (err) {
       reportError(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [reportError]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Realtime: aktivitas lamaran baru/perubahan status langsung tercatat.
+  useLiveRefresh("applications:changed", () => {
+    void load(true);
+  });
 
   // Buka detail kandidat: cek cache lalu cari via GET applications?q=nama.
   async function openCandidate(log: LogEntry) {
@@ -120,7 +128,9 @@ export function LogsTab() {
           </Button>
         </CardHeader>
         <CardContent className="px-6">
-          {loading ? (
+          {/* Skeleton hanya saat pemuatan pertama; refresh senyap mempertahankan
+              tabel lama sampai data baru siap. */}
+          {loading && logs.length === 0 ? (
             <div className="flex flex-col gap-3">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full rounded-lg" />

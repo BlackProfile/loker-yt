@@ -1,0 +1,988 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useMemo, useState } from "react";
+     4→import { AnimatePresence, motion } from "framer-motion";
+     5→import QRCode from "qrcode";
+     6→import { toast } from "sonner";
+     7→import {
+     8→  Briefcase,
+     9→  Check,
+    10→  ClipboardList,
+    11→  Copy,
+    12→  ExternalLink,
+    13→  Eye,
+    14→  Flame,
+    15→  FolderOpen,
+    16→  Loader2,
+    17→  MapPin,
+    18→  MessageCircle,
+    19→  Pin,
+    20→  QrCode,
+    21→  SearchX,
+    22→  Sparkles,
+    23→  Timer,
+    24→  Users,
+    25→  Wallet,
+    26→  X,
+    27→  type LucideIcon,
+    28→} from "lucide-react";
+    29→import type { Position, PositionPublicStats } from "@/lib/types";
+    30→import { Badge } from "@/components/ui/badge";
+    31→import { Button } from "@/components/ui/button";
+    32→import { Card } from "@/components/ui/card";
+    33→import {
+    34→  Dialog,
+    35→  DialogClose,
+    36→  DialogContent,
+    37→  DialogDescription,
+    38→  DialogFooter,
+    39→  DialogHeader,
+    40→  DialogTitle,
+    41→} from "@/components/ui/dialog";
+    42→import { useLang } from "@/components/landing/lang-context";
+    43→import {
+    44→  HoverLift,
+    45→  ROSE_BADGE,
+    46→  Container,
+    47→  FadeIn,
+    48→} from "@/components/landing/primitives";
+    49→import {
+    50→  buildPositionUrl,
+    51→  fillTemplate,
+    52→  formatDateId,
+    53→  isPastIso,
+    54→  isWithinDaysAhead,
+    55→  isWithinDaysBack,
+    56→  safeExternalUrl,
+    57→  waShareHref,
+    58→  youtubeEmbedId,
+    59→} from "@/components/landing/landing-utils";
+    60→import { DeadlineCountdownCompact } from "@/components/landing/deadline-countdown";
+    61→import { cn } from "@/lib/utils";
+    62→
+    63→// Chip status (palet zinc/rose/amber/orange — tanpa biru/indigo/violet).
+    64→const CHIP_URGENT = "border-transparent bg-rose-600 text-white";
+    65→const CHIP_AMBER =
+    66→  "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400";
+    67→const CHIP_ORANGE =
+    68→  "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-400";
+    69→const CHIP_ZINC =
+    70→  "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+    71→const CHIP_FEATURED = "border-transparent bg-amber-500 text-zinc-950";
+    72→const CHIP_MUTED = "border-transparent bg-muted text-muted-foreground";
+    73→
+    74→const MAX_STATUS_CHIPS = 3;
+    75→const MAX_BENEFIT_PREVIEW = 2;
+    76→
+    77→type StatusChip = {
+    78→  key: string;
+    79→  label: string;
+    80→  className: string;
+    81→  Icon: LucideIcon;
+    82→};
+    83→
+    84→/** Badge featured (Pin "Unggulan") + chip status otomatis, maks 3 chip + "+n". */
+    85→function PositionBadges({
+    86→  position,
+    87→  stats,
+    88→  className,
+    89→}: {
+    90→  position: Position;
+    91→  stats?: PositionPublicStats;
+    92→  className?: string;
+    93→}) {
+    94→  const { t } = useLang();
+    95→
+    96→  const remaining = stats?.remainingQuota ?? null;
+    97→  const chips: StatusChip[] = [
+    98→    ...(position.urgent
+    99→      ? [
+   100→          {
+   101→            key: "urgent",
+   102→            label: t.positions.urgent,
+   103→            className: CHIP_URGENT,
+   104→            Icon: Flame,
+   105→          },
+   106→        ]
+   107→      : []),
+   108→    ...(isWithinDaysBack(position.createdAt, 7)
+   109→      ? [
+   110→          {
+   111→            key: "baru",
+   112→            label: t.positions.baru,
+   113→            className: CHIP_AMBER,
+   114→            Icon: Sparkles,
+   115→          },
+   116→        ]
+   117→      : []),
+   118→    ...(position.closesAt && isWithinDaysAhead(position.closesAt, 3)
+   119→      ? [
+   120→          {
+   121→            key: "closing-soon",
+   122→            label: t.positions.segeraDitutup,
+   123→            className: CHIP_ORANGE,
+   124→            Icon: Timer,
+   125→          },
+   126→        ]
+   127→      : []),
+   128→    ...(remaining === 0
+   129→      ? [
+   130→          {
+   131→            key: "quota-full",
+   132→            label: t.positions.kuotaPenuh,
+   133→            className: CHIP_ZINC,
+   134→            Icon: Users,
+   135→          },
+   136→        ]
+   137→      : []),
+   138→    ...(remaining !== null && remaining > 0 && remaining <= 3
+   139→      ? [
+   140→          {
+   141→            key: "quota-low",
+   142→            label: fillTemplate(t.positions.sisaKuota, { n: remaining }),
+   143→            className: CHIP_AMBER,
+   144→            Icon: Users,
+   145→          },
+   146→        ]
+   147→      : []),
+   148→  ];
+   149→
+   150→  if (!position.featured && chips.length === 0) return null;
+   151→
+   152→  const visibleChips = chips.slice(0, MAX_STATUS_CHIPS);
+   153→  const hiddenCount = chips.length - visibleChips.length;
+   154→
+   155→  return (
+   156→    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+   157→      {position.featured ? (
+   158→        <Badge className={CHIP_FEATURED} variant="outline">
+   159→          <Pin className="h-3 w-3" aria-hidden="true" />
+   160→          {t.positions.featured}
+   161→        </Badge>
+   162→      ) : null}
+   163→      {visibleChips.map((chip) => (
+   164→        <Badge key={chip.key} className={chip.className} variant="outline">
+   165→          <chip.Icon className="h-3 w-3" aria-hidden="true" />
+   166→          {chip.label}
+   167→        </Badge>
+   168→      ))}
+   169→      {hiddenCount > 0 ? (
+   170→        <Badge className={CHIP_MUTED} variant="outline">
+   171→          {fillTemplate(t.positions.chipMore, { n: hiddenCount })}
+   172→        </Badge>
+   173→      ) : null}
+   174→    </div>
+   175→  );
+   176→}
+   177→
+   178→/** Chip gaji (bila gaji ditampilkan): ikon Wallet + teks gaji. */
+   179→function SalaryBadge({ position }: { position: Position }) {
+   180→  const { t } = useLang();
+   181→  if (!position.salaryVisible || !position.salaryText) return null;
+   182→  return (
+   183→    <Badge
+   184→      variant="secondary"
+   185→      className="rounded-full"
+   186→      title={t.positions.gaji}
+   187→      aria-label={t.positions.gaji}
+   188→    >
+   189→      <Wallet className="h-3 w-3" aria-hidden="true" />
+   190→      {position.salaryText}
+   191→    </Badge>
+   192→  );
+   193→}
+   194→
+   195→function PositionCard({
+   196→  position,
+   197→  stats,
+   198→  canApply,
+   199→  onApply,
+   200→  onOpenDetail,
+   201→}: {
+   202→  position: Position;
+   203→  stats?: PositionPublicStats;
+   204→  canApply: boolean; // false = sections.applyForm nonaktif, tombol lamar disembunyikan
+   205→  onApply: (positionId: string) => void;
+   206→  onOpenDetail: (position: Position) => void;
+   207→}) {
+   208→  const { t } = useLang();
+   209→
+   210→  const remaining = stats?.remainingQuota ?? null;
+   211→  const quotaFull = remaining === 0;
+   212→  const closed = position.closesAt ? isPastIso(position.closesAt) : false;
+   213→  const applyDisabled = quotaFull || closed;
+   214→  const applyLabel = quotaFull
+   215→    ? t.positions.kuotaPenuh
+   216→    : closed
+   217→      ? t.positions.lamarDitutup
+   218→      : t.positions.apply;
+   219→  const hasCover = Boolean(position.coverFileId);
+   220→
+   221→  return (
+   222→    <Card
+   223→      className={cn(
+   224→        "h-full cursor-pointer overflow-hidden rounded-2xl transition-shadow hover:shadow-lg hover:shadow-rose-600/10 dark:hover:shadow-black/30",
+   225→        hasCover ? "gap-0 p-0" : "gap-4 p-6",
+   226→        position.featured && "ring-1 ring-rose-600/30",
+   227→      )}
+   228→      onClick={() => onOpenDetail(position)}
+   229→    >
+   230→      {hasCover ? (
+   231→        <img
+   232→          src={`/api/files/${position.coverFileId}`}
+   233→          alt={fillTemplate(t.positions.coverAlt, { title: position.title })}
+   234→          loading="lazy"
+   235→          className="aspect-[2/1] w-full object-cover"
+   236→        />
+   237→      ) : null}
+   238→
+   239→      <div className={cn("flex flex-1 flex-col gap-4", hasCover && "p-6")}>
+   240→        <div>
+   241→          <Badge className={ROSE_BADGE} variant="outline">
+   242→            {position.department}
+   243→          </Badge>
+   244→          <h3 className="mt-3 text-lg font-semibold">{position.title}</h3>
+   245→          <PositionBadges position={position} stats={stats} className="mt-2" />
+   246→          <div className="mt-2 flex flex-wrap items-center gap-2">
+   247→            <Badge variant="secondary">{position.type}</Badge>
+   248→            <Badge variant="secondary" className="gap-1">
+   249→              <MapPin className="h-3 w-3" aria-hidden="true" />
+   250→              {position.location}
+   251→            </Badge>
+   252→            <SalaryBadge position={position} />
+   253→          </div>
+   254→        </div>
+   255→
+   256→        <p className="line-clamp-3 text-sm text-muted-foreground">
+   257→          {position.description}
+   258→        </p>
+   259→
+   260→        {position.benefits.length > 0 ? (
+   261→          <div className="flex flex-wrap items-center gap-1.5">
+   262→            {position.benefits.slice(0, MAX_BENEFIT_PREVIEW).map((benefit, index) => (
+   263→              <Badge
+   264→                key={`${position.id}-benefit-${index}`}
+   265→                variant="secondary"
+   266→                className="rounded-full font-normal"
+   267→              >
+   268→                {benefit}
+   269→              </Badge>
+   270→            ))}
+   271→            {position.benefits.length > MAX_BENEFIT_PREVIEW ? (
+   272→              <span className="text-xs text-muted-foreground">
+   273→                {fillTemplate(t.positions.benefitLainnya, {
+   274→                  n: position.benefits.length - MAX_BENEFIT_PREVIEW,
+   275→                })}
+   276→              </span>
+   277→            ) : null}
+   278→          </div>
+   279→        ) : null}
+   280→
+   281→        {position.requirements.length > 0 ? (
+   282→          <ul className="space-y-2">
+   283→            {position.requirements.slice(0, 3).map((requirement, index) => (
+   284→              <li
+   285→                key={`${position.id}-req-${index}`}
+   286→                className="flex items-start gap-2 text-sm text-muted-foreground"
+   287→              >
+   288→                <Check
+   289→                  className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+   290→                  aria-hidden="true"
+   291→                />
+   292→                <span>{requirement}</span>
+   293→              </li>
+   294→            ))}
+   295→          </ul>
+   296→        ) : (
+   297→          <p className="text-sm italic text-muted-foreground">
+   298→            {t.positions.reqFallback}
+   299→          </p>
+   300→        )}
+   301→
+   302→        {position.closesAt && !closed ? (
+   303→          <DeadlineCountdownCompact deadline={position.closesAt} />
+   304→        ) : null}
+   305→
+   306→        <div className="mt-auto flex items-center justify-between gap-3 border-t pt-4">
+   307→          <span className="text-xs text-muted-foreground">
+   308→            {position.requirements.length > 0
+   309→              ? `${position.requirements.length} ${t.positions.requirementsCount}`
+   310→              : ""}
+   311→          </span>
+   312→          <div className="flex items-center gap-2">
+   313→            <Button
+   314→              size="sm"
+   315→              variant="outline"
+   316→              aria-label={`${t.positions.detailAria}: ${position.title}`}
+   317→              onClick={(event) => {
+   318→                event.stopPropagation();
+   319→                onOpenDetail(position);
+   320→              }}
+   321→            >
+   322→              <Eye className="h-4 w-4" aria-hidden="true" />
+   323→              {t.positions.detail}
+   324→            </Button>
+   325→            {canApply ? (
+   326→              <Button
+   327→                size="sm"
+   328→                disabled={applyDisabled}
+   329→                className="transition-transform hover:scale-[1.04] active:scale-95"
+   330→                onClick={(event) => {
+   331→                  event.stopPropagation();
+   332→                  onApply(position.id);
+   333→                }}
+   334→              >
+   335→                {applyLabel}
+   336→              </Button>
+   337→            ) : null}
+   338→          </div>
+   339→        </div>
+   340→      </div>
+   341→    </Card>
+   342→  );
+   343→}
+   344→
+   345→/** Baris share kit posisi: WhatsApp (caption lengkap + UTM), Salin Link, QR Code. */
+   346→function PositionShareRow({
+   347→  position,
+   348→  siteName,
+   349→  onOpenQr,
+   350→}: {
+   351→  position: Position;
+   352→  siteName: string;
+   353→  onOpenQr: () => void;
+   354→}) {
+   355→  const { t } = useLang();
+   356→
+   357→  const shareLink = buildPositionUrl(position, "whatsapp");
+   358→  const waCaption = [
+   359→    fillTemplate(t.positions.waCaption, { title: position.title, siteName }),
+   360→    position.salaryVisible && position.salaryText
+   361→      ? position.salaryText
+   362→      : null,
+   363→    `${t.positions.waDaftar} ${shareLink}`,
+   364→  ]
+   365→    .filter(Boolean)
+   366→    .join(" — ");
+   367→
+   368→  async function copyLink() {
+   369→    try {
+   370→      await navigator.clipboard.writeText(buildPositionUrl(position, "copy"));
+   371→      toast.success(t.positions.salinBerhasil);
+   372→    } catch {
+   373→      toast.error(t.positions.salinGagal);
+   374→    }
+   375→  }
+   376→
+   377→  return (
+   378→    <div className="rounded-xl border bg-muted/40 p-3">
+   379→      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+   380→        {t.positions.bagikan}
+   381→      </p>
+   382→      <div className="mt-2 flex flex-wrap gap-2">
+   383→        <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
+   384→          <a href={waShareHref(waCaption)} target="_blank" rel="noopener noreferrer">
+   385→            <MessageCircle className="h-4 w-4" aria-hidden="true" />
+   386→            {t.positions.bagikanWa}
+   387→          </a>
+   388→        </Button>
+   389→        <Button
+   390→          variant="outline"
+   391→          size="sm"
+   392→          className="h-11 sm:h-9"
+   393→          onClick={() => void copyLink()}
+   394→        >
+   395→          <Copy className="h-4 w-4" aria-hidden="true" />
+   396→          {t.positions.bagikanSalin}
+   397→        </Button>
+   398→        <Button
+   399→          variant="outline"
+   400→          size="sm"
+   401→          className="h-11 sm:h-9"
+   402→          onClick={onOpenQr}
+   403→        >
+   404→          <QrCode className="h-4 w-4" aria-hidden="true" />
+   405→          {t.positions.bagikanQr}
+   406→        </Button>
+   407→      </div>
+   408→    </div>
+   409→  );
+   410→}
+   411→
+   412→/** Isi dialog detail (position pasti non-null di sini agar narrowing TS rapi). */
+   413→function PositionDialogInner({
+   414→  position,
+   415→  siteName,
+   416→  stats,
+   417→  canApply,
+   418→  onApply,
+   419→  onOpenQr,
+   420→}: {
+   421→  position: Position;
+   422→  siteName: string;
+   423→  stats?: PositionPublicStats;
+   424→  canApply: boolean;
+   425→  onApply: (positionId: string) => void;
+   426→  onOpenQr: () => void;
+   427→}) {
+   428→  const { t } = useLang();
+   429→
+   430→  const remaining = stats?.remainingQuota ?? null;
+   431→  const quotaFull = remaining === 0;
+   432→  const closed = position.closesAt ? isPastIso(position.closesAt) : false;
+   433→  const applyDisabled = quotaFull || closed;
+   434→  const applyLabel = quotaFull
+   435→    ? t.positions.kuotaPenuh
+   436→    : closed
+   437→      ? t.positions.lamarDitutup
+   438→      : t.positions.apply;
+   439→  const hasCover = Boolean(position.coverFileId);
+   440→
+   441→  // Contoh karya: YouTube -> iframe embed, lainnya -> chip link eksternal.
+   442→  const exampleEmbeds = position.examples
+   443→    .map((url, index) => ({ url, index, ytId: youtubeEmbedId(url) }))
+   444→    .filter((item) => item.ytId !== null);
+   445→  const exampleLinks = position.examples
+   446→    .map((url, index) => ({ url: safeExternalUrl(url), index }))
+   447→    .filter((item): item is { url: string; index: number } => item.url !== null);
+   448→
+   449→  const assignmentUrl = position.assignment?.url
+   450→    ? safeExternalUrl(position.assignment.url)
+   451→    : null;
+   452→
+   453→  return (
+   454→    <>
+   455→      {hasCover ? (
+   456→        <img
+   457→          src={`/api/files/${position.coverFileId}`}
+   458→          alt={fillTemplate(t.positions.coverAlt, { title: position.title })}
+   459→          loading="lazy"
+   460→          className="aspect-[2/1] w-full object-cover"
+   461→        />
+   462→      ) : null}
+   463→
+   464→      <div className="p-6">
+   465→        <DialogHeader>
+   466→          <div className="flex flex-wrap items-center gap-2">
+   467→            <Badge className={ROSE_BADGE} variant="outline">
+   468→              {position.department}
+   469→            </Badge>
+   470→            <PositionBadges position={position} stats={stats} />
+   471→          </div>
+   472→          <DialogTitle className="text-left text-2xl">
+   473→            {position.title}
+   474→          </DialogTitle>
+   475→          <DialogDescription asChild>
+   476→            <div className="flex flex-wrap items-center gap-2 pt-1">
+   477→              <Badge variant="secondary">{position.type}</Badge>
+   478→              <Badge variant="secondary" className="gap-1">
+   479→                <MapPin className="h-3 w-3" aria-hidden="true" />
+   480→                {position.location}
+   481→              </Badge>
+   482→              <SalaryBadge position={position} />
+   483→              {position.closesAt ? (
+   484→                <Badge
+   485→                  variant="outline"
+   486→                  className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+   487→                >
+   488→                  {t.positions.closesPrefix}: {formatDateId(position.closesAt)}
+   489→                </Badge>
+   490→              ) : null}
+   491→            </div>
+   492→          </DialogDescription>
+   493→        </DialogHeader>
+   494→
+   495→        <div className="mt-4 space-y-5">
+   496→          <div>
+   497→            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+   498→              {t.positions.dialogDescTitle}
+   499→            </h4>
+   500→            <p className="mt-2 whitespace-pre-line text-sm leading-relaxed">
+   501→              {position.description}
+   502→            </p>
+   503→          </div>
+   504→
+   505→          {position.assignment?.title ? (
+   506→            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+   507→              <div className="flex items-start gap-2.5">
+   508→                <ClipboardList
+   509→                  className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
+   510→                  aria-hidden="true"
+   511→                />
+   512→                <div className="min-w-0 text-sm">
+   513→                  <p className="font-medium text-amber-800 dark:text-amber-300">
+   514→                    {t.positions.adaTes}: {position.assignment.title}
+   515→                  </p>
+   516→                  {position.assignment.note ? (
+   517→                    <p className="mt-1 whitespace-pre-line text-amber-700/90 dark:text-amber-200/80">
+   518→                      {position.assignment.note}
+   519→                    </p>
+   520→                  ) : null}
+   521→                  {assignmentUrl ? (
+   522→                    <Button
+   523→                      variant="outline"
+   524→                      size="sm"
+   525→                      className="mt-2 h-11 border-amber-300 bg-transparent text-amber-800 hover:bg-amber-100 hover:text-amber-900 sm:h-9 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+   526→                      asChild
+   527→                    >
+   528→                      <a
+   529→                        href={assignmentUrl}
+   530→                        target="_blank"
+   531→                        rel="noopener noreferrer"
+   532→                      >
+   533→                        <ExternalLink className="h-4 w-4" aria-hidden="true" />
+   534→                        {t.positions.bukaTautan}
+   535→                      </a>
+   536→                    </Button>
+   537→                  ) : null}
+   538→                </div>
+   539→              </div>
+   540→            </div>
+   541→          ) : null}
+   542→
+   543→          <div>
+   544→            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+   545→              {t.positions.dialogReqTitle}
+   546→            </h4>
+   547→            {position.requirements.length > 0 ? (
+   548→              <ul className="mt-2 space-y-2">
+   549→                {position.requirements.map((requirement, index) => (
+   550→                  <li
+   551→                    key={`${position.id}-detail-req-${index}`}
+   552→                    className="flex items-start gap-2 text-sm"
+   553→                  >
+   554→                    <Check
+   555→                      className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+   556→                      aria-hidden="true"
+   557→                    />
+   558→                    <span>{requirement}</span>
+   559→                  </li>
+   560→                ))}
+   561→              </ul>
+   562→            ) : (
+   563→              <p className="mt-2 text-sm italic text-muted-foreground">
+   564→                {t.positions.reqFallback}
+   565→              </p>
+   566→            )}
+   567→          </div>
+   568→
+   569→          {position.benefits.length > 0 ? (
+   570→            <div>
+   571→              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+   572→                {t.positions.dialogBenefitTitle}
+   573→              </h4>
+   574→              <ul className="mt-2 space-y-2">
+   575→                {position.benefits.map((benefit, index) => (
+   576→                  <li
+   577→                    key={`${position.id}-detail-benefit-${index}`}
+   578→                    className="flex items-start gap-2 text-sm"
+   579→                  >
+   580→                    <Check
+   581→                      className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+   582→                      aria-hidden="true"
+   583→                    />
+   584→                    <span>{benefit}</span>
+   585→                  </li>
+   586→                ))}
+   587→              </ul>
+   588→            </div>
+   589→          ) : null}
+   590→
+   591→          {position.examples.length > 0 ? (
+   592→            <div>
+   593→              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+   594→                {t.positions.contohKarya}
+   595→              </h4>
+   596→              {exampleLinks.length > 0 ? (
+   597→                <div className="mt-2 flex flex-wrap gap-2">
+   598→                  {exampleLinks.map((item) => (
+   599→                    <a
+   600→                      key={`${position.id}-example-link-${item.index}`}
+   601→                      href={item.url}
+   602→                      target="_blank"
+   603→                      rel="noopener noreferrer"
+   604→                      className="inline-flex min-h-11 items-center gap-1.5 rounded-full border bg-muted/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:min-h-0"
+   605→                    >
+   606→                      <ExternalLink
+   607→                        className="h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-400"
+   608→                        aria-hidden="true"
+   609→                      />
+   610→                      {new URL(item.url).hostname}
+   611→                    </a>
+   612→                  ))}
+   613→                </div>
+   614→              ) : null}
+   615→              {exampleEmbeds.length > 0 ? (
+   616→                <div className="mt-3 space-y-3">
+   617→                  {exampleEmbeds.map((item) => (
+   618→                    <iframe
+   619→                      key={`${position.id}-example-video-${item.index}`}
+   620→                      src={`https://www.youtube-nocookie.com/embed/${item.ytId}?rel=0`}
+   621→                      title={`${t.positions.contohKarya} — ${position.title} (${item.index + 1})`}
+   622→                      loading="lazy"
+   623→                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+   624→                      allowFullScreen
+   625→                      className="aspect-video w-full rounded-lg border bg-black"
+   626→                    />
+   627→                  ))}
+   628→                </div>
+   629→              ) : null}
+   630→            </div>
+   631→          ) : null}
+   632→
+   633→          <PositionShareRow
+   634→            position={position}
+   635→            siteName={siteName}
+   636→            onOpenQr={onOpenQr}
+   637→          />
+   638→        </div>
+   639→
+   640→        {canApply ? (
+   641→          <DialogFooter className="mt-6 gap-2 sm:gap-2">
+   642→            <DialogClose asChild>
+   643→              <Button
+   644→                disabled={applyDisabled}
+   645→                className="transition-transform hover:scale-[1.04] active:scale-95"
+   646→                onClick={() => onApply(position.id)}
+   647→              >
+   648→                {applyLabel}
+   649→              </Button>
+   650→            </DialogClose>
+   651→          </DialogFooter>
+   652→        ) : null}
+   653→      </div>
+   654→    </>
+   655→  );
+   656→}
+   657→
+   658→function PositionDetailDialog({
+   659→  position,
+   660→  siteName,
+   661→  stats,
+   662→  canApply,
+   663→  onClose,
+   664→  onApply,
+   665→}: {
+   666→  position: Position | null;
+   667→  siteName: string;
+   668→  stats?: PositionPublicStats;
+   669→  canApply: boolean;
+   670→  onClose: () => void;
+   671→  onApply: (positionId: string) => void;
+   672→}) {
+   673→  const { t } = useLang();
+   674→  const [qrOpen, setQrOpen] = useState(false);
+   675→  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+   676→  const [qrLoading, setQrLoading] = useState(false);
+   677→
+   678→  // Views: hitung 1x per sesi per posisi (fire-and-forget, gagal diam).
+   679→  useEffect(() => {
+   680→    if (!position) return;
+   681→    let viewed = false;
+   682→    try {
+   683→      const key = `viewed-${position.id}`;
+   684→      viewed = window.sessionStorage.getItem(key) === "1";
+   685→      if (!viewed) window.sessionStorage.setItem(key, "1");
+   686→    } catch {
+   687→      viewed = false; // storage diblokir — tetap kirim
+   688→    }
+   689→    if (viewed) return;
+   690→    void fetch(`/api/positions/${position.id}/view`, { method: "POST" }).catch(
+   691→      () => {},
+   692→    );
+   693→  }, [position]);
+   694→
+   695→  // QR deep link digenerate saat dialog QR dibuka (pola share-menu).
+   696→  useEffect(() => {
+   697→    if (!qrOpen || !position) return;
+   698→    let cancelled = false;
+   699→    QRCode.toDataURL(buildPositionUrl(position), { width: 320, margin: 2 })
+   700→      .then((dataUrl) => {
+   701→        if (cancelled) return;
+   702→        setQrDataUrl(dataUrl);
+   703→        setQrLoading(false);
+   704→      })
+   705→      .catch(() => {
+   706→        if (cancelled) return;
+   707→        setQrDataUrl(null);
+   708→        setQrLoading(false);
+   709→      });
+   710→    return () => {
+   711→      cancelled = true;
+   712→    };
+   713→  }, [qrOpen, position]);
+   714→
+   715→  // Loading di-set dari event handler (bukan body effect) — pola share-menu.
+   716→  function openQr() {
+   717→    setQrLoading(true);
+   718→    setQrDataUrl(null);
+   719→    setQrOpen(true);
+   720→  }
+   721→
+   722→  return (
+   723→    <>
+   724→      <Dialog open={position !== null} onOpenChange={(open) => !open && onClose()}>
+   725→        <DialogContent
+   726→          showCloseButton={false}
+   727→          className="max-h-[92vh] max-w-2xl gap-0 overflow-y-auto nice-scrollbar p-0"
+   728→        >
+   729→          {position ? (
+   730→            <>
+   731→              <DialogClose
+   732→                className={cn(
+   733→                  "absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-background/80 shadow-sm backdrop-blur transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+   734→                  !position.coverFileId && "border",
+   735→                )}
+   736→                aria-label={t.positions.tutup}
+   737→              >
+   738→                <X className="h-4 w-4" aria-hidden="true" />
+   739→              </DialogClose>
+   740→              <PositionDialogInner
+   741→                position={position}
+   742→                siteName={siteName}
+   743→                stats={stats}
+   744→                canApply={canApply}
+   745→                onApply={onApply}
+   746→                onOpenQr={openQr}
+   747→              />
+   748→            </>
+   749→          ) : null}
+   750→        </DialogContent>
+   751→      </Dialog>
+   752→
+   753→      {position ? (
+   754→        <Dialog open={qrOpen} onOpenChange={setQrOpen}>
+   755→          <DialogContent className="max-w-xs sm:max-w-sm">
+   756→            <DialogHeader>
+   757→              <DialogTitle>{t.positions.qrTitle}</DialogTitle>
+   758→              <DialogDescription>{t.positions.qrCaption}</DialogDescription>
+   759→            </DialogHeader>
+   760→            <div className="flex items-center justify-center rounded-xl border bg-white p-4">
+   761→              {qrLoading ? (
+   762→                <Loader2
+   763→                  className="h-8 w-8 animate-spin text-muted-foreground"
+   764→                  aria-hidden="true"
+   765→                />
+   766→              ) : qrDataUrl ? (
+   767→                <img
+   768→                  src={qrDataUrl}
+   769→                  alt={t.positions.qrAlt}
+   770→                  className="h-56 w-56"
+   771→                  width={224}
+   772→                  height={224}
+   773→                />
+   774→              ) : (
+   775→                <p className="text-sm text-muted-foreground">
+   776→                  {t.positions.salinGagal}
+   777→                </p>
+   778→              )}
+   779→            </div>
+   780→          </DialogContent>
+   781→        </Dialog>
+   782→      ) : null}
+   783→    </>
+   784→  );
+   785→}
+   786→
+   787→function FilterChip({
+   788→  active,
+   789→  children,
+   790→  onClick,
+   791→  ariaLabel,
+   792→}: {
+   793→  active: boolean;
+   794→  children: React.ReactNode;
+   795→  onClick: () => void;
+   796→  ariaLabel: string;
+   797→}) {
+   798→  return (
+   799→    <Button
+   800→      variant={active ? "default" : "outline"}
+   801→      size="sm"
+   802→      className="rounded-full"
+   803→      aria-pressed={active}
+   804→      aria-label={ariaLabel}
+   805→      onClick={onClick}
+   806→    >
+   807→      {children}
+   808→    </Button>
+   809→  );
+   810→}
+   811→
+   812→export function PositionsSection({
+   813→  positions,
+   814→  siteName,
+   815→  canApply,
+   816→  onApply,
+   817→  positionStats = {},
+   818→  initialSlug = null,
+   819→}: {
+   820→  positions: Position[];
+   821→  siteName: string;
+   822→  canApply: boolean; // false = sections.applyForm nonaktif, semua tombol lamar disembunyikan
+   823→  onApply: (positionId: string) => void;
+   824→  /** Kuota & jumlah lamaran per id posisi (dari PublicContentResponse.positionStats). */
+   825→  positionStats?: Record<string, PositionPublicStats>;
+   826→  /** Slug dari deep link /?posisi=slug — dialog detail posisi dibuka otomatis. */
+   827→  initialSlug?: string | null;
+   828→}) {
+   829→  const { t } = useLang();
+   830→  const [department, setDepartment] = useState<string | null>(null);
+   831→  const [jobType, setJobType] = useState<string | null>(null);
+   832→  // Deep link: buka dialog detail posisi otomatis saat pertama render (posisi sudah tersedia).
+   833→  const [detail, setDetail] = useState<Position | null>(() => {
+   834→    if (!initialSlug) return null;
+   835→    return positions.find((p) => p.slug === initialSlug) ?? null;
+   836→  });
+   837→
+   838→  // Featured lebih dulu, lalu urutan existing (Array.sort stabil).
+   839→  const sortedPositions = useMemo(
+   840→    () => [...positions].sort((a, b) => Number(b.featured) - Number(a.featured)),
+   841→    [positions],
+   842→  );
+   843→
+   844→  const departments = useMemo(
+   845→    () => Array.from(new Set(sortedPositions.map((p) => p.department))).sort(),
+   846→    [sortedPositions],
+   847→  );
+   848→  const jobTypes = useMemo(
+   849→    () => Array.from(new Set(sortedPositions.map((p) => p.type))),
+   850→    [sortedPositions],
+   851→  );
+   852→
+   853→  const filtered = sortedPositions.filter(
+   854→    (p) =>
+   855→      (department === null || p.department === department) &&
+   856→      (jobType === null || p.type === jobType),
+   857→  );
+   858→
+   859→  const hasFilters = department !== null || jobType !== null;
+   860→
+   861→  return (
+   862→    <section id="posisi" className="scroll-mt-24 bg-background py-16 md:py-24">
+   863→      <Container>
+   864→        <FadeIn className="max-w-2xl">
+   865→          <Badge variant="outline" className={ROSE_BADGE}>
+   866→            {t.positions.badge}
+   867→          </Badge>
+   868→          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   869→            {t.positions.title}
+   870→          </h2>
+   871→          <p className="mt-3 text-muted-foreground">{t.positions.desc}</p>
+   872→        </FadeIn>
+   873→
+   874→        {positions.length === 0 ? (
+   875→          <FadeIn className="mt-10">
+   876→            <Card className="items-center gap-3 rounded-2xl p-10 text-center">
+   877→              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
+   878→                <FolderOpen className="h-6 w-6" aria-hidden="true" />
+   879→              </div>
+   880→              <p className="font-semibold">{t.positions.emptyTitle}</p>
+   881→              <p className="text-sm text-muted-foreground">
+   882→                {t.positions.emptyBody}
+   883→              </p>
+   884→            </Card>
+   885→          </FadeIn>
+   886→        ) : (
+   887→          <>
+   888→            <FadeIn className="mt-8 space-y-3">
+   889→              <div
+   890→                role="group"
+   891→                aria-label={t.positions.deptLabel}
+   892→                className="flex flex-wrap items-center gap-2"
+   893→              >
+   894→                <FilterChip
+   895→                  active={department === null}
+   896→                  onClick={() => setDepartment(null)}
+   897→                  ariaLabel={`${t.positions.deptLabel}: ${t.positions.all}`}
+   898→                >
+   899→                  {t.positions.all}
+   900→                </FilterChip>
+   901→                {departments.map((dept) => (
+   902→                  <FilterChip
+   903→                    key={dept}
+   904→                    active={department === dept}
+   905→                    onClick={() => setDepartment(department === dept ? null : dept)}
+   906→                    ariaLabel={`${t.positions.deptLabel}: ${dept}`}
+   907→                  >
+   908→                    {dept}
+   909→                  </FilterChip>
+   910→                ))}
+   911→              </div>
+   912→              <div
+   913→                role="group"
+   914→                aria-label={t.positions.typeLabel}
+   915→                className="flex flex-wrap items-center gap-2"
+   916→              >
+   917→                {jobTypes.map((type) => (
+   918→                  <FilterChip
+   919→                    key={type}
+   920→                    active={jobType === type}
+   921→                    onClick={() => setJobType(jobType === type ? null : type)}
+   922→                    ariaLabel={`${t.positions.typeLabel}: ${type}`}
+   923→                  >
+   924→                    <Briefcase className="h-3.5 w-3.5" aria-hidden="true" />
+   925→                    {type}
+   926→                  </FilterChip>
+   927→                ))}
+   928→              </div>
+   929→            </FadeIn>
+   930→
+   931→            {filtered.length === 0 ? (
+   932→              <FadeIn className="mt-8">
+   933→                <Card className="items-center gap-3 rounded-2xl p-10 text-center">
+   934→                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+   935→                    <SearchX className="h-6 w-6" aria-hidden="true" />
+   936→                  </div>
+   937→                  <p className="font-semibold">{t.positions.filterEmptyTitle}</p>
+   938→                  <p className="text-sm text-muted-foreground">
+   939→                    {t.positions.filterEmptyBody}
+   940→                  </p>
+   941→                </Card>
+   942→              </FadeIn>
+   943→            ) : (
+   944→              <motion.div
+   945→                layout
+   946→                className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"
+   947→              >
+   948→                <AnimatePresence mode="popLayout" initial={false}>
+   949→                  {filtered.map((position) => (
+   950→                    <motion.div
+   951→                      key={position.id}
+   952→                      layout
+   953→                      initial={{ opacity: 0, scale: 0.96 }}
+   954→                      animate={{ opacity: 1, scale: 1 }}
+   955→                      exit={{ opacity: 0, scale: 0.96 }}
+   956→                      transition={{ duration: 0.22, ease: "easeOut" }}
+   957→                      className="h-full"
+   958→                    >
+   959→                      <HoverLift className="h-full">
+   960→                        <PositionCard
+   961→                          position={position}
+   962→                          stats={positionStats[position.id]}
+   963→                          canApply={canApply}
+   964→                          onApply={onApply}
+   965→                          onOpenDetail={setDetail}
+   966→                        />
+   967→                      </HoverLift>
+   968→                    </motion.div>
+   969→                  ))}
+   970→                </AnimatePresence>
+   971→              </motion.div>
+   972→            )}
+   973→          </>
+   974→        )}
+   975→      </Container>
+   976→
+   977→      <PositionDetailDialog
+   978→        position={detail}
+   979→        siteName={siteName}
+   980→        stats={detail ? positionStats[detail.id] : undefined}
+   981→        canApply={canApply}
+   982→        onClose={() => setDetail(null)}
+   983→        onApply={onApply}
+   984→      />
+   985→    </section>
+   986→  );
+   987→}
+   988→

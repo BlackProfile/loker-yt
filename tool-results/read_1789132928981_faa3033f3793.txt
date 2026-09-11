@@ -1,0 +1,682 @@
+     1→"use client";
+     2→
+     3→import { useCallback, useEffect, useState } from "react";
+     4→import { motion, useReducedMotion } from "framer-motion";
+     5→import {
+     6→  ResponsiveContainer,
+     7→  AreaChart,
+     8→  Area,
+     9→  BarChart,
+    10→  Bar,
+    11→  XAxis,
+    12→  YAxis,
+    13→  CartesianGrid,
+    14→  Tooltip,
+    15→} from "recharts";
+    16→import { format, parseISO } from "date-fns";
+    17→import { id as localeId } from "date-fns/locale";
+    18→import { Button } from "@/components/ui/button";
+    19→import {
+    20→  Card,
+    21→  CardContent,
+    22→  CardDescription,
+    23→  CardHeader,
+    24→  CardTitle,
+    25→} from "@/components/ui/card";
+    26→import { Skeleton } from "@/components/ui/skeleton";
+    27→import {
+    28→  AlertTriangle,
+    29→  BarChart3,
+    30→  CalendarClock,
+    31→  CheckCircle2,
+    32→  Eye,
+    33→  Inbox,
+    34→  MailCheck,
+    35→  RefreshCw,
+    36→  Sparkles,
+    37→  Users,
+    38→  XCircle,
+    39→  type LucideIcon,
+    40→} from "lucide-react";
+    41→import {
+    42→  APPLICATION_STATUSES,
+    43→  STATUS_LABELS,
+    44→  type AdminOverviewResponse,
+    45→  type AdminPositionStatsResponse,
+    46→  type Application,
+    47→  type ApplicationStatus,
+    48→  type PositionStatsRow,
+    49→} from "@/lib/types";
+    50→import { apiGet } from "./api";
+    51→import { useAdminSession } from "./admin-context";
+    52→import { formatDate, formatDateTime, formatRelative, initialsOf } from "./format";
+    53→import {
+    54→  StatusBadge,
+    55→  statusBarColor,
+    56→  aiScoreStyle,
+    57→} from "./status-badge";
+    58→import { ApplicationDetailDialog } from "./application-detail-dialog";
+    59→import { CountUp, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion-primitives";
+    60→import { cn } from "@/lib/utils";
+    61→
+    62→type StatCardConfig = {
+    63→  key: keyof AdminOverviewResponse["stats"];
+    64→  label: string;
+    65→  icon: LucideIcon;
+    66→  iconWrap: string;
+    67→  strip: string;
+    68→};
+    69→
+    70→const STAT_CARDS: StatCardConfig[] = [
+    71→  { key: "total", label: "Total Pelamar", icon: Users, iconWrap: "bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400", strip: "border-t-rose-500" },
+    72→  { key: "NEW", label: "Baru", icon: Inbox, iconWrap: "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400", strip: "border-t-amber-400" },
+    73→  { key: "REVIEWED", label: "Ditinjau", icon: Eye, iconWrap: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300", strip: "border-t-zinc-400" },
+    74→  { key: "INTERVIEW", label: "Wawancara", icon: CalendarClock, iconWrap: "bg-orange-100 text-orange-600 dark:bg-orange-950 dark:text-orange-400", strip: "border-t-orange-500" },
+    75→  { key: "ACCEPTED", label: "Diterima", icon: CheckCircle2, iconWrap: "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400", strip: "border-t-emerald-500" },
+    76→  { key: "REJECTED", label: "Ditolak", icon: XCircle, iconWrap: "bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400", strip: "border-t-rose-500" },
+    77→];
+    78→
+    79→function ChartTooltip({
+    80→  active,
+    81→  payload,
+    82→  label,
+    83→}: {
+    84→  active?: boolean;
+    85→  payload?: { value?: number | string }[];
+    86→  label?: string | number;
+    87→}) {
+    88→  if (!active || !payload?.length) return null;
+    89→  const raw = payload[0]?.value ?? 0;
+    90→  const dateLabel =
+    91→    typeof label === "string"
+    92→      ? format(parseISO(label), "d MMMM yyyy", { locale: localeId })
+    93→      : String(label);
+    94→  return (
+    95→    <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-sm">
+    96→      <p className="font-medium">{dateLabel}</p>
+    97→      <p className="text-muted-foreground">{raw} lamaran</p>
+    98→    </div>
+    99→  );
+   100→}
+   101→
+   102→// Tooltip Perbandingan Lowongan: lamaran, views, dan konversi.
+   103→function CompareTooltip({
+   104→  active,
+   105→  payload,
+   106→}: {
+   107→  active?: boolean;
+   108→  payload?: {
+   109→    payload?: {
+   110→      fullTitle?: string;
+   111→      applications?: number;
+   112→      views?: number;
+   113→      conversion?: number | null;
+   114→    };
+   115→  }[];
+   116→}) {
+   117→  if (!active || !payload?.length) return null;
+   118→  const row = payload[0]?.payload;
+   119→  return (
+   120→    <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-sm">
+   121→      <p className="max-w-48 truncate font-medium">{row?.fullTitle ?? "-"}</p>
+   122→      <p className="text-muted-foreground">
+   123→        Lamaran: <span className="font-medium text-foreground">{row?.applications ?? 0}</span>
+   124→      </p>
+   125→      <p className="text-muted-foreground">
+   126→        Views: <span className="font-medium text-foreground">{row?.views ?? 0}</span>
+   127→      </p>
+   128→      <p className="text-muted-foreground">
+   129→        Konversi:{" "}
+   130→        <span className="font-medium text-foreground">
+   131→          {row?.conversion != null ? `${row.conversion}%` : "-"}
+   132→        </span>
+   133→      </p>
+   134→    </div>
+   135→  );
+   136→}
+   137→
+   138→// Judul pendek untuk sumbu X grafik perbandingan lowongan.
+   139→function shortTitle(title: string): string {
+   140→  const clean = title.trim();
+   141→  return clean.length > 10 ? `${clean.slice(0, 10).trimEnd()}…` : clean;
+   142→}
+   143→
+   144→export function DashboardTab() {
+   145→  const { reportError } = useAdminSession();
+   146→  const reducedMotion = useReducedMotion();
+   147→  const [overview, setOverview] = useState<AdminOverviewResponse | null>(null);
+   148→  const [loading, setLoading] = useState(true);
+   149→  const [detail, setDetail] = useState<Application | null>(null);
+   150→
+   151→  // Perbandingan lowongan (GET /api/admin/position-stats).
+   152→  const [posStats, setPosStats] = useState<PositionStatsRow[]>([]);
+   153→  const [posStatsLoading, setPosStatsLoading] = useState(true);
+   154→
+   155→  const load = useCallback(async () => {
+   156→    setLoading(true);
+   157→    try {
+   158→      const data = await apiGet<AdminOverviewResponse>("/api/admin/overview");
+   159→      setOverview(data);
+   160→    } catch (err) {
+   161→      reportError(err);
+   162→    } finally {
+   163→      setLoading(false);
+   164→    }
+   165→  }, [reportError]);
+   166→
+   167→  const loadPosStats = useCallback(async () => {
+   168→    setPosStatsLoading(true);
+   169→    try {
+   170→      const data = await apiGet<AdminPositionStatsResponse>("/api/admin/position-stats");
+   171→      setPosStats(data.rows);
+   172→    } catch {
+   173→      // Grafik pelengkap; tampilkan kosong tanpa toast agar tidak berisik.
+   174→      setPosStats([]);
+   175→    } finally {
+   176→      setPosStatsLoading(false);
+   177→    }
+   178→  }, []);
+   179→
+   180→  useEffect(() => {
+   181→    void load();
+   182→  }, [load]);
+   183→
+   184→  useEffect(() => {
+   185→    void loadPosStats();
+   186→  }, [loadPosStats]);
+   187→
+   188→  const stats = overview?.stats;
+   189→  const total = stats?.total ?? 0;
+   190→
+   191→  // Distribusi: 5 tahap bawaan + bucket CUSTOM (agregat tahap kustom).
+   192→  type DistributionBucket = ApplicationStatus | "CUSTOM";
+   193→  const buckets: DistributionBucket[] = [...APPLICATION_STATUSES, "CUSTOM"];
+   194→  const segments = buckets
+   195→    .map((bucket) => {
+   196→      const value =
+   197→        bucket === "CUSTOM" ? (stats?.CUSTOM ?? 0) : (stats?.[bucket] ?? 0);
+   198→      return {
+   199→        bucket,
+   200→        label: bucket === "CUSTOM" ? "Tahap Kustom" : STATUS_LABELS[bucket],
+   201→        value,
+   202→        pct: total > 0 ? (value / total) * 100 : 0,
+   203→      };
+   204→    })
+   205→    .filter((s) => s.value > 0);
+   206→
+   207→  const daily = overview?.daily ?? [];
+   208→
+   209→  const compareData = posStats.map((row) => ({
+   210→    title: shortTitle(row.title),
+   211→    fullTitle: row.title,
+   212→    applications: row.applications,
+   213→    views: row.views,
+   214→    conversion: row.conversion,
+   215→  }));
+   216→
+   217→  return (
+   218→    <div className="flex flex-col gap-6">
+   219→      {/* Kartu statistik: 6 status + rata-rata skor AI + pelanggan */}
+   220→      <motion.div
+   221→        className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4"
+   222→        variants={STAGGER_CONTAINER}
+   223→        initial={reducedMotion ? false : "hidden"}
+   224→        animate="show"
+   225→      >
+   226→        {STAT_CARDS.map((card) => {
+   227→          const Icon = card.icon;
+   228→          return (
+   229→            <motion.div key={card.key} variants={STAGGER_ITEM}>
+   230→              <Card
+   231→                className={cn(
+   232→                  "gap-0 overflow-hidden rounded-2xl border-t-2 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md",
+   233→                  card.strip
+   234→                )}
+   235→              >
+   236→                <CardContent className="px-4">
+   237→                  <div className="flex items-center justify-between gap-2">
+   238→                    <span className="text-2xl font-bold tabular-nums">
+   239→                      {loading ? "—" : <CountUp value={stats?.[card.key] ?? 0} />}
+   240→                    </span>
+   241→                    <span
+   242→                      className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${card.iconWrap}`}
+   243→                    >
+   244→                      <Icon className="size-4" aria-hidden="true" />
+   245→                    </span>
+   246→                  </div>
+   247→                  <p className="mt-1.5 text-xs font-medium text-muted-foreground">
+   248→                    {card.label}
+   249→                  </p>
+   250→                </CardContent>
+   251→              </Card>
+   252→            </motion.div>
+   253→          );
+   254→        })}
+   255→
+   256→        {/* Rata-rata Skor AI */}
+   257→        <motion.div variants={STAGGER_ITEM}>
+   258→          <Card className="gap-0 overflow-hidden rounded-2xl border-t-2 border-t-rose-600 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md">
+   259→            <CardContent className="px-4">
+   260→              <div className="flex items-center justify-between gap-2">
+   261→                <span
+   262→                  className={cn(
+   263→                    "text-2xl font-bold tabular-nums",
+   264→                    overview?.avgAiScore != null ? aiScoreStyle(overview.avgAiScore) : "text-muted-foreground"
+   265→                  )}
+   266→                >
+   267→                  {loading
+   268→                    ? "—"
+   269→                    : overview?.avgAiScore != null
+   270→                      ? <CountUp value={overview.avgAiScore} />
+   271→                      : "-"}
+   272→                </span>
+   273→                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+   274→                  <Sparkles className="size-4" aria-hidden="true" />
+   275→                </span>
+   276→              </div>
+   277→              <p className="mt-1.5 text-xs font-medium text-muted-foreground">
+   278→                Rata-rata Skor AI
+   279→              </p>
+   280→            </CardContent>
+   281→          </Card>
+   282→        </motion.div>
+   283→
+   284→        {/* Pelanggan Notifikasi */}
+   285→        <motion.div variants={STAGGER_ITEM}>
+   286→          <Card className="gap-0 overflow-hidden rounded-2xl border-t-2 border-t-amber-500 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md">
+   287→            <CardContent className="px-4">
+   288→              <div className="flex items-center justify-between gap-2">
+   289→                <span className="text-2xl font-bold tabular-nums">
+   290→                  {loading ? "—" : <CountUp value={overview?.subscriberCount ?? 0} />}
+   291→                </span>
+   292→                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
+   293→                  <MailCheck className="size-4" aria-hidden="true" />
+   294→                </span>
+   295→              </div>
+   296→              <p className="mt-1.5 text-xs font-medium text-muted-foreground">
+   297→                Pelanggan Notifikasi
+   298→              </p>
+   299→            </CardContent>
+   300→          </Card>
+   301→        </motion.div>
+   302→      </motion.div>
+   303→
+   304→      {/* Grafik tren 30 hari */}
+   305→      <Card className="rounded-2xl p-6">
+   306→        <CardTitle className="text-base">Tren Lamaran 30 Hari</CardTitle>
+   307→        <CardDescription className="mt-1">
+   308→          Jumlah lamaran masuk per hari dalam sebulan terakhir.
+   309→        </CardDescription>
+   310→        <CardContent className="mt-4 px-0">
+   311→          {loading ? (
+   312→            <Skeleton className="h-[260px] w-full rounded-xl" />
+   313→          ) : (
+   314→            <div className="h-[260px] w-full">
+   315→              <ResponsiveContainer width="100%" height={260}>
+   316→                <AreaChart data={daily} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+   317→                  <defs>
+   318→                    <linearGradient id="dailyFill" x1="0" y1="0" x2="0" y2="1">
+   319→                      <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.35} />
+   320→                      <stop offset="100%" stopColor="#f43f5e" stopOpacity={0.03} />
+   321→                    </linearGradient>
+   322→                  </defs>
+   323→                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+   324→                  <XAxis
+   325→                    dataKey="date"
+   326→                    tickFormatter={(v: string) => format(parseISO(v), "dd/MM")}
+   327→                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+   328→                    tickLine={false}
+   329→                    axisLine={{ stroke: "var(--border)" }}
+   330→                    minTickGap={20}
+   331→                  />
+   332→                  <YAxis
+   333→                    allowDecimals={false}
+   334→                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+   335→                    tickLine={false}
+   336→                    axisLine={false}
+   337→                    width={40}
+   338→                  />
+   339→                  <Tooltip content={<ChartTooltip />} cursor={{ stroke: "#f43f5e", strokeOpacity: 0.3 }} />
+   340→                  <Area
+   341→                    type="monotone"
+   342→                    dataKey="count"
+   343→                    name="Lamaran"
+   344→                    stroke="#f43f5e"
+   345→                    strokeWidth={2}
+   346→                    fill="url(#dailyFill)"
+   347→                    activeDot={{ r: 4, fill: "#f43f5e" }}
+   348→                  />
+   349→                </AreaChart>
+   350→              </ResponsiveContainer>
+   351→            </div>
+   352→          )}
+   353→        </CardContent>
+   354→      </Card>
+   355→
+   356→      {/* Perbandingan Lowongan */}
+   357→      <Card className="rounded-2xl p-6">
+   358→        <CardTitle className="flex items-center gap-2 text-base">
+   359→          <BarChart3 className="size-4 text-rose-500" aria-hidden="true" />
+   360→          Perbandingan Lowongan
+   361→        </CardTitle>
+   362→        <CardDescription className="mt-1">
+   363→          Jumlah lamaran masuk dibanding tampilan halaman (views) per posisi.
+   364→        </CardDescription>
+   365→        <CardContent className="mt-4 px-0">
+   366→          {posStatsLoading ? (
+   367→            <Skeleton className="h-[280px] w-full rounded-xl" />
+   368→          ) : compareData.length === 0 ? (
+   369→            <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
+   370→              Belum ada data posisi.
+   371→            </div>
+   372→          ) : (
+   373→            <div className="h-[280px] w-full">
+   374→              <ResponsiveContainer width="100%" height={280}>
+   375→                <BarChart data={compareData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+   376→                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+   377→                  <XAxis
+   378→                    dataKey="title"
+   379→                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+   380→                    tickLine={false}
+   381→                    axisLine={{ stroke: "var(--border)" }}
+   382→                    interval={0}
+   383→                  />
+   384→                  <YAxis
+   385→                    allowDecimals={false}
+   386→                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+   387→                    tickLine={false}
+   388→                    axisLine={false}
+   389→                    width={40}
+   390→                  />
+   391→                  <Tooltip
+   392→                    content={<CompareTooltip />}
+   393→                    cursor={{ fill: "var(--muted)", fillOpacity: 0.5 }}
+   394→                  />
+   395→                  <Bar
+   396→                    dataKey="applications"
+   397→                    name="Lamaran"
+   398→                    fill="#f43f5e"
+   399→                    radius={[4, 4, 0, 0]}
+   400→                    barSize={26}
+   401→                  />
+   402→                  <Bar
+   403→                    dataKey="views"
+   404→                    name="Views"
+   405→                    fill="#f59e0b"
+   406→                    radius={[4, 4, 0, 0]}
+   407→                    barSize={10}
+   408→                  />
+   409→                </BarChart>
+   410→              </ResponsiveContainer>
+   411→              <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1.5">
+   412→                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+   413→                  <span className="size-2 rounded-full bg-[#f43f5e]" aria-hidden="true" />
+   414→                  Lamaran
+   415→                </span>
+   416→                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+   417→                  <span className="size-2 rounded-full bg-[#f59e0b]" aria-hidden="true" />
+   418→                  Views
+   419→                </span>
+   420→              </div>
+   421→            </div>
+   422→          )}
+   423→        </CardContent>
+   424→      </Card>
+   425→
+   426→      {/* Wawancara mendatang + perlu ditindaklanjuti */}
+   427→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+   428→        <Card className="gap-0 rounded-2xl py-6">
+   429→          <CardHeader className="px-6">
+   430→            <CardTitle className="text-base">Wawancara Mendatang</CardTitle>
+   431→            <CardDescription className="mt-1">
+   432→              Jadwal wawancara terdekat yang sudah diatur.
+   433→            </CardDescription>
+   434→          </CardHeader>
+   435→          <CardContent className="px-6">
+   436→            {loading ? (
+   437→              <div className="flex flex-col gap-3">
+   438→                {Array.from({ length: 3 }).map((_, i) => (
+   439→                  <Skeleton key={i} className="h-12 w-full rounded-lg" />
+   440→                ))}
+   441→              </div>
+   442→            ) : (overview?.upcomingInterviews?.length ?? 0) === 0 ? (
+   443→              <div className="flex flex-col items-center gap-2 py-8 text-center">
+   444→                <CalendarClock className="size-8 text-muted-foreground/50" aria-hidden="true" />
+   445→                <p className="text-sm text-muted-foreground">
+   446→                  Belum ada jadwal wawancara mendatang.
+   447→                </p>
+   448→              </div>
+   449→            ) : (
+   450→              <div className="max-h-72 overflow-y-auto nice-scrollbar">
+   451→                {overview?.upcomingInterviews.map((app) => (
+   452→                  <div
+   453→                    key={app.id}
+   454→                    className="flex items-center gap-3 border-b py-3 last:border-b-0"
+   455→                  >
+   456→                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-orange-100 text-xs font-semibold text-orange-700 dark:bg-orange-950 dark:text-orange-400">
+   457→                      {initialsOf(app.name)}
+   458→                    </span>
+   459→                    <div className="min-w-0 flex-1">
+   460→                      <p className="truncate text-sm font-semibold">{app.name}</p>
+   461→                      <p className="truncate text-xs text-muted-foreground">
+   462→                        {app.positionTitle ?? "-"} · {formatDateTime(app.interviewAt)}
+   463→                      </p>
+   464→                    </div>
+   465→                    <Button
+   466→                      variant="ghost"
+   467→                      size="sm"
+   468→                      className="h-11 shrink-0 sm:h-8"
+   469→                      onClick={() => setDetail(app)}
+   470→                    >
+   471→                      Detail
+   472→                    </Button>
+   473→                  </div>
+   474→                ))}
+   475→              </div>
+   476→            )}
+   477→          </CardContent>
+   478→        </Card>
+   479→
+   480→        <Card className="gap-0 rounded-2xl border-amber-200 bg-amber-50/60 py-6 dark:border-amber-900 dark:bg-amber-950/20">
+   481→          <CardHeader className="px-6">
+   482→            <CardTitle className="flex items-center gap-2 text-base">
+   483→              <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+   484→              Perlu Ditindaklanjuti
+   485→            </CardTitle>
+   486→            <CardDescription className="mt-1">
+   487→              Lamaran tanpa perubahan lebih dari 7 hari — ubah status atau arsipkan.
+   488→            </CardDescription>
+   489→          </CardHeader>
+   490→          <CardContent className="px-6">
+   491→            {loading ? (
+   492→              <div className="flex flex-col gap-3">
+   493→                {Array.from({ length: 3 }).map((_, i) => (
+   494→                  <Skeleton key={i} className="h-12 w-full rounded-lg" />
+   495→                ))}
+   496→              </div>
+   497→            ) : (overview?.stale?.length ?? 0) === 0 ? (
+   498→              <div className="flex flex-col items-center gap-2 py-8 text-center">
+   499→                <CheckCircle2 className="size-8 text-emerald-500/70" aria-hidden="true" />
+   500→                <p className="text-sm text-muted-foreground">
+   501→                  Semua lamaran tertangani. Kerja bagus!
+   502→                </p>
+   503→              </div>
+   504→            ) : (
+   505→              <div className="max-h-72 overflow-y-auto nice-scrollbar">
+   506→                {overview?.stale.map((app) => (
+   507→                  <div
+   508→                    key={app.id}
+   509→                    className="flex items-center gap-3 border-b py-3 last:border-b-0"
+   510→                  >
+   511→                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+   512→                      {initialsOf(app.name)}
+   513→                    </span>
+   514→                    <div className="min-w-0 flex-1">
+   515→                      <p className="truncate text-sm font-semibold">{app.name}</p>
+   516→                      <p className="truncate text-xs text-muted-foreground">
+   517→                        {app.positionTitle ?? "-"} · masuk {formatDate(app.createdAt)} ({formatRelative(app.createdAt)})
+   518→                      </p>
+   519→                    </div>
+   520→                    <StatusBadge status={app.status} className="hidden shrink-0 sm:inline-flex" />
+   521→                    <Button
+   522→                      variant="ghost"
+   523→                      size="sm"
+   524→                      className="h-11 shrink-0 sm:h-8"
+   525→                      onClick={() => setDetail(app)}
+   526→                    >
+   527→                      Detail
+   528→                    </Button>
+   529→                  </div>
+   530→                ))}
+   531→              </div>
+   532→            )}
+   533→          </CardContent>
+   534→        </Card>
+   535→      </div>
+   536→
+   537→      {/* Bar distribusi status */}
+   538→      <Card className="rounded-2xl p-6">
+   539→        <CardTitle className="text-base">Distribusi Status Lamaran</CardTitle>
+   540→        <CardDescription className="mt-1">
+   541→          Proporsi lamaran berdasarkan tahapan seleksi.
+   542→        </CardDescription>
+   543→        <CardContent className="mt-4 px-0">
+   544→          {loading ? (
+   545→            <Skeleton className="h-3 w-full rounded-full" />
+   546→          ) : total > 0 ? (
+   547→            <div
+   548→              className="flex h-3 w-full overflow-hidden rounded-full"
+   549→              role="img"
+   550→              aria-label="Bar distribusi tahap lamaran"
+   551→            >
+   552→              {segments.map((s) => (
+   553→                <div
+   554→                  key={s.bucket}
+   555→                  className={statusBarColor(s.bucket)}
+   556→                  style={{ width: `${s.pct}%` }}
+   557→                />
+   558→              ))}
+   559→            </div>
+   560→          ) : (
+   561→            <p className="text-sm text-muted-foreground">Belum ada data lamaran.</p>
+   562→          )}
+   563→          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
+   564→            {segments.map((s) => (
+   565→              <span
+   566→                key={s.bucket}
+   567→                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+   568→              >
+   569→                <span
+   570→                  className={`size-2 rounded-full ${statusBarColor(s.bucket)}`}
+   571→                  aria-hidden="true"
+   572→                />
+   573→                {s.label}
+   574→                <span className="font-medium text-foreground">{s.value}</span>
+   575→              </span>
+   576→            ))}
+   577→          </div>
+   578→        </CardContent>
+   579→      </Card>
+   580→
+   581→      {/* Lamaran terbaru */}
+   582→      <Card className="gap-0 rounded-2xl py-6">
+   583→        <CardHeader className="flex-row items-center justify-between px-6">
+   584→          <div>
+   585→            <CardTitle className="text-base">Lamaran Terbaru</CardTitle>
+   586→            <CardDescription className="mt-1">
+   587→              5 lamaran terakhir yang masuk.
+   588→            </CardDescription>
+   589→          </div>
+   590→          <Button
+   591→            variant="outline"
+   592→            size="sm"
+   593→            className="h-10 active:scale-[0.99] sm:h-9"
+   594→            onClick={() => {
+   595→              void load();
+   596→              void loadPosStats();
+   597→            }}
+   598→            disabled={loading}
+   599→            aria-label="Segarkan data dashboard"
+   600→          >
+   601→            <RefreshCw
+   602→              className={`size-4 ${loading ? "animate-spin" : ""}`}
+   603→              aria-hidden="true"
+   604→            />
+   605→            Segarkan
+   606→          </Button>
+   607→        </CardHeader>
+   608→        <CardContent className="px-6">
+   609→          {loading ? (
+   610→            <div className="flex flex-col gap-3">
+   611→              {Array.from({ length: 4 }).map((_, i) => (
+   612→                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+   613→              ))}
+   614→            </div>
+   615→          ) : (overview?.recent?.length ?? 0) === 0 ? (
+   616→            <div className="flex flex-col items-center gap-2 py-10 text-center">
+   617→              <Inbox className="size-8 text-muted-foreground/50" aria-hidden="true" />
+   618→              <p className="text-sm text-muted-foreground">
+   619→                Belum ada lamaran yang masuk.
+   620→              </p>
+   621→            </div>
+   622→          ) : (
+   623→            <div className="-mx-2 max-h-96 overflow-y-auto px-2 nice-scrollbar">
+   624→              {overview?.recent.map((app) => (
+   625→                <div
+   626→                  key={app.id}
+   627→                  className="flex items-center gap-3 border-b py-3 last:border-b-0"
+   628→                >
+   629→                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+   630→                    {initialsOf(app.name)}
+   631→                  </span>
+   632→                  <div className="min-w-0 flex-1">
+   633→                    <p className="truncate text-sm font-semibold">{app.name}</p>
+   634→                    <p className="truncate text-xs text-muted-foreground">
+   635→                      {app.positionTitle ?? "Tanpa posisi"}
+   636→                    </p>
+   637→                  </div>
+   638→                  <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
+   639→                    {formatDate(app.createdAt)}
+   640→                  </span>
+   641→                  <StatusBadge status={app.status} className="hidden shrink-0 sm:inline-flex" />
+   642→                  <Button
+   643→                    variant="ghost"
+   644→                    size="sm"
+   645→                    className="h-11 shrink-0 sm:h-8"
+   646→                    onClick={() => setDetail(app)}
+   647→                  >
+   648→                    Detail
+   649→                  </Button>
+   650→                </div>
+   651→              ))}
+   652→            </div>
+   653→          )}
+   654→        </CardContent>
+   655→      </Card>
+   656→
+   657→      <ApplicationDetailDialog
+   658→        application={detail}
+   659→        onOpenChange={(open) => {
+   660→          if (!open) setDetail(null);
+   661→        }}
+   662→        onSaved={(updated) => {
+   663→          setOverview((prev) =>
+   664→            prev
+   665→              ? {
+   666→                  ...prev,
+   667→                  recent: prev.recent.map((a) => (a.id === updated.id ? updated : a)),
+   668→                  upcomingInterviews: prev.upcomingInterviews.map((a) =>
+   669→                    a.id === updated.id ? updated : a
+   670→                  ),
+   671→                  stale: prev.stale.map((a) => (a.id === updated.id ? updated : a)),
+   672→                }
+   673→              : prev
+   674→          );
+   675→          void load();
+   676→        }}
+   677→        onDeleted={() => void load()}
+   678→      />
+   679→    </div>
+   680→  );
+   681→}
+   682→

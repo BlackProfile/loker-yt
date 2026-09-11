@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { analyzeApplication } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { getSession, requireRole } from "@/lib/server-auth";
+import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Analisis AI gagal, coba lagi." }, { status: 502 });
     }
 
+    // Realtime: skor AI tersimpan — segarkan daftar & statistik admin.
+    void emitRealtime(REALTIME_EVENTS.applications);
     return NextResponse.json({
       score: result.score,
       summary: result.summary,

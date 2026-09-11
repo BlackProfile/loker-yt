@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { ensureSeeded, parseSiteContent, sanitizeSiteContent } from "@/lib/seed";
+import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,8 @@ export async function PUT(req: NextRequest) {
       create: { key: "site", value: JSON.stringify(merged) },
     });
 
+    // Realtime: konten situs berubah (hero/benefit/FAQ/visibilitas section, dll).
+    void emitRealtime(REALTIME_EVENTS.site, REALTIME_EVENTS.positions);
     return NextResponse.json({ ok: true, site: merged });
   } catch (error) {
     console.error("[PUT /api/admin/settings]", error);

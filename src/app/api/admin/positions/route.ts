@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { closeExpiredPositions, serializePosition } from "@/lib/seed";
 import { sanitizePositionInput } from "@/lib/position-input";
+import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +108,8 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Realtime: daftar posisi publik & admin diperbarui otomatis.
+    void emitRealtime(REALTIME_EVENTS.positions);
     return NextResponse.json(serializePosition(created), { status: 201 });
   } catch (error) {
     console.error("[POST /api/admin/positions]", error);

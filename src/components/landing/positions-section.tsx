@@ -1,44 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import QRCode from "qrcode";
-import { toast } from "sonner";
 import {
   Briefcase,
   Check,
-  ClipboardList,
-  Copy,
-  ExternalLink,
   Eye,
   Flame,
   FolderOpen,
-  Loader2,
   MapPin,
-  MessageCircle,
   Pin,
-  QrCode,
   SearchX,
   Sparkles,
   Timer,
   Users,
   Wallet,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import type { Position, PositionPublicStats } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useLang } from "@/components/landing/lang-context";
 import {
   HoverLift,
@@ -47,15 +29,10 @@ import {
   FadeIn,
 } from "@/components/landing/primitives";
 import {
-  buildPositionUrl,
   fillTemplate,
-  formatDateId,
   isPastIso,
   isWithinDaysAhead,
   isWithinDaysBack,
-  safeExternalUrl,
-  waShareHref,
-  youtubeEmbedId,
 } from "@/components/landing/landing-utils";
 import { DeadlineCountdownCompact } from "@/components/landing/deadline-countdown";
 import { cn } from "@/lib/utils";
@@ -195,15 +172,12 @@ function SalaryBadge({ position }: { position: Position }) {
 function PositionCard({
   position,
   stats,
-  canApply,
-  onApply,
-  onOpenDetail,
+  onOpenPosition,
 }: {
   position: Position;
   stats?: PositionPublicStats;
-  canApply: boolean; // false = sections.applyForm nonaktif, tombol lamar disembunyikan
-  onApply: (positionId: string) => void;
-  onOpenDetail: (position: Position) => void;
+  /** Buka halaman detail per lowongan (?posisi=slug) — tombol selalu tampil. */
+  onOpenPosition: (slug: string) => void;
 }) {
   const { t } = useLang();
 
@@ -225,7 +199,7 @@ function PositionCard({
         hasCover ? "gap-0 p-0" : "gap-4 p-6",
         position.featured && "ring-1 ring-rose-600/30",
       )}
-      onClick={() => onOpenDetail(position)}
+      onClick={() => onOpenPosition(position.slug ?? position.id)}
     >
       {hasCover ? (
         <img
@@ -310,477 +284,35 @@ function PositionCard({
               : ""}
           </span>
           <div className="flex items-center gap-2">
+            {/* Selalu tampil: detail kini halaman penuh (?posisi=slug) tempat
+                formulir lamaran per lowongan berada. */}
             <Button
               size="sm"
               variant="outline"
               aria-label={`${t.positions.detailAria}: ${position.title}`}
               onClick={(event) => {
                 event.stopPropagation();
-                onOpenDetail(position);
+                onOpenPosition(position.slug ?? position.id);
               }}
             >
               <Eye className="h-4 w-4" aria-hidden="true" />
               {t.positions.detail}
             </Button>
-            {canApply ? (
-              <Button
-                size="sm"
-                disabled={applyDisabled}
-                className="transition-transform hover:scale-[1.04] active:scale-95"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onApply(position.id);
-                }}
-              >
-                {applyLabel}
-              </Button>
-            ) : null}
+            <Button
+              size="sm"
+              disabled={applyDisabled}
+              className="transition-transform hover:scale-[1.04] active:scale-95"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenPosition(position.slug ?? position.id);
+              }}
+            >
+              {applyLabel}
+            </Button>
           </div>
         </div>
       </div>
     </Card>
-  );
-}
-
-/** Baris share kit posisi: WhatsApp (caption lengkap + UTM), Salin Link, QR Code. */
-function PositionShareRow({
-  position,
-  siteName,
-  onOpenQr,
-}: {
-  position: Position;
-  siteName: string;
-  onOpenQr: () => void;
-}) {
-  const { t } = useLang();
-
-  const shareLink = buildPositionUrl(position, "whatsapp");
-  const waCaption = [
-    fillTemplate(t.positions.waCaption, { title: position.title, siteName }),
-    position.salaryVisible && position.salaryText
-      ? position.salaryText
-      : null,
-    `${t.positions.waDaftar} ${shareLink}`,
-  ]
-    .filter(Boolean)
-    .join(" — ");
-
-  async function copyLink() {
-    try {
-      await navigator.clipboard.writeText(buildPositionUrl(position, "copy"));
-      toast.success(t.positions.salinBerhasil);
-    } catch {
-      toast.error(t.positions.salinGagal);
-    }
-  }
-
-  return (
-    <div className="rounded-xl border bg-muted/40 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {t.positions.bagikan}
-      </p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
-          <a href={waShareHref(waCaption)} target="_blank" rel="noopener noreferrer">
-            <MessageCircle className="h-4 w-4" aria-hidden="true" />
-            {t.positions.bagikanWa}
-          </a>
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-11 sm:h-9"
-          onClick={() => void copyLink()}
-        >
-          <Copy className="h-4 w-4" aria-hidden="true" />
-          {t.positions.bagikanSalin}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-11 sm:h-9"
-          onClick={onOpenQr}
-        >
-          <QrCode className="h-4 w-4" aria-hidden="true" />
-          {t.positions.bagikanQr}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** Isi dialog detail (position pasti non-null di sini agar narrowing TS rapi). */
-function PositionDialogInner({
-  position,
-  siteName,
-  stats,
-  canApply,
-  onApply,
-  onOpenQr,
-}: {
-  position: Position;
-  siteName: string;
-  stats?: PositionPublicStats;
-  canApply: boolean;
-  onApply: (positionId: string) => void;
-  onOpenQr: () => void;
-}) {
-  const { t } = useLang();
-
-  const remaining = stats?.remainingQuota ?? null;
-  const quotaFull = remaining === 0;
-  const closed = position.closesAt ? isPastIso(position.closesAt) : false;
-  const applyDisabled = quotaFull || closed;
-  const applyLabel = quotaFull
-    ? t.positions.kuotaPenuh
-    : closed
-      ? t.positions.lamarDitutup
-      : t.positions.apply;
-  const hasCover = Boolean(position.coverFileId);
-
-  // Contoh karya: YouTube -> iframe embed, lainnya -> chip link eksternal.
-  const exampleEmbeds = position.examples
-    .map((url, index) => ({ url, index, ytId: youtubeEmbedId(url) }))
-    .filter((item) => item.ytId !== null);
-  const exampleLinks = position.examples
-    .map((url, index) => ({ url: safeExternalUrl(url), index }))
-    .filter((item): item is { url: string; index: number } => item.url !== null);
-
-  const assignmentUrl = position.assignment?.url
-    ? safeExternalUrl(position.assignment.url)
-    : null;
-
-  return (
-    <>
-      {hasCover ? (
-        <img
-          src={`/api/files/${position.coverFileId}`}
-          alt={fillTemplate(t.positions.coverAlt, { title: position.title })}
-          loading="lazy"
-          className="aspect-[2/1] w-full object-cover"
-        />
-      ) : null}
-
-      <div className="p-6">
-        <DialogHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className={ROSE_BADGE} variant="outline">
-              {position.department}
-            </Badge>
-            <PositionBadges position={position} stats={stats} />
-          </div>
-          <DialogTitle className="text-left text-2xl">
-            {position.title}
-          </DialogTitle>
-          <DialogDescription asChild>
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Badge variant="secondary">{position.type}</Badge>
-              <Badge variant="secondary" className="gap-1">
-                <MapPin className="h-3 w-3" aria-hidden="true" />
-                {position.location}
-              </Badge>
-              <SalaryBadge position={position} />
-              {position.closesAt ? (
-                <Badge
-                  variant="outline"
-                  className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
-                >
-                  {t.positions.closesPrefix}: {formatDateId(position.closesAt)}
-                </Badge>
-              ) : null}
-            </div>
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="mt-4 space-y-5">
-          <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {t.positions.dialogDescTitle}
-            </h4>
-            <p className="mt-2 whitespace-pre-line text-sm leading-relaxed">
-              {position.description}
-            </p>
-          </div>
-
-          {position.assignment?.title ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
-              <div className="flex items-start gap-2.5">
-                <ClipboardList
-                  className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
-                  aria-hidden="true"
-                />
-                <div className="min-w-0 text-sm">
-                  <p className="font-medium text-amber-800 dark:text-amber-300">
-                    {t.positions.adaTes}: {position.assignment.title}
-                  </p>
-                  {position.assignment.note ? (
-                    <p className="mt-1 whitespace-pre-line text-amber-700/90 dark:text-amber-200/80">
-                      {position.assignment.note}
-                    </p>
-                  ) : null}
-                  {assignmentUrl ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2 h-11 border-amber-300 bg-transparent text-amber-800 hover:bg-amber-100 hover:text-amber-900 sm:h-9 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
-                      asChild
-                    >
-                      <a
-                        href={assignmentUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                        {t.positions.bukaTautan}
-                      </a>
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {t.positions.dialogReqTitle}
-            </h4>
-            {position.requirements.length > 0 ? (
-              <ul className="mt-2 space-y-2">
-                {position.requirements.map((requirement, index) => (
-                  <li
-                    key={`${position.id}-detail-req-${index}`}
-                    className="flex items-start gap-2 text-sm"
-                  >
-                    <Check
-                      className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                      aria-hidden="true"
-                    />
-                    <span>{requirement}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-sm italic text-muted-foreground">
-                {t.positions.reqFallback}
-              </p>
-            )}
-          </div>
-
-          {position.benefits.length > 0 ? (
-            <div>
-              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {t.positions.dialogBenefitTitle}
-              </h4>
-              <ul className="mt-2 space-y-2">
-                {position.benefits.map((benefit, index) => (
-                  <li
-                    key={`${position.id}-detail-benefit-${index}`}
-                    className="flex items-start gap-2 text-sm"
-                  >
-                    <Check
-                      className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                      aria-hidden="true"
-                    />
-                    <span>{benefit}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {position.examples.length > 0 ? (
-            <div>
-              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {t.positions.contohKarya}
-              </h4>
-              {exampleLinks.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {exampleLinks.map((item) => (
-                    <a
-                      key={`${position.id}-example-link-${item.index}`}
-                      href={item.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-h-11 items-center gap-1.5 rounded-full border bg-muted/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:min-h-0"
-                    >
-                      <ExternalLink
-                        className="h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-400"
-                        aria-hidden="true"
-                      />
-                      {new URL(item.url).hostname}
-                    </a>
-                  ))}
-                </div>
-              ) : null}
-              {exampleEmbeds.length > 0 ? (
-                <div className="mt-3 space-y-3">
-                  {exampleEmbeds.map((item) => (
-                    <iframe
-                      key={`${position.id}-example-video-${item.index}`}
-                      src={`https://www.youtube-nocookie.com/embed/${item.ytId}?rel=0`}
-                      title={`${t.positions.contohKarya} — ${position.title} (${item.index + 1})`}
-                      loading="lazy"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      allowFullScreen
-                      className="aspect-video w-full rounded-lg border bg-black"
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <PositionShareRow
-            position={position}
-            siteName={siteName}
-            onOpenQr={onOpenQr}
-          />
-        </div>
-
-        {canApply ? (
-          <DialogFooter className="mt-6 gap-2 sm:gap-2">
-            <DialogClose asChild>
-              <Button
-                disabled={applyDisabled}
-                className="transition-transform hover:scale-[1.04] active:scale-95"
-                onClick={() => onApply(position.id)}
-              >
-                {applyLabel}
-              </Button>
-            </DialogClose>
-          </DialogFooter>
-        ) : null}
-      </div>
-    </>
-  );
-}
-
-function PositionDetailDialog({
-  position,
-  siteName,
-  stats,
-  canApply,
-  onClose,
-  onApply,
-}: {
-  position: Position | null;
-  siteName: string;
-  stats?: PositionPublicStats;
-  canApply: boolean;
-  onClose: () => void;
-  onApply: (positionId: string) => void;
-}) {
-  const { t } = useLang();
-  const [qrOpen, setQrOpen] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [qrLoading, setQrLoading] = useState(false);
-
-  // Views: hitung 1x per sesi per posisi (fire-and-forget, gagal diam).
-  useEffect(() => {
-    if (!position) return;
-    let viewed = false;
-    try {
-      const key = `viewed-${position.id}`;
-      viewed = window.sessionStorage.getItem(key) === "1";
-      if (!viewed) window.sessionStorage.setItem(key, "1");
-    } catch {
-      viewed = false; // storage diblokir — tetap kirim
-    }
-    if (viewed) return;
-    void fetch(`/api/positions/${position.id}/view`, { method: "POST" }).catch(
-      () => {},
-    );
-  }, [position]);
-
-  // QR deep link digenerate saat dialog QR dibuka (pola share-menu).
-  useEffect(() => {
-    if (!qrOpen || !position) return;
-    let cancelled = false;
-    QRCode.toDataURL(buildPositionUrl(position), { width: 320, margin: 2 })
-      .then((dataUrl) => {
-        if (cancelled) return;
-        setQrDataUrl(dataUrl);
-        setQrLoading(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setQrDataUrl(null);
-        setQrLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [qrOpen, position]);
-
-  // Loading di-set dari event handler (bukan body effect) — pola share-menu.
-  function openQr() {
-    setQrLoading(true);
-    setQrDataUrl(null);
-    setQrOpen(true);
-  }
-
-  return (
-    <>
-      <Dialog open={position !== null} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent
-          showCloseButton={false}
-          className="max-h-[92vh] max-w-2xl gap-0 overflow-y-auto nice-scrollbar p-0"
-        >
-          {position ? (
-            <>
-              <DialogClose
-                className={cn(
-                  "absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-background/80 shadow-sm backdrop-blur transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  !position.coverFileId && "border",
-                )}
-                aria-label={t.positions.tutup}
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </DialogClose>
-              <PositionDialogInner
-                position={position}
-                siteName={siteName}
-                stats={stats}
-                canApply={canApply}
-                onApply={onApply}
-                onOpenQr={openQr}
-              />
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      {position ? (
-        <Dialog open={qrOpen} onOpenChange={setQrOpen}>
-          <DialogContent className="max-w-xs sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>{t.positions.qrTitle}</DialogTitle>
-              <DialogDescription>{t.positions.qrCaption}</DialogDescription>
-            </DialogHeader>
-            <div className="flex items-center justify-center rounded-xl border bg-white p-4">
-              {qrLoading ? (
-                <Loader2
-                  className="h-8 w-8 animate-spin text-muted-foreground"
-                  aria-hidden="true"
-                />
-              ) : qrDataUrl ? (
-                <img
-                  src={qrDataUrl}
-                  alt={t.positions.qrAlt}
-                  className="h-56 w-56"
-                  width={224}
-                  height={224}
-                />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {t.positions.salinGagal}
-                </p>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
-      ) : null}
-    </>
   );
 }
 
@@ -811,29 +343,23 @@ function FilterChip({
 
 export function PositionsSection({
   positions,
-  siteName,
-  canApply,
-  onApply,
+  onOpenPosition,
   positionStats = {},
-  initialSlug = null,
 }: {
   positions: Position[];
+  /**
+   * Nama situs (dipertahankan di kontrak props — dipakai fitur share yang kini
+   * berada di halaman detail per lowongan).
+   */
   siteName: string;
-  canApply: boolean; // false = sections.applyForm nonaktif, semua tombol lamar disembunyikan
-  onApply: (positionId: string) => void;
+  /** Buka halaman detail per lowongan (?posisi=slug) via pushState. */
+  onOpenPosition: (slug: string) => void;
   /** Kuota & jumlah lamaran per id posisi (dari PublicContentResponse.positionStats). */
   positionStats?: Record<string, PositionPublicStats>;
-  /** Slug dari deep link /?posisi=slug — dialog detail posisi dibuka otomatis. */
-  initialSlug?: string | null;
 }) {
   const { t } = useLang();
   const [department, setDepartment] = useState<string | null>(null);
   const [jobType, setJobType] = useState<string | null>(null);
-  // Deep link: buka dialog detail posisi otomatis saat pertama render (posisi sudah tersedia).
-  const [detail, setDetail] = useState<Position | null>(() => {
-    if (!initialSlug) return null;
-    return positions.find((p) => p.slug === initialSlug) ?? null;
-  });
 
   // Featured lebih dulu, lalu urutan existing (Array.sort stabil).
   const sortedPositions = useMemo(
@@ -855,8 +381,6 @@ export function PositionsSection({
       (department === null || p.department === department) &&
       (jobType === null || p.type === jobType),
   );
-
-  const hasFilters = department !== null || jobType !== null;
 
   return (
     <section id="posisi" className="scroll-mt-24 bg-background py-16 md:py-24">
@@ -960,9 +484,7 @@ export function PositionsSection({
                         <PositionCard
                           position={position}
                           stats={positionStats[position.id]}
-                          canApply={canApply}
-                          onApply={onApply}
-                          onOpenDetail={setDetail}
+                          onOpenPosition={onOpenPosition}
                         />
                       </HoverLift>
                     </motion.div>
@@ -973,15 +495,6 @@ export function PositionsSection({
           </>
         )}
       </Container>
-
-      <PositionDetailDialog
-        position={detail}
-        siteName={siteName}
-        stats={detail ? positionStats[detail.id] : undefined}
-        canApply={canApply}
-        onClose={() => setDetail(null)}
-        onApply={onApply}
-      />
     </section>
   );
 }

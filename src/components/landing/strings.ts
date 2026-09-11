@@ -59,7 +59,7 @@ const id = {
     typeLabel: "Filter jenis pekerjaan",
     requirementsCount: "persyaratan",
     detail: "Detail",
-    detailAria: "Lihat detail posisi",
+    detailAria: "Lihat detail & lamar",
     apply: "Lamar Posisi Ini",
     closesPrefix: "Ditutup",
     dialogDescTitle: "Deskripsi",
@@ -344,6 +344,47 @@ const id = {
   embed: {
     applyButton: "Lamar di Situs Utama",
   },
+  detail: {
+    back: "Kembali ke Daftar Lowongan",
+    badge: "Detail Lowongan",
+    posted: "Dipublikasikan",
+    live: "Pembaruan langsung",
+    notFoundTitle: "Lowongan tidak ditemukan",
+    notFoundDesc: "Lowongan ini sudah ditutup, diarsipkan, atau tautannya tidak valid.",
+    browseOthers: "Lihat lowongan lain",
+    badgeClosed: "Ditutup",
+    badgeNew: "Baru",
+    badgeSoon: "Segera Ditutup",
+    badgeUrgent: "Urgent",
+    badgeFeatured: "Unggulan",
+    sectionDesc: "Deskripsi Posisi",
+    sectionReq: "Persyaratan",
+    sectionTerms: "Ketentuan Lamaran",
+    sectionBenefit: "Benefit",
+    sectionWorks: "Contoh Karya",
+    termsFiles: "Berkas wajib",
+    termsFilesCv: "CV (PDF)",
+    termsFilesIntro: "Audio/video perkenalan",
+    termsFilesPortfolio: "Tautan portofolio",
+    termsFilesNone: "Tanpa berkas khusus — cukup isi formulir.",
+    termsDeadline: "Batas waktu",
+    termsDeadlineNone: "Dibuka sampai kuota penuh",
+    termsQuota: "Kuota pelamar",
+    termsQuotaValue: "{used}/{max} terisi — sisa {left} tempat",
+    termsQuotaFull: "Kuota sudah penuh",
+    termsQuotaUnlimited: "Tanpa kuota",
+    termsProcess: "Proses seleksi",
+    termsTest: "Tes seleksi",
+    termsScreening: "Pertanyaan screening",
+    termsScreeningCount: "{n} pertanyaan diisi saat melamar",
+    termsScreeningNone: "Tanpa pertanyaan screening",
+    shareLabel: "Bagikan lowongan ini",
+    shareCopied: "Tautan lowongan disalin",
+    shareCopy: "Salin Tautan",
+    applyClosedTitle: "Pendaftaran Ditutup",
+    applyClosedDesc: "Formulir online untuk lowongan ini sudah ditutup. Silakan hubungi kami untuk info lebih lanjut.",
+    applyDisabledDesc: "Pendaftaran online sedang dinonaktifkan. Silakan hubungi kami melalui kontak berikut.",
+  },
 };
 
 export type Dict = idDictShape;
@@ -626,6 +667,47 @@ type idDictShape = {
     chips: string[];
   };
   embed: { applyButton: string };
+  detail: {
+    back: string;
+    badge: string;
+    posted: string;
+    live: string;
+    notFoundTitle: string;
+    notFoundDesc: string;
+    browseOthers: string;
+    badgeClosed: string;
+    badgeNew: string;
+    badgeSoon: string;
+    badgeUrgent: string;
+    badgeFeatured: string;
+    sectionDesc: string;
+    sectionReq: string;
+    sectionTerms: string;
+    sectionBenefit: string;
+    sectionWorks: string;
+    termsFiles: string;
+    termsFilesCv: string;
+    termsFilesIntro: string;
+    termsFilesPortfolio: string;
+    termsFilesNone: string;
+    termsDeadline: string;
+    termsDeadlineNone: string;
+    termsQuota: string;
+    termsQuotaValue: string;
+    termsQuotaFull: string;
+    termsQuotaUnlimited: string;
+    termsProcess: string;
+    termsTest: string;
+    termsScreening: string;
+    termsScreeningCount: string;
+    termsScreeningNone: string;
+    shareLabel: string;
+    shareCopied: string;
+    shareCopy: string;
+    applyClosedTitle: string;
+    applyClosedDesc: string;
+    applyDisabledDesc: string;
+  };
 };
 
 const en: Dict = {
@@ -680,7 +762,7 @@ const en: Dict = {
     typeLabel: "Filter by job type",
     requirementsCount: "requirements",
     detail: "Details",
-    detailAria: "View position details",
+    detailAria: "View details & apply",
     apply: "Apply for This Role",
     closesPrefix: "Closes",
     dialogDescTitle: "Description",
@@ -964,6 +1046,47 @@ const en: Dict = {
   },
   embed: {
     applyButton: "Apply on Main Site",
+  },
+  detail: {
+    back: "Back to Job List",
+    badge: "Job Detail",
+    posted: "Published",
+    live: "Live updates",
+    notFoundTitle: "Job not found",
+    notFoundDesc: "This position has been closed, archived, or the link is invalid.",
+    browseOthers: "Browse other openings",
+    badgeClosed: "Closed",
+    badgeNew: "New",
+    badgeSoon: "Closing Soon",
+    badgeUrgent: "Urgent",
+    badgeFeatured: "Featured",
+    sectionDesc: "About the Role",
+    sectionReq: "Requirements",
+    sectionTerms: "Terms & Conditions",
+    sectionBenefit: "Benefits",
+    sectionWorks: "Sample Works",
+    termsFiles: "Required documents",
+    termsFilesCv: "CV (PDF)",
+    termsFilesIntro: "Intro audio/video",
+    termsFilesPortfolio: "Portfolio link",
+    termsFilesNone: "No special documents — just fill in the form.",
+    termsDeadline: "Deadline",
+    termsDeadlineNone: "Open until quota is filled",
+    termsQuota: "Applicant quota",
+    termsQuotaValue: "{used}/{max} filled — {left} spots left",
+    termsQuotaFull: "Quota is full",
+    termsQuotaUnlimited: "Unlimited",
+    termsProcess: "Selection process",
+    termsTest: "Selection test",
+    termsScreening: "Screening questions",
+    termsScreeningCount: "{n} questions to answer when applying",
+    termsScreeningNone: "No screening questions",
+    shareLabel: "Share this job",
+    shareCopied: "Job link copied",
+    shareCopy: "Copy Link",
+    applyClosedTitle: "Applications Closed",
+    applyClosedDesc: "The online form for this position is closed. Please contact us for more information.",
+    applyDisabledDesc: "Online applications are currently disabled. Please reach us through the contacts below.",
   },
 };
 

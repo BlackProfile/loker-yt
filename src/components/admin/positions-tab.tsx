@@ -53,6 +53,7 @@ import type { Position, PositionStatsRow } from "@/lib/types";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import { copyText } from "./format";
 import { useAdminSession } from "./admin-context";
+import { useLiveRefresh } from "./use-live-refresh";
 import { Reveal } from "./motion-primitives";
 import { PositionFormDialog } from "./position-form-dialog";
 import { PositionStatsDialog } from "./position-stats-dialog";
@@ -142,6 +143,15 @@ export function PositionsTab() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Realtime: posisi dibuat/diubah/dihapus (admin lain maupun aksi sendiri) →
+  // segarkan daftar & statistik di belakang (senyap, mode silent dari tombol
+  // Segarkan). Dialog form yang sedang terbuka TIDAK terpengaruh: key dialog
+  // tidak berubah sehingga state form pengguna tidak di-reset — daftar di
+  // belakang saja yang diperbarui.
+  useLiveRefresh("positions:changed", () => {
+    void load(true);
+  });
 
   function openCreate() {
     setEditing(null);

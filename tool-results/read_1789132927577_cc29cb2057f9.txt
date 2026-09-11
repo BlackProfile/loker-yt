@@ -1,0 +1,1563 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useRef, useState } from "react";
+     4→import type { ChangeEvent, DragEvent, FormEvent, ReactNode } from "react";
+     5→import { AnimatePresence, motion } from "framer-motion";
+     6→import { toast } from "sonner";
+     7→import {
+     8→  CheckCircle2,
+     9→  ClipboardList,
+    10→  Copy,
+    11→  ExternalLink,
+    12→  Eye,
+    13→  FileText,
+    14→  Info,
+    15→  Loader2,
+    16→  MessageSquareText,
+    17→  Mic,
+    18→  PencilLine,
+    19→  ShieldCheck,
+    20→  Upload,
+    21→  X,
+    22→} from "lucide-react";
+    23→import {
+    24→  APPLICATION_SOURCES,
+    25→  CV_MAX_BYTES,
+    26→  INTRO_MAX_BYTES,
+    27→  type ApplySuccessResponse,
+    28→  type Position,
+    29→} from "@/lib/types";
+    30→import { Button } from "@/components/ui/button";
+    31→import { Card } from "@/components/ui/card";
+    32→import { Input } from "@/components/ui/input";
+    33→import { Label } from "@/components/ui/label";
+    34→import { Textarea } from "@/components/ui/textarea";
+    35→import {
+    36→  Select,
+    37→  SelectContent,
+    38→  SelectItem,
+    39→  SelectTrigger,
+    40→  SelectValue,
+    41→} from "@/components/ui/select";
+    42→import {
+    43→  AlertDialog,
+    44→  AlertDialogAction,
+    45→  AlertDialogCancel,
+    46→  AlertDialogContent,
+    47→  AlertDialogDescription,
+    48→  AlertDialogFooter,
+    49→  AlertDialogHeader,
+    50→  AlertDialogTitle,
+    51→} from "@/components/ui/alert-dialog";
+    52→import { Checkbox } from "@/components/ui/checkbox";
+    53→import { cn } from "@/lib/utils";
+    54→import { useLang } from "@/components/landing/lang-context";
+    55→import { fillTemplate, formatMb, safeExternalUrl } from "@/components/landing/landing-utils";
+    56→
+    57→const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    58→const DRAFT_KEY = "lumina-draft";
+    59→const AUTOSAVE_DELAY_MS = 500;
+    60→const MIN_TEXT_LENGTH = 10;
+    61→const SCREENING_MAX = 500; // batas karakter tiap jawaban screening (sinkron dengan server)
+    62→const SCREENING_KEY_PREFIX = "screening:";
+    63→
+    64→/* ------------------------- Komponen pratinjau lamaran ------------------------- */
+    65→
+    66→function PreviewRow({
+    67→  label,
+    68→  value,
+    69→  fallback,
+    70→}: {
+    71→  label: string;
+    72→  value: string;
+    73→  fallback: string;
+    74→}) {
+    75→  const empty = value.trim().length === 0;
+    76→  return (
+    77→    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
+    78→      <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:w-40">
+    79→        {label}
+    80→      </dt>
+    81→      <dd
+    82→        className={cn(
+    83→          "whitespace-pre-line break-words text-sm",
+    84→          empty ? "italic text-muted-foreground/70" : "font-medium",
+    85→        )}
+    86→      >
+    87→        {empty ? fallback : value}
+    88→      </dd>
+    89→    </div>
+    90→  );
+    91→}
+    92→
+    93→function PreviewSection({
+    94→  title,
+    95→  editLabel,
+    96→  onEdit,
+    97→  children,
+    98→}: {
+    99→  title: string;
+   100→  editLabel: string;
+   101→  onEdit: () => void;
+   102→  children: ReactNode;
+   103→}) {
+   104→  return (
+   105→    <div className="rounded-xl border bg-muted/30 p-4">
+   106→      <div className="flex items-center justify-between gap-3">
+   107→        <p className="text-sm font-semibold">{title}</p>
+   108→        <Button
+   109→          type="button"
+   110→          variant="ghost"
+   111→          size="sm"
+   112→          className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+   113→          onClick={onEdit}
+   114→        >
+   115→          <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+   116→          {editLabel}
+   117→        </Button>
+   118→      </div>
+   119→      <dl className="mt-3 flex flex-col gap-3">{children}</dl>
+   120→    </div>
+   121→  );
+   122→}
+   123→
+   124→type FormValues = {
+   125→  name: string;
+   126→  email: string;
+   127→  phone: string;
+   128→  portfolioUrl: string;
+   129→  socialLinks: string;
+   130→  experience: string;
+   131→  motivation: string;
+   132→};
+   133→
+   134→type FieldKey = keyof FormValues | "positionId" | `screening:${string}`;
+   135→type FormErrors = Partial<Record<FieldKey, string>>;
+   136→
+   137→const INITIAL_VALUES: FormValues = {
+   138→  name: "",
+   139→  email: "",
+   140→  phone: "",
+   141→  portfolioUrl: "",
+   142→  socialLinks: "",
+   143→  experience: "",
+   144→  motivation: "",
+   145→};
+   146→
+   147→const VALUE_KEYS: (keyof FormValues)[] = [
+   148→  "name",
+   149→  "email",
+   150→  "phone",
+   151→  "portfolioUrl",
+   152→  "socialLinks",
+   153→  "experience",
+   154→  "motivation",
+   155→];
+   156→
+   157→type StoredDraft = {
+   158→  values?: Partial<Record<keyof FormValues, unknown>>;
+   159→  positionId?: unknown;
+   160→  savedAt?: unknown;
+   161→};
+   162→
+   163→type ApplyWizardProps = {
+   164→  positions: Position[];
+   165→  positionId: string;
+   166→  onPositionIdChange: (positionId: string) => void;
+   167→};
+   168→
+   169→export function ApplyWizard({
+   170→  positions,
+   171→  positionId,
+   172→  onPositionIdChange,
+   173→}: ApplyWizardProps) {
+   174→  const { t } = useLang();
+   175→  const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
+   176→  const [errors, setErrors] = useState<FormErrors>({});
+   177→  const [step, setStep] = useState(0);
+   178→  const [submitting, setSubmitting] = useState(false);
+   179→  // Pratinjau & konfirmasi sebelum pengiriman (tidak ada kirim otomatis).
+   180→  const [confirmOpen, setConfirmOpen] = useState(false);
+   181→  const [agreed, setAgreed] = useState(false);
+   182→  const [direction, setDirection] = useState(1);
+   183→  const [success, setSuccess] = useState<{
+   184→    name: string;
+   185→    trackingCode: string;
+   186→    autoReply: string | null;
+   187→    assignment: ApplySuccessResponse["assignment"];
+   188→  } | null>(null);
+   189→
+   190→  // Jawaban pertanyaan screening posisi: {questionId: jawaban}
+   191→  const [screeningAnswers, setScreeningAnswers] = useState<Record<string, string>>({});
+   192→  // Sumber pelamar ("dari mana tahu lowongan ini") — opsional.
+   193→  const [source, setSource] = useState("");
+   194→  // UTM dibaca SEKALI saat mount via useState initializer (aman SSR; tidak dirender).
+   195→  const [utm] = useState(() => {
+   196→    if (typeof window === "undefined") {
+   197→      return { source: "", medium: "", campaign: "" };
+   198→    }
+   199→    const params = new URLSearchParams(window.location.search);
+   200→    const pick = (key: string) => (params.get(key) ?? "").trim().slice(0, 60);
+   201→    return {
+   202→      source: pick("utm_source"),
+   203→      medium: pick("utm_medium"),
+   204→      campaign: pick("utm_campaign"),
+   205→    };
+   206→  });
+   207→
+   208→  const selectedPosition = positions.find((p) => p.id === positionId);
+   209→  const screeningQuestions = selectedPosition?.screeningQuestions ?? [];
+   210→
+   211→  // Reset jawaban screening saat posisi berubah (termasuk perubahan dari luar
+   212→  // wizard lewat dialog posisi) — pola "adjust state during render", tanpa effect.
+   213→  const [lastPositionId, setLastPositionId] = useState(positionId);
+   214→  if (lastPositionId !== positionId) {
+   215→    setLastPositionId(positionId);
+   216→    setScreeningAnswers({});
+   217→  }
+   218→
+   219→  // File unggahan (tidak masuk draft).
+   220→  const [cvFile, setCvFile] = useState<File | null>(null);
+   221→  const [introFile, setIntroFile] = useState<File | null>(null);
+   222→  const [cvError, setCvError] = useState<string | null>(null);
+   223→  const [introError, setIntroError] = useState<string | null>(null);
+   224→  const [cvDragging, setCvDragging] = useState(false);
+   225→  const [introDragging, setIntroDragging] = useState(false);
+   226→
+   227→  // Draft autosave.
+   228→  const [draft, setDraft] = useState<StoredDraft | null>(null);
+   229→  const submittedRef = useRef(false);
+   230→  const draftDismissedRef = useRef(false);
+   231→
+   232→  useEffect(() => {
+   233→    try {
+   234→      const raw = window.localStorage.getItem(DRAFT_KEY);
+   235→      if (!raw) return;
+   236→      const parsed = JSON.parse(raw) as StoredDraft;
+   237→      if (parsed && typeof parsed === "object" && parsed.values) setDraft(parsed);
+   238→    } catch {
+   239→      // draft rusak -> abaikan
+   240→    }
+   241→  }, []);
+   242→
+   243→  useEffect(() => {
+   244→    if (submittedRef.current || draftDismissedRef.current) return;
+   245→    const hasContent =
+   246→      VALUE_KEYS.some((key) => values[key].trim().length > 0) || positionId;
+   247→    if (!hasContent) return;
+   248→    const timer = window.setTimeout(() => {
+   249→      try {
+   250→        window.localStorage.setItem(
+   251→          DRAFT_KEY,
+   252→          JSON.stringify({ values, positionId, savedAt: Date.now() }),
+   253→        );
+   254→      } catch {
+   255→        // penyimpanan penuh / tidak tersedia
+   256→      }
+   257→    }, AUTOSAVE_DELAY_MS);
+   258→    return () => window.clearTimeout(timer);
+   259→  }, [values, positionId]);
+   260→
+   261→  const setField = (key: keyof FormValues, value: string) => {
+   262→    setValues((prev) => ({ ...prev, [key]: value }));
+   263→    setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+   264→  };
+   265→
+   266→  /** Simpan jawaban screening (dipotong 500 karakter) + hapus error saat diketik. */
+   267→  const setAnswer = (questionId: string, value: string) => {
+   268→    const clipped = value.slice(0, SCREENING_MAX);
+   269→    setScreeningAnswers((prev) => ({ ...prev, [questionId]: clipped }));
+   270→    const key = `${SCREENING_KEY_PREFIX}${questionId}` as FieldKey;
+   271→    setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+   272→  };
+   273→
+   274→  const clearPositionError = () => {
+   275→    setErrors((prev) =>
+   276→      prev.positionId ? { ...prev, positionId: undefined } : prev,
+   277→    );
+   278→  };
+   279→
+   280→  function validateStep1(): FormErrors {
+   281→    const next: FormErrors = {};
+   282→    if (!values.name.trim()) next.name = t.apply.errors.name;
+   283→    if (!values.email.trim()) next.email = t.apply.errors.emailRequired;
+   284→    else if (!EMAIL_RE.test(values.email.trim())) next.email = t.apply.errors.emailInvalid;
+   285→    if (!values.phone.trim()) next.phone = t.apply.errors.phoneRequired;
+   286→    else if (values.phone.replace(/\D/g, "").length < 8)
+   287→      next.phone = t.apply.errors.phoneMin;
+   288→    if (positions.length > 0 && !positionId) next.positionId = t.apply.errors.position;
+   289→    return next;
+   290→  }
+   291→
+   292→  function validateStep2(): FormErrors {
+   293→    const next: FormErrors = {};
+   294→    if (values.experience.trim().length < MIN_TEXT_LENGTH)
+   295→      next.experience = t.apply.errors.experience;
+   296→    if (values.motivation.trim().length < MIN_TEXT_LENGTH)
+   297→      next.motivation = t.apply.errors.motivation;
+   298→    // Pertanyaan screening wajib milik posisi terpilih.
+   299→    for (const question of screeningQuestions) {
+   300→      if (question.required && !(screeningAnswers[question.id] ?? "").trim()) {
+   301→        next[`${SCREENING_KEY_PREFIX}${question.id}`] = fillTemplate(
+   302→          t.apply.errors.screeningRequired,
+   303→          { label: question.label },
+   304→        );
+   305→      }
+   306→    }
+   307→    // Posisi tertentu mewajibkan portofolio ATAU link sosial media.
+   308→    if (
+   309→      selectedPosition?.requirePortfolio &&
+   310→      !values.portfolioUrl.trim() &&
+   311→      !values.socialLinks.trim()
+   312→    ) {
+   313→      next.portfolioUrl = t.apply.errors.portfolioRequired;
+   314→    }
+   315→    return next;
+   316→  }
+   317→
+   318→  function scrollToScreening(questionId: string) {
+   319→    document
+   320→      .getElementById(`apply-screening-${questionId}`)
+   321→      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+   322→  }
+   323→
+   324→  /** Error screening pertama dari peta error (untuk scroll + toast). */
+   325→  function firstScreeningErrorOf(next: FormErrors): { id: string; message: string } | null {
+   326→    for (const [key, message] of Object.entries(next)) {
+   327→      if (key.startsWith(SCREENING_KEY_PREFIX) && message) {
+   328→        return { id: key.slice(SCREENING_KEY_PREFIX.length), message };
+   329→      }
+   330→    }
+   331→    return null;
+   332→  }
+   333→
+   334→  function goToStep(next: number) {
+   335→    setDirection(next > step ? 1 : -1);
+   336→    setStep(next);
+   337→  }
+   338→
+   339→  function goNext() {
+   340→    const next = step === 0 ? validateStep1() : validateStep2();
+   341→    setErrors((prev) => ({ ...prev, ...next }));
+   342→    if (Object.values(next).some(Boolean)) {
+   343→      if (step === 1) {
+   344→        // Screening wajib kosong: sorot + scroll + toast (pola error wizard).
+   345→        const screeningError = firstScreeningErrorOf(next);
+   346→        if (screeningError) {
+   347→          scrollToScreening(screeningError.id);
+   348→          toast.error(screeningError.message);
+   349→        }
+   350→      }
+   351→      return;
+   352→    }
+   353→    goToStep(Math.min(2, step + 1));
+   354→  }
+   355→
+   356→  function goBack() {
+   357→    goToStep(Math.max(0, step - 1));
+   358→  }
+   359→
+   360→  /** Validasi seluruh formulir; bila ada galat, lompat ke langkah pertama yang bermasalah. */
+   361→  function validateAllAndJump(): boolean {
+   362→    const e1 = validateStep1();
+   363→    const e2 = validateStep2();
+   364→    setErrors((prev) => ({ ...prev, ...e1, ...e2 }));
+   365→    if (e1.name || e1.email || e1.phone || e1.positionId) {
+   366→      goToStep(0);
+   367→      return false;
+   368→    }
+   369→    if (Object.values({ ...e1, ...e2 }).some(Boolean)) {
+   370→      goToStep(1);
+   371→      // Konten langkah 1 baru muncul setelah transisi AnimatePresence selesai —
+   372→      // scroll ke pertanyaan screening bermasalah dengan sedikit jeda.
+   373→      const screeningError = firstScreeningErrorOf(e2);
+   374→      if (screeningError) {
+   375→        window.setTimeout(() => scrollToScreening(screeningError.id), 400);
+   376→        toast.error(screeningError.message);
+   377→      }
+   378→      return false;
+   379→    }
+   380→    return true;
+   381→  }
+   382→
+   383→  /** Berkas wajib per posisi (CV/audio intro) — dipakai sebelum masuk pratinjau. */
+   384→  function validateRequiredFiles(): boolean {
+   385→    if (selectedPosition?.requireCv && !cvFile) {
+   386→      setCvError(t.apply.errors.cvRequired);
+   387→      toast.error(t.apply.errors.cvRequired);
+   388→      return false;
+   389→    }
+   390→    if (selectedPosition?.requireIntro && !introFile) {
+   391→      setIntroError(t.apply.errors.introRequired);
+   392→      toast.error(t.apply.errors.introRequired);
+   393→      return false;
+   394→    }
+   395→    return true;
+   396→  }
+   397→
+   398→  function acceptCv(file: File | null) {
+   399→    if (!file) return;
+   400→    if (file.type !== "application/pdf") {
+   401→      setCvError(t.apply.errors.cvType);
+   402→      toast.error(t.apply.errors.cvType);
+   403→      return;
+   404→    }
+   405→    if (file.size > CV_MAX_BYTES) {
+   406→      setCvError(t.apply.errors.cvSize);
+   407→      toast.error(t.apply.errors.cvSize);
+   408→      return;
+   409→    }
+   410→    setCvFile(file);
+   411→    setCvError(null);
+   412→  }
+   413→
+   414→  function acceptIntro(file: File | null) {
+   415→    if (!file) return;
+   416→    const typeOk =
+   417→      file.type.startsWith("audio/") || /\.(mp3|wav|m4a)$/i.test(file.name);
+   418→    if (!typeOk) {
+   419→      setIntroError(t.apply.errors.introType);
+   420→      toast.error(t.apply.errors.introType);
+   421→      return;
+   422→    }
+   423→    if (file.size > INTRO_MAX_BYTES) {
+   424→      setIntroError(t.apply.errors.introSize);
+   425→      toast.error(t.apply.errors.introSize);
+   426→      return;
+   427→    }
+   428→    setIntroFile(file);
+   429→    setIntroError(null);
+   430→  }
+   431→
+   432→  function onCvInput(event: ChangeEvent<HTMLInputElement>) {
+   433→    acceptCv(event.target.files?.[0] ?? null);
+   434→    event.target.value = "";
+   435→  }
+   436→
+   437→  function onIntroInput(event: ChangeEvent<HTMLInputElement>) {
+   438→    acceptIntro(event.target.files?.[0] ?? null);
+   439→    event.target.value = "";
+   440→  }
+   441→
+   442→  function onDropFactory(
+   443→    acceptor: (file: File | null) => void,
+   444→    setDragging: (value: boolean) => void,
+   445→  ) {
+   446→    return (event: DragEvent<HTMLLabelElement>) => {
+   447→      event.preventDefault();
+   448→      setDragging(false);
+   449→      acceptor(event.dataTransfer.files?.[0] ?? null);
+   450→    };
+   451→  }
+   452→
+   453→  /**
+   454→   * Pengiriman sesungguhnya. Hanya dipanggil setelah pengguna melihat pratinjau
+   455→   * dan menekan konfirmasi pada dialog — tidak pernah kirim otomatis.
+   456→   */
+   457→  async function doSubmit() {
+   458→    setSubmitting(true);
+   459→    try {
+   460→      const fd = new FormData();
+   461→      fd.append("name", values.name.trim());
+   462→      fd.append("email", values.email.trim());
+   463→      fd.append("phone", values.phone.trim());
+   464→      if (positionId) fd.append("positionId", positionId);
+   465→      if (values.portfolioUrl.trim())
+   466→        fd.append("portfolioUrl", values.portfolioUrl.trim());
+   467→      if (values.socialLinks.trim())
+   468→        fd.append("socialLinks", values.socialLinks.trim());
+   469→      fd.append("experience", values.experience.trim());
+   470→      fd.append("motivation", values.motivation.trim());
+   471→      // Jawaban screening posisi (JSON {questionId: jawaban}) — hanya yang terisi.
+   472→      if (screeningQuestions.length > 0) {
+   473→        const record: Record<string, string> = {};
+   474→        for (const question of screeningQuestions) {
+   475→          const answer = (screeningAnswers[question.id] ?? "").trim();
+   476→          if (answer) record[question.id] = answer.slice(0, SCREENING_MAX);
+   477→        }
+   478→        fd.append("screeningAnswers", JSON.stringify(record));
+   479→      }
+   480→      // Sumber pelamar + UTM dari URL saat halaman dibuka.
+   481→      if (source) fd.append("source", source);
+   482→      if (utm.source) fd.append("utmSource", utm.source);
+   483→      if (utm.medium) fd.append("utmMedium", utm.medium);
+   484→      if (utm.campaign) fd.append("utmCampaign", utm.campaign);
+   485→      if (cvFile) fd.append("cvFile", cvFile);
+   486→      if (introFile) fd.append("introFile", introFile);
+   487→
+   488→      const res = await fetch("/api/applications", { method: "POST", body: fd });
+   489→      const data: unknown = await res.json().catch(() => null);
+   490→      if (!res.ok) {
+   491→        // Termasuk 409 kuota penuh — pesan spesifik dari server ditampilkan apa adanya.
+   492→        const serverError =
+   493→          typeof data === "object" &&
+   494→          data !== null &&
+   495→          "error" in data &&
+   496→          typeof (data as { error: unknown }).error === "string"
+   497→            ? (data as { error: string }).error
+   498→            : null;
+   499→        toast.error(serverError ?? t.apply.errors.submitFailed);
+   500→        return;
+   501→      }
+   502→      const successData: ApplySuccessResponse | null =
+   503→        typeof data === "object" &&
+   504→        data !== null &&
+   505→        "ok" in data &&
+   506→        (data as { ok: unknown }).ok === true
+   507→          ? (data as ApplySuccessResponse)
+   508→          : null;
+   509→      const trackingCode = successData?.trackingCode ?? "";
+   510→
+   511→      submittedRef.current = true;
+   512→      try {
+   513→        window.localStorage.removeItem(DRAFT_KEY);
+   514→      } catch {
+   515→        // abaikan
+   516→      }
+   517→      setSuccess({
+   518→        name: values.name.trim(),
+   519→        trackingCode,
+   520→        autoReply: successData?.autoReply ?? null,
+   521→        assignment: successData?.assignment ?? null,
+   522→      });
+   523→      toast.success(t.apply.success.title);
+   524→    } catch {
+   525→      toast.error(t.apply.errors.submitFailed);
+   526→    } finally {
+   527→      setSubmitting(false);
+   528→    }
+   529→  }
+   530→
+   531→  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+   532→    event.preventDefault();
+   533→    if (submitting) return;
+   534→
+   535→    // Langkah 0-1: validasi per langkah lalu maju.
+   536→    if (step === 0 || step === 1) {
+   537→      goNext();
+   538→      return;
+   539→    }
+   540→
+   541→    // Langkah 3 (Berkas): validasi semuanya (termasuk berkas wajib), lalu pratinjau.
+   542→    if (step === 2) {
+   543→      if (!validateAllAndJump()) return;
+   544→      if (!validateRequiredFiles()) return;
+   545→      goToStep(3);
+   546→      return;
+   547→    }
+   548→
+   549→    // Langkah 3 (Pratinjau): wajib pernyataan kebenaran data sebelum konfirmasi.
+   550→    if (!agreed) {
+   551→      toast.error(t.apply.preview.agreeRequired);
+   552→      return;
+   553→    }
+   554→    setConfirmOpen(true);
+   555→  }
+   556→
+   557→  function resetForm() {
+   558→    submittedRef.current = false;
+   559→    draftDismissedRef.current = false;
+   560→    setValues(INITIAL_VALUES);
+   561→    setErrors({});
+   562→    setStep(0);
+   563→    setSuccess(null);
+   564→    setCvFile(null);
+   565→    setIntroFile(null);
+   566→    setCvError(null);
+   567→    setIntroError(null);
+   568→    setAgreed(false);
+   569→    setConfirmOpen(false);
+   570→    setDirection(1);
+   571→    setSource("");
+   572→    setScreeningAnswers({});
+   573→    onPositionIdChange("");
+   574→    try {
+   575→      window.localStorage.removeItem(DRAFT_KEY);
+   576→    } catch {
+   577→      // abaikan
+   578→    }
+   579→  }
+   580→
+   581→  function restoreDraft() {
+   582→    if (!draft) return;
+   583→    const restored: FormValues = { ...INITIAL_VALUES };
+   584→    for (const key of VALUE_KEYS) {
+   585→      const raw = draft.values?.[key];
+   586→      if (typeof raw === "string") restored[key] = raw;
+   587→    }
+   588→    setValues(restored);
+   589→    draftDismissedRef.current = false;
+   590→    if (
+   591→      typeof draft.positionId === "string" &&
+   592→      positions.some((p) => p.id === draft.positionId)
+   593→    ) {
+   594→      onPositionIdChange(draft.positionId);
+   595→    }
+   596→    setDraft(null);
+   597→    toast.success(t.apply.draft.title);
+   598→  }
+   599→
+   600→  function discardDraft() {
+   601→    draftDismissedRef.current = true;
+   602→    try {
+   603→      window.localStorage.removeItem(DRAFT_KEY);
+   604→    } catch {
+   605→      // abaikan
+   606→    }
+   607→    setDraft(null);
+   608→  }
+   609→
+   610→  async function copyTrackingCode() {
+   611→    if (!success?.trackingCode) return;
+   612→    try {
+   613→      await navigator.clipboard.writeText(success.trackingCode);
+   614→      toast.success(t.apply.success.copied);
+   615→    } catch {
+   616→      toast.error(t.apply.errors.submitFailed);
+   617→    }
+   618→  }
+   619→
+   620→  function goToStatus() {
+   621→    document.getElementById("status")?.scrollIntoView({ behavior: "smooth" });
+   622→  }
+   623→
+   624→  if (success) {
+   625→    const briefUrl = safeExternalUrl(success.assignment?.url ?? "");
+   626→    return (
+   627→      <motion.div
+   628→        role="status"
+   629→        initial={{ opacity: 0, y: 16 }}
+   630→        animate={{ opacity: 1, y: 0 }}
+   631→        transition={{ duration: 0.35, ease: "easeOut" }}
+   632→        className="flex flex-col items-center justify-center gap-4 py-8 text-center"
+   633→      >
+   634→        <motion.div
+   635→          initial={{ scale: 0.4, opacity: 0 }}
+   636→          animate={{ scale: 1, opacity: 1 }}
+   637→          transition={{ type: "spring", stiffness: 260, damping: 16, delay: 0.1 }}
+   638→          className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/15"
+   639→        >
+   640→          <CheckCircle2
+   641→            className="h-12 w-12 text-emerald-600 dark:text-emerald-400"
+   642→            aria-hidden="true"
+   643→          />
+   644→        </motion.div>
+   645→        <h3 className="text-2xl font-bold">{t.apply.success.title}</h3>
+   646→        <p className="text-sm font-medium">
+   647→          {t.apply.success.thanksTo} {success.name}
+   648→        </p>
+   649→        <p className="max-w-md text-sm text-muted-foreground">{t.apply.success.body}</p>
+   650→
+   651→        <div className="mt-2 flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border bg-muted/40 p-5">
+   652→          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+   653→            {t.apply.success.trackingLabel}
+   654→          </p>
+   655→          <div className="flex w-full items-center justify-center gap-3">
+   656→            <code className="rounded-lg bg-background px-4 py-2 font-mono text-xl tracking-widest sm:text-2xl">
+   657→              {success.trackingCode || "-"}
+   658→            </code>
+   659→            <Button
+   660→              variant="outline"
+   661→              size="icon"
+   662→              className="h-10 w-10 shrink-0"
+   663→              aria-label={t.apply.success.copy}
+   664→              onClick={() => void copyTrackingCode()}
+   665→            >
+   666→              <Copy className="h-4 w-4" aria-hidden="true" />
+   667→            </Button>
+   668→          </div>
+   669→          <p className="text-xs text-muted-foreground">{t.apply.success.saveNote}</p>
+   670→        </div>
+   671→
+   672→        {/* Pesan balasan otomatis dari template posisi (bila diatur admin) */}
+   673→        {success.autoReply && success.autoReply.trim() ? (
+   674→          <motion.div
+   675→            initial={{ opacity: 0, y: 10 }}
+   676→            animate={{ opacity: 1, y: 0 }}
+   677→            transition={{ duration: 0.35, delay: 0.15, ease: "easeOut" }}
+   678→            className="w-full max-w-md rounded-2xl border border-rose-200 bg-rose-50/70 p-5 text-left dark:border-rose-500/30 dark:bg-rose-500/10"
+   679→          >
+   680→            <p className="flex items-center gap-2 text-sm font-semibold text-rose-800 dark:text-rose-300">
+   681→              <MessageSquareText className="h-4 w-4 shrink-0" aria-hidden="true" />
+   682→              {t.apply.success.autoReplyTitle}
+   683→            </p>
+   684→            <blockquote className="mt-2 border-l-2 border-rose-400/60 pl-3 text-sm leading-relaxed text-rose-900 dark:border-rose-400/40 dark:text-rose-200">
+   685→              {success.autoReply}
+   686→            </blockquote>
+   687→          </motion.div>
+   688→        ) : null}
+   689→
+   690→        {/* Info tes/brief dari posisi (bila diatur admin) */}
+   691→        {success.assignment &&
+   692→        (success.assignment.title || success.assignment.note || success.assignment.url) ? (
+   693→          <motion.div
+   694→            initial={{ opacity: 0, y: 10 }}
+   695→            animate={{ opacity: 1, y: 0 }}
+   696→            transition={{ duration: 0.35, delay: 0.25, ease: "easeOut" }}
+   697→            className="w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50/70 p-5 text-left dark:border-amber-500/30 dark:bg-amber-500/10"
+   698→          >
+   699→            <p className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+   700→              <ClipboardList className="h-4 w-4 shrink-0" aria-hidden="true" />
+   701→              {t.apply.success.nextStepsTitle}
+   702→            </p>
+   703→            <p className="mt-2 text-sm font-medium text-foreground">
+   704→              {success.assignment.title || t.apply.success.assignmentFallback}
+   705→            </p>
+   706→            {success.assignment.note ? (
+   707→              <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-amber-800/90 dark:text-amber-200/80">
+   708→                {success.assignment.note}
+   709→              </p>
+   710→            ) : null}
+   711→            {briefUrl ? (
+   712→              <Button
+   713→                variant="outline"
+   714→                size="sm"
+   715→                className="mt-3 h-11 border-amber-300 bg-transparent text-amber-800 hover:bg-amber-100 hover:text-amber-900 sm:h-9 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+   716→                asChild
+   717→              >
+   718→                <a href={briefUrl} target="_blank" rel="noopener noreferrer">
+   719→                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+   720→                  {t.apply.success.openBrief}
+   721→                </a>
+   722→              </Button>
+   723→            ) : null}
+   724→          </motion.div>
+   725→        ) : null}
+   726→
+   727→        <div className="mt-2 flex flex-col gap-3 sm:flex-row">
+   728→          <Button onClick={goToStatus}>{t.apply.success.checkStatus}</Button>
+   729→          <Button variant="outline" onClick={resetForm}>
+   730→            {t.apply.success.another}
+   731→          </Button>
+   732→        </div>
+   733→      </motion.div>
+   734→    );
+   735→  }
+   736→
+   737→  const stepLabels = t.apply.steps;
+   738→
+   739→  return (
+   740→    <div className="flex flex-col gap-6">
+   741→      <div>
+   742→        <h3 className="text-lg font-semibold">{t.apply.formTitle}</h3>
+   743→        <p className="mt-1 text-sm text-muted-foreground">
+   744→          {t.apply.requiredBefore} <span className="text-rose-600">*</span>{" "}
+   745→          {t.apply.requiredAfter}
+   746→        </p>
+   747→      </div>
+   748→
+   749→      {draft ? (
+   750→        <Card className="flex-row items-center justify-between gap-3 rounded-xl border-amber-200 bg-amber-50/60 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+   751→          <div className="min-w-0">
+   752→            <p className="text-sm font-semibold">{t.apply.draft.title}</p>
+   753→            <p className="truncate text-xs text-muted-foreground">
+   754→              {t.apply.draft.body}
+   755→              {typeof draft.savedAt === "number"
+   756→                ? ` (${t.apply.draft.savedPrefix} ${new Date(draft.savedAt).toLocaleString("id-ID")})`
+   757→                : ""}
+   758→            </p>
+   759→          </div>
+   760→          <div className="flex shrink-0 items-center gap-2">
+   761→            <Button size="sm" variant="outline" onClick={discardDraft}>
+   762→              {t.apply.draft.discard}
+   763→            </Button>
+   764→            <Button size="sm" onClick={restoreDraft}>
+   765→              {t.apply.draft.restore}
+   766→            </Button>
+   767→          </div>
+   768→        </Card>
+   769→      ) : null}
+   770→
+   771→      {/* Stepper */}
+   772→      <ol className="flex items-center gap-2" aria-label={t.apply.stepOf}>
+   773→        {stepLabels.map((label, index) => {
+   774→          const isDone = index < step;
+   775→          const isActive = index === step;
+   776→          return (
+   777→            <li key={label} className="flex flex-1 items-center gap-2 last:flex-none">
+   778→              <div className="flex items-center gap-2">
+   779→                <span
+   780→                  aria-current={isActive ? "step" : undefined}
+   781→                  className={cn(
+   782→                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition-colors",
+   783→                    isDone &&
+   784→                      "border-emerald-500 bg-emerald-500 text-white dark:border-emerald-400 dark:bg-emerald-400 dark:text-emerald-950",
+   785→                    isActive && "border-primary ring-primary ring-offset-background ring-2",
+   786→                    !isDone && !isActive && "border-border text-muted-foreground",
+   787→                  )}
+   788→                >
+   789→                  {isDone ? (
+   790→                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+   791→                  ) : (
+   792→                    index + 1
+   793→                  )}
+   794→                </span>
+   795→                <span
+   796→                  className={cn(
+   797→                    "hidden text-xs font-medium sm:block",
+   798→                    isActive ? "text-foreground" : "text-muted-foreground",
+   799→                  )}
+   800→                >
+   801→                  {label}
+   802→                </span>
+   803→              </div>
+   804→              {index < stepLabels.length - 1 ? (
+   805→                <span
+   806→                  aria-hidden="true"
+   807→                  className={cn(
+   808→                    "h-px flex-1",
+   809→                    index < step ? "bg-emerald-500 dark:bg-emerald-400" : "bg-border",
+   810→                  )}
+   811→                />
+   812→              ) : null}
+   813→            </li>
+   814→          );
+   815→        })}
+   816→      </ol>
+   817→
+   818→      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
+   819→        <AnimatePresence mode="wait" initial={false} custom={direction}>
+   820→          <motion.div
+   821→            key={step}
+   822→            custom={direction}
+   823→            variants={{
+   824→              enter: (dir: number) => ({ opacity: 0, x: 36 * dir }),
+   825→              center: { opacity: 1, x: 0 },
+   826→              exit: (dir: number) => ({ opacity: 0, x: -36 * dir }),
+   827→            }}
+   828→            initial="enter"
+   829→            animate="center"
+   830→            exit="exit"
+   831→            transition={{ duration: 0.25, ease: "easeOut" }}
+   832→            className="flex flex-col gap-5"
+   833→          >
+   834→        {/* LANGKAH 1: Data Diri */}
+   835→        {step === 0 && (
+   836→          <div className="flex flex-col gap-5">
+   837→            <div className="grid gap-5 sm:grid-cols-2">
+   838→              <div className="flex flex-col gap-2">
+   839→                <Label htmlFor="apply-name">
+   840→                  {t.apply.fields.name} <span className="text-rose-600">*</span>
+   841→                </Label>
+   842→                <Input
+   843→                  id="apply-name"
+   844→                  name="name"
+   845→                  value={values.name}
+   846→                  onChange={(e) => setField("name", e.target.value)}
+   847→                  placeholder={t.apply.fields.namePh}
+   848→                  autoComplete="name"
+   849→                  className="h-11"
+   850→                  aria-invalid={errors.name ? true : undefined}
+   851→                  aria-describedby={errors.name ? "apply-name-error" : undefined}
+   852→                />
+   853→                {errors.name ? (
+   854→                  <p id="apply-name-error" className="text-sm text-rose-600">
+   855→                    {errors.name}
+   856→                  </p>
+   857→                ) : null}
+   858→              </div>
+   859→
+   860→              <div className="flex flex-col gap-2">
+   861→                <Label htmlFor="apply-email">
+   862→                  {t.apply.fields.email} <span className="text-rose-600">*</span>
+   863→                </Label>
+   864→                <Input
+   865→                  id="apply-email"
+   866→                  name="email"
+   867→                  type="email"
+   868→                  value={values.email}
+   869→                  onChange={(e) => setField("email", e.target.value)}
+   870→                  placeholder={t.apply.fields.emailPh}
+   871→                  autoComplete="email"
+   872→                  className="h-11"
+   873→                  aria-invalid={errors.email ? true : undefined}
+   874→                  aria-describedby={errors.email ? "apply-email-error" : undefined}
+   875→                />
+   876→                {errors.email ? (
+   877→                  <p id="apply-email-error" className="text-sm text-rose-600">
+   878→                    {errors.email}
+   879→                  </p>
+   880→                ) : null}
+   881→              </div>
+   882→            </div>
+   883→
+   884→            <div className="grid gap-5 sm:grid-cols-2">
+   885→              <div className="flex flex-col gap-2">
+   886→                <Label htmlFor="apply-phone">
+   887→                  {t.apply.fields.phone} <span className="text-rose-600">*</span>
+   888→                </Label>
+   889→                <Input
+   890→                  id="apply-phone"
+   891→                  name="phone"
+   892→                  type="tel"
+   893→                  inputMode="tel"
+   894→                  value={values.phone}
+   895→                  onChange={(e) => setField("phone", e.target.value)}
+   896→                  placeholder={t.apply.fields.phonePh}
+   897→                  autoComplete="tel"
+   898→                  className="h-11"
+   899→                  aria-invalid={errors.phone ? true : undefined}
+   900→                  aria-describedby={errors.phone ? "apply-phone-error" : undefined}
+   901→                />
+   902→                {errors.phone ? (
+   903→                  <p id="apply-phone-error" className="text-sm text-rose-600">
+   904→                    {errors.phone}
+   905→                  </p>
+   906→                ) : null}
+   907→              </div>
+   908→
+   909→              <div className="flex flex-col gap-2">
+   910→                <Label htmlFor="apply-position">
+   911→                  {t.apply.fields.position} <span className="text-rose-600">*</span>
+   912→                </Label>
+   913→                <Select
+   914→                  value={positionId || undefined}
+   915→                  onValueChange={(value) => {
+   916→                    onPositionIdChange(value);
+   917→                    clearPositionError();
+   918→                  }}
+   919→                  disabled={positions.length === 0}
+   920→                >
+   921→                  <SelectTrigger
+   922→                    id="apply-position"
+   923→                    className="h-11 w-full"
+   924→                    aria-invalid={errors.positionId ? true : undefined}
+   925→                    aria-describedby={
+   926→                      errors.positionId ? "apply-position-error" : undefined
+   927→                    }
+   928→                  >
+   929→                    <SelectValue
+   930→                      placeholder={
+   931→                        positions.length === 0
+   932→                          ? t.apply.fields.positionEmpty
+   933→                          : t.apply.fields.positionPh
+   934→                      }
+   935→                    />
+   936→                  </SelectTrigger>
+   937→                  <SelectContent>
+   938→                    {positions.map((position) => (
+   939→                      <SelectItem key={position.id} value={position.id}>
+   940→                        {position.title}
+   941→                      </SelectItem>
+   942→                    ))}
+   943→                  </SelectContent>
+   944→                </Select>
+   945→                {errors.positionId ? (
+   946→                  <p id="apply-position-error" className="text-sm text-rose-600">
+   947→                    {errors.positionId}
+   948→                  </p>
+   949→                ) : null}
+   950→              </div>
+   951→            </div>
+   952→
+   953→            {/* Sumber pelamar (opsional) — membantu pemilik melacak kanal rekrutmen */}
+   954→            <div className="flex flex-col gap-2">
+   955→              <Label htmlFor="apply-source">{t.apply.fields.source}</Label>
+   956→              <Select
+   957→                value={source || undefined}
+   958→                onValueChange={(value) => setSource(value)}
+   959→              >
+   960→                <SelectTrigger id="apply-source" className="h-11 w-full">
+   961→                  <SelectValue placeholder={t.apply.fields.sourcePh} />
+   962→                </SelectTrigger>
+   963→                <SelectContent>
+   964→                  {APPLICATION_SOURCES.map((option) => (
+   965→                    <SelectItem key={option} value={option}>
+   966→                      {option}
+   967→                    </SelectItem>
+   968→                  ))}
+   969→                </SelectContent>
+   970→              </Select>
+   971→            </div>
+   972→          </div>
+   973→        )}
+   974→
+   975→        {/* LANGKAH 2: Pengalaman */}
+   976→        {step === 1 && (
+   977→          <div className="flex flex-col gap-5">
+   978→            <div className="flex flex-col gap-2">
+   979→              <Label htmlFor="apply-experience">
+   980→                {t.apply.fields.experience} <span className="text-rose-600">*</span>
+   981→              </Label>
+   982→              <Textarea
+   983→                id="apply-experience"
+   984→                name="experience"
+   985→                rows={4}
+   986→                value={values.experience}
+   987→                onChange={(e) => setField("experience", e.target.value)}
+   988→                placeholder={t.apply.fields.experiencePh}
+   989→                aria-invalid={errors.experience ? true : undefined}
+   990→                aria-describedby={
+   991→                  errors.experience ? "apply-experience-error" : undefined
+   992→                }
+   993→              />
+   994→              {errors.experience ? (
+   995→                <p id="apply-experience-error" className="text-sm text-rose-600">
+   996→                  {errors.experience}
+   997→                </p>
+   998→              ) : null}
+   999→            </div>
+  1000→
+  1001→            <div className="flex flex-col gap-2">
+  1002→              <Label htmlFor="apply-motivation">
+  1003→                {t.apply.fields.motivation} <span className="text-rose-600">*</span>
+  1004→              </Label>
+  1005→              <Textarea
+  1006→                id="apply-motivation"
+  1007→                name="motivation"
+  1008→                rows={4}
+  1009→                value={values.motivation}
+  1010→                onChange={(e) => setField("motivation", e.target.value)}
+  1011→                placeholder={t.apply.fields.motivationPh}
+  1012→                aria-invalid={errors.motivation ? true : undefined}
+  1013→                aria-describedby={
+  1014→                  errors.motivation ? "apply-motivation-error" : undefined
+  1015→                }
+  1016→              />
+  1017→              {errors.motivation ? (
+  1018→                <p id="apply-motivation-error" className="text-sm text-rose-600">
+  1019→                  {errors.motivation}
+  1020→                </p>
+  1021→              ) : null}
+  1022→            </div>
+  1023→
+  1024→            {/* Pertanyaan screening khusus posisi terpilih (v3) */}
+  1025→            {screeningQuestions.length > 0 ? (
+  1026→              <div className="flex flex-col gap-4 rounded-xl border bg-muted/40 p-4">
+  1027→                <p className="flex items-center gap-2 text-sm font-semibold">
+  1028→                  <ClipboardList
+  1029→                    className="h-4 w-4 text-rose-600 dark:text-rose-400"
+  1030→                    aria-hidden="true"
+  1031→                  />
+  1032→                  {t.apply.screening.sectionTitle}
+  1033→                </p>
+  1034→                {screeningQuestions.map((question, index) => {
+  1035→                  const errorKey =
+  1036→                    `${SCREENING_KEY_PREFIX}${question.id}` as FieldKey;
+  1037→                  const error = errors[errorKey];
+  1038→                  return (
+  1039→                    <div
+  1040→                      key={question.id}
+  1041→                      id={`apply-screening-${question.id}`}
+  1042→                      className="flex scroll-mt-24 flex-col gap-2"
+  1043→                    >
+  1044→                      <Label htmlFor={`apply-screening-${question.id}-input`}>
+  1045→                        {index + 1}. {question.label}{" "}
+  1046→                        {question.required ? (
+  1047→                          <span className="font-normal text-rose-600">
+  1048→                            {t.apply.screening.requiredMark}
+  1049→                          </span>
+  1050→                        ) : (
+  1051→                          <span className="text-xs font-normal text-muted-foreground">
+  1052→                            ({t.apply.uploads.optional})
+  1053→                          </span>
+  1054→                        )}
+  1055→                      </Label>
+  1056→                      <Textarea
+  1057→                        id={`apply-screening-${question.id}-input`}
+  1058→                        rows={2}
+  1059→                        value={screeningAnswers[question.id] ?? ""}
+  1060→                        onChange={(e) => setAnswer(question.id, e.target.value)}
+  1061→                        maxLength={SCREENING_MAX}
+  1062→                        placeholder={t.apply.screening.answerPh}
+  1063→                        aria-invalid={error ? true : undefined}
+  1064→                        aria-describedby={
+  1065→                          error ? `apply-screening-${question.id}-error` : undefined
+  1066→                        }
+  1067→                        className={cn(
+  1068→                          error &&
+  1069→                            "border-rose-400 focus-visible:ring-rose-400/40 dark:border-rose-500",
+  1070→                        )}
+  1071→                      />
+  1072→                      {error ? (
+  1073→                        <p
+  1074→                          id={`apply-screening-${question.id}-error`}
+  1075→                          className="text-sm text-rose-600"
+  1076→                        >
+  1077→                          {error}
+  1078→                        </p>
+  1079→                      ) : null}
+  1080→                    </div>
+  1081→                  );
+  1082→                })}
+  1083→              </div>
+  1084→            ) : null}
+  1085→
+  1086→            <div className="grid gap-5 sm:grid-cols-2">
+  1087→              <div className="flex flex-col gap-2">
+  1088→                <Label htmlFor="apply-portfolio">{t.apply.fields.portfolio}</Label>
+  1089→                <Input
+  1090→                  id="apply-portfolio"
+  1091→                  name="portfolioUrl"
+  1092→                  type="url"
+  1093→                  value={values.portfolioUrl}
+  1094→                  onChange={(e) => setField("portfolioUrl", e.target.value)}
+  1095→                  placeholder="https://..."
+  1096→                  className="h-11"
+  1097→                  aria-invalid={errors.portfolioUrl ? true : undefined}
+  1098→                  aria-describedby={
+  1099→                    errors.portfolioUrl ? "apply-portfolio-error" : undefined
+  1100→                  }
+  1101→                />
+  1102→              </div>
+  1103→
+  1104→              <div className="flex flex-col gap-2">
+  1105→                <Label htmlFor="apply-social">{t.apply.fields.social}</Label>
+  1106→                <Input
+  1107→                  id="apply-social"
+  1108→                  name="socialLinks"
+  1109→                  type="url"
+  1110→                  value={values.socialLinks}
+  1111→                  onChange={(e) => setField("socialLinks", e.target.value)}
+  1112→                  placeholder="https://instagram.com/..."
+  1113→                  className="h-11"
+  1114→                />
+  1115→              </div>
+  1116→
+  1117→              {/* Posisi tertentu mewajibkan salah satu diisi */}
+  1118→              {errors.portfolioUrl ? (
+  1119→                <p
+  1120→                  id="apply-portfolio-error"
+  1121→                  className="text-sm text-rose-600 sm:col-span-2"
+  1122→                >
+  1123→                  {errors.portfolioUrl}
+  1124→                </p>
+  1125→              ) : null}
+  1126→            </div>
+  1127→          </div>
+  1128→        )}
+  1129→
+  1130→        {/* LANGKAH 3: Berkas (CV & audio perkenalan) */}
+  1131→        {step === 2 && (
+  1132→          <div className="flex flex-col gap-5">
+  1133→
+  1134→            {/* Dropzone CV */}
+  1135→            <div className="flex flex-col gap-2">
+  1136→              <Label htmlFor="apply-cv" className="gap-2">
+  1137→                {t.apply.uploads.cvLabel}
+  1138→                <span
+  1139→                  className={cn(
+  1140→                    "text-xs font-normal",
+  1141→                    selectedPosition?.requireCv
+  1142→                      ? "text-rose-600"
+  1143→                      : "text-muted-foreground",
+  1144→                  )}
+  1145→                >
+  1146→                  ({selectedPosition?.requireCv ? t.apply.uploads.required : t.apply.uploads.optional})
+  1147→                </span>
+  1148→              </Label>
+  1149→              {selectedPosition?.requireCv ? (
+  1150→                <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+  1151→                  <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+  1152→                  {t.apply.uploads.cvRequiredHint}
+  1153→                </p>
+  1154→              ) : null}
+  1155→              <label
+  1156→                htmlFor="apply-cv"
+  1157→                onDragOver={(e) => {
+  1158→                  e.preventDefault();
+  1159→                  setCvDragging(true);
+  1160→                }}
+  1161→                onDragLeave={() => setCvDragging(false)}
+  1162→                onDrop={onDropFactory(acceptCv, setCvDragging)}
+  1163→                className={cn(
+  1164→                  "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-6 text-center transition-colors",
+  1165→                  cvDragging
+  1166→                    ? "border-primary bg-rose-50 dark:bg-rose-500/10"
+  1167→                    : "hover:bg-accent/50",
+  1168→                  cvError && "border-rose-400 dark:border-rose-500",
+  1169→                )}
+  1170→              >
+  1171→                <Upload className="h-6 w-6 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+  1172→                <span className="text-sm text-muted-foreground">
+  1173→                  {t.apply.uploads.dropHint}
+  1174→                </span>
+  1175→                <input
+  1176→                  id="apply-cv"
+  1177→                  name="cvFile"
+  1178→                  type="file"
+  1179→                  accept=".pdf,application/pdf"
+  1180→                  className="sr-only"
+  1181→                  onChange={onCvInput}
+  1182→                />
+  1183→              </label>
+  1184→              {cvFile ? (
+  1185→                <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
+  1186→                  <span className="flex min-w-0 items-center gap-2 text-sm">
+  1187→                    <FileText
+  1188→                      className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+  1189→                      aria-hidden="true"
+  1190→                    />
+  1191→                    <span className="truncate">{cvFile.name}</span>
+  1192→                    <span className="shrink-0 text-xs text-muted-foreground">
+  1193→                      {formatMb(cvFile.size)}
+  1194→                    </span>
+  1195→                  </span>
+  1196→                  <Button
+  1197→                    type="button"
+  1198→                    variant="ghost"
+  1199→                    size="icon"
+  1200→                    className="h-8 w-8 shrink-0"
+  1201→                    aria-label={t.apply.uploads.remove}
+  1202→                    onClick={() => setCvFile(null)}
+  1203→                  >
+  1204→                    <X className="h-4 w-4" aria-hidden="true" />
+  1205→                  </Button>
+  1206→                </div>
+  1207→              ) : null}
+  1208→              {cvError ? <p className="text-sm text-rose-600">{cvError}</p> : null}
+  1209→            </div>
+  1210→
+  1211→            {/* Dropzone Intro Audio */}
+  1212→            <div className="flex flex-col gap-2">
+  1213→              <Label htmlFor="apply-intro" className="gap-2">
+  1214→                {t.apply.uploads.introLabel}
+  1215→                <span
+  1216→                  className={cn(
+  1217→                    "text-xs font-normal",
+  1218→                    selectedPosition?.requireIntro
+  1219→                      ? "text-rose-600"
+  1220→                      : "text-muted-foreground",
+  1221→                  )}
+  1222→                >
+  1223→                  ({selectedPosition?.requireIntro ? t.apply.uploads.required : t.apply.uploads.optional})
+  1224→                </span>
+  1225→              </Label>
+  1226→              {selectedPosition?.requireIntro ? (
+  1227→                <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+  1228→                  <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+  1229→                  {t.apply.uploads.introRequiredHint}
+  1230→                </p>
+  1231→              ) : null}
+  1232→              <label
+  1233→                htmlFor="apply-intro"
+  1234→                onDragOver={(e) => {
+  1235→                  e.preventDefault();
+  1236→                  setIntroDragging(true);
+  1237→                }}
+  1238→                onDragLeave={() => setIntroDragging(false)}
+  1239→                onDrop={onDropFactory(acceptIntro, setIntroDragging)}
+  1240→                className={cn(
+  1241→                  "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-6 text-center transition-colors",
+  1242→                  introDragging
+  1243→                    ? "border-primary bg-rose-50 dark:bg-rose-500/10"
+  1244→                    : "hover:bg-accent/50",
+  1245→                  introError && "border-rose-400 dark:border-rose-500",
+  1246→                )}
+  1247→              >
+  1248→                <Mic className="h-6 w-6 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+  1249→                <span className="text-sm text-muted-foreground">
+  1250→                  {t.apply.uploads.dropHint}
+  1251→                </span>
+  1252→                <input
+  1253→                  id="apply-intro"
+  1254→                  name="introFile"
+  1255→                  type="file"
+  1256→                  accept="audio/*,.mp3,.wav,.m4a"
+  1257→                  className="sr-only"
+  1258→                  onChange={onIntroInput}
+  1259→                />
+  1260→              </label>
+  1261→              {introFile ? (
+  1262→                <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
+  1263→                  <span className="flex min-w-0 items-center gap-2 text-sm">
+  1264→                    <Mic
+  1265→                      className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+  1266→                      aria-hidden="true"
+  1267→                    />
+  1268→                    <span className="truncate">{introFile.name}</span>
+  1269→                    <span className="shrink-0 text-xs text-muted-foreground">
+  1270→                      {formatMb(introFile.size)}
+  1271→                    </span>
+  1272→                  </span>
+  1273→                  <Button
+  1274→                    type="button"
+  1275→                    variant="ghost"
+  1276→                    size="icon"
+  1277→                    className="h-8 w-8 shrink-0"
+  1278→                    aria-label={t.apply.uploads.remove}
+  1279→                    onClick={() => setIntroFile(null)}
+  1280→                  >
+  1281→                    <X className="h-4 w-4" aria-hidden="true" />
+  1282→                  </Button>
+  1283→                </div>
+  1284→              ) : null}
+  1285→              {introError ? (
+  1286→                <p className="text-sm text-rose-600">{introError}</p>
+  1287→              ) : null}
+  1288→            </div>
+  1289→
+  1290→            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+  1291→              <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+  1292→              {t.apply.trust[0]}
+  1293→            </p>
+  1294→          </div>
+  1295→        )}
+  1296→
+  1297→        {/* LANGKAH 4: Pratinjau & Konfirmasi — lamaran tidak terkirim otomatis */}
+  1298→        {step === 3 && (
+  1299→          <div className="flex flex-col gap-4">
+  1300→            <div className="rounded-xl border border-primary/30 bg-rose-50/70 p-4 dark:border-primary/40 dark:bg-primary/10">
+  1301→              <p className="flex items-center gap-2 text-sm font-semibold">
+  1302→                <Eye
+  1303→                  className="h-4 w-4 text-rose-600 dark:text-rose-400"
+  1304→                  aria-hidden="true"
+  1305→                />
+  1306→                {t.apply.preview.title}
+  1307→              </p>
+  1308→              <p className="mt-1 text-xs text-muted-foreground">
+  1309→                {t.apply.preview.desc}
+  1310→              </p>
+  1311→            </div>
+  1312→
+  1313→            <PreviewSection
+  1314→              title={t.apply.preview.sectionPersonal}
+  1315→              editLabel={t.apply.preview.edit}
+  1316→              onEdit={() => goToStep(0)}
+  1317→            >
+  1318→              <PreviewRow
+  1319→                label={t.apply.summary.name}
+  1320→                value={values.name}
+  1321→                fallback={t.apply.preview.notFilled}
+  1322→              />
+  1323→              <PreviewRow
+  1324→                label={t.apply.summary.email}
+  1325→                value={values.email}
+  1326→                fallback={t.apply.preview.notFilled}
+  1327→              />
+  1328→              <PreviewRow
+  1329→                label={t.apply.summary.phone}
+  1330→                value={values.phone}
+  1331→                fallback={t.apply.preview.notFilled}
+  1332→              />
+  1333→              <PreviewRow
+  1334→                label={t.apply.summary.position}
+  1335→                value={selectedPosition?.title ?? ""}
+  1336→                fallback={t.apply.summary.notChosen}
+  1337→              />
+  1338→              {/* Sumber pelamar — tampil hanya bila diisi */}
+  1339→              {source ? (
+  1340→                <PreviewRow
+  1341→                  label={t.apply.fields.source}
+  1342→                  value={source}
+  1343→                  fallback={t.apply.preview.notFilled}
+  1344→                />
+  1345→              ) : null}
+  1346→            </PreviewSection>
+  1347→
+  1348→            <PreviewSection
+  1349→              title={t.apply.preview.sectionAnswers}
+  1350→              editLabel={t.apply.preview.edit}
+  1351→              onEdit={() => goToStep(1)}
+  1352→            >
+  1353→              <PreviewRow
+  1354→                label={t.apply.fields.experience}
+  1355→                value={values.experience}
+  1356→                fallback={t.apply.preview.notFilled}
+  1357→              />
+  1358→              <PreviewRow
+  1359→                label={t.apply.fields.motivation}
+  1360→                value={values.motivation}
+  1361→                fallback={t.apply.preview.notFilled}
+  1362→              />
+  1363→              <PreviewRow
+  1364→                label={t.apply.fields.portfolio}
+  1365→                value={values.portfolioUrl}
+  1366→                fallback={t.apply.preview.notFilled}
+  1367→              />
+  1368→              <PreviewRow
+  1369→                label={t.apply.fields.social}
+  1370→                value={values.socialLinks}
+  1371→                fallback={t.apply.preview.notFilled}
+  1372→              />
+  1373→            </PreviewSection>
+  1374→
+  1375→            {/* Jawaban screening posisi — hanya bila posisi punya pertanyaan */}
+  1376→            {screeningQuestions.length > 0 ? (
+  1377→              <PreviewSection
+  1378→                title={t.apply.preview.sectionScreening}
+  1379→                editLabel={t.apply.preview.edit}
+  1380→                onEdit={() => goToStep(1)}
+  1381→              >
+  1382→                {screeningQuestions.map((question) => (
+  1383→                  <PreviewRow
+  1384→                    key={question.id}
+  1385→                    label={question.label}
+  1386→                    value={screeningAnswers[question.id] ?? ""}
+  1387→                    fallback={t.apply.preview.notAnswered}
+  1388→                  />
+  1389→                ))}
+  1390→              </PreviewSection>
+  1391→            ) : null}
+  1392→
+  1393→            <PreviewSection
+  1394→              title={t.apply.preview.sectionFiles}
+  1395→              editLabel={t.apply.preview.edit}
+  1396→              onEdit={() => goToStep(2)}
+  1397→            >
+  1398→              <div className="flex items-center gap-2.5 text-sm">
+  1399→                <FileText
+  1400→                  className={cn(
+  1401→                    "h-4 w-4 shrink-0",
+  1402→                    cvFile
+  1403→                      ? "text-emerald-600 dark:text-emerald-400"
+  1404→                      : "text-muted-foreground/50",
+  1405→                  )}
+  1406→                  aria-hidden="true"
+  1407→                />
+  1408→                {cvFile ? (
+  1409→                  <span className="min-w-0 truncate font-medium">
+  1410→                    {cvFile.name}{" "}
+  1411→                    <span className="text-xs text-muted-foreground">
+  1412→                      ({formatMb(cvFile.size)})
+  1413→                    </span>
+  1414→                  </span>
+  1415→                ) : (
+  1416→                  <span className="italic text-muted-foreground/70">
+  1417→                    {t.apply.preview.noFile}
+  1418→                  </span>
+  1419→                )}
+  1420→                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+  1421→                  ({selectedPosition?.requireCv ? t.apply.uploads.required : t.apply.uploads.optional})
+  1422→                </span>
+  1423→              </div>
+  1424→              <div className="flex items-center gap-2.5 text-sm">
+  1425→                <Mic
+  1426→                  className={cn(
+  1427→                    "h-4 w-4 shrink-0",
+  1428→                    introFile
+  1429→                      ? "text-emerald-600 dark:text-emerald-400"
+  1430→                      : "text-muted-foreground/50",
+  1431→                  )}
+  1432→                  aria-hidden="true"
+  1433→                />
+  1434→                {introFile ? (
+  1435→                  <span className="min-w-0 truncate font-medium">
+  1436→                    {introFile.name}{" "}
+  1437→                    <span className="text-xs text-muted-foreground">
+  1438→                      ({formatMb(introFile.size)})
+  1439→                    </span>
+  1440→                  </span>
+  1441→                ) : (
+  1442→                  <span className="italic text-muted-foreground/70">
+  1443→                    {t.apply.preview.noFile}
+  1444→                  </span>
+  1445→                )}
+  1446→                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+  1447→                  ({selectedPosition?.requireIntro ? t.apply.uploads.required : t.apply.uploads.optional})
+  1448→                </span>
+  1449→              </div>
+  1450→            </PreviewSection>
+  1451→
+  1452→            {/* Pernyataan kebenaran data — wajib dicentang sebelum konfirmasi */}
+  1453→            <div
+  1454→              className={cn(
+  1455→                "flex items-start gap-3 rounded-xl border p-4 transition-colors",
+  1456→                agreed
+  1457→                  ? "border-emerald-300 bg-emerald-50/60 dark:border-emerald-500/40 dark:bg-emerald-500/10"
+  1458→                  : "border-border",
+  1459→              )}
+  1460→            >
+  1461→              <Checkbox
+  1462→                id="apply-agree"
+  1463→                checked={agreed}
+  1464→                onCheckedChange={(checked) => setAgreed(checked === true)}
+  1465→                className="mt-0.5"
+  1466→              />
+  1467→              <Label
+  1468→                htmlFor="apply-agree"
+  1469→                className="cursor-pointer text-sm font-normal leading-relaxed"
+  1470→              >
+  1471→                {t.apply.preview.agreeLabel}
+  1472→              </Label>
+  1473→            </div>
+  1474→
+  1475→            <p className="flex items-start gap-2 text-xs text-muted-foreground">
+  1476→              <ShieldCheck
+  1477→                className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+  1478→                aria-hidden="true"
+  1479→              />
+  1480→              {t.apply.preview.privacyNote}
+  1481→            </p>
+  1482→          </div>
+  1483→        )}
+  1484→          </motion.div>
+  1485→        </AnimatePresence>
+  1486→
+  1487→        {/* Navigasi langkah */}
+  1488→        <div className="flex items-center justify-between gap-3">
+  1489→          <Button
+  1490→            type="button"
+  1491→            variant="outline"
+  1492→            className="h-11"
+  1493→            onClick={goBack}
+  1494→            disabled={step === 0 || submitting}
+  1495→          >
+  1496→            {t.apply.buttons.back}
+  1497→          </Button>
+  1498→
+  1499→          {step < 2 ? (
+  1500→            <Button type="submit" className="h-11 min-w-32">
+  1501→              {t.apply.buttons.next}
+  1502→            </Button>
+  1503→          ) : step === 2 ? (
+  1504→            <Button type="submit" className="h-11 min-w-40">
+  1505→              <Eye className="h-4 w-4" aria-hidden="true" />
+  1506→              {t.apply.buttons.review}
+  1507→            </Button>
+  1508→          ) : (
+  1509→            <Button type="submit" className="h-11 min-w-40" disabled={submitting}>
+  1510→              {submitting ? (
+  1511→                <>
+  1512→                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+  1513→                  {t.apply.buttons.submitting}
+  1514→                </>
+  1515→              ) : (
+  1516→                t.apply.buttons.submit
+  1517→              )}
+  1518→            </Button>
+  1519→          )}
+  1520→        </div>
+  1521→
+  1522→        {/* Dialog konfirmasi akhir — lamaran hanya terkirim setelah tombol ini ditekan */}
+  1523→        <AlertDialog
+  1524→          open={confirmOpen}
+  1525→          onOpenChange={(open) => {
+  1526→            if (!submitting) setConfirmOpen(open);
+  1527→          }}
+  1528→        >
+  1529→          <AlertDialogContent>
+  1530→            <AlertDialogHeader>
+  1531→              <AlertDialogTitle>{t.apply.preview.confirmTitle}</AlertDialogTitle>
+  1532→              <AlertDialogDescription>
+  1533→                {t.apply.preview.confirmDesc}
+  1534→              </AlertDialogDescription>
+  1535→            </AlertDialogHeader>
+  1536→            <AlertDialogFooter>
+  1537→              <AlertDialogCancel disabled={submitting}>
+  1538→                {t.apply.preview.confirmCancel}
+  1539→              </AlertDialogCancel>
+  1540→              <AlertDialogAction
+  1541→                disabled={submitting}
+  1542→                onClick={(event) => {
+  1543→                  event.preventDefault();
+  1544→                  void doSubmit().finally(() => setConfirmOpen(false));
+  1545→                }}
+  1546→              >
+  1547→                {submitting ? (
+  1548→                  <>
+  1549→                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+  1550→                    {t.apply.buttons.submitting}
+  1551→                  </>
+  1552→                ) : (
+  1553→                  t.apply.preview.confirmYes
+  1554→                )}
+  1555→              </AlertDialogAction>
+  1556→            </AlertDialogFooter>
+  1557→          </AlertDialogContent>
+  1558→        </AlertDialog>
+  1559→      </form>
+  1560→    </div>
+  1561→  );
+  1562→}
+  1563→

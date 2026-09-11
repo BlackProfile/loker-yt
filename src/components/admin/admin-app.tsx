@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -18,16 +19,22 @@ import {
   LogOut,
   Moon,
   Sun,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   ROLE_LABELS,
   type AdminSession,
+  type Application,
   type Role,
   type SiteContent,
 } from "@/lib/types";
+import { useRealtimeConnected } from "@/lib/live-client";
+import { cn } from "@/lib/utils";
 import { ApiError, apiGet, apiPost } from "./api";
 import { roleBadgeClass } from "./format";
+import { useLiveRefresh } from "./use-live-refresh";
 import { AdminSessionProvider } from "./admin-context";
 import { Reveal } from "./motion-primitives";
 import { LoginCard } from "./login-card";
@@ -69,6 +76,95 @@ function ThemeToggle() {
       )}
     </Button>
   );
+}
+
+// Indikator kecil status koneksi realtime di header: titik hijau + "Live"
+// saat socket tersambung, abu-abu + "Offline" saat tidak.
+function RealtimeIndicator() {
+  const connected = useRealtimeConnected();
+  return (
+    <span
+      className={cn(
+        "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium",
+        connected
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400"
+          : "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+      )}
+      role="status"
+      aria-label={
+        connected
+          ? "Koneksi realtime aktif"
+          : "Koneksi realtime terputus"
+      }
+    >
+      {connected ? (
+        <Wifi className="size-3" aria-hidden="true" />
+      ) : (
+        <WifiOff className="size-3" aria-hidden="true" />
+      )}
+      <span
+        className={cn(
+          "size-1.5 shrink-0 rounded-full",
+          connected
+            ? "animate-pulse bg-emerald-500"
+            : "bg-zinc-400 dark:bg-zinc-600"
+        )}
+        aria-hidden="true"
+      />
+      <span className="hidden sm:inline">
+        {connected ? "Live" : "Offline"}
+      </span>
+    </span>
+  );
+}
+
+// Toast "Lamaran baru masuk": membandingkan jumlah lamaran antar event
+// realtime. Hanya toast saat jumlah BERTAMBAH (perubahan status atau hapus
+// oleh admin tidak), maksimal 1 toast per 8 detik, dan tidak pada muatan
+// pertama (baseline). Aksi admin yang sudah punya toastnya sendiri tidak
+// mengubah jumlah, sehingga tidak memicu toast ganda.
+function NewApplicationToaster() {
+  const lastCountRef = useRef<number | null>(null);
+  const lastToastAtRef = useRef(0);
+
+  const checkCount = useCallback(async () => {
+    try {
+      const data = await apiGet<Application[]>("/api/admin/applications");
+      const count = Array.isArray(data) ? data.length : 0;
+      const prev = lastCountRef.current;
+      if (prev === null) {
+        // Muatan pertama: simpan baseline saja, tanpa toast.
+        lastCountRef.current = count;
+        return;
+      }
+      if (count <= prev) {
+        lastCountRef.current = count;
+        return;
+      }
+      // Bertambah: hormati jendela 8 detik. Baseline sengaja ditahan agar
+      // kenaikan yang tersembur tidak terlewat oleh event berikutnya.
+      const now = Date.now();
+      if (now - lastToastAtRef.current < 8000) return;
+      lastToastAtRef.current = now;
+      lastCountRef.current = count;
+      toast.info("Lamaran baru masuk", {
+        description: `${count - prev} lamaran baru menunggu ditinjau.`,
+      });
+    } catch {
+      // Pemuatan latar belakang senyap; coba lagi pada event berikutnya.
+    }
+  }, []);
+
+  // Baseline awal (tanpa toast) saat panel admin siap.
+  useEffect(() => {
+    void checkCount();
+  }, [checkCount]);
+
+  useLiveRefresh("applications:changed", () => {
+    void checkCount();
+  });
+
+  return null;
 }
 
 export function AdminApp({ onExit }: { onExit: () => void }) {
@@ -153,6 +249,19 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     [session, role, canMutate, reportError]
   );
 
+  // Saat pengaturan situs disimpan di tempat lain (event site:changed),
+  // segarkan nama situs di header secara senyap.
+  useLiveRefresh("site:changed", () => {
+    if (phase !== "ready") return;
+    apiGet<{ site: SiteContent }>("/api/admin/settings")
+      .then((data) => {
+        if (data?.site?.siteName) setSiteName(data.site.siteName);
+      })
+      .catch(() => {
+        // Header tetap menampilkan nama sebelumnya.
+      });
+  });
+
   async function handleLogout() {
     try {
       await apiPost<{ ok: boolean }>("/api/admin/logout");
@@ -186,6 +295,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
 
   return (
     <AdminSessionProvider value={sessionContextValue}>
+      <NewApplicationToaster />
       <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-background">
         <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
@@ -209,6 +319,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <RealtimeIndicator />
               <ThemeToggle />
               <Button
                 variant="outline"

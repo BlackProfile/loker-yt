@@ -13,6 +13,7 @@ import {
 } from "@/lib/seed";
 import { isBuiltInStage } from "@/lib/stages";
 import { STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
+import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";
 
@@ -265,6 +266,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       });
     }
 
+    // Realtime: perubahan lamaran (status/catatan/wawancara) disebarkan ke semua admin
+    // dan ke publik (pembaruan status pelacakan tanpa refresh).
+    void emitRealtime(REALTIME_EVENTS.applications);
     return NextResponse.json(serializeApplication(updated));
   } catch (error) {
     console.error("[PATCH /api/admin/applications/[id]]", error);
@@ -290,6 +294,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     await db.application.delete({ where: { id } });
 
+    // Realtime: lamaran dihapus — segarkan daftar admin & statistik.
+    void emitRealtime(REALTIME_EVENTS.applications);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[DELETE /api/admin/applications/[id]]", error);

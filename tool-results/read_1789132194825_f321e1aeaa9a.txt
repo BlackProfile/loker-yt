@@ -1,0 +1,996 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useState, useSyncExternalStore } from "react";
+     4→import { motion, MotionConfig } from "framer-motion";
+     5→import {
+     6→  Clock,
+     7→  Instagram,
+     8→  Mail,
+     9→  Menu,
+    10→  MessageCircle,
+    11→  Phone,
+    12→  Quote,
+    13→  ShieldCheck,
+    14→  Sparkles,
+    15→} from "lucide-react";
+    16→import type {
+    17→  Position,
+    18→  PositionPublicStats,
+    19→  SectionVisibility,
+    20→  SiteContent,
+    21→} from "@/lib/types";
+    22→import { Badge } from "@/components/ui/badge";
+    23→import { Button } from "@/components/ui/button";
+    24→import { Card } from "@/components/ui/card";
+    25→import {
+    26→  Accordion,
+    27→  AccordionContent,
+    28→  AccordionItem,
+    29→  AccordionTrigger,
+    30→} from "@/components/ui/accordion";
+    31→import {
+    32→  Sheet,
+    33→  SheetContent,
+    34→  SheetDescription,
+    35→  SheetHeader,
+    36→  SheetTitle,
+    37→  SheetTrigger,
+    38→} from "@/components/ui/sheet";
+    39→import { cn } from "@/lib/utils";
+    40→import { LangProvider, useLang } from "@/components/landing/lang-context";
+    41→import {
+    42→  AnimatedNumber,
+    43→  BrandMark,
+    44→  Container,
+    45→  FadeIn,
+    46→  HoverLift,
+    47→  ICON_TILE,
+    48→  ROSE_BADGE,
+    49→  Stagger,
+    50→  StaggerItem,
+    51→} from "@/components/landing/primitives";
+    52→import {
+    53→  buildPositionUrl,
+    54→  employmentTypeOf,
+    55→  instagramHref,
+    56→  whatsappHref,
+    57→} from "@/components/landing/landing-utils";
+    58→import { LangToggle } from "@/components/landing/lang-toggle";
+    59→import { ThemeToggle } from "@/components/landing/theme-toggle";
+    60→import { DeadlineCountdown } from "@/components/landing/deadline-countdown";
+    61→import { ShareMenu } from "@/components/landing/share-menu";
+    62→import { PositionsSection } from "@/components/landing/positions-section";
+    63→import { ApplyWizard } from "@/components/landing/apply-wizard";
+    64→import { StatusCheckSection } from "@/components/landing/status-check";
+    65→import { SubscribeSection } from "@/components/landing/subscribe-section";
+    66→import { ChatWidget } from "@/components/landing/chat-widget";
+    67→import { BenefitIcon } from "@/components/landing/benefit-icon";
+    68→
+    69→type LandingPageProps = {
+    70→  content: SiteContent;
+    71→  positions: Position[];
+    72→  stats: { openRoles: number; totalApplications: number };
+    73→  /** Kuota & jumlah lamaran per posisi (dari PublicContentResponse.positionStats) untuk badge publik. */
+    74→  positionStats?: Record<string, PositionPublicStats>;
+    75→  /** Slug posisi dari deep link /?posisi=slug — dipakai untuk membuka dialog detail posisi otomatis. */
+    76→  initialPosisiSlug?: string | null;
+    77→};
+    78→
+    79→// Link nav/footer mengikuti visibilitas section terkait —
+    80→// anchor menuju section yang disembunyikan tidak boleh dirender.
+    81→function useNavLinks(sections: SectionVisibility) {
+    82→  const { t } = useLang();
+    83→  return [
+    84→    { key: "positions" as const, href: "#posisi", label: t.nav.positions },
+    85→    { key: "benefits" as const, href: "#benefit", label: t.nav.benefits },
+    86→    { key: "steps" as const, href: "#cara-lamar", label: t.nav.howToApply },
+    87→    { key: "statusCheck" as const, href: "#status", label: t.nav.status },
+    88→    { key: "faq" as const, href: "#faq", label: t.nav.faq },
+    89→  ].filter((link) => sections[link.key]);
+    90→}
+    91→
+    92→const TRUST_ICONS = [ShieldCheck, Clock, MessageCircle];
+    93→
+    94→// Status "halaman sudah digulir" via useSyncExternalStore (murah, tanpa setState di effect).
+    95→function useScrolled(threshold = 8): boolean {
+    96→  return useSyncExternalStore(
+    97→    (notify) => {
+    98→      window.addEventListener("scroll", notify, { passive: true });
+    99→      return () => window.removeEventListener("scroll", notify);
+   100→    },
+   101→    () => window.scrollY > threshold,
+   102→    () => false,
+   103→  );
+   104→}
+   105→
+   106→function Navbar({
+   107→  siteName,
+   108→  tagline,
+   109→  sections,
+   110→}: {
+   111→  siteName: string;
+   112→  tagline: string;
+   113→  sections: SectionVisibility;
+   114→}) {
+   115→  const { t } = useLang();
+   116→  const [mobileOpen, setMobileOpen] = useState(false);
+   117→  const navLinks = useNavLinks(sections);
+   118→  // Hamburger seluler hanya bila isinya ada: link nav atau CTA lamaran.
+   119→  const hasMobileMenu = navLinks.length > 0 || sections.applyForm;
+   120→  const scrolled = useScrolled();
+   121→
+   122→  return (
+   123→    <header
+   124→      className={cn(
+   125→        "sticky top-0 z-50 border-b bg-background/80 backdrop-blur transition-[box-shadow] duration-300",
+   126→        scrolled && "shadow-sm",
+   127→      )}
+   128→    >
+   129→      <Container
+   130→        className={cn(
+   131→          "flex h-16 items-center justify-between gap-4 transition-[height] duration-300",
+   132→          scrolled && "h-14",
+   133→        )}
+   134→      >
+   135→        <div className="flex min-w-0 items-center gap-3">
+   136→          <BrandMark />
+   137→          <div className="min-w-0 leading-tight">
+   138→            <p className="truncate font-bold">{siteName}</p>
+   139→            <p className="hidden truncate text-xs text-muted-foreground sm:block">
+   140→              {tagline}
+   141→            </p>
+   142→          </div>
+   143→        </div>
+   144→
+   145→        {navLinks.length > 0 ? (
+   146→          <nav
+   147→            aria-label={t.nav.mainNav}
+   148→            className="hidden items-center gap-1 lg:flex"
+   149→          >
+   150→            {navLinks.map((link) => (
+   151→              <a
+   152→                key={link.href}
+   153→                href={link.href}
+   154→                className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+   155→              >
+   156→                {link.label}
+   157→              </a>
+   158→            ))}
+   159→          </nav>
+   160→        ) : null}
+   161→
+   162→        <div className="flex items-center gap-2">
+   163→          <div className="hidden items-center gap-2 md:flex">
+   164→            <LangToggle />
+   165→            <ThemeToggle />
+   166→          </div>
+   167→          {sections.applyForm ? (
+   168→            <Button size="sm" asChild className="hidden md:inline-flex">
+   169→              <a href="#lamar">{t.nav.applyNow}</a>
+   170→            </Button>
+   171→          ) : null}
+   172→
+   173→          {hasMobileMenu ? (
+   174→            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+   175→              <SheetTrigger asChild>
+   176→                <Button
+   177→                  variant="ghost"
+   178→                  size="icon"
+   179→                  className="h-11 w-11 md:hidden"
+   180→                  aria-label={t.nav.openMenu}
+   181→                >
+   182→                  <Menu className="h-5 w-5" aria-hidden="true" />
+   183→                </Button>
+   184→              </SheetTrigger>
+   185→              <SheetContent side="right" className="w-80">
+   186→                <SheetHeader>
+   187→                  <SheetTitle className="flex items-center gap-2 text-base">
+   188→                    <BrandMark size="sm" />
+   189→                    {siteName}
+   190→                  </SheetTitle>
+   191→                  <SheetDescription className="sr-only">
+   192→                    {t.nav.mobileNav}
+   193→                  </SheetDescription>
+   194→                </SheetHeader>
+   195→                <nav
+   196→                  aria-label={t.nav.mobileNav}
+   197→                  className="flex flex-col gap-1 px-4"
+   198→                >
+   199→                  {navLinks.map((link) => (
+   200→                    <a
+   201→                      key={link.href}
+   202→                      href={link.href}
+   203→                      onClick={() => setMobileOpen(false)}
+   204→                      className="flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+   205→                    >
+   206→                      {link.label}
+   207→                    </a>
+   208→                  ))}
+   209→                  {sections.applyForm ? (
+   210→                    <Button asChild className="mt-3">
+   211→                      <a href="#lamar" onClick={() => setMobileOpen(false)}>
+   212→                        {t.nav.applyNow}
+   213→                      </a>
+   214→                    </Button>
+   215→                  ) : null}
+   216→
+   217→                  <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4">
+   218→                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+   219→                      {t.aria.langToggle} / {t.aria.themeToggle}
+   220→                    </span>
+   221→                    <div className="flex items-center gap-2">
+   222→                      <LangToggle />
+   223→                      <ThemeToggle />
+   224→                    </div>
+   225→                  </div>
+   226→                </nav>
+   227→              </SheetContent>
+   228→            </Sheet>
+   229→          ) : null}
+   230→        </div>
+   231→      </Container>
+   232→    </header>
+   233→  );
+   234→}
+   235→
+   236→function Hero({
+   237→  content,
+   238→  stats,
+   239→  sections,
+   240→}: {
+   241→  content: SiteContent;
+   242→  stats: LandingPageProps["stats"];
+   243→  sections: SectionVisibility;
+   244→}) {
+   245→  const { t } = useLang();
+   246→
+   247→  return (
+   248→    <section className="relative overflow-hidden bg-zinc-950 text-zinc-50">
+   249→      <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
+   250→      {/* Glow blob rose mengambang pelan (loop y + opacity, hanya transform/opacity) */}
+   251→      <div
+   252→        aria-hidden="true"
+   253→        className="absolute -top-32 left-1/2 h-96 w-[44rem] max-w-full -translate-x-1/2"
+   254→      >
+   255→        <motion.div
+   256→          className="h-full w-full rounded-full bg-rose-600/20 blur-3xl"
+   257→          animate={{ y: [0, 24, 0], opacity: [0.75, 1, 0.75] }}
+   258→          transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
+   259→        />
+   260→      </div>
+   261→      <motion.div
+   262→        aria-hidden="true"
+   263→        className="absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-amber-500/10 blur-3xl"
+   264→        animate={{ y: [0, -18, 0], opacity: [0.7, 1, 0.7] }}
+   265→        transition={{ duration: 11, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
+   266→      />
+   267→
+   268→      <Container className="relative py-20 md:py-28">
+   269→        {/* Entrance berurutan: badge → judul → deskripsi → countdown → CTA → statistik */}
+   270→        <Stagger className="max-w-3xl" gap={0.09} delay={0.05}>
+   271→          <StaggerItem>
+   272→            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-zinc-300">
+   273→              <span
+   274→                className="dot-pulse h-2 w-2 rounded-full bg-emerald-400 text-emerald-400"
+   275→                aria-hidden="true"
+   276→              />
+   277→              {content.heroBadge}
+   278→            </div>
+   279→          </StaggerItem>
+   280→
+   281→          <StaggerItem>
+   282→            <h1 className="mt-6 text-4xl font-bold tracking-tight md:text-6xl">
+   283→              {content.heroTitle}{" "}
+   284→              {content.heroHighlight ? (
+   285→                <span className="text-gradient">{content.heroHighlight}</span>
+   286→              ) : null}
+   287→            </h1>
+   288→          </StaggerItem>
+   289→
+   290→          <StaggerItem>
+   291→            <p className="mt-6 max-w-2xl text-base text-zinc-400 md:text-lg">
+   292→              {content.heroDescription}
+   293→            </p>
+   294→          </StaggerItem>
+   295→
+   296→          {content.deadline ? (
+   297→            <StaggerItem>
+   298→              <DeadlineCountdown deadline={content.deadline} />
+   299→            </StaggerItem>
+   300→          ) : null}
+   301→
+   302→          <StaggerItem>
+   303→            <div className="mt-8 flex flex-wrap items-center gap-3">
+   304→              {sections.applyForm ? (
+   305→                <Button size="lg" className="h-11" asChild>
+   306→                  <a href="#lamar">{t.nav.applyNow}</a>
+   307→                </Button>
+   308→              ) : null}
+   309→              {sections.positions ? (
+   310→                <Button
+   311→                  size="lg"
+   312→                  variant="outline"
+   313→                  className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+   314→                  asChild
+   315→                >
+   316→                  <a href="#posisi">{t.hero.viewPositions}</a>
+   317→                </Button>
+   318→              ) : null}
+   319→              <ShareMenu dark siteName={content.siteName} tagline={content.tagline} />
+   320→            </div>
+   321→          </StaggerItem>
+   322→
+   323→          <StaggerItem className="mt-14">
+   324→            <div className="grid grid-cols-3 divide-x divide-white/10 border-t border-white/10 pt-8">
+   325→              <div className="min-w-0 pr-3 sm:pr-10">
+   326→                <p className="text-xl font-bold tabular-nums sm:text-2xl md:text-3xl">
+   327→                  <AnimatedNumber value={stats.openRoles} />
+   328→                </p>
+   329→                <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+   330→                  {t.hero.statsOpen}
+   331→                </p>
+   332→              </div>
+   333→              <div className="min-w-0 px-3 sm:px-10">
+   334→                <p className="text-xl font-bold tabular-nums sm:text-2xl md:text-3xl">
+   335→                  <AnimatedNumber value={stats.totalApplications} suffix="+" />
+   336→                </p>
+   337→                <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+   338→                  {t.hero.statsApps}
+   339→                </p>
+   340→              </div>
+   341→              <div className="min-w-0 pl-3 sm:pl-10">
+   342→                <p className="text-xl font-bold tabular-nums sm:text-2xl md:text-3xl">
+   343→                  <AnimatedNumber value={100} suffix="%" />
+   344→                </p>
+   345→                <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+   346→                  {t.hero.statsRemote}
+   347→                </p>
+   348→              </div>
+   349→            </div>
+   350→          </StaggerItem>
+   351→        </Stagger>
+   352→      </Container>
+   353→    </section>
+   354→  );
+   355→}
+   356→
+   357→function AboutSection({
+   358→  content,
+   359→  stats,
+   360→}: {
+   361→  content: SiteContent;
+   362→  stats: LandingPageProps["stats"];
+   363→}) {
+   364→  const { t } = useLang();
+   365→
+   366→  return (
+   367→    <section className="bg-muted/40 py-16 md:py-24">
+   368→      <Container>
+   369→        <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+   370→          <FadeIn>
+   371→            <Badge variant="outline" className={ROSE_BADGE}>
+   372→              {t.about.badge}
+   373→            </Badge>
+   374→            <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   375→              {content.aboutTitle}
+   376→            </h2>
+   377→            <p className="mt-4 text-muted-foreground md:text-lg">
+   378→              {content.aboutDescription}
+   379→            </p>
+   380→          </FadeIn>
+   381→
+   382→          <FadeIn delay={0.1}>
+   383→            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-600 to-amber-500 p-8 text-white shadow-sm">
+   384→              <Sparkles className="h-10 w-10" aria-hidden="true" />
+   385→              <p className="mt-4 text-xl font-semibold">{t.about.cardTitle}</p>
+   386→              <p className="mt-2 text-sm text-white/80">{t.about.cardBody}</p>
+   387→            </div>
+   388→            {/* Padding/gap mengecil di layar sangat kecil agar 3 kolom tidak sesak */}
+   389→            <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-4">
+   390→              <HoverLift className="h-full">
+   391→                <Card className="h-full gap-1 rounded-2xl p-3 text-center transition-shadow hover:shadow-md sm:p-4">
+   392→                  <p className="text-lg font-bold tabular-nums sm:text-xl md:text-2xl">
+   393→                    <AnimatedNumber value={stats.openRoles} />
+   394→                  </p>
+   395→                  <p className="text-xs text-muted-foreground">{t.about.statActive}</p>
+   396→                </Card>
+   397→              </HoverLift>
+   398→              <HoverLift className="h-full">
+   399→                <Card className="h-full gap-1 rounded-2xl p-3 text-center transition-shadow hover:shadow-md sm:p-4">
+   400→                  <p className="text-lg font-bold tabular-nums sm:text-xl md:text-2xl">
+   401→                    <AnimatedNumber value={stats.totalApplications} suffix="+" />
+   402→                  </p>
+   403→                  <p className="text-xs text-muted-foreground">{t.about.statApps}</p>
+   404→                </Card>
+   405→              </HoverLift>
+   406→              <HoverLift className="h-full">
+   407→                <Card className="h-full gap-1 rounded-2xl p-3 text-center transition-shadow hover:shadow-md sm:p-4">
+   408→                  <p className="text-lg font-bold tabular-nums sm:text-xl md:text-2xl">
+   409→                    2 Jt+
+   410→                  </p>
+   411→                  <p className="text-xs text-muted-foreground">
+   412→                    {t.about.statCommunity}
+   413→                  </p>
+   414→                </Card>
+   415→              </HoverLift>
+   416→            </div>
+   417→          </FadeIn>
+   418→        </div>
+   419→      </Container>
+   420→    </section>
+   421→  );
+   422→}
+   423→
+   424→function BenefitsSection({ content }: { content: SiteContent }) {
+   425→  const { t } = useLang();
+   426→
+   427→  return (
+   428→    <section id="benefit" className="scroll-mt-24 bg-background py-16 md:py-24">
+   429→      <Container>
+   430→        <FadeIn className="max-w-2xl">
+   431→          <Badge variant="outline" className={ROSE_BADGE}>
+   432→            {t.benefits.badge}
+   433→          </Badge>
+   434→          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   435→            {t.benefits.title}
+   436→          </h2>
+   437→          <p className="mt-3 text-muted-foreground">{t.benefits.desc}</p>
+   438→        </FadeIn>
+   439→
+   440→        {content.benefits.length === 0 ? (
+   441→          <p className="mt-10 text-sm text-muted-foreground">{t.benefits.empty}</p>
+   442→        ) : (
+   443→          <Stagger className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+   444→            {content.benefits.map((benefit, index) => (
+   445→              <StaggerItem key={`${benefit.title}-${index}`} className="h-full">
+   446→                <HoverLift className="h-full">
+   447→                  <Card className="h-full gap-4 rounded-2xl p-6 transition-shadow hover:shadow-md">
+   448→                    <div className={cn("w-fit rounded-xl p-3", ICON_TILE)}>
+   449→                      <BenefitIcon name={benefit.icon} className="h-6 w-6" />
+   450→                    </div>
+   451→                    <h3 className="font-semibold">{benefit.title}</h3>
+   452→                    <p className="text-sm text-muted-foreground">
+   453→                      {benefit.description}
+   454→                    </p>
+   455→                  </Card>
+   456→                </HoverLift>
+   457→              </StaggerItem>
+   458→            ))}
+   459→          </Stagger>
+   460→        )}
+   461→      </Container>
+   462→    </section>
+   463→  );
+   464→}
+   465→
+   466→function HowToApplySection() {
+   467→  const { t } = useLang();
+   468→
+   469→  return (
+   470→    <section id="cara-lamar" className="scroll-mt-24 bg-muted/40 py-16 md:py-24">
+   471→      <Container>
+   472→        <FadeIn className="max-w-2xl">
+   473→          <Badge variant="outline" className={ROSE_BADGE}>
+   474→            {t.howTo.badge}
+   475→          </Badge>
+   476→          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   477→            {t.howTo.title}
+   478→          </h2>
+   479→          <p className="mt-3 text-muted-foreground">{t.howTo.desc}</p>
+   480→        </FadeIn>
+   481→
+   482→        <Stagger className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+   483→          {t.howTo.steps.map((step, index) => (
+   484→            <StaggerItem key={step.title} className="h-full">
+   485→              <HoverLift className="h-full">
+   486→                <Card className="h-full gap-3 rounded-2xl p-6 transition-shadow hover:shadow-md">
+   487→                  <span
+   488→                    aria-hidden="true"
+   489→                    className="text-4xl font-bold text-rose-600/20 dark:text-rose-400/20"
+   490→                  >
+   491→                    {String(index + 1).padStart(2, "0")}
+   492→                  </span>
+   493→                  <h3 className="font-semibold">{step.title}</h3>
+   494→                  <p className="text-sm text-muted-foreground">{step.description}</p>
+   495→                </Card>
+   496→              </HoverLift>
+   497→            </StaggerItem>
+   498→          ))}
+   499→        </Stagger>
+   500→      </Container>
+   501→    </section>
+   502→  );
+   503→}
+   504→
+   505→function ApplySection({
+   506→  content,
+   507→  positions,
+   508→  positionId,
+   509→  onPositionIdChange,
+   510→}: {
+   511→  content: SiteContent;
+   512→  positions: Position[];
+   513→  positionId: string;
+   514→  onPositionIdChange: (positionId: string) => void;
+   515→}) {
+   516→  const { t } = useLang();
+   517→
+   518→  return (
+   519→    <section id="lamar" className="scroll-mt-24 bg-background py-16 md:py-24">
+   520→      <Container>
+   521→        <div className="grid grid-cols-1 gap-8 lg:grid-cols-5 lg:gap-10">
+   522→          <FadeIn className="lg:col-span-2">
+   523→            <Badge variant="outline" className={ROSE_BADGE}>
+   524→              {t.apply.badge}
+   525→            </Badge>
+   526→            <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   527→              {t.apply.title}
+   528→            </h2>
+   529→            <p className="mt-4 text-muted-foreground">{t.apply.desc}</p>
+   530→
+   531→            <ul className="mt-6 space-y-3">
+   532→              {t.apply.trust.map((line, index) => {
+   533→                const TrustIcon = TRUST_ICONS[index] ?? ShieldCheck;
+   534→                return (
+   535→                  <li key={line} className="flex items-start gap-3">
+   536→                    <TrustIcon
+   537→                      className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-400"
+   538→                      aria-hidden="true"
+   539→                    />
+   540→                    <span className="text-sm text-muted-foreground">{line}</span>
+   541→                  </li>
+   542→                );
+   543→              })}
+   544→            </ul>
+   545→
+   546→            <Card className="mt-8 gap-3 rounded-2xl p-6">
+   547→              <p className="text-sm font-semibold">{t.apply.contactTitle}</p>
+   548→              <a
+   549→                href={`mailto:${content.contactEmail}`}
+   550→                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   551→              >
+   552→                <Mail
+   553→                  className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   554→                  aria-hidden="true"
+   555→                />
+   556→                <span className="break-all">{content.contactEmail}</span>
+   557→              </a>
+   558→              <a
+   559→                href={whatsappHref(content.contactWhatsapp)}
+   560→                target="_blank"
+   561→                rel="noopener noreferrer"
+   562→                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   563→              >
+   564→                <Phone
+   565→                  className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   566→                  aria-hidden="true"
+   567→                />
+   568→                <span>
+   569→                  {t.apply.contactWhatsapp} {content.contactWhatsapp}
+   570→                </span>
+   571→              </a>
+   572→              <a
+   573→                href={instagramHref(content.instagram)}
+   574→                target="_blank"
+   575→                rel="noopener noreferrer"
+   576→                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   577→              >
+   578→                <Instagram
+   579→                  className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   580→                  aria-hidden="true"
+   581→                />
+   582→                <span className="break-all">
+   583→                  {content.instagram || "Instagram"}
+   584→                </span>
+   585→              </a>
+   586→            </Card>
+   587→          </FadeIn>
+   588→
+   589→          <FadeIn delay={0.1} className="lg:col-span-3">
+   590→            <Card className="rounded-2xl p-6 md:p-8">
+   591→              <ApplyWizard
+   592→                positions={positions}
+   593→                positionId={positionId}
+   594→                onPositionIdChange={onPositionIdChange}
+   595→              />
+   596→            </Card>
+   597→          </FadeIn>
+   598→        </div>
+   599→      </Container>
+   600→    </section>
+   601→  );
+   602→}
+   603→
+   604→function VoicesSection({ content }: { content: SiteContent }) {
+   605→  const { t } = useLang();
+   606→
+   607→  if (content.teamMembers.length === 0) return null;
+   608→
+   609→  return (
+   610→    <section className="bg-background py-16 md:py-24">
+   611→      <Container>
+   612→        <FadeIn className="max-w-2xl">
+   613→          <Badge variant="outline" className={ROSE_BADGE}>
+   614→            {t.voices.badge}
+   615→          </Badge>
+   616→          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   617→            {t.voices.title}
+   618→          </h2>
+   619→          <p className="mt-3 text-muted-foreground">{t.voices.desc}</p>
+   620→        </FadeIn>
+   621→
+   622→        <Stagger className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+   623→          {content.teamMembers.map((member, index) => (
+   624→            <StaggerItem key={`${member.name}-${index}`} className="h-full">
+   625→              <HoverLift className="h-full">
+   626→                <Card className="h-full gap-4 rounded-2xl p-6 transition-shadow hover:shadow-md">
+   627→                  <Quote
+   628→                    className="h-7 w-7 text-rose-600 dark:text-rose-400"
+   629→                    aria-hidden="true"
+   630→                  />
+   631→                  <p className="text-sm italic leading-relaxed">
+   632→                    &ldquo;{member.quote}&rdquo;
+   633→                  </p>
+   634→                  <div className="mt-auto flex items-center gap-3 border-t pt-4">
+   635→                    <span
+   636→                      aria-hidden="true"
+   637→                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-600 to-amber-500 text-sm font-bold text-white"
+   638→                    >
+   639→                      {member.name
+   640→                        .trim()
+   641→                        .split(/\s+/)
+   642→                        .slice(0, 2)
+   643→                        .map((part) => part.charAt(0).toUpperCase())
+   644→                        .join("") || "?"}
+   645→                    </span>
+   646→                    <div className="leading-tight">
+   647→                      <p className="text-sm font-semibold">{member.name}</p>
+   648→                      <p className="text-xs text-muted-foreground">{member.role}</p>
+   649→                    </div>
+   650→                  </div>
+   651→                </Card>
+   652→              </HoverLift>
+   653→            </StaggerItem>
+   654→          ))}
+   655→        </Stagger>
+   656→      </Container>
+   657→    </section>
+   658→  );
+   659→}
+   660→
+   661→function FaqSection({ content }: { content: SiteContent }) {
+   662→  const { t } = useLang();
+   663→
+   664→  return (
+   665→    <section id="faq" className="scroll-mt-24 bg-muted/40 py-16 md:py-24">
+   666→      <Container>
+   667→        <FadeIn className="mx-auto max-w-3xl">
+   668→          <div className="text-center">
+   669→            <Badge variant="outline" className={ROSE_BADGE}>
+   670→              {t.faq.badge}
+   671→            </Badge>
+   672→            <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   673→              {t.faq.title}
+   674→            </h2>
+   675→            <p className="mt-3 text-muted-foreground">{t.faq.desc}</p>
+   676→          </div>
+   677→
+   678→          {content.faqs.length === 0 ? (
+   679→            <p className="mt-10 text-center text-sm text-muted-foreground">
+   680→              {t.faq.empty}
+   681→            </p>
+   682→          ) : (
+   683→            <Card className="mt-10 rounded-2xl px-6 py-2 md:px-8">
+   684→              <Accordion type="single" collapsible>
+   685→                {content.faqs.map((faq, index) => (
+   686→                  <AccordionItem
+   687→                    key={`${faq.question}-${index}`}
+   688→                    value={`faq-${index}`}
+   689→                  >
+   690→                    <AccordionTrigger className="text-left text-sm font-medium md:text-base">
+   691→                      {faq.question}
+   692→                    </AccordionTrigger>
+   693→                    <AccordionContent className="text-sm text-muted-foreground">
+   694→                      {faq.answer}
+   695→                    </AccordionContent>
+   696→                  </AccordionItem>
+   697→                ))}
+   698→              </Accordion>
+   699→            </Card>
+   700→          )}
+   701→        </FadeIn>
+   702→      </Container>
+   703→    </section>
+   704→  );
+   705→}
+   706→
+   707→function FinalCtaSection({
+   708→  content,
+   709→  sections,
+   710→}: {
+   711→  content: SiteContent;
+   712→  sections: SectionVisibility;
+   713→}) {
+   714→  const { t } = useLang();
+   715→
+   716→  return (
+   717→    <section className="bg-background py-16 md:py-24">
+   718→      <Container>
+   719→        <FadeIn>
+   720→          <div className="relative overflow-hidden rounded-3xl bg-zinc-950 px-6 py-16 text-center text-zinc-50 md:px-12 md:py-20">
+   721→            <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
+   722→            <div
+   723→              aria-hidden="true"
+   724→              className="absolute -top-24 left-1/2 h-72 w-[36rem] max-w-full -translate-x-1/2"
+   725→            >
+   726→              <motion.div
+   727→                className="h-full w-full rounded-full bg-rose-600/20 blur-3xl"
+   728→                animate={{ y: [0, 18, 0], opacity: [0.7, 1, 0.7] }}
+   729→                transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+   730→              />
+   731→            </div>
+   732→            <div className="relative mx-auto max-w-2xl">
+   733→              <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
+   734→                {t.cta.title}
+   735→              </h2>
+   736→              <p className="mt-4 text-zinc-400">{t.cta.desc}</p>
+   737→              <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+   738→                {sections.applyForm ? (
+   739→                  <Button size="lg" className="h-11" asChild>
+   740→                    <a href="#lamar">{t.cta.apply}</a>
+   741→                  </Button>
+   742→                ) : null}
+   743→                <Button
+   744→                  size="lg"
+   745→                  variant="outline"
+   746→                  className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+   747→                  asChild
+   748→                >
+   749→                  <a
+   750→                    href={whatsappHref(content.contactWhatsapp)}
+   751→                    target="_blank"
+   752→                    rel="noopener noreferrer"
+   753→                  >
+   754→                    {t.cta.whatsapp}
+   755→                  </a>
+   756→                </Button>
+   757→              </div>
+   758→            </div>
+   759→          </div>
+   760→        </FadeIn>
+   761→      </Container>
+   762→    </section>
+   763→  );
+   764→}
+   765→
+   766→function Footer({
+   767→  content,
+   768→  sections,
+   769→}: {
+   770→  content: SiteContent;
+   771→  sections: SectionVisibility;
+   772→}) {
+   773→  const { t } = useLang();
+   774→  const navLinks = useNavLinks(sections);
+   775→
+   776→  return (
+   777→    <footer className="mt-auto border-t bg-background">
+   778→      <Container className="py-12 md:py-16">
+   779→        <div className="grid gap-10 md:grid-cols-3">
+   780→          <div>
+   781→            <div className="flex items-center gap-3">
+   782→              <BrandMark />
+   783→              <div className="leading-tight">
+   784→                <p className="font-bold">{content.siteName}</p>
+   785→                <p className="text-xs text-muted-foreground">{content.tagline}</p>
+   786→              </div>
+   787→            </div>
+   788→            <p className="mt-4 max-w-sm text-sm text-muted-foreground">
+   789→              {content.footerText}
+   790→            </p>
+   791→          </div>
+   792→
+   793→          {navLinks.length > 0 ? (
+   794→            <nav aria-label={t.footer.nav}>
+   795→              <h3 className="text-sm font-semibold">{t.footer.nav}</h3>
+   796→              <ul className="mt-4 space-y-1">
+   797→                {navLinks.map((link) => (
+   798→                  <li key={link.href}>
+   799→                    <a
+   800→                      href={link.href}
+   801→                      className="inline-flex min-h-11 items-center text-sm text-muted-foreground transition-colors hover:text-foreground"
+   802→                    >
+   803→                      {link.label}
+   804→                    </a>
+   805→                  </li>
+   806→                ))}
+   807→              </ul>
+   808→            </nav>
+   809→          ) : null}
+   810→
+   811→          <div>
+   812→            <h3 className="text-sm font-semibold">{t.footer.contact}</h3>
+   813→            <ul className="mt-4 space-y-1">
+   814→              <li>
+   815→                <a
+   816→                  href={`mailto:${content.contactEmail}`}
+   817→                  className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   818→                >
+   819→                  <Mail
+   820→                    className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   821→                    aria-hidden="true"
+   822→                  />
+   823→                  <span className="break-all">{content.contactEmail}</span>
+   824→                </a>
+   825→              </li>
+   826→              <li>
+   827→                <a
+   828→                  href={whatsappHref(content.contactWhatsapp)}
+   829→                  target="_blank"
+   830→                  rel="noopener noreferrer"
+   831→                  className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   832→                >
+   833→                  <Phone
+   834→                    className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   835→                    aria-hidden="true"
+   836→                  />
+   837→                  <span>{t.footer.whatsapp}</span>
+   838→                </a>
+   839→              </li>
+   840→              <li>
+   841→                <a
+   842→                  href={instagramHref(content.instagram)}
+   843→                  target="_blank"
+   844→                  rel="noopener noreferrer"
+   845→                  className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   846→                >
+   847→                  <Instagram
+   848→                    className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400"
+   849→                    aria-hidden="true"
+   850→                  />
+   851→                  <span className="break-all">
+   852→                    {content.instagram || "Instagram"}
+   853→                  </span>
+   854→                </a>
+   855→              </li>
+   856→            </ul>
+   857→          </div>
+   858→        </div>
+   859→
+   860→        {/* Garis bawah footer: hak cipta + catatan kecil. */}
+   861→        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t pt-6 text-center sm:flex-row sm:text-left">
+   862→          <p className="text-xs text-muted-foreground">{content.footerText}</p>
+   863→          <p className="text-xs text-muted-foreground/70">
+   864→            {content.siteName} — {content.tagline}
+   865→          </p>
+   866→        </div>
+   867→      </Container>
+   868→    </footer>
+   869→  );
+   870→}
+   871→
+   872→/**
+   873→ * JSON-LD JobPosting untuk SEO (dipasang/dibongkar sesuai perubahan positions).
+   874→ * Bila focusSlug cocok dengan sebuah posisi (deep link /?posisi=slug), emit SATU
+   875→ * schema JobPosting posisi tersebut — lengkap dengan url deep link — else semua posisi.
+   876→ */
+   877→function useJobPostingJsonLd(
+   878→  positions: Position[],
+   879→  siteName: string,
+   880→  focusSlug?: string | null,
+   881→) {
+   882→  useEffect(() => {
+   883→    const focused = focusSlug
+   884→      ? (positions.find((position) => position.slug === focusSlug) ?? null)
+   885→      : null;
+   886→    const jobPostings = focused
+   887→      ? [
+   888→          {
+   889→            "@context": "https://schema.org",
+   890→            "@type": "JobPosting",
+   891→            title: focused.title,
+   892→            description: focused.description.trim().slice(0, 300),
+   893→            hiringOrganization: { "@type": "Organization", name: siteName },
+   894→            jobLocationType: "TELECOMMUTE",
+   895→            employmentType: employmentTypeOf(focused.type),
+   896→            datePosted: focused.createdAt,
+   897→            ...(focused.closesAt ? { validThrough: focused.closesAt } : {}),
+   898→            ...(focused.slug ? { url: buildPositionUrl(focused) } : {}),
+   899→          },
+   900→        ]
+   901→      : positions.map((position) => ({
+   902→          "@context": "https://schema.org",
+   903→          "@type": "JobPosting",
+   904→          title: position.title,
+   905→          description: position.description,
+   906→          hiringOrganization: { "@type": "Organization", name: siteName },
+   907→          jobLocationType: "TELECOMMUTE",
+   908→          employmentType: employmentTypeOf(position.type),
+   909→          datePosted: position.createdAt,
+   910→          ...(position.closesAt ? { validThrough: position.closesAt } : {}),
+   911→        }));
+   912→    const script = document.createElement("script");
+   913→    script.id = "jobposting-ld";
+   914→    script.type = "application/ld+json";
+   915→    script.textContent = JSON.stringify(jobPostings);
+   916→    document.head.appendChild(script);
+   917→    return () => {
+   918→      document.getElementById("jobposting-ld")?.remove();
+   919→    };
+   920→  }, [positions, siteName, focusSlug]);
+   921→}
+   922→
+   923→function LandingShell({
+   924→  content,
+   925→  positions,
+   926→  stats,
+   927→  positionStats,
+   928→  initialPosisiSlug,
+   929→}: LandingPageProps) {
+   930→  const [selectedPositionId, setSelectedPositionId] = useState("");
+   931→  // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin).
+   932→  const sections = content.sections;
+   933→
+   934→  useJobPostingJsonLd(positions, content.siteName, initialPosisiSlug);
+   935→
+   936→  const handleApplyPosition = (positionId: string) => {
+   937→    setSelectedPositionId(positionId);
+   938→    document.getElementById("lamar")?.scrollIntoView({ behavior: "smooth" });
+   939→  };
+   940→
+   941→  return (
+   942→    <MotionConfig reducedMotion="user">
+   943→      <div className="flex min-h-screen flex-col">
+   944→        <Navbar
+   945→          siteName={content.siteName}
+   946→          tagline={content.tagline}
+   947→          sections={sections}
+   948→        />
+   949→        <main className="flex-1">
+   950→          {sections.hero ? (
+   951→            <Hero content={content} stats={stats} sections={sections} />
+   952→          ) : null}
+   953→          {sections.positions ? (
+   954→            <PositionsSection
+   955→              positions={positions}
+   956→              siteName={content.siteName}
+   957→              canApply={sections.applyForm}
+   958→              onApply={handleApplyPosition}
+   959→              positionStats={positionStats}
+   960→              initialSlug={initialPosisiSlug}
+   961→            />
+   962→          ) : null}
+   963→          {sections.about ? <AboutSection content={content} stats={stats} /> : null}
+   964→          {sections.benefits ? <BenefitsSection content={content} /> : null}
+   965→          {sections.steps ? <HowToApplySection /> : null}
+   966→          {sections.applyForm ? (
+   967→            <ApplySection
+   968→              content={content}
+   969→              positions={positions}
+   970→              positionId={selectedPositionId}
+   971→              onPositionIdChange={setSelectedPositionId}
+   972→            />
+   973→          ) : null}
+   974→          {sections.statusCheck ? <StatusCheckSection /> : null}
+   975→          {sections.testimonials ? <VoicesSection content={content} /> : null}
+   976→          {sections.faq ? <FaqSection content={content} /> : null}
+   977→          {sections.finalCta ? (
+   978→            <FinalCtaSection content={content} sections={sections} />
+   979→          ) : null}
+   980→          {sections.subscribe ? <SubscribeSection /> : null}
+   981→        </main>
+   982→        <Footer content={content} sections={sections} />
+   983→        {content.chatbotEnabled && sections.chatbot ? <ChatWidget /> : null}
+   984→      </div>
+   985→    </MotionConfig>
+   986→  );
+   987→}
+   988→
+   989→export function LandingPage(props: LandingPageProps) {
+   990→  return (
+   991→    <LangProvider>
+   992→      <LandingShell {...props} />
+   993→    </LangProvider>
+   994→  );
+   995→}
+   996→
