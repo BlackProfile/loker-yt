@@ -81,6 +81,21 @@ model Position {
   checklistTemplate  String  @default("[]") // JSON string[] checklist evaluasi
   noteTemplates      String  @default("[]") // JSON string[] template catatan admin
   views              Int     @default(0) // jumlah view dialog detail (publik)
+
+  // Wawancara per lowongan (Zoom/Google Meet/onsite)
+  interviewMode      String  @default("ONLINE") // mode default: ONLINE | ONSITE
+  interviewPlatform  String  @default("GOOGLE_MEET") // platform default: GOOGLE_MEET | ZOOM | MICROSOFT_TEAMS | WHATSAPP | TELEPON | LAINNYA
+  interviewDuration  Int     @default(45) // durasi default (menit)
+  interviewCriteria  String  @default("[]") // JSON string[] kriteria scorecard wawancara
+  interviewInviteTemplate String? // template pesan undangan ({nama},{posisi},{tanggal},{jam},{link},{mode})
+  offerTemplate      String? // template pesan penawaran ({nama},{posisi},{gaji},{tanggal},{deadline})
+  welcomeTemplate    String? // template pesan selamat datang ({nama},{posisi},{tanggal})
+
+  // Offer & onboarding per lowongan
+  probationMonths    Int     @default(3) // lama masa percobaan (bulan)
+  onboardingDocs     String  @default("[]") // JSON string[] dokumen wajib onboarding
+  reapplyCooldownDays Int    @default(0) // jeda minimal lamar ulang setelah ditolak (hari); 0 = bebas
+  autoCloseOnHired   Boolean @default(true) // tandai kuota terpenuhi otomatis saat kandidat diterima
 }
 
 // Aset file yang diunggah pelamar (CV, audio intro)
