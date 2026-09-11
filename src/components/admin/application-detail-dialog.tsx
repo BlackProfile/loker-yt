@@ -235,6 +235,7 @@ export function ApplicationDetailDialog({
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<Interview | null>(null);
   const [sessionCreateOpen, setSessionCreateOpen] = useState(false);
+  const [createNonce, setCreateNonce] = useState(0);
 
   // Panel Tolak Lamaran.
   const [rejectReason, setRejectReason] = useState<RejectionReason | "">("");
@@ -948,7 +949,11 @@ export function ApplicationDetailDialog({
                     variant="outline"
                     size="sm"
                     className="ml-auto h-11 sm:h-8"
-                    onClick={() => setSessionCreateOpen(true)}
+                    onClick={() => {
+                      // Nonce memastikan dialog create termuat dengan form bersih.
+                      setCreateNonce((n) => n + 1);
+                      setSessionCreateOpen(true);
+                    }}
                   >
                     <CalendarPlus className="size-4" aria-hidden="true" />
                     Jadwalkan Wawancara
@@ -1867,6 +1872,7 @@ export function ApplicationDetailDialog({
             position: pos,
           }}
           position={pos}
+          resetKey={createNonce}
           onSaved={handleSessionSaved}
           onDeleted={handleSessionDeleted}
         />

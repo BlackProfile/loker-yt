@@ -171,6 +171,8 @@ type Props = {
   interview: Interview | null;
   /** Posisi terkait (untuk default mode/platform/durasi, kriteria & template). */
   position: Position | null;
+  /** Pengubah key tambahan (mis. nonce) agar mode create selalu form bersih. */
+  resetKey?: string | number;
   onSaved: (interview: Interview, application?: Application) => void;
   onDeleted?: (id: string) => void;
 };
@@ -178,13 +180,19 @@ type Props = {
 /* -------------------------------- Komponen -------------------------------- */
 
 export function InterviewSessionDialog(props: Props) {
-  const { interview, create } = props;
+  const { interview, create, resetKey } = props;
   if (!interview && !create) return null;
   // Key memastikan state form bersih saat berganti sesi/mode tanpa
   // setState di effect (pola sama dengan dialog form posisi).
+  // updatedAt menyertakan key edit agar form ikut termuat ulang saat sesi
+  // berubah di server; resetKey (nonce) memuat ulang mode create tiap buka.
   return (
     <InterviewSessionDialogInner
-      key={interview ? `edit-${interview.id}` : `create-${create?.applicationId}`}
+      key={
+        interview
+          ? `edit-${interview.id}-${interview.updatedAt}`
+          : `create-${create?.applicationId ?? "new"}-${resetKey ?? 0}`
+      }
       {...props}
     />
   );
