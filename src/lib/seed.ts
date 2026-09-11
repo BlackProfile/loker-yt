@@ -1,6 +1,7 @@
 // Seed data awal + helper serialisasi & filter (SERVER-ONLY — jangan diimpor dari komponen klien).
 import type {
   Application as ApplicationRecordModel,
+  Interview as InterviewRecordModel,
   Prisma,
   Position as PositionRecordModel,
   AdminUser as AdminUserRecordModel,
@@ -17,6 +18,12 @@ import { hashPassword } from "@/lib/server-auth";
 import { generateUniqueTrackingCode } from "@/lib/tracking";
 import {
   AI_RECOMMENDATION_LABELS,
+  INTERVIEW_MODES,
+  INTERVIEW_PLATFORMS,
+  INTERVIEW_RECOMMENDATIONS,
+  INTERVIEW_STATUSES,
+  OFFER_STATUSES,
+  REJECTION_REASONS,
   SECTION_KEYS,
   type AdminUser,
   type AiRecommendation,
@@ -25,7 +32,15 @@ import {
   type AssignmentInfo,
   type BenefitItem,
   type FaqItem,
+  type Interview,
+  type InterviewMode,
+  type InterviewPlatform,
+  type InterviewRecommendation,
+  type InterviewStatus,
+  type OfferStatus,
+  type OnboardingDoc,
   type Position,
+  type RejectionReason,
   type ReplyTemplates,
   type ScreeningQuestion,
   type SectionVisibility,
@@ -164,6 +179,59 @@ export function parseTags(raw: string | null | undefined): string[] {
   }
 }
 
+/** Parse dokumen onboarding dari JSON string (aman terhadap nilai rusak). */
+export function parseOnboardingDocs(raw: string | null | undefined): OnboardingDoc[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const docs: OnboardingDoc[] = [];
+    for (let i = 0; i < parsed.length; i++) {
+      const obj = (parsed[i] && typeof parsed[i] === "object" ? parsed[i] : {}) as Record<string, unknown>;
+      const label = typeof obj.label === "string" ? obj.label.trim().slice(0, 120) : "";
+      if (!label) continue;
+      docs.push({
+        id: typeof obj.id === "string" && obj.id.trim() ? obj.id.trim().slice(0, 40) : `doc${i + 1}`,
+        label,
+        required: obj.required === true,
+        done: obj.done === true,
+        fileId: typeof obj.fileId === "string" && obj.fileId.trim() ? obj.fileId.trim() : null,
+      });
+    }
+    return docs.slice(0, 10);
+  } catch {
+    return [];
+  }
+}
+
+/** Sanitasi enum wawancara/offer/rejection dari input tak dikenal. */
+export function sanitizeInterviewMode(value: unknown): InterviewMode {
+  return value === "ONSITE" ? "ONSITE" : "ONLINE";
+}
+export function sanitizeInterviewPlatform(value: unknown): InterviewPlatform {
+  return (INTERVIEW_PLATFORMS as string[]).includes(String(value))
+    ? (value as InterviewPlatform)
+    : "GOOGLE_MEET";
+}
+export function sanitizeInterviewStatus(value: unknown): InterviewStatus | null {
+  return (INTERVIEW_STATUSES as string[]).includes(String(value))
+    ? (value as InterviewStatus)
+    : null;
+}
+export function sanitizeInterviewRecommendation(value: unknown): InterviewRecommendation | null {
+  return (INTERVIEW_RECOMMENDATIONS as string[]).includes(String(value))
+    ? (value as InterviewRecommendation)
+    : null;
+}
+export function sanitizeOfferStatus(value: unknown): OfferStatus | null {
+  return (OFFER_STATUSES as string[]).includes(String(value)) ? (value as OfferStatus) : null;
+}
+export function sanitizeRejectionReason(value: unknown): RejectionReason | null {
+  return (REJECTION_REASONS as string[]).includes(String(value))
+    ? (value as RejectionReason)
+    : null;
+}
+
 /** Ubah record Prisma Position menjadi bentuk tipe `Position` v3 (JSON fields terurai). */
 export function serializePosition(record: PositionRecordModel): Position {
   return {
@@ -207,6 +275,19 @@ export function serializePosition(record: PositionRecordModel): Position {
     checklistTemplate: parseRequirements(record.checklistTemplate),
     noteTemplates: parseRequirements(record.noteTemplates),
     views: record.views,
+
+    interviewMode: sanitizeInterviewMode(record.interviewMode),
+    interviewPlatform: sanitizeInterviewPlatform(record.interviewPlatform),
+    interviewDuration: record.interviewDuration,
+    interviewCriteria: parseRequirements(record.interviewCriteria),
+    interviewInviteTemplate: record.interviewInviteTemplate,
+
+    offerTemplate: record.offerTemplate,
+    welcomeTemplate: record.welcomeTemplate,
+    probationMonths: record.probationMonths,
+    onboardingDocs: parseRequirements(record.onboardingDocs),
+    reapplyCooldownDays: record.reapplyCooldownDays,
+    autoCloseOnHired: record.autoCloseOnHired,
   };
 }
 
@@ -253,7 +334,54 @@ export function serializeApplication(record: ApplicationRecord): Application {
     cvFileName: record.cvFile?.filename ?? null,
     introFileId: record.introFileId,
     introFileName: record.introFile?.filename ?? null,
+
+    rejectionReason: sanitizeRejectionReason(record.rejectionReason),
+    rejectionNote: record.rejectionNote,
+    rejectedAt: record.rejectedAt ? record.rejectedAt.toISOString() : null,
+
+    offerStatus: sanitizeOfferStatus(record.offerStatus),
+    offerSalary: record.offerSalary,
+    offerType: record.offerType,
+    offerStartDate: record.offerStartDate ? record.offerStartDate.toISOString() : null,
+    offerNote: record.offerNote,
+    offerDeadline: record.offerDeadline ? record.offerDeadline.toISOString() : null,
+    offerSentAt: record.offerSentAt ? record.offerSentAt.toISOString() : null,
+    offerRespondedAt: record.offerRespondedAt ? record.offerRespondedAt.toISOString() : null,
+    offerDeclineReason: record.offerDeclineReason,
+
+    hiredAt: record.hiredAt ? record.hiredAt.toISOString() : null,
+    probationEnd: record.probationEnd ? record.probationEnd.toISOString() : null,
+    onboardingDocs: parseOnboardingDocs(record.onboardingDocs),
+
     createdAt: record.createdAt.toISOString(),
+  };
+}
+
+/** Ubah record Prisma Interview menjadi tipe `Interview` (JSON fields terurai). */
+export function serializeInterview(record: InterviewRecordModel): Interview {
+  return {
+    id: record.id,
+    applicationId: record.applicationId,
+    round: record.round,
+    mode: sanitizeInterviewMode(record.mode),
+    platform: sanitizeInterviewPlatform(record.platform),
+    meetingLink: record.meetingLink,
+    address: record.address,
+    scheduledAt: record.scheduledAt.toISOString(),
+    durationMin: record.durationMin,
+    interviewers: parseTags(record.interviewers),
+    status: sanitizeInterviewStatus(record.status) ?? "SCHEDULED",
+    scores: parseScoreRecord(record.scores),
+    recommendation: sanitizeInterviewRecommendation(record.recommendation),
+    notes: record.notes,
+    recordingUrl: record.recordingUrl,
+    completedAt: record.completedAt ? record.completedAt.toISOString() : null,
+    rescheduleReason: record.rescheduleReason,
+    rescheduleProposedAt: record.rescheduleProposedAt
+      ? record.rescheduleProposedAt.toISOString()
+      : null,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
   };
 }
 

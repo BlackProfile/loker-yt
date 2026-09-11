@@ -170,3 +170,65 @@ export async function sendNewApplicationNotifications(app: {
     console.error("[notify] gagal menulis ActivityLog WEBHOOK:", message);
   }
 }
+
+/**
+ * Notifikasi event sistem generik (reminder wawancara, offer, hasil) ke Discord & Telegram.
+ * Tidak pernah melempar error. applicationId opsional untuk log per kandidat.
+ */
+export async function sendSystemEvent(params: {
+  title: string;
+  detail: string;
+  applicationId?: string;
+  action?: string; // default "NOTIFY"
+}): Promise<void> {
+  const action = params.action ?? "NOTIFY";
+  let discord: NotifyChannelResult = "nonaktif";
+  let telegram: NotifyChannelResult = "nonaktif";
+  try {
+    const settings = await getAutomationSettings();
+    const telegramText = `${params.title}\n${params.detail}`;
+    if (isValidDiscordWebhook(settings.discordWebhookUrl)) {
+      try {
+        discord = await sendDiscordNotification(settings.discordWebhookUrl, {
+          content: "",
+          embeds: [
+            {
+              title: params.title,
+              description: params.detail,
+              color: 15158332,
+            },
+          ],
+        });
+      } catch {
+        discord = "gagal";
+      }
+    }
+    if (settings.telegramBotToken && settings.telegramChatId) {
+      try {
+        telegram = await sendTelegramNotification(
+          settings.telegramBotToken,
+          settings.telegramChatId,
+          telegramText
+        );
+      } catch {
+        telegram = "gagal";
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[notify] sendSystemEvent gagal:", message);
+  }
+
+  try {
+    await db.activityLog.create({
+      data: {
+        applicationId: params.applicationId ?? null,
+        actor: "Sistem",
+        action,
+        detail: `${params.title} | Discord: ${discord}; Telegram: ${telegram}`,
+      },
+    });
+  } catch {
+    // logging tidak boleh menggagalkan alur utama
+  }
+}

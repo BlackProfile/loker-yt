@@ -10,6 +10,7 @@ const REALTIME_SECRET = process.env.REALTIME_SECRET ?? "lumina-realtime-secret";
 export const REALTIME_EVENTS = {
   positions: "positions:changed",
   applications: "applications:changed",
+  interviews: "interviews:changed",
   site: "site:changed",
 } as const;
 
