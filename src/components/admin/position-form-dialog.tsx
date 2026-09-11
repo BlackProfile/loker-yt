@@ -32,6 +32,7 @@ import {
   Briefcase,
   ClipboardCheck,
   Gift,
+  Handshake,
   Image as ImageIcon,
   ListChecks,
   Loader2,
@@ -43,6 +44,7 @@ import {
   Trash2,
   TriangleAlert,
   Upload,
+  Video,
   Wallet,
   Wand2,
   Workflow,
@@ -50,9 +52,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  INTERVIEW_MODE_LABELS,
+  INTERVIEW_MODES,
+  INTERVIEW_PLATFORM_LABELS,
+  INTERVIEW_PLATFORMS,
   POSITION_TYPES,
   type AiCoverResponse,
   type AdminUploadResponse,
+  type InterviewMode,
+  type InterviewPlatform,
   type Position,
   type PositionStatsRow,
   type ScreeningQuestion,
@@ -99,6 +107,17 @@ type FormState = {
   rubricCriteria: string[];
   checklistTemplate: string[];
   noteTemplates: string[];
+  interviewMode: InterviewMode;
+  interviewPlatform: InterviewPlatform;
+  interviewDuration: string;
+  interviewCriteria: string[];
+  interviewInviteTemplate: string;
+  offerTemplate: string;
+  welcomeTemplate: string;
+  probationMonths: string;
+  onboardingDocs: string[];
+  reapplyCooldownDays: string;
+  autoCloseOnHired: boolean;
 };
 
 const EMPTY_FORM: FormState = {
@@ -137,6 +156,17 @@ const EMPTY_FORM: FormState = {
   rubricCriteria: [],
   checklistTemplate: [],
   noteTemplates: [],
+  interviewMode: "ONLINE",
+  interviewPlatform: "GOOGLE_MEET",
+  interviewDuration: "45",
+  interviewCriteria: [],
+  interviewInviteTemplate: "",
+  offerTemplate: "",
+  welcomeTemplate: "",
+  probationMonths: "",
+  onboardingDocs: [],
+  reapplyCooldownDays: "",
+  autoCloseOnHired: false,
 };
 
 function buildFormState(p: Position): FormState {
@@ -178,6 +208,17 @@ function buildFormState(p: Position): FormState {
     rubricCriteria: [...p.rubricCriteria],
     checklistTemplate: [...p.checklistTemplate],
     noteTemplates: [...p.noteTemplates],
+    interviewMode: p.interviewMode,
+    interviewPlatform: p.interviewPlatform,
+    interviewDuration: String(p.interviewDuration ?? 45),
+    interviewCriteria: [...p.interviewCriteria],
+    interviewInviteTemplate: p.interviewInviteTemplate ?? "",
+    offerTemplate: p.offerTemplate ?? "",
+    welcomeTemplate: p.welcomeTemplate ?? "",
+    probationMonths: String(p.probationMonths ?? 0),
+    onboardingDocs: [...p.onboardingDocs],
+    reapplyCooldownDays: String(p.reapplyCooldownDays ?? 0),
+    autoCloseOnHired: p.autoCloseOnHired,
   };
 }
 
@@ -371,6 +412,30 @@ export function PositionFormDialog({
     }
     if (form.order.trim() !== "" && !isInt(form.order))
       errors.push("Urutan harus berupa bilangan bulat.");
+    if (form.interviewDuration.trim() !== "") {
+      if (
+        !isInt(form.interviewDuration) ||
+        Number(form.interviewDuration) < 10 ||
+        Number(form.interviewDuration) > 480
+      )
+        errors.push("Durasi wawancara harus angka bulat 10-480 menit.");
+    }
+    if (form.probationMonths.trim() !== "") {
+      if (
+        !isInt(form.probationMonths) ||
+        Number(form.probationMonths) < 0 ||
+        Number(form.probationMonths) > 12
+      )
+        errors.push("Masa percobaan harus angka bulat 0-12 bulan.");
+    }
+    if (form.reapplyCooldownDays.trim() !== "") {
+      if (
+        !isInt(form.reapplyCooldownDays) ||
+        Number(form.reapplyCooldownDays) < 0 ||
+        Number(form.reapplyCooldownDays) > 365
+      )
+        errors.push("Jeda lamar ulang harus angka bulat 0-365 hari.");
+    }
     return errors;
   }
 
@@ -427,6 +492,22 @@ export function PositionFormDialog({
       rubricCriteria: form.rubricCriteria.map((r) => r.trim()).filter(Boolean),
       checklistTemplate: form.checklistTemplate.map((c) => c.trim()).filter(Boolean),
       noteTemplates: form.noteTemplates.map((n) => n.trim()).filter(Boolean),
+      // Wawancara
+      interviewMode: form.interviewMode,
+      interviewPlatform: form.interviewPlatform,
+      interviewDuration:
+        form.interviewDuration.trim() === "" ? null : Number(form.interviewDuration),
+      interviewCriteria: form.interviewCriteria.map((c) => c.trim()).filter(Boolean),
+      interviewInviteTemplate: form.interviewInviteTemplate.trim() || null,
+      // Penawaran & onboarding
+      offerTemplate: form.offerTemplate.trim() || null,
+      welcomeTemplate: form.welcomeTemplate.trim() || null,
+      probationMonths:
+        form.probationMonths.trim() === "" ? 0 : Number(form.probationMonths),
+      onboardingDocs: form.onboardingDocs.map((d) => d.trim()).filter(Boolean),
+      reapplyCooldownDays:
+        form.reapplyCooldownDays.trim() === "" ? 0 : Number(form.reapplyCooldownDays),
+      autoCloseOnHired: form.autoCloseOnHired,
     };
     if (form.order.trim() !== "") payload.order = Number(form.order);
 

@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -828,6 +829,83 @@ export function ApplicationsTab() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog tolak massal */}
+      <Dialog open={bulkRejectOpen} onOpenChange={setBulkRejectOpen}>
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tolak {selectedIds.size} lamaran?</DialogTitle>
+            <DialogDescription>
+              Semua lamaran terpilih akan berstatus Ditolak dengan alasan yang sama.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="bulk-reject-reason">Alasan Penolakan</Label>
+              <Select
+                value={bulkRejectReason || "__pilih__"}
+                onValueChange={(v) => setBulkRejectReason(v as RejectionReason)}
+                disabled={bulkWorking}
+              >
+                <SelectTrigger
+                  id="bulk-reject-reason"
+                  className="h-11 w-full sm:h-10"
+                  aria-label="Alasan penolakan massal"
+                >
+                  <SelectValue placeholder="Pilih alasan" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__pilih__" disabled>
+                    Pilih alasan
+                  </SelectItem>
+                  {REJECTION_REASONS.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {REJECTION_REASON_LABELS[r]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="bulk-reject-note">Catatan (opsional)</Label>
+              <Textarea
+                id="bulk-reject-note"
+                value={bulkRejectNote}
+                onChange={(e) => setBulkRejectNote(e.target.value)}
+                placeholder="Catatan internal untuk seluruh lamaran terpilih"
+                rows={3}
+                maxLength={1000}
+                disabled={bulkWorking}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setBulkRejectOpen(false)}
+              disabled={bulkWorking}
+              className="h-11 sm:h-9"
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void handleBulkReject()}
+              disabled={bulkWorking || !bulkRejectReason}
+              className="h-11 active:scale-[0.99] sm:h-9"
+            >
+              {bulkWorking ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menolak...
+                </>
+              ) : (
+                `Tolak ${selectedIds.size} Lamaran`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
