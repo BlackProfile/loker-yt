@@ -290,7 +290,7 @@ export function InterviewTab() {
                       <div className="min-w-0 flex-1">
                         <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
                           <span className="truncate">{i.applicationName ?? "-"}</span>
-                          <Badge inline>R{i.round}</Badge>
+                          <RoundBadge round={i.round} />
                         </p>
                         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                           {i.mode === "ONLINE" ? (
@@ -374,11 +374,10 @@ const INTERVIEW_PLATFORM_SHORT: Record<Interview["platform"], string> = {
 };
 
 // Badge ronde kecil (R1, R2, ...) inline.
-function Badge({ inline, children }: { inline: string; children: string }) {
-  void inline;
+function RoundBadge({ round }: { round: number }) {
   return (
     <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
-      {children}
+      R{round}
     </span>
   );
 }
