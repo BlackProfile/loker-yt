@@ -16,6 +16,7 @@ import {
 import { format, parseISO } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -269,8 +270,112 @@ export function DashboardTab() {
     }
   }
 
+  // Kelompok kartu "Perlu Tindakan" — hanya kelompok berisi yang tampil.
+  const actionGroups: {
+    key: string;
+    icon: LucideIcon;
+    label: string;
+    rows: { appId: string; text: string }[];
+  }[] = actionItems
+    ? [
+        {
+          key: "reschedule",
+          icon: CalendarClock,
+          label: "Permintaan Ubah Jadwal",
+          rows: actionItems.rescheduleRequests.map((r) => ({
+            appId: r.applicationId,
+            text: `${r.name} minta ubah jadwal ke ${formatDateTime(r.proposedAt)}`,
+          })),
+        },
+        {
+          key: "offers",
+          icon: Handshake,
+          label: "Penawaran Menunggu Jawaban",
+          rows: actionItems.offersAwaiting.map((r) => ({
+            appId: r.applicationId,
+            text: `${r.name} menunggu jawaban sampai ${formatDateTime(r.deadline)}`,
+          })),
+        },
+        {
+          key: "unscored",
+          icon: ClipboardCheck,
+          label: "Wawancara Belum Dinilai",
+          rows: actionItems.unscoredInterviews.map((r) => ({
+            appId: r.applicationId,
+            text: `Nilai wawancara ${r.name}`,
+          })),
+        },
+        {
+          key: "onboarding",
+          icon: ClipboardList,
+          label: "Onboarding Belum Lengkap",
+          rows: actionItems.onboardingIncomplete.map((r) => ({
+            appId: r.applicationId,
+            text: `${r.name}: ${r.missingDocs.length} dokumen kurang`,
+          })),
+        },
+      ].filter((g) => g.rows.length > 0)
+    : [];
+
   return (
     <div className="flex flex-col gap-6">
+      {/* Kartu Perlu Tindakan — hilang otomatis bila semua kelompok kosong */}
+      {actionGroups.length > 0 ? (
+        <Card className="gap-0 rounded-2xl border-amber-200 bg-amber-50/60 py-6 dark:border-amber-900 dark:bg-amber-950/20">
+          <CardHeader className="px-6">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+              Perlu Tindakan
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Item yang menunggu keputusan atau penilaian tim rekrutmen.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {actionGroups.map((group) => {
+                const Icon = group.icon;
+                return (
+                  <div
+                    key={group.key}
+                    className="flex flex-col gap-2 rounded-lg border bg-background p-3"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon className="size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                      <p className="min-w-0 flex-1 truncate text-xs font-semibold">
+                        {group.label}
+                      </p>
+                      <Badge variant="secondary" className="shrink-0 tabular-nums">
+                        {group.rows.length}
+                      </Badge>
+                    </div>
+                    <ul className="flex flex-col gap-0.5">
+                      {group.rows.slice(0, 3).map((row) => (
+                        <li key={`${group.key}-${row.appId}`}>
+                          <button
+                            type="button"
+                            className="w-full rounded-md px-1.5 py-1.5 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                            onClick={() => void openAppById(row.appId)}
+                            aria-label={`Buka detail: ${row.text}`}
+                          >
+                            {row.text}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {group.rows.length > 3 ? (
+                      <p className="px-1.5 text-[11px] text-muted-foreground">
+                        +{group.rows.length - 3} lainnya
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* Kartu statistik: 6 status + rata-rata skor AI + pelanggan */}
       <motion.div
         className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4"
