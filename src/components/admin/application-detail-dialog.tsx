@@ -245,7 +245,13 @@ export function ApplicationDetailDialog({
   const [rejectMessage, setRejectMessage] = useState<string | null>(null);
 
   // Panel Penawaran (form & edit inline memakai state yang sama).
-  const [offerForm, setOfferForm] = useState({
+  const [offerForm, setOfferForm] = useState<{
+    salary: string;
+    type: string;
+    startDate: string;
+    note: string;
+    deadlineDays: string;
+  }>({
     salary: "",
     type: POSITION_TYPES[0],
     startDate: "",

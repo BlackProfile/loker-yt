@@ -1311,6 +1311,207 @@ export function PositionFormDialog({
                     />
                   </div>
                 </FormSection>
+
+                <FormDivider />
+
+              {/* i. Wawancara */}
+              <FormSection
+                id="wawancara"
+                icon={Video}
+                title="Wawancara"
+                hint="Mode, platform, durasi bawaan, kriteria scorecard, dan template undangan."
+              >
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label>Mode Bawaan</Label>
+                      <Select
+                        value={form.interviewMode}
+                        onValueChange={(v) => set("interviewMode", v as InterviewMode)}
+                      >
+                        <SelectTrigger className="h-10 w-full" aria-label="Mode wawancara bawaan">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {INTERVIEW_MODES.map((m) => (
+                            <SelectItem key={m} value={m}>
+                              {INTERVIEW_MODE_LABELS[m]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label>Platform Bawaan</Label>
+                      <Select
+                        value={form.interviewPlatform}
+                        onValueChange={(v) => set("interviewPlatform", v as InterviewPlatform)}
+                      >
+                        <SelectTrigger className="h-10 w-full" aria-label="Platform wawancara bawaan">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {INTERVIEW_PLATFORMS.map((p) => (
+                            <SelectItem key={p} value={p}>
+                              {INTERVIEW_PLATFORM_LABELS[p]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5 sm:max-w-56">
+                    <Label htmlFor="pos-interviewDuration">Durasi Default (menit)</Label>
+                    <Input
+                      id="pos-interviewDuration"
+                      type="number"
+                      min={10}
+                      max={480}
+                      step={5}
+                      value={form.interviewDuration}
+                      onChange={(e) => set("interviewDuration", e.target.value)}
+                      placeholder="45"
+                      className="h-10"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Terisi otomatis saat menjadwalkan wawancara (10-480 menit).
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Kriteria Scorecard</Label>
+                    <StringListEditor
+                      name="Kriteria scorecard"
+                      items={form.interviewCriteria}
+                      onChange={(items) => set("interviewCriteria", items)}
+                      maxItems={8}
+                      maxLength={60}
+                      addLabel="Tambah kriteria"
+                      placeholder="mis. Komunikasi"
+                      hint="Kosongkan untuk memakai kriteria bawaan (Komunikasi, Portofolio, dll.)"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pos-interviewInviteTemplate">Template Undangan Wawancara</Label>
+                    <Textarea
+                      id="pos-interviewInviteTemplate"
+                      value={form.interviewInviteTemplate}
+                      onChange={(e) => set("interviewInviteTemplate", e.target.value)}
+                      placeholder="Hai {nama}, kamu diundang wawancara untuk posisi {posisi} pada {tanggal} pukul {jam} via {mode}. Link: {link}"
+                      rows={3}
+                      maxLength={800}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Variabel: {"{nama}"} {"{posisi}"} {"{tanggal}"} {"{jam}"} {"{link}"} {"{mode}"}
+                    </p>
+                  </div>
+                </FormSection>
+
+                <FormDivider />
+
+              {/* j. Penawaran & Onboarding */}
+              <FormSection
+                id="penawaran"
+                icon={Handshake}
+                title="Penawaran & Onboarding"
+                hint="Template penawaran & sambutan, masa percobaan, dokumen onboarding, dan jeda lamar ulang."
+              >
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pos-offerTemplate">Template Pesan Penawaran</Label>
+                    <Textarea
+                      id="pos-offerTemplate"
+                      value={form.offerTemplate}
+                      onChange={(e) => set("offerTemplate", e.target.value)}
+                      placeholder="Selamat {nama}! Kami menawarkanmu posisi {posisi} dengan gaji {gaji}, mulai {tanggal}. Mohon konfirmasi sebelum {deadline}."
+                      rows={3}
+                      maxLength={800}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Variabel: {"{nama}"} {"{posisi}"} {"{gaji}"} {"{tanggal}"} {"{deadline}"}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pos-welcomeTemplate">Template Pesan Sambutan</Label>
+                    <Textarea
+                      id="pos-welcomeTemplate"
+                      value={form.welcomeTemplate}
+                      onChange={(e) => set("welcomeTemplate", e.target.value)}
+                      placeholder="Selamat bergabung, {nama}! Hari pertamamu di posisi {posisi} dimulai {tanggal}."
+                      rows={3}
+                      maxLength={800}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Variabel: {"{nama}"} {"{posisi}"} {"{tanggal}"}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="pos-probationMonths">Masa Percobaan (bulan)</Label>
+                      <Input
+                        id="pos-probationMonths"
+                        type="number"
+                        min={0}
+                        max={12}
+                        step={1}
+                        value={form.probationMonths}
+                        onChange={(e) => set("probationMonths", e.target.value)}
+                        placeholder="0"
+                        className="h-10"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Batas akhir masa percobaan dihitung dari tanggal diterima (0-12).
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="pos-reapplyCooldown">Jeda Lamar Ulang (hari)</Label>
+                      <Input
+                        id="pos-reapplyCooldown"
+                        type="number"
+                        min={0}
+                        max={365}
+                        step={1}
+                        value={form.reapplyCooldownDays}
+                        onChange={(e) => set("reapplyCooldownDays", e.target.value)}
+                        placeholder="0"
+                        className="h-10"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Pelamar yang ditolak bisa melamar lagi setelah jeda ini. 0 = bebas.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Dokumen Wajib Onboarding</Label>
+                    <StringListEditor
+                      name="Dokumen onboarding"
+                      items={form.onboardingDocs}
+                      onChange={(items) => set("onboardingDocs", items)}
+                      maxItems={10}
+                      maxLength={120}
+                      addLabel="Tambah dokumen"
+                      placeholder="mis. Kontrak Kerja"
+                      hint="Daftar ini otomatis jadi checklist dokumen saat pelamar diterima"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Tutup otomatis saat diterima</p>
+                      <p className="text-xs text-muted-foreground">
+                        Lowongan berhenti menerima lamaran begitu ada kandidat menerima penawaran
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.autoCloseOnHired}
+                      onCheckedChange={(checked) => set("autoCloseOnHired", checked)}
+                      aria-label="Tutup lowongan otomatis saat ada kandidat diterima"
+                    />
+                  </div>
+                </FormSection>
             </div>
 
             {/* Tombol submit tersembunyi agar Enter mensubmit form */}
