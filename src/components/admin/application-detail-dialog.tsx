@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -218,9 +218,7 @@ export function ApplicationDetailDialog({
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // Editor jadwal, tags, rating.
-  const [interviewInput, setInterviewInput] = useState("");
-  const [savingInterview, setSavingInterview] = useState(false);
+  // Editor tags & rating.
   const [tagInput, setTagInput] = useState("");
   const [tagsSaving, setTagsSaving] = useState(false);
   const [ratingSaving, setRatingSaving] = useState(false);
@@ -232,18 +230,67 @@ export function ApplicationDetailDialog({
   const [checkedItems, setCheckedItems] = useState<string[]>([]);
   const [checklistSaving, setChecklistSaving] = useState(false);
 
+  // Sesi wawancara milik pelamar (GET /api/admin/interviews, filter applicationId).
+  const [sessions, setSessions] = useState<Interview[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionDetail, setSessionDetail] = useState<Interview | null>(null);
+  const [sessionCreateOpen, setSessionCreateOpen] = useState(false);
+
+  // Panel Tolak Lamaran.
+  const [rejectReason, setRejectReason] = useState<RejectionReason | "">("");
+  const [rejectNote, setRejectNote] = useState("");
+  const [rejectFeedback, setRejectFeedback] = useState(false);
+  const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectMessage, setRejectMessage] = useState<string | null>(null);
+
+  // Panel Penawaran (form & edit inline memakai state yang sama).
+  const [offerForm, setOfferForm] = useState({
+    salary: "",
+    type: POSITION_TYPES[0],
+    startDate: "",
+    note: "",
+    deadlineDays: "3",
+  });
+  const [offerEditing, setOfferEditing] = useState(false);
+  const [offerWorking, setOfferWorking] = useState(false);
+  const [offerCancelOpen, setOfferCancelOpen] = useState(false);
+  const [offerMessage, setOfferMessage] = useState<string | null>(null);
+
+  // Panel Onboarding.
+  const [onboardingSaving, setOnboardingSaving] = useState(false);
+  const [docInput, setDocInput] = useState("");
+
+  // Reset form hanya saat berganti pelamar (bukan tiap update objek) agar
+  // pesan penolakan/penawaran yang baru dibuat tidak ikut terhapus.
+  const lastAppIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (application) {
-      setEditStatus(application.status);
-      setEditNotes(application.adminNotes ?? "");
-      setInterviewInput(isoToLocalInput(application.interviewAt));
-      setTagInput("");
-      setSaving(false);
-      setDeleting(false);
-      setConfirmOpen(false);
-      setRubricValues(application.rubricScores ?? {});
-      setCheckedItems(application.checklistState ?? []);
-    }
+    if (!application || lastAppIdRef.current === application.id) return;
+    lastAppIdRef.current = application.id;
+    setEditStatus(application.status);
+    setEditNotes(application.adminNotes ?? "");
+    setTagInput("");
+    setSaving(false);
+    setDeleting(false);
+    setConfirmOpen(false);
+    setRubricValues(application.rubricScores ?? {});
+    setCheckedItems(application.checklistState ?? []);
+    setSessions([]);
+    setSessionDetail(null);
+    setSessionCreateOpen(false);
+    setRejectReason("");
+    setRejectNote("");
+    setRejectFeedback(false);
+    setRejectConfirmOpen(false);
+    setRejecting(false);
+    setRejectMessage(null);
+    setOfferForm({ salary: "", type: POSITION_TYPES[0], startDate: "", note: "", deadlineDays: "3" });
+    setOfferEditing(false);
+    setOfferWorking(false);
+    setOfferCancelOpen(false);
+    setOfferMessage(null);
+    setOnboardingSaving(false);
+    setDocInput("");
   }, [application]);
 
   const applicationId = application?.id ?? null;
@@ -270,6 +317,31 @@ export function ApplicationDetailDialog({
       cancelled = true;
     };
   }, [applicationId, positionId]);
+
+  // Sesi wawancara pelamar: muat sekali + segarkan senyap saat ada event realtime.
+  const loadSessions = useCallback(
+    async (silent = false) => {
+      if (!applicationId) return;
+      if (!silent) setSessionsLoading(true);
+      try {
+        const rows = await apiGet<Interview[]>("/api/admin/interviews");
+        setSessions(rows.filter((r) => r.applicationId === applicationId));
+      } catch {
+        // Daftar sesi bersifat pelengkap; biarkan data lama saat gagal senyap.
+      } finally {
+        if (!silent) setSessionsLoading(false);
+      }
+    },
+    [applicationId]
+  );
+
+  useEffect(() => {
+    void loadSessions();
+  }, [loadSessions]);
+
+  useLiveRefresh("interviews:changed", () => {
+    void loadSessions(true);
+  });
 
   if (!application) return null;
 
@@ -362,29 +434,6 @@ export function ApplicationDetailDialog({
       setDeleting(false);
       setConfirmOpen(false);
     }
-  }
-
-  async function handleSaveInterview() {
-    if (savingInterview) return;
-    if (!interviewInput) {
-      toast.error("Pilih tanggal dan jam terlebih dahulu.");
-      return;
-    }
-    const iso = localInputToIso(interviewInput);
-    if (!iso) {
-      toast.error("Tanggal tidak valid.");
-      return;
-    }
-    setSavingInterview(true);
-    await patch({ interviewAt: iso }, "Jadwal wawancara disimpan");
-    setSavingInterview(false);
-  }
-
-  async function handleClearInterview() {
-    if (savingInterview) return;
-    setSavingInterview(true);
-    await patch({ interviewAt: null }, "Jadwal wawancara dihapus");
-    setSavingInterview(false);
   }
 
   async function handleAddTag(e: FormEvent<HTMLFormElement>) {
