@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Pengaturan situs disimpan sebagai key-value (value berisi JSON string)
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// Posisi lowongan yang dibuka
+model Position {
+  id           String        @id @default(cuid())
+  title        String
+  department   String        @default("Umum")
+  type         String        @default("Remote")
+  location     String        @default("Remote")
+  description  String
+  requirements String        @default("[]") // JSON string[]
+  isActive     Boolean       @default(true)
+  order        Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  applications Application[]
+}
+
+// Lamaran yang masuk dari form publik
+model Application {
+  id           String    @id @default(cuid())
+  name         String
+  email        String
+  phone        String
+  positionId   String?
+  position     Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  socialLinks  String?
+  portfolioUrl String?
+  experience   String
+  motivation   String
+  status       String    @default("NEW") // NEW | REVIEWED | INTERVIEW | ACCEPTED | REJECTED
+  adminNotes   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
