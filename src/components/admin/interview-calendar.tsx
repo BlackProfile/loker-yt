@@ -12,22 +12,26 @@ import {
 import { id as localeId } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
-import type { Application } from "@/lib/types";
+import type { Interview } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const WEEKDAY_LABELS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
 
-// Kalender bulan custom (date-fns) untuk jadwal wawancara.
+// Status yang dianggap aktif untuk titik hari & daftar nama (batal/selesai/no-show tidak).
+const ACTIVE_STATUSES = ["SCHEDULED", "CONFIRMED", "RESCHEDULE_REQUESTED"];
+
+// Kalender bulan custom (date-fns) untuk sesi wawancara.
+// Titik hari muncul bila ada sesi AKTIF pada hari tersebut.
 export function InterviewCalendar({
   month,
   onMonthChange,
-  apps,
+  interviews,
   selectedDay,
   onSelectDay,
 }: {
   month: Date;
   onMonthChange: (next: Date) => void;
-  apps: Application[];
+  interviews: Interview[];
   selectedDay: Date | null;
   onSelectDay: (day: Date) => void;
 }) {
@@ -36,12 +40,15 @@ export function InterviewCalendar({
     return Array.from({ length: 42 }, (_, i) => addDays(first, i));
   }, [month]);
 
-  function appsOn(day: Date): Application[] {
-    return apps.filter((app) => {
-      if (!app.interviewAt) return false;
-      const d = new Date(app.interviewAt);
+  function sessionsOn(day: Date): Interview[] {
+    return interviews.filter((i) => {
+      const d = new Date(i.scheduledAt);
       return !Number.isNaN(d.getTime()) && isSameDay(d, day);
     });
+  }
+
+  function activeOn(day: Date): Interview[] {
+    return sessionsOn(day).filter((i) => ACTIVE_STATUSES.includes(i.status));
   }
 
   const today = new Date();
@@ -107,13 +114,13 @@ export function InterviewCalendar({
           const inMonth = isSameMonth(day, month);
           const isToday = isSameDay(day, today);
           const isSelected = selectedDay ? isSameDay(day, selectedDay) : false;
-          const dayApps = appsOn(day);
+          const daySessions = activeOn(day);
           return (
             <button
               key={day.toISOString()}
               type="button"
               onClick={() => onSelectDay(day)}
-              aria-label={`Jadwal tanggal ${format(day, "d MMMM yyyy", { locale: localeId })}, ${dayApps.length} wawancara`}
+              aria-label={`Jadwal tanggal ${format(day, "d MMMM yyyy", { locale: localeId })}, ${daySessions.length} wawancara aktif`}
               aria-pressed={isSelected}
               className={cn(
                 "flex min-h-16 flex-col items-start gap-1 rounded-lg border p-1.5 text-left transition outline-none focus-visible:ring-2 focus-visible:ring-ring/50 hover:bg-accent active:scale-[0.97]",
@@ -124,24 +131,24 @@ export function InterviewCalendar({
             >
               <span className="flex w-full items-center justify-between">
                 <span className="text-xs font-medium">{format(day, "d")}</span>
-                {dayApps.length > 0 ? (
+                {daySessions.length > 0 ? (
                   <span
                     className="size-1.5 rounded-full bg-rose-500"
                     aria-hidden="true"
                   />
                 ) : null}
               </span>
-              {dayApps.slice(0, 2).map((app) => (
+              {daySessions.slice(0, 2).map((i) => (
                 <span
-                  key={app.id}
+                  key={i.id}
                   className="w-full truncate rounded bg-rose-100 px-1 text-[10px] leading-tight text-rose-700 dark:bg-rose-950 dark:text-rose-400"
                 >
-                  {app.name}
+                  {i.applicationName ?? "Wawancara"}
                 </span>
               ))}
-              {dayApps.length > 2 ? (
+              {daySessions.length > 2 ? (
                 <span className="text-[10px] text-muted-foreground">
-                  +{dayApps.length - 2} lainnya
+                  +{daySessions.length - 2} lainnya
                 </span>
               ) : null}
             </button>

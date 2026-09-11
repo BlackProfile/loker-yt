@@ -125,7 +125,7 @@ function fillTemplateManual(
   );
 }
 
-// URL "Tambah ke Google Calendar" — dates pakau format YYYYMMDDTHHMMSSZ.
+// URL "Tambah ke Google Calendar" — dates pakai format YYYYMMDDTHHMMSSZ.
 function googleCalendarUrl(i: Interview): string {
   const start = new Date(i.scheduledAt);
   const end = new Date(start.getTime() + (i.durationMin || 45) * 60_000);
@@ -417,7 +417,7 @@ function InterviewSessionDialogInner({
       }
     }
     setSavingResult(true);
-    const updated = await handlePatch(
+    await handlePatch(
       {
         scores,
         recommendation: recommendation || null,
@@ -426,13 +426,6 @@ function InterviewSessionDialogInner({
       },
       "Hasil wawancara disimpan"
     );
-    if (updated) {
-      const fresh = await apiPatch<{ interview: Interview }>(
-        `/api/admin/interviews/${interview.id}`,
-        {}
-      ).catch(() => null);
-      void fresh;
-    }
     setSavingResult(false);
   }
 
@@ -646,7 +639,7 @@ function InterviewSessionDialogInner({
               {showLinkField ? (
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="iv-meetingLink">Link Meeting</Label>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Input
                       id="iv-meetingLink"
                       type="url"
@@ -654,7 +647,7 @@ function InterviewSessionDialogInner({
                       onChange={(e) => setMeetingLink(e.target.value)}
                       placeholder="https://meet.google.com/xxx-xxxx-xxx"
                       disabled={!canMutate}
-                      className="h-11 sm:h-10"
+                      className="h-11 min-w-0 flex-1 sm:h-10"
                     />
                     <Button
                       asChild
@@ -666,11 +659,12 @@ function InterviewSessionDialogInner({
                         href="https://meet.google.com/new"
                         target="_blank"
                         rel="noopener noreferrer"
-                        aria-label="Buat room baru di meet.google.com/new"
-                        title="Buat room baru di meet.google.com/new"
+                        aria-label="Buka meet.google.com/new untuk membuat room baru"
+                        title="Buka meet.google.com/new"
                       >
                         <ExternalLink className="size-4" aria-hidden="true" />
-                        <span className="hidden sm:inline">Buat Room</span>
+                        <span className="hidden sm:inline">Buka meet.google.com/new</span>
+                        <span className="sm:hidden">Room Baru</span>
                       </a>
                     </Button>
                   </div>
