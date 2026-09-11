@@ -1,0 +1,1243 @@
+     1→"use client";
+     2→
+     3→// Dialog form posisi v3 — pusat kendali semua field per lowongan.
+     4→// Section dipisah dengan Accordion agar dialog panjang tetap rapi saat discroll.
+     5→// Batas karakter/item dikunci via maxLength & maxItems editor (selaras server).
+     6→
+     7→import { useMemo, useRef, useState } from "react";
+     8→import { Button } from "@/components/ui/button";
+     9→import {
+    10→  Accordion,
+    11→  AccordionContent,
+    12→  AccordionItem,
+    13→  AccordionTrigger,
+    14→} from "@/components/ui/accordion";
+    15→import {
+    16→  Dialog,
+    17→  DialogContent,
+    18→  DialogDescription,
+    19→  DialogFooter,
+    20→  DialogHeader,
+    21→  DialogTitle,
+    22→} from "@/components/ui/dialog";
+    23→import { Input } from "@/components/ui/input";
+    24→import { Label } from "@/components/ui/label";
+    25→import {
+    26→  Select,
+    27→  SelectContent,
+    28→  SelectItem,
+    29→  SelectTrigger,
+    30→  SelectValue,
+    31→} from "@/components/ui/select";
+    32→import { Switch } from "@/components/ui/switch";
+    33→import { Textarea } from "@/components/ui/textarea";
+    34→import { Badge } from "@/components/ui/badge";
+    35→import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+    36→import {
+    37→  Briefcase,
+    38→  ClipboardCheck,
+    39→  Gift,
+    40→  Image as ImageIcon,
+    41→  ListChecks,
+    42→  Loader2,
+    43→  MessagesSquare,
+    44→  Pin,
+    45→  Flame,
+    46→  Send,
+    47→  Sparkles,
+    48→  Trash2,
+    49→  TriangleAlert,
+    50→  Upload,
+    51→  Wallet,
+    52→  Wand2,
+    53→  Workflow,
+    54→} from "lucide-react";
+    55→import { toast } from "sonner";
+    56→import {
+    57→  POSITION_TYPES,
+    58→  type AiCoverResponse,
+    59→  type AdminUploadResponse,
+    60→  type Position,
+    61→  type PositionStatsRow,
+    62→  type ScreeningQuestion,
+    63→} from "@/lib/types";
+    64→import { stagesForPosition, stageLabel } from "@/lib/stages";
+    65→import { apiFetch, apiPatch, apiPost } from "./api";
+    66→import { isoToLocalInput, localInputToIso } from "./format";
+    67→import { useAdminSession } from "./admin-context";
+    68→import { ScreeningQuestionsEditor, StringListEditor } from "./position-list-editors";
+    69→
+    70→type FormState = {
+    71→  title: string;
+    72→  department: string;
+    73→  type: string;
+    74→  location: string;
+    75→  description: string;
+    76→  requirements: string[];
+    77→  isActive: boolean;
+    78→  publishAtLocal: string;
+    79→  closesAtLocal: string;
+    80→  order: string;
+    81→  coverFileId: string | null;
+    82→  salaryText: string;
+    83→  salaryVisible: boolean;
+    84→  benefits: string[];
+    85→  examples: string[];
+    86→  urgent: boolean;
+    87→  featured: boolean;
+    88→  requireCv: boolean;
+    89→  requireIntro: boolean;
+    90→  requirePortfolio: boolean;
+    91→  maxApplicants: string;
+    92→  screeningQuestions: ScreeningQuestion[];
+    93→  stages: string[];
+    94→  aiCriteria: string;
+    95→  autoShortlistScore: string;
+    96→  autoShortlistStage: string; // "" = nonaktif
+    97→  applyTemplate: string;
+    98→  acceptTemplate: string;
+    99→  rejectTemplate: string;
+   100→  assignmentTitle: string;
+   101→  assignmentUrl: string;
+   102→  assignmentNote: string;
+   103→  rubricCriteria: string[];
+   104→  checklistTemplate: string[];
+   105→  noteTemplates: string[];
+   106→};
+   107→
+   108→const EMPTY_FORM: FormState = {
+   109→  title: "",
+   110→  department: "",
+   111→  type: "Full-time",
+   112→  location: "Remote",
+   113→  description: "",
+   114→  requirements: [],
+   115→  isActive: true,
+   116→  publishAtLocal: "",
+   117→  closesAtLocal: "",
+   118→  order: "",
+   119→  coverFileId: null,
+   120→  salaryText: "",
+   121→  salaryVisible: false,
+   122→  benefits: [],
+   123→  examples: [],
+   124→  urgent: false,
+   125→  featured: false,
+   126→  requireCv: true,
+   127→  requireIntro: false,
+   128→  requirePortfolio: false,
+   129→  maxApplicants: "",
+   130→  screeningQuestions: [],
+   131→  stages: [],
+   132→  aiCriteria: "",
+   133→  autoShortlistScore: "",
+   134→  autoShortlistStage: "",
+   135→  applyTemplate: "",
+   136→  acceptTemplate: "",
+   137→  rejectTemplate: "",
+   138→  assignmentTitle: "",
+   139→  assignmentUrl: "",
+   140→  assignmentNote: "",
+   141→  rubricCriteria: [],
+   142→  checklistTemplate: [],
+   143→  noteTemplates: [],
+   144→};
+   145→
+   146→function buildFormState(p: Position): FormState {
+   147→  return {
+   148→    title: p.title,
+   149→    department: p.department,
+   150→    type: POSITION_TYPES.includes(p.type as (typeof POSITION_TYPES)[number])
+   151→      ? p.type
+   152→      : POSITION_TYPES[0],
+   153→    location: p.location || "Remote",
+   154→    description: p.description,
+   155→    requirements: [...p.requirements],
+   156→    isActive: p.isActive,
+   157→    publishAtLocal: isoToLocalInput(p.publishAt),
+   158→    closesAtLocal: isoToLocalInput(p.closesAt),
+   159→    order: String(p.order ?? ""),
+   160→    coverFileId: p.coverFileId,
+   161→    salaryText: p.salaryText ?? "",
+   162→    salaryVisible: p.salaryVisible,
+   163→    benefits: [...p.benefits],
+   164→    examples: [...p.examples],
+   165→    urgent: p.urgent,
+   166→    featured: p.featured,
+   167→    requireCv: p.requireCv,
+   168→    requireIntro: p.requireIntro,
+   169→    requirePortfolio: p.requirePortfolio,
+   170→    maxApplicants: p.maxApplicants == null ? "" : String(p.maxApplicants),
+   171→    screeningQuestions: p.screeningQuestions.map((q) => ({ ...q })),
+   172→    stages: [...p.stages],
+   173→    aiCriteria: p.aiCriteria ?? "",
+   174→    autoShortlistScore: p.autoShortlistScore == null ? "" : String(p.autoShortlistScore),
+   175→    autoShortlistStage: p.autoShortlistStage ?? "",
+   176→    applyTemplate: p.replyTemplates.apply ?? "",
+   177→    acceptTemplate: p.replyTemplates.accept ?? "",
+   178→    rejectTemplate: p.replyTemplates.reject ?? "",
+   179→    assignmentTitle: p.assignment.title ?? "",
+   180→    assignmentUrl: p.assignment.url ?? "",
+   181→    assignmentNote: p.assignment.note ?? "",
+   182→    rubricCriteria: [...p.rubricCriteria],
+   183→    checklistTemplate: [...p.checklistTemplate],
+   184→    noteTemplates: [...p.noteTemplates],
+   185→  };
+   186→}
+   187→
+   188→const PUB_MODE = {
+   189→  tayang: {
+   190→    label: "Tayang",
+   191→    className:
+   192→      "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400",
+   193→  },
+   194→  terjadwal: {
+   195→    label: "Terjadwal",
+   196→    className:
+   197→      "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400",
+   198→  },
+   199→  draft: {
+   200→    label: "Draft",
+   201→    className:
+   202→      "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+   203→  },
+   204→  tutup: {
+   205→    label: "Tutup",
+   206→    className:
+   207→      "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400",
+   208→  },
+   209→} as const;
+   210→
+   211→function formPublicationMode(form: FormState): {
+   212→  key: keyof typeof PUB_MODE;
+   213→  hint: string;
+   214→} {
+   215→  if (!form.isActive) {
+   216→    return { key: "draft", hint: "Posisi tidak tampil di halaman publik." };
+   217→  }
+   218→  if (form.publishAtLocal) {
+   219→    const t = new Date(form.publishAtLocal).getTime();
+   220→    if (!Number.isNaN(t) && t > Date.now()) {
+   221→      return {
+   222→        key: "terjadwal",
+   223→        hint: "Posisi otomatis tayang tepat pada jadwal publikasi di atas.",
+   224→      };
+   225→    }
+   226→  }
+   227→  if (form.closesAtLocal) {
+   228→    const t = new Date(form.closesAtLocal).getTime();
+   229→    if (!Number.isNaN(t) && t <= Date.now()) {
+   230→      return {
+   231→        key: "tutup",
+   232→        hint: "Posisi sudah melewati tanggal penutupan dan tidak menerima lamaran baru.",
+   233→      };
+   234→    }
+   235→  }
+   236→  return { key: "tayang", hint: "Posisi tampil di halaman publik sekarang." };
+   237→}
+   238→
+   239→const DEMO_TEMPLATES = {
+   240→  apply:
+   241→    "Terima kasih {nama}, lamaranmu untuk posisi {posisi} sudah kami terima. Pantau statusnya kapan saja dengan kode {kode}.",
+   242→  accept:
+   243→    "Selamat {nama}, kamu diterima untuk posisi {posisi}! Tim kami akan menghubungimu untuk langkah selanjutnya.",
+   244→  reject:
+   245→    "Terima kasih {nama}, setelah meninjau lamaranmu untuk posisi {posisi}, kami memutuskan untuk tidak melanjutkan proses. Semoga sukses di kesempatan berikutnya!",
+   246→};
+   247→
+   248→const COVER_MAX_BYTES = 3 * 1024 * 1024;
+   249→const COVER_MIME = ["image/png", "image/jpeg", "image/webp"];
+   250→
+   251→// Sentinel opsi "(nonaktif)" — Radix Select melarang SelectItem dengan value "".
+   252→const SHORTLIST_NONE = "__nonaktif__";
+   253→
+   254→function isInt(value: string): boolean {
+   255→  return /^-?\d+$/.test(value.trim());
+   256→}
+   257→
+   258→export function PositionFormDialog({
+   259→  open,
+   260→  onOpenChange,
+   261→  editing,
+   262→  statsRow,
+   263→  onSaved,
+   264→}: {
+   265→  open: boolean;
+   266→  onOpenChange: (open: boolean) => void;
+   267→  editing: Position | null;
+   268→  statsRow: PositionStatsRow | null;
+   269→  onSaved: () => void;
+   270→}) {
+   271→  const { reportError } = useAdminSession();
+   272→  const [form, setForm] = useState<FormState>(() =>
+   273→    editing ? buildFormState(editing) : EMPTY_FORM
+   274→  );
+   275→  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+   276→  const [saving, setSaving] = useState(false);
+   277→  const [uploadingCover, setUploadingCover] = useState(false);
+   278→  const [aiCoverLoading, setAiCoverLoading] = useState(false);
+   279→  const fileInputRef = useRef<HTMLInputElement>(null);
+   280→
+   281→  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+   282→    setForm((f) => ({ ...f, [key]: value }));
+   283→
+   284→  const cleanedStages = useMemo(
+   285→    () => form.stages.map((s) => s.trim()).filter(Boolean),
+   286→    [form.stages]
+   287→  );
+   288→
+   289→  // Lamaran pada tahap di luar daftar pipeline tersimpan (dari stats funnel).
+   290→  const outOfStageApps = useMemo(() => {
+   291→    if (!editing || !statsRow) return 0;
+   292→    const inFunnel = statsRow.funnel.reduce((sum, f) => sum + f.count, 0);
+   293→    return Math.max(0, statsRow.applications - inFunnel);
+   294→  }, [editing, statsRow]);
+   295→
+   296→  const pubMode = formPublicationMode(form);
+   297→  const pub = PUB_MODE[pubMode.key];
+   298→
+   299→  function validate(): string[] {
+   300→    const errors: string[] = [];
+   301→    if (form.title.trim().length < 3)
+   302→      errors.push("Judul posisi minimal 3 karakter.");
+   303→    if (!form.department.trim()) errors.push("Departemen wajib diisi.");
+   304→    if (form.description.trim().length < 10)
+   305→      errors.push("Deskripsi minimal 10 karakter.");
+   306→    if (form.salaryText.trim().length > 80)
+   307→      errors.push("Teks gaji maksimal 80 karakter.");
+   308→    if (
+   309→      form.examples.some(
+   310→        (url) => url.trim().length > 0 && !/^https?:\/\//i.test(url.trim())
+   311→      )
+   312→    )
+   313→      errors.push("Contoh karya harus diawali http:// atau https://.");
+   314→    if (
+   315→      form.assignmentUrl.trim().length > 0 &&
+   316→      !/^https?:\/\//i.test(form.assignmentUrl.trim())
+   317→    )
+   318→      errors.push("URL tes/assignment harus diawali http:// atau https://.");
+   319→    if (form.screeningQuestions.some((q) => q.label.trim().length < 3))
+   320→      errors.push("Label pertanyaan screening minimal 3 karakter.");
+   321→    if (cleanedStages.length > 12)
+   322→      errors.push("Pipeline tahap maksimal 12 tahap.");
+   323→    if (form.maxApplicants.trim() !== "") {
+   324→      if (!isInt(form.maxApplicants) || Number(form.maxApplicants) < 1 || Number(form.maxApplicants) > 10000)
+   325→        errors.push("Kuota pelamar harus angka bulat 1-10000, atau dikosongkan.");
+   326→    }
+   327→    if (form.autoShortlistScore.trim() !== "") {
+   328→      if (!isInt(form.autoShortlistScore) || Number(form.autoShortlistScore) < 0 || Number(form.autoShortlistScore) > 100)
+   329→        errors.push("Skor auto-shortlist harus angka bulat 0-100, atau dikosongkan.");
+   330→    }
+   331→    if (form.order.trim() !== "" && !isInt(form.order))
+   332→      errors.push("Urutan harus berupa bilangan bulat.");
+   333→    return errors;
+   334→  }
+   335→
+   336→  async function handleSave() {
+   337→    if (saving) return;
+   338→    const errors = validate();
+   339→    setValidationErrors(errors);
+   340→    if (errors.length > 0) {
+   341→      toast.error(errors[0]);
+   342→      return;
+   343→    }
+   344→    setSaving(true);
+   345→    const payload: Record<string, unknown> = {
+   346→      title: form.title.trim(),
+   347→      department: form.department.trim(),
+   348→      type: form.type,
+   349→      location: form.location.trim() || "Remote",
+   350→      description: form.description.trim(),
+   351→      requirements: form.requirements.map((r) => r.trim()).filter(Boolean),
+   352→      isActive: form.isActive,
+   353→      publishAt: localInputToIso(form.publishAtLocal),
+   354→      closesAt: localInputToIso(form.closesAtLocal),
+   355→      coverFileId: form.coverFileId,
+   356→      salaryText: form.salaryText.trim() || null,
+   357→      salaryVisible: form.salaryVisible,
+   358→      benefits: form.benefits.map((b) => b.trim()).filter(Boolean),
+   359→      examples: form.examples.map((e) => e.trim()).filter(Boolean),
+   360→      urgent: form.urgent,
+   361→      featured: form.featured,
+   362→      requireCv: form.requireCv,
+   363→      requireIntro: form.requireIntro,
+   364→      requirePortfolio: form.requirePortfolio,
+   365→      maxApplicants:
+   366→        form.maxApplicants.trim() === "" ? null : Number(form.maxApplicants),
+   367→      screeningQuestions: form.screeningQuestions.map((q) => ({
+   368→        id: q.id,
+   369→        label: q.label.trim(),
+   370→        required: q.required,
+   371→      })),
+   372→      stages: cleanedStages,
+   373→      aiCriteria: form.aiCriteria.trim() || null,
+   374→      autoShortlistScore:
+   375→        form.autoShortlistScore.trim() === ""
+   376→          ? null
+   377→          : Number(form.autoShortlistScore),
+   378→      autoShortlistStage:
+   379→        cleanedStages.length === 0 ? null : form.autoShortlistStage || null,
+   380→      applyTemplate: form.applyTemplate.trim() || null,
+   381→      acceptTemplate: form.acceptTemplate.trim() || null,
+   382→      rejectTemplate: form.rejectTemplate.trim() || null,
+   383→      assignmentTitle: form.assignmentTitle.trim() || null,
+   384→      assignmentUrl: form.assignmentUrl.trim() || null,
+   385→      assignmentNote: form.assignmentNote.trim() || null,
+   386→      rubricCriteria: form.rubricCriteria.map((r) => r.trim()).filter(Boolean),
+   387→      checklistTemplate: form.checklistTemplate.map((c) => c.trim()).filter(Boolean),
+   388→      noteTemplates: form.noteTemplates.map((n) => n.trim()).filter(Boolean),
+   389→    };
+   390→    if (form.order.trim() !== "") payload.order = Number(form.order);
+   391→
+   392→    try {
+   393→      if (editing) {
+   394→        await apiPatch<Position>(`/api/admin/positions/${editing.id}`, payload);
+   395→        toast.success("Posisi diperbarui");
+   396→      } else {
+   397→        await apiPost<Position>("/api/admin/positions", payload);
+   398→        toast.success("Posisi ditambahkan");
+   399→      }
+   400→      onOpenChange(false);
+   401→      onSaved();
+   402→    } catch (err) {
+   403→      reportError(err);
+   404→    } finally {
+   405→      setSaving(false);
+   406→    }
+   407→  }
+   408→
+   409→  function handleUploadCover(file: File) {
+   410→    if (!COVER_MIME.includes(file.type)) {
+   411→      toast.error("Format gambar harus PNG, JPEG, atau WebP.");
+   412→      return;
+   413→    }
+   414→    if (file.size > COVER_MAX_BYTES) {
+   415→      toast.error("Ukuran gambar maksimal 3 MB.");
+   416→      return;
+   417→    }
+   418→    setUploadingCover(true);
+   419→    const fd = new FormData();
+   420→    fd.append("file", file);
+   421→    apiFetch<AdminUploadResponse>("/api/admin/upload", {
+   422→      method: "POST",
+   423→      body: fd,
+   424→    })
+   425→      .then((res) => {
+   426→        set("coverFileId", res.fileId);
+   427→        toast.success("Cover berhasil diunggah");
+   428→      })
+   429→      .catch((err) => reportError(err))
+   430→      .finally(() => {
+   431→        setUploadingCover(false);
+   432→        if (fileInputRef.current) fileInputRef.current.value = "";
+   433→      });
+   434→  }
+   435→
+   436→  function handleAiCover() {
+   437→    if (!editing || aiCoverLoading) return;
+   438→    setAiCoverLoading(true);
+   439→    const tid = toast.loading(
+   440→      "Membuat cover dengan AI... proses bisa memakan waktu hingga 1 menit."
+   441→    );
+   442→    apiPost<AiCoverResponse>("/api/admin/ai/cover", { positionId: editing.id })
+   443→      .then((res) => {
+   444→        if (res.ok) {
+   445→          set("coverFileId", res.fileId);
+   446→          toast.success("Cover AI berhasil dibuat", { id: tid });
+   447→          onSaved();
+   448→        } else {
+   449→          toast.error(res.error, { id: tid });
+   450→        }
+   451→      })
+   452→      .catch((err) => {
+   453→        reportError(err);
+   454→        toast.dismiss(tid);
+   455→      })
+   456→      .finally(() => setAiCoverLoading(false));
+   457→  }
+   458→
+   459→  return (
+   460→    <Dialog open={open} onOpenChange={onOpenChange}>
+   461→      <DialogContent className="max-h-[94vh] overflow-hidden rounded-2xl sm:max-w-3xl">
+   462→        <DialogHeader>
+   463→          <DialogTitle>{editing ? "Edit Posisi" : "Tambah Posisi"}</DialogTitle>
+   464→          <DialogDescription>
+   465→            {editing
+   466→              ? "Perbarui semua pengaturan posisi lowongan."
+   467→              : "Tambahkan posisi lowongan baru untuk halaman publik."}
+   468→          </DialogDescription>
+   469→        </DialogHeader>
+   470→
+   471→        <div className="-mr-2 max-h-[68vh] overflow-y-auto pr-2 nice-scrollbar sm:max-h-[70vh]">
+   472→          <form
+   473→            className="flex flex-col gap-3"
+   474→            onSubmit={(e) => {
+   475→              e.preventDefault();
+   476→              void handleSave();
+   477→            }}
+   478→          >
+   479→            {validationErrors.length > 0 ? (
+   480→              <div
+   481→                className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
+   482→                role="alert"
+   483→              >
+   484→                <p className="font-semibold">Periksa kembali formulir:</p>
+   485→                <ul className="mt-1 list-inside list-disc space-y-0.5">
+   486→                  {validationErrors.map((err) => (
+   487→                    <li key={err}>{err}</li>
+   488→                  ))}
+   489→                </ul>
+   490→              </div>
+   491→            ) : null}
+   492→
+   493→            <Accordion
+   494→              type="multiple"
+   495→              defaultValue={["dasar", "publikasi"]}
+   496→              className="rounded-xl border px-4"
+   497→            >
+   498→              {/* a. Dasar */}
+   499→              <AccordionItem value="dasar" className="border-b last:border-b-0">
+   500→                <AccordionTrigger className="py-3.5 hover:no-underline">
+   501→                  <span className="flex items-center gap-2">
+   502→                    <Briefcase className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+   503→                    Dasar
+   504→                  </span>
+   505→                </AccordionTrigger>
+   506→                <AccordionContent className="flex flex-col gap-4 pb-4">
+   507→                  <div className="flex flex-col gap-1.5">
+   508→                    <Label htmlFor="pos-title">Nama Posisi *</Label>
+   509→                    <Input
+   510→                      id="pos-title"
+   511→                      value={form.title}
+   512→                      onChange={(e) => set("title", e.target.value)}
+   513→                      placeholder="mis. Content Video Creator"
+   514→                      className="h-10"
+   515→                      maxLength={120}
+   516→                    />
+   517→                  </div>
+   518→
+   519→                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   520→                    <div className="flex flex-col gap-1.5">
+   521→                      <Label htmlFor="pos-department">Departemen *</Label>
+   522→                      <Input
+   523→                        id="pos-department"
+   524→                        value={form.department}
+   525→                        onChange={(e) => set("department", e.target.value)}
+   526→                        placeholder="mis. Produksi"
+   527→                        className="h-10"
+   528→                        maxLength={80}
+   529→                      />
+   530→                    </div>
+   531→                    <div className="flex flex-col gap-1.5">
+   532→                      <Label>Jenis</Label>
+   533→                      <Select
+   534→                        value={form.type}
+   535→                        onValueChange={(v) => set("type", v)}
+   536→                      >
+   537→                        <SelectTrigger
+   538→                          className="h-10 w-full"
+   539→                          aria-label="Jenis pekerjaan"
+   540→                        >
+   541→                          <SelectValue />
+   542→                        </SelectTrigger>
+   543→                        <SelectContent>
+   544→                          {POSITION_TYPES.map((t) => (
+   545→                            <SelectItem key={t} value={t}>
+   546→                              {t}
+   547→                            </SelectItem>
+   548→                          ))}
+   549→                        </SelectContent>
+   550→                      </Select>
+   551→                    </div>
+   552→                  </div>
+   553→
+   554→                  <div className="flex flex-col gap-1.5">
+   555→                    <Label htmlFor="pos-location">Lokasi</Label>
+   556→                    <Input
+   557→                      id="pos-location"
+   558→                      value={form.location}
+   559→                      onChange={(e) => set("location", e.target.value)}
+   560→                      placeholder="Remote"
+   561→                      className="h-10"
+   562→                      maxLength={120}
+   563→                    />
+   564→                  </div>
+   565→
+   566→                  <div className="flex flex-col gap-1.5">
+   567→                    <Label htmlFor="pos-description">Deskripsi *</Label>
+   568→                    <Textarea
+   569→                      id="pos-description"
+   570→                      value={form.description}
+   571→                      onChange={(e) => set("description", e.target.value)}
+   572→                      placeholder="Jelaskan tanggung jawab dan gambaran umum posisi..."
+   573→                      rows={4}
+   574→                    />
+   575→                  </div>
+   576→
+   577→                  <div className="flex flex-col gap-1.5">
+   578→                    <Label>Persyaratan</Label>
+   579→                    <StringListEditor
+   580→                      name="Persyaratan"
+   581→                      items={form.requirements}
+   582→                      onChange={(items) => set("requirements", items)}
+   583→                      maxItems={20}
+   584→                      maxLength={200}
+   585→                      addLabel="Tambah persyaratan"
+   586→                      placeholder="mis. Menguasai editing video"
+   587→                    />
+   588→                  </div>
+   589→                </AccordionContent>
+   590→              </AccordionItem>
+   591→
+   592→              {/* b. Publikasi & Status */}
+   593→              <AccordionItem value="publikasi" className="border-b last:border-b-0">
+   594→                <AccordionTrigger className="py-3.5 hover:no-underline">
+   595→                  <span className="flex items-center gap-2">
+   596→                    <Send className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+   597→                    Publikasi &amp; Status
+   598→                  </span>
+   599→                </AccordionTrigger>
+   600→                <AccordionContent className="flex flex-col gap-4 pb-4">
+   601→                  <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+   602→                    <div>
+   603→                      <p className="text-sm font-medium">Aktifkan posisi</p>
+   604→                      <p className="text-xs text-muted-foreground">
+   605→                        Dasar tampil di halaman publik
+   606→                      </p>
+   607→                    </div>
+   608→                    <Switch
+   609→                      checked={form.isActive}
+   610→                      onCheckedChange={(checked) => set("isActive", checked)}
+   611→                      aria-label="Aktifkan posisi (tampil di halaman publik)"
+   612→                    />
+   613→                  </div>
+   614→
+   615→                  <div className="flex items-center gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+   616→                    <Badge className={pub.className} variant="outline">
+   617→                      {pub.label}
+   618→                    </Badge>
+   619→                    <p className="text-xs text-muted-foreground">{pubMode.hint}</p>
+   620→                  </div>
+   621→
+   622→                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   623→                    <div className="flex flex-col gap-1.5">
+   624→                      <Label htmlFor="pos-publishAt">Jadwal Publikasi (opsional)</Label>
+   625→                      <Input
+   626→                        id="pos-publishAt"
+   627→                        type="datetime-local"
+   628→                        value={form.publishAtLocal}
+   629→                        onChange={(e) => set("publishAtLocal", e.target.value)}
+   630→                        className="h-10"
+   631→                      />
+   632→                      <p className="text-xs text-muted-foreground">
+   633→                        Posisi mulai tayang otomatis setelah waktu ini.
+   634→                      </p>
+   635→                    </div>
+   636→                    <div className="flex flex-col gap-1.5">
+   637→                      <Label htmlFor="pos-closesAt">Tanggal Penutupan (opsional)</Label>
+   638→                      <Input
+   639→                        id="pos-closesAt"
+   640→                        type="datetime-local"
+   641→                        value={form.closesAtLocal}
+   642→                        onChange={(e) => set("closesAtLocal", e.target.value)}
+   643→                        className="h-10"
+   644→                      />
+   645→                      <p className="text-xs text-muted-foreground">
+   646→                        Posisi berhenti tampil setelah waktu ini.
+   647→                      </p>
+   648→                    </div>
+   649→                  </div>
+   650→
+   651→                  <div className="flex flex-col gap-1.5 sm:max-w-56">
+   652→                    <Label htmlFor="pos-order">Urutan Tampil</Label>
+   653→                    <Input
+   654→                      id="pos-order"
+   655→                      type="number"
+   656→                      step={1}
+   657→                      value={form.order}
+   658→                      onChange={(e) => set("order", e.target.value)}
+   659→                      placeholder="Otomatis"
+   660→                      className="h-10"
+   661→                    />
+   662→                    <p className="text-xs text-muted-foreground">
+   663→                      Angka kecil tampil lebih dulu. Kosongkan untuk urutan otomatis.
+   664→                    </p>
+   665→                  </div>
+   666→                </AccordionContent>
+   667→              </AccordionItem>
+   668→
+   669→              {/* c. Tampilan & Konten */}
+   670→              <AccordionItem value="tampilan" className="border-b last:border-b-0">
+   671→                <AccordionTrigger className="py-3.5 hover:no-underline">
+   672→                  <span className="flex items-center gap-2">
+   673→                    <ImageIcon className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+   674→                    Tampilan &amp; Konten
+   675→                  </span>
+   676→                </AccordionTrigger>
+   677→                <AccordionContent className="flex flex-col gap-4 pb-4">
+   678→                  <div className="flex flex-col gap-2">
+   679→                    <Label>Cover Posisi</Label>
+   680→                    {form.coverFileId ? (
+   681→                      <img
+   682→                        src={`/api/files/${form.coverFileId}`}
+   683→                        alt={`Cover posisi ${form.title || "baru"}`}
+   684→                        className="h-40 w-full rounded-lg border object-cover"
+   685→                      />
+   686→                    ) : (
+   687→                      <div className="flex h-28 items-center justify-center rounded-lg border border-dashed bg-zinc-50/60 text-xs text-muted-foreground dark:bg-zinc-900/40">
+   688→                        Belum ada cover
+   689→                      </div>
+   690→                    )}
+   691→                    <div className="flex flex-wrap items-center gap-2">
+   692→                      <Button
+   693→                        type="button"
+   694→                        variant="outline"
+   695→                        size="sm"
+   696→                        className="h-11 active:scale-[0.99] sm:h-9"
+   697→                        onClick={() => fileInputRef.current?.click()}
+   698→                        disabled={uploadingCover}
+   699→                      >
+   700→                        {uploadingCover ? (
+   701→                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+   702→                        ) : (
+   703→                          <Upload className="size-4" aria-hidden="true" />
+   704→                        )}
+   705→                        Unggah Gambar
+   706→                      </Button>
+   707→                      <input
+   708→                        ref={fileInputRef}
+   709→                        type="file"
+   710→                        accept={COVER_MIME.join(",")}
+   711→                        className="hidden"
+   712→                        aria-hidden="true"
+   713→                        tabIndex={-1}
+   714→                        onChange={(e) => {
+   715→                          const file = e.target.files?.[0];
+   716→                          if (file) handleUploadCover(file);
+   717→                        }}
+   718→                      />
+   719→                      {editing ? (
+   720→                        <Button
+   721→                          type="button"
+   722→                          variant="outline"
+   723→                          size="sm"
+   724→                          className="h-11 active:scale-[0.99] sm:h-9"
+   725→                          onClick={handleAiCover}
+   726→                          disabled={aiCoverLoading || uploadingCover}
+   727→                        >
+   728→                          {aiCoverLoading ? (
+   729→                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+   730→                          ) : (
+   731→                            <Wand2 className="size-4" aria-hidden="true" />
+   732→                          )}
+   733→                          Buat dengan AI
+   734→                        </Button>
+   735→                      ) : (
+   736→                        <Tooltip>
+   737→                          <TooltipTrigger asChild>
+   738→                            <span className="inline-block">
+   739→                              <Button
+   740→                                type="button"
+   741→                                variant="outline"
+   742→                                size="sm"
+   743→                                className="h-11 sm:h-9"
+   744→                                disabled
+   745→                              >
+   746→                                <Wand2 className="size-4" aria-hidden="true" />
+   747→                                Buat dengan AI
+   748→                              </Button>
+   749→                            </span>
+   750→                          </TooltipTrigger>
+   751→                          <TooltipContent>Simpan posisi dulu</TooltipContent>
+   752→                        </Tooltip>
+   753→                      )}
+   754→                      <Button
+   755→                        type="button"
+   756→                        variant="ghost"
+   757→                        size="sm"
+   758→                        className="h-11 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:h-9 dark:hover:bg-rose-950"
+   759→                        onClick={() => {
+   760→                          set("coverFileId", null);
+   761→                          toast.success("Cover dihapus dari formulir");
+   762→                        }}
+   763→                        disabled={!form.coverFileId || uploadingCover}
+   764→                      >
+   765→                        <Trash2 className="size-4" aria-hidden="true" />
+   766→                        Hapus Cover
+   767→                      </Button>
+   768→                    </div>
+   769→                    <p className="text-xs text-muted-foreground">
+   770→                      PNG/JPEG/WebP maksimal 3 MB. Cover tampil di kartu posisi &amp; pratinjau berbagi tautan.
+   771→                    </p>
+   772→                  </div>
+   773→
+   774→                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   775→                    <div className="flex flex-col gap-1.5">
+   776→                      <Label htmlFor="pos-salaryText">Teks Gaji (opsional)</Label>
+   777→                      <Input
+   778→                        id="pos-salaryText"
+   779→                        value={form.salaryText}
+   780→                        onChange={(e) => set("salaryText", e.target.value)}
+   781→                        placeholder="mis. Rp 4-6 juta/bulan"
+   782→                        className="h-10"
+   783→                        maxLength={80}
+   784→                      />
+   785→                    </div>
+   786→                    <div className="flex items-end">
+   787→                      <div className="flex w-full items-center justify-between gap-3 rounded-lg border p-3">
+   788→                        <div>
+   789→                          <p className="flex items-center gap-1.5 text-sm font-medium">
+   790→                            <Wallet className="size-3.5" aria-hidden="true" />
+   791→                            Tampilkan gaji
+   792→                          </p>
+   793→                          <p className="text-xs text-muted-foreground">
+   794→                            Teks gaji tampil di halaman publik
+   795→                          </p>
+   796→                        </div>
+   797→                        <Switch
+   798→                          checked={form.salaryVisible}
+   799→                          onCheckedChange={(checked) => set("salaryVisible", checked)}
+   800→                          aria-label="Tampilkan teks gaji di halaman publik"
+   801→                        />
+   802→                      </div>
+   803→                    </div>
+   804→                  </div>
+   805→
+   806→                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+   807→                    <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+   808→                      <div>
+   809→                        <p className="flex items-center gap-1.5 text-sm font-medium">
+   810→                          <Flame className="size-3.5 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+   811→                          Tandai urgent
+   812→                        </p>
+   813→                        <p className="text-xs text-muted-foreground">
+   814→                          Badge &quot;Urgent&quot; di kartu posisi
+   815→                        </p>
+   816→                      </div>
+   817→                      <Switch
+   818→                        checked={form.urgent}
+   819→                        onCheckedChange={(checked) => set("urgent", checked)}
+   820→                        aria-label="Tandai posisi sebagai urgent"
+   821→                      />
+   822→                    </div>
+   823→                    <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+   824→                      <div>
+   825→                        <p className="flex items-center gap-1.5 text-sm font-medium">
+   826→                          <Pin className="size-3.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+   827→                          Tandai unggulan
+   828→                        </p>
+   829→                        <p className="text-xs text-muted-foreground">
+   830→                          Posisi tampil paling depan
+   831→                        </p>
+   832→                      </div>
+   833→                      <Switch
+   834→                        checked={form.featured}
+   835→                        onCheckedChange={(checked) => set("featured", checked)}
+   836→                        aria-label="Tandai posisi sebagai unggulan"
+   837→                      />
+   838→                    </div>
+   839→                  </div>
+   840→                </AccordionContent>
+   841→              </AccordionItem>
+   842→
+   843→              {/* d. Benefit & Karya */}
+   844→              <AccordionItem value="benefit" className="border-b last:border-b-0">
+   845→                <AccordionTrigger className="py-3.5 hover:no-underline">
+   846→                  <span className="flex items-center gap-2">
+   847→                    <Gift className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+   848→                    Benefit &amp; Karya
+   849→                  </span>
+   850→                </AccordionTrigger>
+   851→                <AccordionContent className="flex flex-col gap-4 pb-4">
+   852→                  <div className="flex flex-col gap-1.5">
+   853→                    <Label>Benefit</Label>
+   854→                    <StringListEditor
+   855→                      name="Benefit"
+   856→                      items={form.benefits}
+   857→                      onChange={(items) => set("benefits", items)}
+   858→                      maxItems={10}
+   859→                      maxLength={120}
+   860→                      addLabel="Tambah benefit"
+   861→                      placeholder="mis. Fasilitas peralatan lengkap"
+   862→                    />
+   863→                  </div>
+   864→                  <div className="flex flex-col gap-1.5">
+   865→                    <Label>Contoh Karya</Label>
+   866→                    <StringListEditor
+   867→                      name="Contoh karya"
+   868→                      items={form.examples}
+   869→                      onChange={(items) => set("examples", items)}
+   870→                      maxItems={6}
+   871→                      maxLength={300}
+   872→                      addLabel="Tambah contoh karya"
+   873→                      placeholder="https://youtube.com/..."
+   874→                      urlOnly
+   875→                    />
+   876→                  </div>
+   877→                </AccordionContent>
+   878→              </AccordionItem>
+   879→
+   880→              {/* e. Formulir & Screening */}
+   881→              <AccordionItem value="formulir" className="border-b last:border-b-0">
+   882→                <AccordionTrigger className="py-3.5 hover:no-underline">
+   883→                  <span className="flex items-center gap-2">
+   884→                    <ListChecks className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+   885→                    Formulir &amp; Screening
+   886→                  </span>
+   887→                </AccordionTrigger>
+   888→                <AccordionContent className="flex flex-col gap-4 pb-4">
+   889→                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+   890→                    {(
+   891→                      [
+   892→                        ["requireCv", "Wajib CV", "Berkas PDF saat melamar"],
+   893→                        ["requireIntro", "Wajib Intro Video", "Audio/video perkenalan"],
+   894→                        ["requirePortfolio", "Wajib Portofolio", "Tautan portofolio karya"],
+   895→                      ] as const
+   896→                    ).map(([key, label, hint]) => (
+   897→                      <div
+   898→                        key={key}
+   899→                        className="flex items-center justify-between gap-3 rounded-lg border p-3 sm:flex-col sm:items-start sm:justify-between"
+   900→                      >
+   901→                        <div>
+   902→                          <p className="text-sm font-medium">{label}</p>
+   903→                          <p className="text-xs text-muted-foreground">{hint}</p>
+   904→                        </div>
+   905→                        <Switch
+   906→                          checked={form[key]}
+   907→                          onCheckedChange={(checked) => set(key, checked)}
+   908→                          aria-label={label}
+   909→                        />
+   910→                      </div>
+   911→                    ))}
+   912→                  </div>
+   913→
+   914→                  <div className="flex flex-col gap-1.5 sm:max-w-56">
+   915→                    <Label htmlFor="pos-maxApplicants">Kuota Pelamar (opsional)</Label>
+   916→                    <Input
+   917→                      id="pos-maxApplicants"
+   918→                      type="number"
+   919→                      min={1}
+   920→                      max={10000}
+   921→                      step={1}
+   922→                      value={form.maxApplicants}
+   923→                      onChange={(e) => set("maxApplicants", e.target.value)}
+   924→                      placeholder="Tanpa kuota"
+   925→                      className="h-10"
+   926→                    />
+   927→                    <p className="text-xs text-muted-foreground">
+   928→                      Posisi otomatis berhenti menerima lamaran saat kuota penuh.
+   929→                    </p>
+   930→                  </div>
+   931→
+   932→                  <div className="flex flex-col gap-1.5">
+   933→                    <Label>Pertanyaan Screening</Label>
+   934→                    <ScreeningQuestionsEditor
+   935→                      items={form.screeningQuestions}
+   936→                      onChange={(items) => set("screeningQuestions", items)}
+   937→                      maxItems={10}
+   938→                    />
+   939→                  </div>
+   940→                </AccordionContent>
+   941→              </AccordionItem>
+   942→
+   943→              {/* f. Pipeline & AI */}
+   944→              <AccordionItem value="pipeline" className="border-b last:border-b-0">
+   945→                <AccordionTrigger className="py-3.5 hover:no-underline">
+   946→                  <span className="flex items-center gap-2">
+   947→                    <Workflow className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+   948→                    Pipeline &amp; AI
+   949→                  </span>
+   950→                </AccordionTrigger>
+   951→                <AccordionContent className="flex flex-col gap-4 pb-4">
+   952→                  <div className="flex flex-col gap-1.5">
+   953→                    <Label>Pipeline Tahap Kustom</Label>
+   954→                    {outOfStageApps > 0 ? (
+   955→                      <div
+   956→                        className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+   957→                        role="alert"
+   958→                      >
+   959→                        <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+   960→                        <span>
+   961→                          {outOfStageApps} lamaran posisi ini berada pada tahap yang tidak ada di daftar
+   962→                          pipeline tersimpan. Tambahkan kembali tahap tersebut, atau lamaran itu tidak akan
+   963→                          tampil di funnel &amp; papan kanban.
+   964→                        </span>
+   965→                      </div>
+   966→                    ) : null}
+   967→                    <StringListEditor
+   968→                      name="Tahap pipeline"
+   969→                      items={form.stages}
+   970→                      onChange={(items) => {
+   971→                        set("stages", items);
+   972→                        // Tahap yang dihapus dari pipeline tidak valid lagi untuk auto-shortlist.
+   973→                        setForm((f) =>
+   974→                          f.autoShortlistStage &&
+   975→                          !items.map((s) => s.trim()).includes(f.autoShortlistStage)
+   976→                            ? { ...f, autoShortlistStage: "" }
+   977→                            : f
+   978→                        );
+   979→                      }}
+   980→                      maxItems={12}
+   981→                      maxLength={40}
+   982→                      addLabel="Tambah tahap"
+   983→                      placeholder="mis. Tes Menulis"
+   984→                      hint="Kosong = pipeline bawaan (Baru/Ditinjau/Wawancara/Diterima/Ditolak)"
+   985→                    />
+   986→                  </div>
+   987→
+   988→                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+   989→                    <div className="flex flex-col gap-1.5">
+   990→                      <Label htmlFor="pos-shortlistScore">Ambang Skor Auto-Shortlist (opsional)</Label>
+   991→                      <Input
+   992→                        id="pos-shortlistScore"
+   993→                        type="number"
+   994→                        min={0}
+   995→                        max={100}
+   996→                        step={1}
+   997→                        value={form.autoShortlistScore}
+   998→                        onChange={(e) => set("autoShortlistScore", e.target.value)}
+   999→                        placeholder="mis. 80"
+  1000→                        className="h-10"
+  1001→                      />
+  1002→                      <p className="text-xs text-muted-foreground">
+  1003→                        Lamaran Baru dengan skor AI mencapai angka ini dipindah otomatis.
+  1004→                      </p>
+  1005→                    </div>
+  1006→                    <div className="flex flex-col gap-1.5">
+  1007→                      <Label>Tahap Tujuan Auto-Shortlist</Label>
+  1008→                      <Select
+  1009→                        value={form.autoShortlistStage || SHORTLIST_NONE}
+  1010→                        onValueChange={(v) =>
+  1011→                          set("autoShortlistStage", v === SHORTLIST_NONE ? "" : v)
+  1012→                        }
+  1013→                        disabled={cleanedStages.length === 0}
+  1014→                      >
+  1015→                        <SelectTrigger
+  1016→                          className="h-10 w-full"
+  1017→                          aria-label="Tahap tujuan auto-shortlist"
+  1018→                        >
+  1019→                          <SelectValue placeholder="(nonaktif)" />
+  1020→                        </SelectTrigger>
+  1021→                        <SelectContent>
+  1022→                          {/* Radix melarang SelectItem value="" — pakai sentinel */}
+  1023→                          <SelectItem value={SHORTLIST_NONE}>(nonaktif)</SelectItem>
+  1024→                          {stagesForPosition(cleanedStages).map((stage) => (
+  1025→                            <SelectItem key={stage} value={stage}>
+  1026→                              {stageLabel(stage)}
+  1027→                            </SelectItem>
+  1028→                          ))}
+  1029→                        </SelectContent>
+  1030→                      </Select>
+  1031→                      <p className="text-xs text-muted-foreground">
+  1032→                        {cleanedStages.length === 0
+  1033→                          ? "Isi pipeline tahap kustom di atas untuk mengaktifkan pilihan ini."
+  1034→                          : "Lamaran dipindah ke tahap ini saat ambang skor tercapai."}
+  1035→                      </p>
+  1036→                    </div>
+  1037→                  </div>
+  1038→
+  1039→                  <div className="flex flex-col gap-1.5">
+  1040→                    <Label htmlFor="pos-aiCriteria">Kriteria AI (opsional)</Label>
+  1041→                    <Textarea
+  1042→                      id="pos-aiCriteria"
+  1043→                      value={form.aiCriteria}
+  1044→                      onChange={(e) => set("aiCriteria", e.target.value)}
+  1045→                      placeholder="mis. Utamakan kandidat dengan pengalaman editing YouTube dan pemahaman tren konten pendek."
+  1046→                      rows={3}
+  1047→                      maxLength={600}
+  1048→                    />
+  1049→                    <p className="text-xs text-muted-foreground">
+  1050→                      Mempengaruhi prompt screening AI khusus posisi ini. Maksimal 600 karakter.
+  1051→                    </p>
+  1052→                  </div>
+  1053→                </AccordionContent>
+  1054→              </AccordionItem>
+  1055→
+  1056→              {/* g. Otomasi Pesan */}
+  1057→              <AccordionItem value="otomasi" className="border-b last:border-b-0">
+  1058→                <AccordionTrigger className="py-3.5 hover:no-underline">
+  1059→                  <span className="flex items-center gap-2">
+  1060→                    <MessagesSquare className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+  1061→                    Otomasi Pesan
+  1062→                  </span>
+  1063→                </AccordionTrigger>
+  1064→                <AccordionContent className="flex flex-col gap-4 pb-4">
+  1065→                  <p className="text-xs text-muted-foreground">
+  1066→                    Variabel yang tersedia:{" "}
+  1067→                    <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[11px] dark:bg-zinc-800">
+  1068→                      {"{nama}"}
+  1069→                    </code>
+  1070→                    ,{" "}
+  1071→                    <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[11px] dark:bg-zinc-800">
+  1072→                      {"{posisi}"}
+  1073→                    </code>
+  1074→                    ,{" "}
+  1075→                    <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[11px] dark:bg-zinc-800">
+  1076→                      {"{kode}"}
+  1077→                    </code>{" "}
+  1078→                    (kode pelacakan; hanya untuk pesan lamaran). Maksimal 500 karakter per template.
+  1079→                  </p>
+  1080→
+  1081→                  {(
+  1082→                    [
+  1083→                      ["applyTemplate", "Template Konfirmasi Lamaran", DEMO_TEMPLATES.apply, "Dikirim otomatis saat pelamar selesai mendaftar."],
+  1084→                      ["acceptTemplate", "Template Diterima", DEMO_TEMPLATES.accept, "Dikirim saat lamaran dipindah ke tahap Diterima."],
+  1085→                      ["rejectTemplate", "Template Ditolak", DEMO_TEMPLATES.reject, "Dikirim saat lamaran dipindah ke tahap Ditolak."],
+  1086→                    ] as const
+  1087→                  ).map(([key, label, demo, hint]) => (
+  1088→                    <div key={key} className="flex flex-col gap-1.5">
+  1089→                      <div className="flex items-center justify-between gap-2">
+  1090→                        <Label htmlFor={`pos-${key}`}>{label}</Label>
+  1091→                        <Button
+  1092→                          type="button"
+  1093→                          variant="ghost"
+  1094→                          size="sm"
+  1095→                          className="h-8 gap-1 px-2 text-xs active:scale-[0.99]"
+  1096→                          onClick={() => set(key, demo)}
+  1097→                        >
+  1098→                          <Sparkles className="size-3.5" aria-hidden="true" />
+  1099→                          Isi contoh
+  1100→                        </Button>
+  1101→                      </div>
+  1102→                      <Textarea
+  1103→                        id={`pos-${key}`}
+  1104→                        value={form[key]}
+  1105→                        onChange={(e) => set(key, e.target.value)}
+  1106→                        placeholder="Kosongkan untuk tidak mengirim pesan otomatis."
+  1107→                        rows={3}
+  1108→                        maxLength={500}
+  1109→                      />
+  1110→                      <p className="text-xs text-muted-foreground">{hint}</p>
+  1111→                    </div>
+  1112→                  ))}
+  1113→
+  1114→                  <div className="rounded-lg border p-3">
+  1115→                    <p className="text-sm font-medium">Tes untuk Pelamar</p>
+  1116→                    <p className="mb-3 text-xs text-muted-foreground">
+  1117→                      Info tes/brief dikirim bersama pesan konfirmasi lamaran. Kosongkan bila tidak ada tes.
+  1118→                    </p>
+  1119→                    <div className="flex flex-col gap-3">
+  1120→                      <div className="flex flex-col gap-1.5">
+  1121→                        <Label htmlFor="pos-assignmentTitle">Judul Tes</Label>
+  1122→                        <Input
+  1123→                          id="pos-assignmentTitle"
+  1124→                          value={form.assignmentTitle}
+  1125→                          onChange={(e) => set("assignmentTitle", e.target.value)}
+  1126→                          placeholder="mis. Tes Editing 60 Detik"
+  1127→                          className="h-10"
+  1128→                          maxLength={120}
+  1129→                        />
+  1130→                      </div>
+  1131→                      <div className="flex flex-col gap-1.5">
+  1132→                        <Label htmlFor="pos-assignmentUrl">URL Tes</Label>
+  1133→                        <Input
+  1134→                          id="pos-assignmentUrl"
+  1135→                          value={form.assignmentUrl}
+  1136→                          onChange={(e) => set("assignmentUrl", e.target.value)}
+  1137→                          placeholder="https://drive.google.com/..."
+  1138→                          className="h-10"
+  1139→                          maxLength={300}
+  1140→                        />
+  1141→                      </div>
+  1142→                      <div className="flex flex-col gap-1.5">
+  1143→                        <Label htmlFor="pos-assignmentNote">Catatan Tes</Label>
+  1144→                        <Textarea
+  1145→                          id="pos-assignmentNote"
+  1146→                          value={form.assignmentNote}
+  1147→                          onChange={(e) => set("assignmentNote", e.target.value)}
+  1148→                          placeholder="Instruksi singkat pengerjaan tes..."
+  1149→                          rows={2}
+  1150→                          maxLength={400}
+  1151→                        />
+  1152→                      </div>
+  1153→                    </div>
+  1154→                  </div>
+  1155→                </AccordionContent>
+  1156→              </AccordionItem>
+  1157→
+  1158→              {/* h. Evaluasi */}
+  1159→              <AccordionItem value="evaluasi" className="border-b last:border-b-0">
+  1160→                <AccordionTrigger className="py-3.5 hover:no-underline">
+  1161→                  <span className="flex items-center gap-2">
+  1162→                    <ClipboardCheck className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+  1163→                    Evaluasi
+  1164→                  </span>
+  1165→                </AccordionTrigger>
+  1166→                <AccordionContent className="flex flex-col gap-4 pb-4">
+  1167→                  <div className="flex flex-col gap-1.5">
+  1168→                    <Label>Kriteria Rubrik Penilaian</Label>
+  1169→                    <StringListEditor
+  1170→                      name="Kriteria rubrik"
+  1171→                      items={form.rubricCriteria}
+  1172→                      onChange={(items) => set("rubricCriteria", items)}
+  1173→                      maxItems={8}
+  1174→                      maxLength={60}
+  1175→                      addLabel="Tambah kriteria"
+  1176→                      placeholder="mis. Kualitas storytelling"
+  1177→                    />
+  1178→                  </div>
+  1179→                  <div className="flex flex-col gap-1.5">
+  1180→                    <Label>Template Checklist</Label>
+  1181→                    <StringListEditor
+  1182→                      name="Item checklist"
+  1183→                      items={form.checklistTemplate}
+  1184→                      onChange={(items) => set("checklistTemplate", items)}
+  1185→                      maxItems={8}
+  1186→                      maxLength={120}
+  1187→                      addLabel="Tambah item checklist"
+  1188→                      placeholder="mis. Cek reel di Instagram kandidat"
+  1189→                    />
+  1190→                  </div>
+  1191→                  <div className="flex flex-col gap-1.5">
+  1192→                    <Label>Template Catatan Cepat</Label>
+  1193→                    <StringListEditor
+  1194→                      name="Template catatan"
+  1195→                      items={form.noteTemplates}
+  1196→                      onChange={(items) => set("noteTemplates", items)}
+  1197→                      maxItems={8}
+  1198→                      maxLength={200}
+  1199→                      addLabel="Tambah template catatan"
+  1200→                      placeholder="mis. Portofolio kuat, cek di wawancara"
+  1201→                      hint="Klik cepat saat menulis catatan pada lamaran"
+  1202→                    />
+  1203→                  </div>
+  1204→                </AccordionContent>
+  1205→              </AccordionItem>
+  1206→            </Accordion>
+  1207→
+  1208→            {/* Tombol submit tersembunyi agar Enter mensubmit form */}
+  1209→            <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
+  1210→          </form>
+  1211→        </div>
+  1212→
+  1213→        <DialogFooter className="gap-2 border-t pt-4">
+  1214→          <Button
+  1215→            variant="outline"
+  1216→            onClick={() => onOpenChange(false)}
+  1217→            disabled={saving}
+  1218→            className="h-11 sm:h-10"
+  1219→          >
+  1220→            Batal
+  1221→          </Button>
+  1222→          <Button
+  1223→            onClick={() => void handleSave()}
+  1224→            disabled={saving}
+  1225→            className="h-11 active:scale-[0.99] sm:h-10"
+  1226→          >
+  1227→            {saving ? (
+  1228→              <>
+  1229→                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+  1230→                Menyimpan...
+  1231→              </>
+  1232→            ) : editing ? (
+  1233→              "Simpan Perubahan"
+  1234→            ) : (
+  1235→              "Tambah Posisi"
+  1236→            )}
+  1237→          </Button>
+  1238→        </DialogFooter>
+  1239→      </DialogContent>
+  1240→    </Dialog>
+  1241→  );
+  1242→}
+  1243→

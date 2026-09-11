@@ -571,3 +571,19 @@ Stage Summary:
 - SEMUA 28 fitur ide per lowongan kini LIVE dan tersinkron end-to-end: (1) cover upload+AI, (2) gaji+toggle, (3) benefit, (4) contoh karya embed, (5) badge Urgent/Baru/Segera Ditutup otomatis, (6) featured/pin, (7) pertanyaan screening kustom wajib/opsional, (8) toggle berkas per posisi, (9) kriteria AI per posisi, (10) kuota + auto-close 409, (11) wajib portofolio, (12) draft/terjadwal/tayang (publishAt), (13) auto-close deadline/kuota + log, (14) duplikat penuh, (15) pipeline tahap kustom per posisi (kanban/track/detail adaptif), (16) template pesan apply/accept/reject + salin, (17) auto-shortlist skor AI, (18) tes/assignment tampil ke pelamar (sukses+tracking+dialog detail), (19) statistik per posisi (views/konversi/funnel/rata AI), (20) grafik perbandingan di dashboard, (21) sumber pelamar (self-report + filter + agregasi), (22) halaman detail ?posisi=slug + SEO/OG metadata dinamis + JSON-LD, (23) QR per posisi, (24) embed per posisi, (25) UTM pada share, (26) rubrik penilaian per posisi, (27) checklist evaluasi, (28) template catatan.
 - Kontrak tetap: Application.status = StageKey (5 bawaan atau tahap kustom); label/warna via src/lib/stages.ts; data lama 100% aman (serializer toleran).
 - Data demo kaya fitur (gaji, screening, tes, rubrik, kuota SMO=10); akun & alur lama tidak berubah.
+
+---
+Task ID: 12
+Agent: Z.ai Code (orchestrator)
+Task: "ratakan per fitur sesuai layar tambahkan garis panjang untuk pembatas fitur" — ratakan tampilan per fitur selebar layar + garis panjang sebagai pembatas antar fitur.
+
+Work Log:
+- Membaca worklog.md (Task 11: 28 fitur per lowongan selesai) lalu mengaudit 2 permukaan "daftar fitur" di admin: position-form-dialog.tsx (Accordion ber-box `rounded-xl border px-4`, 8 grup fitur terlipat) dan section-visibility-card.tsx (grid 2 kolom kartu ber-border, 12 fitur).
+- position-form-dialog.tsx — refactor accordion → section FLAT: hapus impor Accordion*, tambah komponen lokal `FormSection` (header: ikon lucide dalam kotak rose `size-8 rounded-lg bg-rose-100 text-rose-600` + judul + hint 1 baris; konten full-width `flex flex-col gap-4`) dan `FormDivider` (hairline `h-px w-full bg-zinc-200 dark:bg-zinc-800`). 8 section (Dasar/Publikasi/Tampilan/Benefit/Formulir/Pipeline/Otomasi/Evaluasi) kini selalu terbuka, selebar dialog, dipisah 7 garis panjang; seluruh isi field TIDAK berubah (payload & validasi utuh).
+- section-visibility-card.tsx — grid `md:grid-cols-2` kartu ber-border → daftar baris flat selebar kartu: tiap fitur satu baris `py-3.5` (ikon rose + label + switch), dipisah garis panjang `h-px w-full` antar baris (11 pembatas / 12 fitur), tinggi baris >=60px tetap touch-friendly.
+- Verifikasi: `bun run lint` 0 error; curl GET / 200; agent-browser end-to-end — login admin@lumina.id, dialog Tambah Posisi: 8 section flat + 7 `hr` terhitung via DOM, screenshot terverifikasi (desktop + mobile 390px), Pengaturan: 12 baris flat + 11 pembatas, dark mode diverifikasi (garis zinc-800 terlihat jelas), tema dikembalikan ke terang; dev.log tanpa error.
+
+Stage Summary:
+- Layout "ratakkan per fitur + garis panjang pembatas" diterapkan konsisten di 2 layar fitur: form posisi (section fitur flat selebar layar) & pengaturan tampilan publik (baris fitur flat). Pola divider: `h-px w-full bg-zinc-200 dark:bg-zinc-800`.
+- Tidak ada perubahan skema/API/payload — murni presentasi; semua fitur 28 tetap berfungsi.
+- File berubah: src/components/admin/position-form-dialog.tsx, src/components/admin/section-visibility-card.tsx.

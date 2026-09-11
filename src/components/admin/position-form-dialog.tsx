@@ -1,17 +1,12 @@
 "use client";
 
 // Dialog form posisi v3 — pusat kendali semua field per lowongan.
-// Section dipisah dengan Accordion agar dialog panjang tetap rapi saat discroll.
+// Layout: section fitur FLAT selebar layar (tanpa accordion), dipisah garis
+// panjang (hairline) sebagai pembatas antar fitur agar mudah dipindai.
 // Batas karakter/item dikunci via maxLength & maxItems editor (selaras server).
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import {
   Dialog,
   DialogContent,
@@ -51,6 +46,7 @@ import {
   Wallet,
   Wand2,
   Workflow,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -250,6 +246,51 @@ const COVER_MIME = ["image/png", "image/jpeg", "image/webp"];
 
 // Sentinel opsi "(nonaktif)" — Radix Select melarang SelectItem dengan value "".
 const SHORTLIST_NONE = "__nonaktif__";
+
+// Garis panjang pembatas antar section fitur — selebar area formulir.
+function FormDivider() {
+  return (
+    <hr
+      aria-hidden="true"
+      className="h-px w-full border-0 bg-zinc-200 dark:bg-zinc-800"
+    />
+  );
+}
+
+// Header section fitur flat: ikon dalam kotak rose + judul + petunjuk singkat.
+function FormSection({
+  id,
+  icon: Icon,
+  title,
+  hint,
+  children,
+}: {
+  id: string;
+  icon: LucideIcon;
+  title: string;
+  hint: string;
+  children: ReactNode;
+}) {
+  return (
+    <section aria-labelledby={`formsec-${id}`} className="flex flex-col gap-4">
+      <div className="flex items-center gap-3">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+          <Icon className="size-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h3
+            id={`formsec-${id}`}
+            className="text-sm font-semibold leading-tight"
+          >
+            {title}
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
 
 function isInt(value: string): boolean {
   return /^-?\d+$/.test(value.trim());
@@ -490,20 +531,14 @@ export function PositionFormDialog({
               </div>
             ) : null}
 
-            <Accordion
-              type="multiple"
-              defaultValue={["dasar", "publikasi"]}
-              className="rounded-xl border px-4"
-            >
+            <div className="flex flex-col gap-5">
               {/* a. Dasar */}
-              <AccordionItem value="dasar" className="border-b last:border-b-0">
-                <AccordionTrigger className="py-3.5 hover:no-underline">
-                  <span className="flex items-center gap-2">
-                    <Briefcase className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                    Dasar
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="flex flex-col gap-4 pb-4">
+              <FormSection
+                id="dasar"
+                icon={Briefcase}
+                title="Dasar"
+                hint="Informasi inti lowongan yang tampil di halaman publik."
+              >
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="pos-title">Nama Posisi *</Label>
                     <Input
@@ -586,18 +621,17 @@ export function PositionFormDialog({
                       placeholder="mis. Menguasai editing video"
                     />
                   </div>
-                </AccordionContent>
-              </AccordionItem>
+                </FormSection>
+
+                <FormDivider />
 
               {/* b. Publikasi & Status */}
-              <AccordionItem value="publikasi" className="border-b last:border-b-0">
-                <AccordionTrigger className="py-3.5 hover:no-underline">
-                  <span className="flex items-center gap-2">
-                    <Send className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                    Publikasi &amp; Status
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="flex flex-col gap-4 pb-4">
+              <FormSection
+                id="publikasi"
+                icon={Send}
+                title="Publikasi & Status"
+                hint="Status tayang, jadwal publikasi & penutupan, dan urutan tampil."
+              >
                   <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
                     <div>
                       <p className="text-sm font-medium">Aktifkan posisi</p>
@@ -663,18 +697,17 @@ export function PositionFormDialog({
                       Angka kecil tampil lebih dulu. Kosongkan untuk urutan otomatis.
                     </p>
                   </div>
-                </AccordionContent>
-              </AccordionItem>
+                </FormSection>
+
+                <FormDivider />
 
               {/* c. Tampilan & Konten */}
-              <AccordionItem value="tampilan" className="border-b last:border-b-0">
-                <AccordionTrigger className="py-3.5 hover:no-underline">
-                  <span className="flex items-center gap-2">
-                    <ImageIcon className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                    Tampilan &amp; Konten
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="flex flex-col gap-4 pb-4">
+              <FormSection
+                id="tampilan"
+                icon={ImageIcon}
+                title="Tampilan & Konten"
+                hint="Cover, teks gaji, serta badge urgent & unggulan."
+              >
                   <div className="flex flex-col gap-2">
                     <Label>Cover Posisi</Label>
                     {form.coverFileId ? (
@@ -837,18 +870,17 @@ export function PositionFormDialog({
                       />
                     </div>
                   </div>
-                </AccordionContent>
-              </AccordionItem>
+                </FormSection>
+
+                <FormDivider />
 
               {/* d. Benefit & Karya */}
-              <AccordionItem value="benefit" className="border-b last:border-b-0">
-                <AccordionTrigger className="py-3.5 hover:no-underline">
-                  <span className="flex items-center gap-2">
-                    <Gift className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                    Benefit &amp; Karya
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="flex flex-col gap-4 pb-4">
+              <FormSection
+                id="benefit"
+                icon={Gift}
+                title="Benefit & Karya"
+                hint="Benefit dan contoh karya yang dipajang di detail lowongan."
+              >
                   <div className="flex flex-col gap-1.5">
                     <Label>Benefit</Label>
                     <StringListEditor
@@ -874,18 +906,17 @@ export function PositionFormDialog({
                       urlOnly
                     />
                   </div>
-                </AccordionContent>
-              </AccordionItem>
+                </FormSection>
+
+                <FormDivider />
 
               {/* e. Formulir & Screening */}
-              <AccordionItem value="formulir" className="border-b last:border-b-0">
-                <AccordionTrigger className="py-3.5 hover:no-underline">
-                  <span className="flex items-center gap-2">
-                    <ListChecks className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                    Formulir &amp; Screening
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="flex flex-col gap-4 pb-4">
+              <FormSection
+                id="formulir"
+                icon={ListChecks}
+                title="Formulir & Screening"
+                hint="Berkas wajib, kuota pelamar, dan pertanyaan screening."
+              >
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     {(
                       [
@@ -937,18 +968,17 @@ export function PositionFormDialog({
                       maxItems={10}
                     />
                   </div>
-                </AccordionContent>
-              </AccordionItem>
+                </FormSection>
+
+                <FormDivider />
 
               {/* f. Pipeline & AI */}
-              <AccordionItem value="pipeline" className="border-b last:border-b-0">
-                <AccordionTrigger className="py-3.5 hover:no-underline">
-                  <span className="flex items-center gap-2">
-                    <Workflow className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                    Pipeline &amp; AI
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="flex flex-col gap-4 pb-4">
+              <FormSection
+                id="pipeline"
+                icon={Workflow}
+                title="Pipeline & AI"
+                hint="Tahapan seleksi kustom, auto-shortlist, dan kriteria AI."
+              >
                   <div className="flex flex-col gap-1.5">
                     <Label>Pipeline Tahap Kustom</Label>
                     {outOfStageApps > 0 ? (
@@ -1050,18 +1080,17 @@ export function PositionFormDialog({
                       Mempengaruhi prompt screening AI khusus posisi ini. Maksimal 600 karakter.
                     </p>
                   </div>
-                </AccordionContent>
-              </AccordionItem>
+                </FormSection>
+
+                <FormDivider />
 
               {/* g. Otomasi Pesan */}
-              <AccordionItem value="otomasi" className="border-b last:border-b-0">
-                <AccordionTrigger className="py-3.5 hover:no-underline">
-                  <span className="flex items-center gap-2">
-                    <MessagesSquare className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                    Otomasi Pesan
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="flex flex-col gap-4 pb-4">
+              <FormSection
+                id="otomasi"
+                icon={MessagesSquare}
+                title="Otomasi Pesan"
+                hint="Template pesan otomatis dan info tes untuk pelamar."
+              >
                   <p className="text-xs text-muted-foreground">
                     Variabel yang tersedia:{" "}
                     <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[11px] dark:bg-zinc-800">
@@ -1152,18 +1181,17 @@ export function PositionFormDialog({
                       </div>
                     </div>
                   </div>
-                </AccordionContent>
-              </AccordionItem>
+                </FormSection>
+
+                <FormDivider />
 
               {/* h. Evaluasi */}
-              <AccordionItem value="evaluasi" className="border-b last:border-b-0">
-                <AccordionTrigger className="py-3.5 hover:no-underline">
-                  <span className="flex items-center gap-2">
-                    <ClipboardCheck className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                    Evaluasi
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent className="flex flex-col gap-4 pb-4">
+              <FormSection
+                id="evaluasi"
+                icon={ClipboardCheck}
+                title="Evaluasi"
+                hint="Rubrik penilaian, checklist, dan catatan cepat tim."
+              >
                   <div className="flex flex-col gap-1.5">
                     <Label>Kriteria Rubrik Penilaian</Label>
                     <StringListEditor
@@ -1201,9 +1229,8 @@ export function PositionFormDialog({
                       hint="Klik cepat saat menulis catatan pada lamaran"
                     />
                   </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+                </FormSection>
+            </div>
 
             {/* Tombol submit tersembunyi agar Enter mensubmit form */}
             <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
