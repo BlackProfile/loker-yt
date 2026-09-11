@@ -96,5 +96,38 @@ httpServer.on("request", (req, res) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`[realtime] listening on :${PORT} (path "/rt", events: positions:changed | applications:changed | site:changed)`);
+  console.log(`[realtime] listening on :${PORT} (path "/rt", events: positions:changed | applications:changed | interviews:changed | site:changed)`);
 });
+
+// ---------------------------------------------------------------------------
+// Scheduler terjadwal: panggil /api/cron/reminders di Next.js tiap 60 detik.
+// Tugas: reminder wawancara (H-1 & H-1 jam), offer kedaluwarsa, auto no-show.
+// Kegagalan diabaikan senyap (Next dev server bisa restart saat deploy).
+// ---------------------------------------------------------------------------
+const NEXT_BASE = "http://127.0.0.1:3000";
+const CRON_SECRET = process.env.REALTIME_SECRET ?? "lumina-realtime-secret";
+
+async function runCron(): Promise<void> {
+  try {
+    const res = await fetch(`${NEXT_BASE}/api/cron/reminders`, {
+      method: "POST",
+      headers: { "x-realtime-secret": CRON_SECRET },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.ok) {
+      const data = (await res.json().catch(() => null)) as
+        | { offerExpired?: number; remindersDay?: number; remindersHour?: number; noShows?: number }
+        | null;
+      if (data && (data.offerExpired || data.remindersDay || data.remindersHour || data.noShows)) {
+        console.log(
+          `[realtime][cron] offersExpired=${data.offerExpired ?? 0} remindersDay=${data.remindersDay ?? 0} remindersHour=${data.remindersHour ?? 0} noShows=${data.noShows ?? 0}`,
+        );
+      }
+    }
+  } catch {
+    // Senyap — Next.js mungkin sedang restart.
+  }
+}
+
+setInterval(() => void runCron(), 60_000);
+void runCron();

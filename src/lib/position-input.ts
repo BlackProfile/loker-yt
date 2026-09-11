@@ -522,7 +522,7 @@ export async function sanitizePositionInput(
 
   const interviewDuration = sanitizeNullableInt(data.interviewDuration, "Durasi wawancara", 10, 480);
   if (!interviewDuration.ok) return interviewDuration;
-  if (interviewDuration.value !== undefined) f.interviewDuration = interviewDuration.value;
+  if (interviewDuration.value != null) f.interviewDuration = interviewDuration.value;
 
   const interviewCriteria = sanitizeStringList(data.interviewCriteria, {
     name: "Kriteria scorecard", maxItems: 8, minLen: 1, maxLen: 60,
@@ -547,7 +547,7 @@ export async function sanitizePositionInput(
 
   const probationMonths = sanitizeNullableInt(data.probationMonths, "Masa percobaan (bulan)", 0, 12);
   if (!probationMonths.ok) return probationMonths;
-  if (probationMonths.value !== undefined) f.probationMonths = probationMonths.value;
+  if (probationMonths.value != null) f.probationMonths = probationMonths.value;
 
   const onboardingDocs = sanitizeStringList(data.onboardingDocs, {
     name: "Dokumen onboarding", maxItems: 10, minLen: 1, maxLen: 120,
@@ -557,7 +557,7 @@ export async function sanitizePositionInput(
 
   const reapplyCooldownDays = sanitizeNullableInt(data.reapplyCooldownDays, "Jeda lamar ulang (hari)", 0, 365);
   if (!reapplyCooldownDays.ok) return reapplyCooldownDays;
-  if (reapplyCooldownDays.value !== undefined) f.reapplyCooldownDays = reapplyCooldownDays.value;
+  if (reapplyCooldownDays.value != null) f.reapplyCooldownDays = reapplyCooldownDays.value;
 
   const autoCloseOnHired = sanitizeBoolean(data.autoCloseOnHired, "autoCloseOnHired");
   if (!autoCloseOnHired.ok) return autoCloseOnHired;

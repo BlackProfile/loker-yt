@@ -40,7 +40,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
-    const updateData: { onboardingDocs?: string; adminNotes?: string } = {};
+    const updateData: { onboardingDocs?: string; adminNotes?: string | null } = {};
 
     if (data.docs !== undefined) {
       if (!Array.isArray(data.docs)) {
