@@ -1388,6 +1388,380 @@ export function ApplicationDetailDialog({
               </div>
             </div>
 
+            {/* Tolak Lamaran */}
+            {canMutate && (app.status !== "REJECTED" || rejectMessage) ? (
+              <div className="flex flex-col gap-3 rounded-lg border border-rose-200 p-3 dark:border-rose-900">
+                <div className="flex items-center gap-2">
+                  <XCircle className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Tolak Lamaran</p>
+                </div>
+
+                {app.status === "REJECTED" ? (
+                  <p className="text-sm text-muted-foreground">
+                    Ditolak {formatDate(app.rejectedAt)}
+                    {app.rejectionReason
+                      ? ` — ${REJECTION_REASON_LABELS[app.rejectionReason]}`
+                      : ""}
+                    {app.rejectionNote ? ` · ${app.rejectionNote}` : ""}
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="reject-reason">Alasan Penolakan</Label>
+                      <Select
+                        value={rejectReason || "__pilih__"}
+                        onValueChange={(v) => setRejectReason(v as RejectionReason)}
+                        disabled={rejecting}
+                      >
+                        <SelectTrigger
+                          id="reject-reason"
+                          className="h-11 w-full sm:h-10"
+                          aria-label="Alasan penolakan lamaran"
+                        >
+                          <SelectValue placeholder="Pilih alasan" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__pilih__" disabled>
+                            Pilih alasan
+                          </SelectItem>
+                          {REJECTION_REASONS.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {REJECTION_REASON_LABELS[r]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="reject-note">Catatan</Label>
+                      <Textarea
+                        id="reject-note"
+                        value={rejectNote}
+                        onChange={(e) => setRejectNote(e.target.value)}
+                        placeholder="Opsional — catatan internal / feedback untuk pelamar"
+                        rows={2}
+                        maxLength={1000}
+                        disabled={rejecting}
+                      />
+                    </div>
+                    <label className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm">
+                      <Switch
+                        checked={rejectFeedback}
+                        onCheckedChange={setRejectFeedback}
+                        disabled={rejecting}
+                        aria-label="Tampilkan feedback ini ke pelamar"
+                      />
+                      Tampilkan feedback ini ke pelamar
+                    </label>
+                    <AlertDialog open={rejectConfirmOpen} onOpenChange={setRejectConfirmOpen}>
+                      <Button
+                        variant="destructive"
+                        className="h-11 w-fit active:scale-[0.99] sm:h-9"
+                        onClick={() => setRejectConfirmOpen(true)}
+                        disabled={rejecting}
+                      >
+                        Tolak Lamaran
+                      </Button>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Tolak lamaran {app.name}?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Status lamaran berubah menjadi Ditolak dan tidak bisa
+                            dikembalikan ke tahap sebelumnya.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel disabled={rejecting}>Batal</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={(e) => {
+                              e.preventDefault();
+                              void handleReject();
+                            }}
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                            disabled={rejecting}
+                          >
+                            {rejecting ? (
+                              <>
+                                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                                Menolak...
+                              </>
+                            ) : (
+                              "Ya, Tolak"
+                            )}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </>
+                )}
+
+                {rejectMessage ? (
+                  <div className="flex flex-col gap-2 rounded-lg bg-muted/60 p-3">
+                    <p className="whitespace-pre-wrap text-sm">{rejectMessage}</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-11 w-fit sm:h-9"
+                      onClick={() => void handleCopyMessage(rejectMessage)}
+                    >
+                      <Copy className="size-4" aria-hidden="true" />
+                      Salin Pesan
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Penawaran (offer) */}
+            {canMutate && app.status !== "REJECTED" ? (
+              <div className="flex flex-col gap-3 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <Handshake className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Penawaran</p>
+                </div>
+
+                {!app.offerStatus || app.offerStatus === "DECLINED" || app.offerStatus === "EXPIRED" ? (
+                  <>
+                    {app.offerStatus === "DECLINED" ? (
+                      <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50/60 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-400">
+                        <XCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                        <span>
+                          Penawaran sebelumnya ditolak pelamar
+                          {app.offerDeclineReason ? ` — ${app.offerDeclineReason}` : ""}
+                          {app.offerRespondedAt ? ` (${formatDateTime(app.offerRespondedAt)})` : ""}
+                          . Kirim penawaran baru bila masih berminat.
+                        </span>
+                      </div>
+                    ) : null}
+                    {app.offerStatus === "EXPIRED" ? (
+                      <p className="text-xs text-muted-foreground">
+                        Penawaran sebelumnya kedaluwarsa tanpa jawaban. Isi ulang untuk mengirim penawaran baru.
+                      </p>
+                    ) : null}
+                    {offerFormFields}
+                    <Button
+                      className="h-11 w-fit bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.99] sm:h-9"
+                      onClick={() => void handleSendOffer()}
+                      disabled={offerWorking}
+                    >
+                      {offerWorking ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Handshake className="size-4" aria-hidden="true" />
+                      )}
+                      Kirim Penawaran
+                    </Button>
+                    {offerMessage ? (
+                      <div className="flex flex-col gap-2 rounded-lg bg-muted/60 p-3">
+                        <p className="whitespace-pre-wrap text-sm">{offerMessage}</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-11 w-fit sm:h-9"
+                          onClick={() => void handleCopyMessage(offerMessage)}
+                        >
+                          <Copy className="size-4" aria-hidden="true" />
+                          Salin Pesan
+                        </Button>
+                      </div>
+                    ) : null}
+                  </>
+                ) : app.offerStatus === "PENDING" ? (
+                  <>
+                    <div className="flex flex-col gap-1.5 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20">
+                      <p className="font-medium text-amber-800 dark:text-amber-300">
+                        Menunggu jawaban pelamar
+                      </p>
+                      <p className="text-muted-foreground">
+                        Gaji: <span className="text-foreground">{app.offerSalary ?? "-"}</span>
+                      </p>
+                      <p className="text-muted-foreground">
+                        Jenis: <span className="text-foreground">{app.offerType ?? "-"}</span>
+                      </p>
+                      <p className="text-muted-foreground">
+                        Mulai: <span className="text-foreground">{formatDate(app.offerStartDate)}</span>
+                      </p>
+                      <p className="text-muted-foreground">
+                        Batas jawaban:{" "}
+                        <span className="text-foreground">{formatDateTime(app.offerDeadline)}</span>
+                      </p>
+                      <p className="text-muted-foreground">
+                        Terkirim: <span className="text-foreground">{formatDateTime(app.offerSentAt)}</span>
+                      </p>
+                      {app.offerNote ? (
+                        <p className="text-muted-foreground">
+                          Catatan: <span className="text-foreground">{app.offerNote}</span>
+                        </p>
+                      ) : null}
+                    </div>
+                    {offerEditing ? (
+                      <>
+                        {offerFormFields}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            className="h-11 w-fit bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.99] sm:h-9"
+                            onClick={() => void handleUpdateOffer()}
+                            disabled={offerWorking}
+                          >
+                            {offerWorking ? (
+                              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            ) : null}
+                            Simpan Perubahan
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="h-11 sm:h-9"
+                            onClick={() => setOfferEditing(false)}
+                            disabled={offerWorking}
+                          >
+                            Batal
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="outline"
+                          className="h-11 sm:h-9"
+                          onClick={() => void handleResendOffer()}
+                          disabled={offerWorking}
+                        >
+                          {offerWorking ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          ) : null}
+                          Kirim Ulang
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="h-11 sm:h-9"
+                          onClick={startOfferEdit}
+                          disabled={offerWorking}
+                        >
+                          Ubah / Perpanjang
+                        </Button>
+                        <AlertDialog open={offerCancelOpen} onOpenChange={setOfferCancelOpen}>
+                          <Button
+                            variant="outline"
+                            className="h-11 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:h-9 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                            onClick={() => setOfferCancelOpen(true)}
+                            disabled={offerWorking}
+                          >
+                            Batalkan Penawaran
+                          </Button>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Batalkan penawaran ini?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Penawaran akan ditandai kedaluwarsa dan pelamar tidak
+                                lagi bisa menjawabnya.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel disabled={offerWorking}>Batal</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  void handleCancelOffer();
+                                }}
+                                className="bg-rose-600 text-white hover:bg-rose-700"
+                                disabled={offerWorking}
+                              >
+                                {offerWorking ? "Membatalkan..." : "Ya, Batalkan"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    )}
+                  </>
+                ) : app.offerStatus === "ACCEPTED" ? (
+                  <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-400">
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    <span>
+                      Penawaran diterima pelamar
+                      {app.offerRespondedAt ? ` pada ${formatDateTime(app.offerRespondedAt)}` : ""}
+                      . Langkah onboarding tersedia di bawah.
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Onboarding */}
+            {app.hiredAt ? (
+              <div className="flex flex-col gap-3 rounded-lg border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <ClipboardList className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Onboarding</p>
+                  <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-secondary-foreground">
+                    {(app.onboardingDocs ?? []).filter((d) => d.done).length}/
+                    {(app.onboardingDocs ?? []).length} dokumen
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <InfoItem label="Mulai Kerja">{formatDateTime(app.hiredAt)}</InfoItem>
+                  <InfoItem label="Akhir Masa Percobaan">
+                    {app.probationEnd ? formatDateTime(app.probationEnd) : "-"}
+                  </InfoItem>
+                </div>
+                {(app.onboardingDocs ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Belum ada dokumen onboarding.
+                  </p>
+                ) : (
+                  <div className="flex max-h-56 flex-col gap-1 overflow-y-auto nice-scrollbar">
+                    {app.onboardingDocs.map((doc) => (
+                      <div
+                        key={doc.id || doc.label}
+                        className="flex min-h-11 items-center gap-2.5 rounded-md px-1 py-1 text-sm"
+                      >
+                        <Checkbox
+                          checked={doc.done}
+                          disabled={!canMutate || onboardingSaving}
+                          onCheckedChange={() => void handleToggleDoc(doc.id)}
+                          aria-label={`Tandai dokumen ${doc.label}`}
+                        />
+                        <span className={cn("min-w-0 flex-1 truncate", doc.done && "text-muted-foreground line-through")}>
+                          {doc.label}
+                          {doc.required ? (
+                            <span className="ml-1 text-rose-500" aria-hidden="true">
+                              *
+                            </span>
+                          ) : null}
+                        </span>
+                        {doc.fileId ? (
+                          <a
+                            href={`/api/files/${doc.fileId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex h-8 shrink-0 items-center rounded-md border px-2.5 text-xs font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+                          >
+                            Unduh
+                          </a>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {canMutate ? (
+                  <form onSubmit={handleAddDoc} className="flex flex-col gap-1.5">
+                    <Label htmlFor="onboarding-doc-input">Tambah Dokumen</Label>
+                    <Input
+                      id="onboarding-doc-input"
+                      value={docInput}
+                      onChange={(e) => setDocInput(e.target.value)}
+                      placeholder="mis. Kontrak Kerja — tekan Enter untuk menambah"
+                      className="h-11 sm:h-10"
+                      maxLength={120}
+                      disabled={onboardingSaving}
+                    />
+                  </form>
+                ) : null}
+              </div>
+            ) : null}
+
             <Separator />
 
             {/* Timeline */}
@@ -1460,6 +1834,35 @@ export function ApplicationDetailDialog({
             </Button>
           ) : null}
         </DialogFooter>
+
+        {/* Dialog sesi wawancara: mode detail/edit & mode create */}
+        <InterviewSessionDialog
+          open={!!sessionDetail}
+          onOpenChange={(open) => {
+            if (!open) setSessionDetail(null);
+          }}
+          interview={sessionDetail}
+          create={null}
+          position={pos}
+          onSaved={handleSessionSaved}
+          onDeleted={handleSessionDeleted}
+        />
+        <InterviewSessionDialog
+          open={sessionCreateOpen}
+          onOpenChange={(open) => {
+            if (!open) setSessionCreateOpen(false);
+          }}
+          interview={null}
+          create={{
+            applicationId: app.id,
+            applicationName: app.name,
+            positionTitle: app.positionTitle,
+            position: pos,
+          }}
+          position={pos}
+          onSaved={handleSessionSaved}
+          onDeleted={handleSessionDeleted}
+        />
       </DialogContent>
     </Dialog>
   );
