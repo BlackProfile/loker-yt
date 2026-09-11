@@ -668,10 +668,12 @@ Work Log:
 - Remote origin diset (https + token BlackProfile); push pertama `git push -u origin main` sukses — new branch main, upstream diset.
 - Post-commit hook .git/hooks/post-commit: push async tanpa blokir setiap commit manual.
 - Start watcher (pid 30623); uji end-to-end: buat README.md baru → watcher auto-commit 2b5317b dalam 60 detik → push OK; verifikasi ls-remote origin main == local HEAD (2b5317b), status "## main...origin/main" tanpa ahead/behind.
+- Kendala: race push antara post-commit hook (async) & watcher — keduanya mem-push commit dddc412 (update worklog) bersamaan → satu push ditolak remote (expected 2b5317b, remote sudah dddc412); state tetap sinkron (pemenang memperbarui refs/remotes/origin/main).
+- Fix: hapus .git/hooks/post-commit → watcher jadi single-writer (bebas race, sync tetap ≤60 detik); README & worklog diperbarui.
 
 Stage Summary:
 - Aplikasi live di github.com/BlackProfile/loker-yt (branch main, sinkron penuh).
-- Auto-sync aktif permanen: perubahan apa pun otomatis commit & push ≤60 detik (watcher + post-commit hook); log di auto-push.log.
+- Auto-sync aktif permanen: perubahan apa pun otomatis commit & push ≤60 detik oleh watcher tunggal; log di auto-push.log.
 - Data runtime (SQLite db, uploads pelamar, artefak sandbox) dikecualikan dari repo demi privasi & anti-churn; clone baru cukup `bun install && bun run db:push`.
 - README.md proyek dibuat (fitur, stack, cara jalan, akun demo, auto-sync).
 - Catatan keamanan: token GitHub tersimpan di .git/config sandbox; rotasi token bila dianggap bocor.

@@ -53,8 +53,8 @@ Repository ini otomatis tersinkronisasi ke GitHub:
 bash scripts/start-auto-push.sh   # mulai watcher (aman dijalankan ulang)
 ```
 
-- Watcher memeriksa perubahan tiap **60 detik** → otomatis `git commit` + `git push`
-- `post-commit` hook juga langsung push setiap commit manual
+- Watcher memeriksa perubahan tiap **60 detik** → otomatis `git commit` + `git push` (maks. 1 menit setelah perubahan)
+- Hanya watcher yang melakukan push (single-writer) agar bebas race
 - Log aktivitas: `auto-push.log`
 
 ## Struktur
