@@ -655,3 +655,23 @@ Stage Summary:
 - Realtime end-to-end (socket.io :3003 via Caddy XTransformPort, path /rt): admin & publik sinkron tanpa refresh; event invalidate-only (tanpa payload) → aman.
 - Anti-flicker: satu sumber data live bersama, swap berbasis JSON-diff, skeleton hanya load pertama, data lama dipertahankan saat refresh/error. Anti-error: ErrorBoundary per view, emitRealtime never-throw, socket reconnect Infinity, fallback retry.
 - Artefak baru: mini-services/realtime-service/, src/lib/live-client.ts, src/lib/realtime-server.ts, src/components/landing/position-detail.tsx, src/components/admin/use-live-refresh.ts.
+
+---
+Task ID: 14
+Agent: Z.ai Code (main)
+Task: Push aplikasi ke GitHub (BlackProfile/loker-yt) + auto-sync setiap perubahan
+
+Work Log:
+- Audit git: repo ter-init (3 commit, branch main, 238 file tracked, working tree bersih), remote belum diset; ls-remote ke github.com/BlackProfile/loker-yt sukses (repo kosong, token valid).
+- Bersihkan tracking runtime dari git index (git rm -r --cached): db/custom.db (database live), uploads/ (CV & berkas pelamar), tool-results/, download/, tests/ → tambah ke .gitignore (db/*.db, /uploads/, /tool-results/, /download/, /tests/, auto-push.log).
+- Commit 35af8f0 "chore: bersihkan artefak runtime dari git & siapkan auto-push watcher"; buat scripts/auto-push.sh (daemon interval 60s: commit bila ada perubahan, push hanya bila HEAD != origin/main, lock via mkdir, rotasi log 500 baris) + scripts/start-auto-push.sh (idempotent via pidfile /tmp/lumina-autopush.pid).
+- Remote origin diset (https + token BlackProfile); push pertama `git push -u origin main` sukses — new branch main, upstream diset.
+- Post-commit hook .git/hooks/post-commit: push async tanpa blokir setiap commit manual.
+- Start watcher (pid 30623); uji end-to-end: buat README.md baru → watcher auto-commit 2b5317b dalam 60 detik → push OK; verifikasi ls-remote origin main == local HEAD (2b5317b), status "## main...origin/main" tanpa ahead/behind.
+
+Stage Summary:
+- Aplikasi live di github.com/BlackProfile/loker-yt (branch main, sinkron penuh).
+- Auto-sync aktif permanen: perubahan apa pun otomatis commit & push ≤60 detik (watcher + post-commit hook); log di auto-push.log.
+- Data runtime (SQLite db, uploads pelamar, artefak sandbox) dikecualikan dari repo demi privasi & anti-churn; clone baru cukup `bun install && bun run db:push`.
+- README.md proyek dibuat (fitur, stack, cara jalan, akun demo, auto-sync).
+- Catatan keamanan: token GitHub tersimpan di .git/config sandbox; rotasi token bila dianggap bocor.
