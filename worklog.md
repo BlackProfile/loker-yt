@@ -692,3 +692,40 @@ Work Log:
 - Palet sesuai aturan: zinc + rose-600 + amber + emerald/orange fungsional, tanpa biru/indigo/violet, ikon lucide tanpa emoji, tombol h-11 di mobile (sm:h-9) dengan flex-wrap, aria-label untuk kontrol ikon/file, semua teks via strings id/en.
 
 Stage Summary: Halaman cek status kini end-to-end: pelamar melihat jadwal wawancara lengkap dengan aksi konfirmasi/ubah jadwal + integrasi kalender, menjawab penawaran (terima/tolak), mengunggah dokumen onboarding dengan progress, dan menerima alasan/umpan balik penolakan — semuanya realtime (applications:changed + interviews:changed, debounce bersama, anti-flicker) dengan rate-limit 429 yang ditangani sopan; API publik tidak diubah sama sekali.
+
+---
+Task ID: 15-a
+Agent: general-purpose (subagent, selesai mendekati timeout — dilengkapi & diverifikasi main agent)
+Task: Admin UI v4 — tab wawancara multi-ronde (Zoom/Meet/onsite), dialog sesi + scorecard, panel tolak/penawaran/onboarding di detail pelamar, tab analitik, kartu Perlu Tindakan, bulk reject, section posisi baru
+
+Work Log:
+- interview-session-dialog.tsx (BARU): create/edit sesi (mode, platform, datetime, durasi, link + shortcut meet.google.com/new, alamat onsite, pewawancara chip), preview & salin pesan undangan dari template posisi, aksi Gabung Meeting/Unduh .ics/Google Calendar, status CONFIRMED/NO_SHOW/CANCELLED/DELETE, scorecard kriteria 1-5 + catatan + recordingUrl + rekomendasi (LANJUT/CADANGAN/TOLAK) → auto COMPLETED.
+- interview-tab.tsx REBUILD: sumber /api/admin/interviews, kalender + panel sesi harian (ronde, ikon mode, platform, chip status), banner "Permintaan Ubah Jadwal" (Setujui usulan pelamar / Tolak usulan dismissReschedule), useLiveRefresh applications+interviews senyap.
+- interview-calendar.tsx disesuaikan menerima sesi Interview.
+- application-detail-dialog.tsx: panel Wawancara (daftar sesi + jadwalkan via dialog), panel Tolak Lamaran (alasan REJECTION_REASONS + catatan + switch feedback + AlertDialog + pesan siap kirim salin), panel Penawaran (form kirim/edit/resend/cancel, status PENDING/ACCEPTED/DECLINED/EXPIRED), panel Onboarding (hiredAt/probationEnd/progres dokumen/toggle done/tambah dokumen/unduh berkas pelamar).
+- analytics-tab.tsx (BARU) + tab "Analitik" di admin-app.tsx: kartu metrik (time-to-hire, offer acceptance, pass rate, avg skor), funnel BarChart, alasan penolakan, lamaran vs diterima 6 bulan, beban pewawancara.
+- dashboard-tab.tsx: kartu "Perlu Tindakan" (GET action-items: reschedule/offer/unscored/onboarding) + realtime refresh.
+- applications-tab.tsx: aksi massal "Tolak" (dialog alasan + catatan → bulk reject).
+- position-form-dialog.tsx: 2 FormSection baru "Wawancara" (mode/platform/durasi/kriteria scorecard/template undangan) & "Penawaran & Onboarding" (offer/welcome template, masa percobaan, dokumen wajib, cooldown lamar ulang, autoCloseOnHired).
+- Verifikasi main agent: tsc 0 error (termasuk fix 'CalendarClock' yang tertinggal dari sesi agent), bun run lint bersih.
+
+Stage Summary: Admin kini mengelola wawancara multi-ronde lengkap (jadwal → konfirmasi pelamar → scorecard → rekomendasi menggerakkan pipeline: TOLAK auto-reject, CADANGAN auto talent pool), alur penolakan terstruktur, penawaran dengan batas jawaban, dan onboarding — semua realtime & anti-flicker.
+
+---
+Task ID: 15 (utama)
+Agent: Z.ai Code (main)
+Task: "Tambahkan semuanya" — wawancara Zoom/Google Meet, alur ketolak & keterima (offer + onboarding), analitik, realtime, anti-flicker
+
+Work Log:
+- Backend: schema.prisma + model Interview (ronde, mode, platform, link, alamat, pewawancara, status, scorecard, reschedule, reminder flags) + field Application (rejection*/offer*/hiredAt/probationEnd/onboardingDocs) + field Position (interviewMode/Platform/Duration/Criteria/InviteTemplate, offerTemplate, welcomeTemplate, probationMonths, onboardingDocs, reapplyCooldownDays, autoCloseOnHired); bun run db:push OK.
+- types.ts: tipe & label Interview (Mode/Platform/Status/Recommendation + DEFAULT_INTERVIEW_CRITERIA), RejectionReason (8 kategori + label), OfferStatus, OnboardingDoc, TrackInterviewInfo/TrackOfferInfo/TrackOnboardingInfo, AnalyticsResponse, ActionItemsResponse; seed.ts: parseOnboardingDocs, sanitize* enum, serializeInterview, serialisasi field baru.
+- API baru: /api/admin/interviews (GET/POST), /api/admin/interviews/[id] (PATCH: scheduledAt reset reschedule+reminder, dismissReschedule, status, scorecard; TOLAK→auto REJECTED, CADANGAN→auto talentPool; DELETE), /api/admin/applications/[id]/reject (alasan+feedback+pesan siap kirim+webhook), /[id]/offer (POST/PATCH edit/resend/cancel, template offer, deadline 1-30 hari), /[id]/onboarding (merge docs by label), /api/admin/analytics, /api/admin/action-items, /api/cron/reminders (secret header: offer expire, reminder H-1 & H-1 jam, auto NO_SHOW >1 jam), /api/public/interview/respond (CONFIRM/RESCHEDULE/CANCEL_REQUEST + rate limit), /api/public/interview/ics (.ics RFC5545+VALARM), /api/public/offer/respond (ACCEPT→hired+probation+init docs posisi+welcomeMessage; DECLINE+alasan), /api/public/onboarding/upload (PDF/JPG/PNG 5MB, hired-only, per dokumen).
+- API extended: /api/public/track (+interviews/offer/rejection/onboarding, lazy expiry offer), /api/applications POST (cooldown lamar ulang per posisi, 429 + pesan sopan), bulk route (+aksi reject massal dengan alasan), position-input.ts (+11 field posisi baru).
+- notify.ts: sendSystemEvent generik (webhook Discord/Telegram + ActivityLog); realtime-server: event interviews:changed; mini-services/realtime-service: scheduler panggil /api/cron/reminders tiap 60 detik.
+- Kendala & fix: (1) referensi @/lib/env tak ada → inline konstanta; (2) tsc error nullability → perbaiki; (3) dev server mati & Prisma client lama ter-cache (cron 500 "Unknown argument offerStatus") → restart next dev, klien baru termuat; (4) subagent 15-a timeout sebelum menulis worklog → hasilnya diverifikasi lengkap & fix sisa error CalendarClock.
+- Verifikasi browser end-to-end (agent-browser): kartu wawancara publik (join/.ics/GCal/Saya Hadir→Dikonfirmasi), Terima Penawaran (AlertDialog→ACCEPTED→hired→onboarding welcome+masa percobaan 10 Des), penolakan (alasan+umpan balik+Lihat Lowongan Lain), admin: tab Analitik (metrik+4 chart), tab Wawancara (kalender, banner reschedule), dialog sesi (scorecard 4 kriteria→Selesai), action-items API, reschedule pelamar→admin setujui→.ics unduh OK, onboarding unggah KTP→done+fileId, form posisi section Wawancara & Penawaran&Onboarding ada; mobile 390px OK; dev.log bersih; lint & tsc 0 error.
+
+Stage Summary:
+- Seluruh ide Fase 1-3 terealisasi: wawancara multi-ronde online/onsite dengan link meeting + kalender (.ics/GCal) + konfirmasi/reschedule pelamar + reminder otomatis + scorecard + rekomendasi auto-pipeline; penolakan terstruktur 8 alasan + mode feedback + bulk reject + cooldown lamar ulang; penawaran (offer) dengan template, batas jawaban, auto-expire, terima/tolak dari halaman status; onboarding (dokumen wajib + unggah pelamar + masa percobaan); analitik (funnel, alasan tolak, time-to-hire, offer acceptance, beban pewawancara).
+- Semua realtime (event interviews:changed baru) & anti-flicker (silent refresh, data lama dipertahankan).
+- Auto-sync GitHub tetap aktif — perubahan akan ter-commit & ter-push otomatis oleh watcher.
