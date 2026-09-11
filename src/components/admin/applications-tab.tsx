@@ -15,6 +15,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -23,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Download,
   Inbox,
@@ -32,12 +41,16 @@ import {
   Search,
   Table2,
   Trash2,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   APPLICATION_SOURCES,
+  REJECTION_REASONS,
+  REJECTION_REASON_LABELS,
   type Application,
   type Position,
+  type RejectionReason,
   type StageKey,
 } from "@/lib/types";
 import {
@@ -95,6 +108,9 @@ export function ApplicationsTab() {
   const [bulkStatus, setBulkStatus] = useState<string>("");
   const [bulkWorking, setBulkWorking] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
+  const [bulkRejectReason, setBulkRejectReason] = useState<RejectionReason | "">("");
+  const [bulkRejectNote, setBulkRejectNote] = useState("");
 
   const [detail, setDetail] = useState<Application | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Application | null>(null);
@@ -348,6 +364,26 @@ export function ApplicationsTab() {
       setBulkWorking(false);
       setBulkDeleteOpen(false);
     }
+  }
+
+  // Tolak massal dengan alasan terstruktur (POST /api/admin/applications/bulk).
+  async function handleBulkReject() {
+    if (!bulkRejectReason) {
+      toast.error("Pilih alasan penolakan terlebih dahulu.");
+      return;
+    }
+    await runBulk(
+      {
+        ids: Array.from(selectedIds),
+        action: "reject",
+        reason: bulkRejectReason,
+        note: bulkRejectNote.trim() || undefined,
+      },
+      "{n} lamaran ditolak"
+    );
+    setBulkRejectOpen(false);
+    setBulkRejectReason("");
+    setBulkRejectNote("");
   }
 
   async function handleDelete() {
@@ -661,6 +697,16 @@ export function ApplicationsTab() {
             }
           >
             Talent Pool
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 border-rose-200 bg-background text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+            disabled={bulkWorking}
+            onClick={() => setBulkRejectOpen(true)}
+          >
+            <XCircle className="size-4" aria-hidden="true" />
+            Tolak
           </Button>
           <Button
             variant="destructive"

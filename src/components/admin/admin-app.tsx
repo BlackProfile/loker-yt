@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  BarChart3,
   ExternalLink,
   LayoutDashboard,
   Loader2,
@@ -41,6 +42,7 @@ import { LoginCard } from "./login-card";
 import { DashboardTab } from "./dashboard-tab";
 import { ApplicationsTab } from "./applications-tab";
 import { InterviewTab } from "./interview-tab";
+import { AnalyticsTab } from "./analytics-tab";
 import { LogsTab } from "./logs-tab";
 import { PositionsTab } from "./positions-tab";
 import { UsersTab } from "./users-tab";
@@ -365,6 +367,10 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 <TabsTrigger value="interview" className="h-full px-3 sm:px-4">
                   Wawancara
                 </TabsTrigger>
+                <TabsTrigger value="analytics" className="h-full px-3 sm:px-4">
+                  <BarChart3 className="size-4" aria-hidden="true" />
+                  Analitik
+                </TabsTrigger>
                 <TabsTrigger value="logs" className="h-full px-3 sm:px-4">
                   Log
                 </TabsTrigger>
@@ -398,6 +404,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
             <TabsContent value="interview">
               <TabReveal>
                 <InterviewTab />
+              </TabReveal>
+            </TabsContent>
+            <TabsContent value="analytics">
+              <TabReveal>
+                <AnalyticsTab />
               </TabReveal>
             </TabsContent>
             <TabsContent value="logs">

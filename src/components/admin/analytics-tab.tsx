@@ -16,9 +16,9 @@ import {
 } from "recharts";
 import {
   CalendarCheck,
+  ClipboardCheck,
   Handshake,
   Inbox,
-  Percent,
   RefreshCw,
   Timer,
   TrendingUp,
@@ -184,7 +184,7 @@ export function AnalyticsTab() {
         ),
         metric(
           "Offer Diterima",
-          Percent,
+          Handshake,
           "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400",
           "border-t-emerald-500",
           data.offerAcceptanceRate != null ? `${data.offerAcceptanceRate.toFixed(1)}%` : "-"
@@ -198,7 +198,7 @@ export function AnalyticsTab() {
         ),
         metric(
           "Rata Skor Wawancara",
-          Handshake,
+          ClipboardCheck,
           "bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400",
           "border-t-rose-500",
           data.avgInterviewScore != null ? `${data.avgInterviewScore.toFixed(1)}/5` : "-"
