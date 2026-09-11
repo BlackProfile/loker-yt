@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -37,40 +37,50 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   AudioLines,
-  CalendarClock,
+  CalendarPlus,
+  CheckCircle2,
   ChevronDown,
   ClipboardCheck,
   ClipboardList,
   Copy,
   FileText,
   Globe,
+  Handshake,
   Link2,
   ListChecks,
   Loader2,
+  MapPin,
   Megaphone,
   MessageSquareText,
   Share2,
   Tag,
   Trash2,
+  Video,
   X,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  POSITION_TYPES,
+  REJECTION_REASONS,
+  REJECTION_REASON_LABELS,
   type Application,
+  type Interview,
   type Position,
+  type RejectionReason,
   type StageKey,
   type LogEntry,
 } from "@/lib/types";
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
-import { apiDelete, apiGet, apiPatch } from "./api";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import {
   actionLabel,
   actorBadgeClass,
   copyText,
+  formatDate,
   formatDateTime,
   formatShortDateTime,
-  isoToLocalInput,
   localInputToIso,
   normalizeUrl,
   waHref,
@@ -79,6 +89,11 @@ import { StatusBadge } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 import { AiPanel } from "./ai-panel";
 import { useAdminSession } from "./admin-context";
+import { useLiveRefresh } from "./use-live-refresh";
+import {
+  InterviewSessionDialog,
+  InterviewStatusChip,
+} from "./interview-session-dialog";
 import { cn } from "@/lib/utils";
 
 function InfoItem({ label, children }: { label: string; children: ReactNode }) {

@@ -505,7 +505,7 @@ export function ApplyWizard({
           typeof (data as { error: unknown }).error === "string"
             ? (data as { error: string }).error
             : null;
-        toast.error(serverError ?? t.apply.errors.submitFailed);
+        toast.error(serverError || t.apply.errors.submitFailed);
         return;
       }
       const successData: ApplySuccessResponse | null =
