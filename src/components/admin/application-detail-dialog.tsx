@@ -486,6 +486,7 @@ export function ApplicationDetailDialog({
         (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
       );
     });
+    setSessionDetail((prev) => (prev && prev.id === updated.id ? updated : prev));
     if (updatedApp) onSaved(updatedApp);
   }
 

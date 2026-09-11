@@ -29,7 +29,10 @@ import {
   BarChart3,
   CalendarClock,
   CheckCircle2,
+  ClipboardCheck,
+  ClipboardList,
   Eye,
+  Handshake,
   Inbox,
   MailCheck,
   RefreshCw,
@@ -38,9 +41,11 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   APPLICATION_STATUSES,
   STATUS_LABELS,
+  type ActionItemsResponse,
   type AdminOverviewResponse,
   type AdminPositionStatsResponse,
   type Application,
@@ -153,6 +158,18 @@ export function DashboardTab() {
   const [posStats, setPosStats] = useState<PositionStatsRow[]>([]);
   const [posStatsLoading, setPosStatsLoading] = useState(true);
 
+  // Kartu "Perlu Tindakan" (GET /api/admin/action-items).
+  const [actionItems, setActionItems] = useState<ActionItemsResponse | null>(null);
+
+  const loadActionItems = useCallback(async () => {
+    try {
+      const data = await apiGet<ActionItemsResponse>("/api/admin/action-items");
+      setActionItems(data);
+    } catch {
+      // Kartu pelengkap; senyap saat gagal (data lama dipertahankan).
+    }
+  }, []);
+
   // silent: refresh senyap (dipakai event realtime) — data lama tetap tampil,
   // state loading tidak disentuh sehingga skeleton tidak muncul ulang.
   const load = useCallback(async (silent = false) => {
@@ -189,14 +206,23 @@ export function DashboardTab() {
     void loadPosStats();
   }, [loadPosStats]);
 
+  useEffect(() => {
+    void loadActionItems();
+  }, [loadActionItems]);
+
   // Realtime: lamaran baru/perubahan status memengaruhi overview + statistik.
   useLiveRefresh("applications:changed", () => {
     void load(true);
     void loadPosStats(true);
+    void loadActionItems();
   });
   // Perubahan posisi memengaruhi grafik perbandingan (views/konversi/kuota).
   useLiveRefresh("positions:changed", () => {
     void loadPosStats(true);
+  });
+  // Sesi wawancara baru (reschedule/no-show) memengaruhi kartu tindakan.
+  useLiveRefresh("interviews:changed", () => {
+    void loadActionItems();
   });
 
   const stats = overview?.stats;
@@ -227,6 +253,21 @@ export function DashboardTab() {
     views: row.views,
     conversion: row.conversion,
   }));
+
+  // Buka dialog detail pelamar dari kartu tindakan (butuh objek Application penuh).
+  async function openAppById(id: string) {
+    try {
+      const apps = await apiGet<Application[]>("/api/admin/applications");
+      const app = apps.find((a) => a.id === id);
+      if (app) {
+        setDetail(app);
+      } else {
+        toast.error("Lamaran tidak ditemukan.");
+      }
+    } catch (err) {
+      reportError(err);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
