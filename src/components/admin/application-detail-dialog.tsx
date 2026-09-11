@@ -617,6 +617,20 @@ export function ApplicationDetailDialog({
 
   /* -------------------------------- Onboarding ------------------------------ */
 
+  // Prefill form penawaran dari data pelamar untuk edit inline saat PENDING.
+  function startOfferEdit() {
+    setOfferForm({
+      salary: app.offerSalary ?? "",
+      type: POSITION_TYPES.includes(app.offerType as (typeof POSITION_TYPES)[number])
+        ? (app.offerType as string)
+        : POSITION_TYPES[0],
+      startDate: app.offerStartDate ? app.offerStartDate.slice(0, 10) : "",
+      note: app.offerNote ?? "",
+      deadlineDays: "3",
+    });
+    setOfferEditing(true);
+  }
+
   async function handleToggleDoc(docId: string) {
     if (!canMutate || onboardingSaving) return;
     const docs = (app.onboardingDocs ?? []).map((d) =>
@@ -726,6 +740,89 @@ export function ApplicationDetailDialog({
     if (ok) toast.success("Kode pelacakan disalin");
     else toast.error("Gagal menyalin ke clipboard");
   }
+
+  // Form penawaran — dipakai untuk kirim baru & edit inline saat PENDING.
+  const offerFormFields = (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="offer-salary">Gaji</Label>
+          <Input
+            id="offer-salary"
+            value={offerForm.salary}
+            onChange={(e) => setOfferForm((f) => ({ ...f, salary: e.target.value }))}
+            placeholder="mis. Rp 5.000.000/bulan"
+            maxLength={80}
+            disabled={offerWorking}
+            className="h-11 sm:h-10"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label>Jenis</Label>
+          <Select
+            value={offerForm.type}
+            onValueChange={(v) => setOfferForm((f) => ({ ...f, type: v }))}
+            disabled={offerWorking}
+          >
+            <SelectTrigger className="h-11 w-full sm:h-10" aria-label="Jenis penawaran kerja">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {POSITION_TYPES.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="offer-start">Mulai Kerja</Label>
+          <Input
+            id="offer-start"
+            type="date"
+            value={offerForm.startDate}
+            onChange={(e) => setOfferForm((f) => ({ ...f, startDate: e.target.value }))}
+            disabled={offerWorking}
+            className="h-11 sm:h-10"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label>Batas Jawaban (hari)</Label>
+          <Select
+            value={offerForm.deadlineDays}
+            onValueChange={(v) => setOfferForm((f) => ({ ...f, deadlineDays: v }))}
+            disabled={offerWorking}
+          >
+            <SelectTrigger className="h-11 w-full sm:h-10" aria-label="Batas jawaban penawaran dalam hari">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 30 }, (_, i) => i + 1).map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n} hari
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="offer-note">Catatan</Label>
+        <Textarea
+          id="offer-note"
+          value={offerForm.note}
+          onChange={(e) => setOfferForm((f) => ({ ...f, note: e.target.value }))}
+          placeholder="Opsional — catatan untuk pelamar"
+          rows={2}
+          maxLength={1000}
+          disabled={offerWorking}
+        />
+      </div>
+    </div>
+  );
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
