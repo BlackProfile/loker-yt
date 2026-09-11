@@ -144,6 +144,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // Status: transisi eksplisit (CONFIRMED/NO_SHOW/CANCELLED dari admin; COMPLETED via complete).
     let completing = false;
+    if (data.dismissReschedule === true) {
+      // Admin menolak usulan ubah jadwal pelamar -> kembali ke jadwal awal.
+      updateData.status = "SCHEDULED";
+      updateData.rescheduleReason = null;
+      updateData.rescheduleProposedAt = null;
+    }
     if (data.status !== undefined) {
       const status = sanitizeInterviewStatus(data.status);
       if (!status) {
