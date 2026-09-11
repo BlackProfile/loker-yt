@@ -474,6 +474,198 @@ export function ApplicationDetailDialog({
     );
   }
 
+  /* ----------------------------- Sesi wawancara ----------------------------- */
+
+  function handleSessionSaved(updated: Interview, updatedApp?: Application) {
+    setSessions((prev) => {
+      const exists = prev.some((s) => s.id === updated.id);
+      const next = exists
+        ? prev.map((s) => (s.id === updated.id ? updated : s))
+        : [...prev, updated];
+      return next.sort(
+        (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+      );
+    });
+    if (updatedApp) onSaved(updatedApp);
+  }
+
+  function handleSessionDeleted(id: string) {
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+    setSessionDetail(null);
+  }
+
+  /* ------------------------------ Tolak lamaran ----------------------------- */
+
+  async function handleReject() {
+    if (rejecting) return;
+    if (!rejectReason) {
+      toast.error("Pilih alasan penolakan terlebih dahulu.");
+      return;
+    }
+    setRejecting(true);
+    try {
+      const res = await apiPost<{
+        application: Application;
+        message: string;
+        reasonLabel: string;
+      }>(`/api/admin/applications/${app.id}/reject`, {
+        reason: rejectReason,
+        note: rejectNote.trim() || undefined,
+        feedback: rejectFeedback,
+      });
+      toast.success(`Lamaran ditolak — ${res.reasonLabel}`);
+      setRejectMessage(res.message);
+      setRejectConfirmOpen(false);
+      onSaved(res.application);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setRejecting(false);
+    }
+  }
+
+  async function handleCopyMessage(text: string) {
+    const ok = await copyText(text);
+    if (ok) toast.success("Pesan disalin ke clipboard");
+    else toast.error("Gagal menyalin ke clipboard");
+  }
+
+  /* -------------------------------- Penawaran ------------------------------- */
+
+  function offerBodyFromForm() {
+    const deadline = Number(offerForm.deadlineDays);
+    return {
+      salary: offerForm.salary.trim() || undefined,
+      type: offerForm.type,
+      startDate: localInputToIso(offerForm.startDate),
+      note: offerForm.note.trim() || undefined,
+      deadlineDays: Number.isInteger(deadline) ? deadline : 3,
+    };
+  }
+
+  async function handleSendOffer() {
+    if (offerWorking) return;
+    setOfferWorking(true);
+    try {
+      const res = await apiPost<{ application: Application; message: string }>(
+        `/api/admin/applications/${app.id}/offer`,
+        offerBodyFromForm()
+      );
+      toast.success("Penawaran terkirim");
+      setOfferMessage(res.message);
+      onSaved(res.application);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setOfferWorking(false);
+    }
+  }
+
+  async function handleUpdateOffer() {
+    if (offerWorking) return;
+    setOfferWorking(true);
+    try {
+      const res = await apiPatch<{ application: Application }>(
+        `/api/admin/applications/${app.id}/offer`,
+        offerBodyFromForm()
+      );
+      toast.success("Penawaran diperbarui");
+      setOfferEditing(false);
+      onSaved(res.application);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setOfferWorking(false);
+    }
+  }
+
+  async function handleResendOffer() {
+    if (offerWorking) return;
+    setOfferWorking(true);
+    try {
+      const res = await apiPatch<{ application: Application }>(
+        `/api/admin/applications/${app.id}/offer`,
+        { action: "RESEND" }
+      );
+      toast.success("Penawaran dikirim ulang");
+      onSaved(res.application);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setOfferWorking(false);
+    }
+  }
+
+  async function handleCancelOffer() {
+    if (offerWorking) return;
+    setOfferWorking(true);
+    try {
+      const res = await apiPatch<{ application: Application }>(
+        `/api/admin/applications/${app.id}/offer`,
+        { action: "CANCEL" }
+      );
+      toast.success("Penawaran dibatalkan");
+      setOfferCancelOpen(false);
+      setOfferEditing(false);
+      onSaved(res.application);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setOfferWorking(false);
+    }
+  }
+
+  /* -------------------------------- Onboarding ------------------------------ */
+
+  async function handleToggleDoc(docId: string) {
+    if (!canMutate || onboardingSaving) return;
+    const docs = (app.onboardingDocs ?? []).map((d) =>
+      d.id === docId ? { ...d, done: !d.done } : d
+    );
+    setOnboardingSaving(true);
+    try {
+      const res = await apiPatch<{ application: Application }>(
+        `/api/admin/applications/${app.id}/onboarding`,
+        { docs }
+      );
+      toast.success("Dokumen onboarding diperbarui");
+      onSaved(res.application);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setOnboardingSaving(false);
+    }
+  }
+
+  async function handleAddDoc(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!canMutate || onboardingSaving) return;
+    const label = docInput.trim();
+    if (!label) return;
+    if ((app.onboardingDocs ?? []).length >= 10) {
+      toast.error("Maksimal 10 dokumen onboarding.");
+      return;
+    }
+    const docs = [
+      ...(app.onboardingDocs ?? []),
+      { id: `doc${Date.now()}`, label, required: false, done: false, fileId: null },
+    ];
+    setOnboardingSaving(true);
+    try {
+      const res = await apiPatch<{ application: Application }>(
+        `/api/admin/applications/${app.id}/onboarding`,
+        { docs }
+      );
+      toast.success("Dokumen ditambahkan");
+      setDocInput("");
+      onSaved(res.application);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setOnboardingSaving(false);
+    }
+  }
+
   async function handleSaveRubric() {
     if (rubricSaving) return;
     // Kirim hanya kriteria yang bernilai (int 1..5 disanitasi server).
@@ -642,58 +834,75 @@ export function ApplicationDetailDialog({
               </div>
             ) : null}
 
-            {/* Jadwal wawancara */}
+            {/* Wawancara: daftar sesi multi-ronde */}
             <div className="rounded-lg border p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <CalendarClock className="size-4 text-orange-500" aria-hidden="true" />
-                <p className="text-sm font-semibold">Jadwal Wawancara</p>
-              </div>
-              {app.interviewAt ? (
-                <p className="mb-2 text-sm text-muted-foreground">
-                  Terjadwal:{" "}
-                  <span className="font-medium text-foreground">
-                    {formatDateTime(app.interviewAt)}
-                  </span>
-                </p>
-              ) : (
-                <p className="mb-2 text-sm text-muted-foreground">
-                  Belum ada jadwal.
-                </p>
-              )}
-              {canMutate ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    type="datetime-local"
-                    value={interviewInput}
-                    onChange={(e) => setInterviewInput(e.target.value)}
-                    aria-label="Atur tanggal dan jam wawancara"
-                    className="h-9 w-fit"
-                  />
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Video className="size-4 text-orange-500" aria-hidden="true" />
+                <p className="text-sm font-semibold">Wawancara</p>
+                {canMutate ? (
                   <Button
+                    variant="outline"
                     size="sm"
-                    className="h-11 sm:h-9"
-                    onClick={() => void handleSaveInterview()}
-                    disabled={savingInterview}
+                    className="ml-auto h-11 sm:h-8"
+                    onClick={() => setSessionCreateOpen(true)}
                   >
-                    {savingInterview ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                    ) : null}
-                    Simpan Jadwal
+                    <CalendarPlus className="size-4" aria-hidden="true" />
+                    Jadwalkan Wawancara
                   </Button>
-                  {app.interviewAt ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 sm:size-9"
-                      onClick={() => void handleClearInterview()}
-                      disabled={savingInterview}
-                      aria-label="Hapus jadwal wawancara"
+                ) : null}
+              </div>
+              {sessionsLoading && sessions.length === 0 ? (
+                <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Memuat sesi wawancara...
+                </p>
+              ) : sessions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada sesi wawancara.</p>
+              ) : (
+                <div className="flex max-h-64 flex-col gap-2 overflow-y-auto nice-scrollbar">
+                  {sessions.map((i) => (
+                    <div
+                      key={i.id}
+                      className="flex flex-wrap items-center gap-2 rounded-lg border p-2.5"
                     >
-                      <X className="size-4" aria-hidden="true" />
-                    </Button>
-                  ) : null}
+                      <span className="shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+                        R{i.round}
+                      </span>
+                      <span className="min-w-0 flex-1 text-sm">
+                        {formatDateTime(i.scheduledAt)}
+                        <span className="text-xs text-muted-foreground">
+                          {" "}
+                          · {i.durationMin} menit
+                        </span>
+                      </span>
+                      <InterviewStatusChip status={i.status} />
+                      <div className="flex w-full items-center gap-1.5 sm:w-auto">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-11 sm:h-8"
+                          onClick={() => setSessionDetail(i)}
+                        >
+                          Detail
+                        </Button>
+                        {i.mode === "ONLINE" && i.meetingLink ? (
+                          <Button asChild variant="outline" size="sm" className="h-11 sm:h-8">
+                            <a
+                              href={i.meetingLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label={`Gabung meeting ronde ${i.round}`}
+                            >
+                              <Video className="size-4" aria-hidden="true" />
+                              Gabung
+                            </a>
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ) : null}
+              )}
             </div>
 
             {/* Berkas */}
