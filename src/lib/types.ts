@@ -179,6 +179,21 @@ export type Position = {
   checklistTemplate: string[];
   noteTemplates: string[];
   views: number;
+
+  // Wawancara per lowongan
+  interviewMode: InterviewMode;
+  interviewPlatform: InterviewPlatform;
+  interviewDuration: number;
+  interviewCriteria: string[]; // [] = pakai DEFAULT_INTERVIEW_CRITERIA
+  interviewInviteTemplate: string | null;
+
+  // Offer & onboarding per lowongan
+  offerTemplate: string | null;
+  welcomeTemplate: string | null;
+  probationMonths: number;
+  onboardingDocs: string[]; // label dokumen wajib onboarding
+  reapplyCooldownDays: number;
+  autoCloseOnHired: boolean;
 };
 
 export type PositionPublicStats = {
@@ -220,6 +235,28 @@ export type Application = {
   cvFileName: string | null;
   introFileId: string | null;
   introFileName: string | null;
+
+  // Penolakan terstruktur
+  rejectionReason: RejectionReason | null;
+  rejectionNote: string | null;
+  rejectedAt: string | null;
+
+  // Penawaran (offer)
+  offerStatus: OfferStatus | null;
+  offerSalary: string | null;
+  offerType: string | null;
+  offerStartDate: string | null;
+  offerNote: string | null;
+  offerDeadline: string | null;
+  offerSentAt: string | null;
+  offerRespondedAt: string | null;
+  offerDeclineReason: string | null;
+
+  // Onboarding
+  hiredAt: string | null;
+  probationEnd: string | null;
+  onboardingDocs: OnboardingDoc[];
+
   createdAt: string;
 };
 
@@ -318,6 +355,67 @@ export type TrackResponse = {
   submittedAt?: string;
   steps?: { key: string; label: string; done: boolean; at: string | null }[];
   assignment?: { title: string | null; url: string | null; note: string | null } | null; // info tes posisi (jika ada)
+  // Sesi wawancara aktif + riwayat (terurut ronde)
+  interviews?: TrackInterviewInfo[];
+  offer?: TrackOfferInfo | null;
+  rejection?: { reasonLabel: string; note: string | null } | null; // note hanya jika admin memberi feedback
+  onboarding?: TrackOnboardingInfo | null;
+  cooldown?: { until: string; days: number } | null; // pelamar masih dalam masa jeda lamar ulang
+};
+
+// GET /api/admin/analytics — data tab analitik
+export type AnalyticsResponse = {
+  totals: {
+    applications: number;
+    rejected: number;
+    hired: number;
+    offersSent: number;
+    offersAccepted: number;
+    interviewsCompleted: number;
+    noShows: number;
+  };
+  funnel: { stage: string; count: number }[]; // bucket bawaan + CUSTOM
+  rejectionReasons: { reason: string; label: string; count: number }[];
+  timeToRejectAvgDays: number | null;
+  timeToHireAvgDays: number | null;
+  offerAcceptanceRate: number | null; // persen
+  interviewPassRate: number | null; // persen LANJUT dari selesai
+  avgInterviewScore: number | null; // 1-5
+  interviewerLoad: { name: string; count: number }[];
+  monthly: { month: string; applications: number; hires: number }[]; // 6 bulan terakhir
+};
+
+// GET /api/admin/action-items — kartu "Perlu Tindakan" dashboard
+export type ActionItemsResponse = {
+  rescheduleRequests: {
+    interviewId: string;
+    applicationId: string;
+    name: string;
+    positionTitle: string | null;
+    scheduledAt: string;
+    proposedAt: string | null;
+    reason: string | null;
+  }[];
+  offersAwaiting: {
+    applicationId: string;
+    name: string;
+    positionTitle: string | null;
+    salary: string | null;
+    deadline: string | null;
+  }[];
+  unscoredInterviews: {
+    interviewId: string;
+    applicationId: string;
+    name: string;
+    positionTitle: string | null;
+    completedAt: string | null;
+  }[];
+  onboardingIncomplete: {
+    applicationId: string;
+    name: string;
+    positionTitle: string | null;
+    missingDocs: string[];
+  }[];
 };
 
 // POST /api/applications -> sukses
@@ -331,6 +429,197 @@ export type ApplySuccessResponse = {
 
 // POST /api/chat -> { message, history }
 export type ChatResponse = { reply: string };
+
+/* ------------------------------ Wawancara (Zoom/Meet/onsite) ------------------------------ */
+
+export type InterviewMode = "ONLINE" | "ONSITE";
+export const INTERVIEW_MODES: InterviewMode[] = ["ONLINE", "ONSITE"];
+export const INTERVIEW_MODE_LABELS: Record<InterviewMode, string> = {
+  ONLINE: "Online",
+  ONSITE: "Onsite (tatap muka)",
+};
+
+export type InterviewPlatform =
+  | "GOOGLE_MEET"
+  | "ZOOM"
+  | "MICROSOFT_TEAMS"
+  | "WHATSAPP"
+  | "TELEPON"
+  | "LAINNYA";
+export const INTERVIEW_PLATFORMS: InterviewPlatform[] = [
+  "GOOGLE_MEET",
+  "ZOOM",
+  "MICROSOFT_TEAMS",
+  "WHATSAPP",
+  "TELEPON",
+  "LAINNYA",
+];
+export const INTERVIEW_PLATFORM_LABELS: Record<InterviewPlatform, string> = {
+  GOOGLE_MEET: "Google Meet",
+  ZOOM: "Zoom",
+  MICROSOFT_TEAMS: "Microsoft Teams",
+  WHATSAPP: "WhatsApp Call",
+  TELEPON: "Telepon",
+  LAINNYA: "Lainnya",
+};
+
+export type InterviewStatus =
+  | "SCHEDULED"
+  | "CONFIRMED"
+  | "RESCHEDULE_REQUESTED"
+  | "COMPLETED"
+  | "NO_SHOW"
+  | "CANCELLED";
+export const INTERVIEW_STATUSES: InterviewStatus[] = [
+  "SCHEDULED",
+  "CONFIRMED",
+  "RESCHEDULE_REQUESTED",
+  "COMPLETED",
+  "NO_SHOW",
+  "CANCELLED",
+];
+export const INTERVIEW_STATUS_LABELS: Record<InterviewStatus, string> = {
+  SCHEDULED: "Terjadwal",
+  CONFIRMED: "Dikonfirmasi",
+  RESCHEDULE_REQUESTED: "Minta Ubah Jadwal",
+  COMPLETED: "Selesai",
+  NO_SHOW: "Tidak Hadir",
+  CANCELLED: "Dibatalkan",
+};
+
+export type InterviewRecommendation = "LANJUT" | "CADANGAN" | "TOLAK";
+export const INTERVIEW_RECOMMENDATIONS: InterviewRecommendation[] = ["LANJUT", "CADANGAN", "TOLAK"];
+export const INTERVIEW_RECOMMENDATION_LABELS: Record<InterviewRecommendation, string> = {
+  LANJUT: "Lanjut ke tahap berikutnya",
+  CADANGAN: "Cadangkan (talent pool)",
+  TOLAK: "Tolak kandidat",
+};
+
+/** Kriteria scorecard wawancara bila posisi tidak mendefinisikan sendiri. */
+export const DEFAULT_INTERVIEW_CRITERIA: string[] = [
+  "Komunikasi",
+  "Portofolio & Karya",
+  "Kemampuan Teknis",
+  "Kecocokan Budaya",
+];
+
+/** Satu sesi wawancara (multi-ronde) milik sebuah lamaran. */
+export type Interview = {
+  id: string;
+  applicationId: string;
+  round: number;
+  mode: InterviewMode;
+  platform: InterviewPlatform;
+  meetingLink: string | null;
+  address: string | null;
+  scheduledAt: string; // ISO
+  durationMin: number;
+  interviewers: string[]; // nama pewawancara
+  status: InterviewStatus;
+  scores: Record<string, number> | null; // {kriteria: 1-5}
+  recommendation: InterviewRecommendation | null;
+  notes: string | null;
+  recordingUrl: string | null;
+  completedAt: string | null;
+  rescheduleReason: string | null;
+  rescheduleProposedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // konteks ringkas untuk daftar admin (opsional, dari API)
+  applicationName?: string;
+  applicationPhone?: string;
+  positionTitle?: string | null;
+  trackingCode?: string;
+};
+
+/* ---------------------------------- Penolakan terstruktur ---------------------------------- */
+
+export type RejectionReason =
+  | "KUALIFIKASI"
+  | "PENGALAMAN"
+  | "PORTOFOLIO"
+  | "KUOTA"
+  | "TIDAK_HADIR"
+  | "MENARIK_DIRI"
+  | "TIDAK_RESPON"
+  | "LAINNYA";
+
+export const REJECTION_REASONS: RejectionReason[] = [
+  "KUALIFIKASI",
+  "PENGALAMAN",
+  "PORTOFOLIO",
+  "KUOTA",
+  "TIDAK_HADIR",
+  "MENARIK_DIRI",
+  "TIDAK_RESPON",
+  "LAINNYA",
+];
+
+export const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
+  KUALIFIKASI: "Kualifikasi belum sesuai",
+  PENGALAMAN: "Pengalaman kurang relevan",
+  PORTOFOLIO: "Portofolio tidak sesuai niche",
+  KUOTA: "Kuota telah terpenuhi",
+  TIDAK_HADIR: "Tidak hadir wawancara",
+  MENARIK_DIRI: "Menarik lamaran sendiri",
+  TIDAK_RESPON: "Tidak merespons dalam waktu yang ditentukan",
+  LAINNYA: "Alasan lain",
+};
+
+export type OfferStatus = "PENDING" | "ACCEPTED" | "DECLINED" | "EXPIRED";
+export const OFFER_STATUSES: OfferStatus[] = ["PENDING", "ACCEPTED", "DECLINED", "EXPIRED"];
+export const OFFER_STATUS_LABELS: Record<OfferStatus, string> = {
+  PENDING: "Menunggu Jawaban",
+  ACCEPTED: "Diterima Pelamar",
+  DECLINED: "Ditolak Pelamar",
+  EXPIRED: "Kedaluwarsa",
+};
+
+/** Dokumen onboarding yang harus diunggah pelamar setelah diterima. */
+export type OnboardingDoc = {
+  id: string;
+  label: string;
+  required: boolean;
+  done: boolean;
+  fileId: string | null; // /api/files/{fileId}
+};
+
+/* ------------------------------ Penawaran untuk halaman status ------------------------------ */
+
+export type TrackOfferInfo = {
+  status: OfferStatus;
+  salary: string | null;
+  type: string | null;
+  startDate: string | null;
+  note: string | null;
+  deadline: string | null;
+  sentAt: string | null;
+  respondedAt: string | null;
+  declineReason: string | null;
+  message: string | null; // teks penawaran (dari template posisi, sudah diisi variabel)
+};
+
+export type TrackInterviewInfo = {
+  id: string;
+  round: number;
+  mode: InterviewMode;
+  platform: InterviewPlatform;
+  meetingLink: string | null;
+  address: string | null;
+  scheduledAt: string;
+  durationMin: number;
+  interviewers: string[];
+  status: InterviewStatus;
+  rescheduleReason: string | null;
+  rescheduleProposedAt: string | null;
+};
+
+export type TrackOnboardingInfo = {
+  hiredAt: string | null;
+  probationEnd: string | null;
+  docs: OnboardingDoc[];
+  welcomeMessage: string | null;
+};
 
 // Ikon lucide yang diizinkan untuk item benefit (dipakai admin & landing)
 export const BENEFIT_ICONS = [
