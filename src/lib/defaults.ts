@@ -1,6 +1,6 @@
 // Nilai default aplikasi rekrutmen konten kreator.
 // File ini murni konstanta (tanpa import server), aman diimpor dari klien maupun server.
-import type { SiteContent } from "@/lib/types";
+import type { Role, SiteContent } from "@/lib/types";
 
 export const DEFAULT_ADMIN_PASSWORD = "admin123";
 
@@ -80,7 +80,45 @@ export const DEFAULT_SITE: SiteContent = {
   contactWhatsapp: "6281234567890",
   instagram: "@lumina.studio",
   footerText: "© 2025 Lumina Studio. Seluruh hak cipta dilindungi.",
+  teamMembers: [
+    {
+      name: "Rania Putri",
+      role: "Video Editor Senior",
+      quote:
+        "Dua tahun di Lumina dan saya masih terkejut seberapa cepat kami mencoba ide gila baru setiap minggu.",
+    },
+    {
+      name: "Dimas Aryo",
+      role: "Penulis Naskah",
+      quote:
+        "Remote bukan berarti sendirian. Tim ini membuat saya tetap merasa punya rumah kreatif.",
+    },
+    {
+      name: "Kayla Nursyifa",
+      role: "Thumbnail Designer",
+      quote:
+        "Karya kami dilihat jutaan orang setiap minggu. Sensasinya tidak tergantikan.",
+    },
+  ],
+  chatbotEnabled: true,
+  discordWebhookUrl: "",
+  telegramBotToken: "",
+  telegramChatId: "",
 };
+
+export type DefaultUserSeed = {
+  name: string;
+  email: string;
+  password: string;
+  role: Role;
+};
+
+// Akun admin awal (dibuat saat seed jika tabel AdminUser kosong).
+export const DEFAULT_USERS: DefaultUserSeed[] = [
+  { name: "Pemilik Studio", email: "admin@lumina.id", password: "admin123", role: "OWNER" },
+  { name: "Tim HR", email: "hr@lumina.id", password: "admin123", role: "HR" },
+  { name: "Pengamat", email: "viewer@lumina.id", password: "admin123", role: "VIEWER" },
+];
 
 export type DefaultPositionSeed = {
   title: string;

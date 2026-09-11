@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertDialog,
@@ -22,19 +22,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Eye,
+  Download,
   Inbox,
+  LayoutGrid,
+  Loader2,
   RotateCcw,
   Search,
+  Table2,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -45,16 +41,29 @@ import {
   type ApplicationStatus,
   type Position,
 } from "@/lib/types";
-import { apiDelete, apiGet, buildQuery } from "./api";
-import { formatDate, initialsOf } from "./format";
-import { StatusBadge } from "./status-badge";
+import { apiDelete, apiGet, apiPatch, apiPost, buildQuery } from "./api";
+import { useAdminSession } from "./admin-context";
 import { ApplicationDetailDialog } from "./application-detail-dialog";
+import { ApplicationsTable } from "./applications-table";
+import { KanbanBoard } from "./kanban-board";
+import { ComparisonDialog } from "./comparison-dialog";
+import { cn } from "@/lib/utils";
 
 const ALL = "ALL";
 
-const FILTER_TRIGGER_CLASS = "h-10 w-full rounded-xl sm:w-44";
+const FILTER_TRIGGER_CLASS = "h-10 w-full rounded-xl sm:w-40";
+
+const SORT_OPTIONS = [
+  { value: "newest", label: "Terbaru" },
+  { value: "oldest", label: "Terlama" },
+  { value: "aiScore", label: "Skor AI" },
+] as const;
+
+type ViewMode = "table" | "kanban";
 
 export function ApplicationsTab() {
+  const { canMutate, reportError } = useAdminSession();
+
   const [applications, setApplications] = useState<Application[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,12 +72,48 @@ export function ApplicationsTab() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
   const [positionFilter, setPositionFilter] = useState<string>(ALL);
+  const [sort, setSort] = useState<string>("newest");
+  const [ratingMin, setRatingMin] = useState<string>("");
+  const [tag, setTag] = useState<string>(ALL);
+  const [talentPool, setTalentPool] = useState(false);
+  const [hasInterview, setHasInterview] = useState(false);
+
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [view, setView] = useState<ViewMode>("table");
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<string>("");
+  const [bulkWorking, setBulkWorking] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const [detail, setDetail] = useState<Application | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Application | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
-  const hasActiveFilter = q !== "" || statusFilter !== ALL || positionFilter !== ALL;
+  const activeQuery = useMemo(() => {
+    return buildQuery({
+      q: q || undefined,
+      status: statusFilter !== ALL ? statusFilter : undefined,
+      positionId: positionFilter !== ALL ? positionFilter : undefined,
+      sort: sort !== "newest" ? sort : undefined,
+      ratingMin: ratingMin !== "" ? ratingMin : undefined,
+      tag: tag !== ALL ? tag : undefined,
+      talentPool: talentPool ? "1" : undefined,
+      hasInterview: hasInterview ? "1" : undefined,
+    });
+  }, [q, statusFilter, positionFilter, sort, ratingMin, tag, talentPool, hasInterview]);
+
+  const hasActiveFilter =
+    q !== "" ||
+    statusFilter !== ALL ||
+    positionFilter !== ALL ||
+    sort !== "newest" ||
+    ratingMin !== "" ||
+    tag !== ALL ||
+    talentPool ||
+    hasInterview;
 
   const loadPositions = useCallback(async () => {
     try {
@@ -82,19 +127,22 @@ export function ApplicationsTab() {
   const loadApplications = useCallback(async () => {
     setLoading(true);
     try {
-      const query = buildQuery({
-        q: q || undefined,
-        status: statusFilter !== ALL ? statusFilter : undefined,
-        positionId: positionFilter !== ALL ? positionFilter : undefined,
-      });
-      const data = await apiGet<Application[]>(`/api/admin/applications${query}`);
+      const data = await apiGet<Application[]>(
+        `/api/admin/applications${activeQuery}`
+      );
       setApplications(data);
+      // Kumpulkan tag unik untuk pilihan filter.
+      setAllTags((prev) => {
+        const set = new Set(prev);
+        for (const app of data) for (const t of app.tags) set.add(t);
+        return Array.from(set).sort((a, b) => a.localeCompare(b, "id"));
+      });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+      reportError(err);
     } finally {
       setLoading(false);
     }
-  }, [q, statusFilter, positionFilter]);
+  }, [activeQuery, reportError]);
 
   useEffect(() => {
     void loadPositions();
@@ -113,6 +161,101 @@ export function ApplicationsTab() {
     setQ("");
     setStatusFilter(ALL);
     setPositionFilter(ALL);
+    setSort("newest");
+    setRatingMin("");
+    setTag(ALL);
+    setTalentPool(false);
+    setHasInterview(false);
+  }
+
+  function toggleSelect(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll(checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        for (const app of applications) next.add(app.id);
+      } else {
+        for (const app of applications) next.delete(app.id);
+      }
+      return next;
+    });
+  }
+
+  function toggleCompare(app: Application) {
+    setCompareIds((prev) => {
+      if (prev.includes(app.id)) {
+        return prev.filter((id) => id !== app.id);
+      }
+      if (prev.length >= 3) {
+        toast.info("Maksimal 3 kandidat — kandidat pertama diganti.");
+        return [...prev.slice(1), app.id];
+      }
+      return [...prev, app.id];
+    });
+  }
+
+  function updateAppInList(updated: Application) {
+    setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    setDetail((prev) => (prev && prev.id === updated.id ? updated : prev));
+  }
+
+  async function handleRate(app: Application, rating: number) {
+    try {
+      const updated = await apiPatch<Application>(
+        `/api/admin/applications/${app.id}`,
+        { rating }
+      );
+      toast.success(`Rating disimpan (${rating}/5)`);
+      updateAppInList(updated);
+    } catch (err) {
+      reportError(err);
+    }
+  }
+
+  // Pindah kolom kanban: optimistik + PATCH, revert bila gagal.
+  function handleKanbanMove(id: string, status: ApplicationStatus) {
+    const previous = applications;
+    const target = STATUS_LABELS[status];
+    setApplications((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, status } : a))
+    );
+    apiPatch<Application>(`/api/admin/applications/${id}`, { status })
+      .then((updated) => {
+        toast.success(`Status diubah ke ${target}`);
+        updateAppInList(updated);
+      })
+      .catch((err) => {
+        setApplications(previous);
+        reportError(err);
+      });
+  }
+
+  async function runBulk(body: Record<string, unknown>, successMessage: string) {
+    if (bulkWorking) return;
+    setBulkWorking(true);
+    try {
+      const res = await apiPost<{ ok: boolean; affected: number }>(
+        "/api/admin/applications/bulk",
+        body
+      );
+      toast.success(successMessage.replace("{n}", String(res.affected)));
+      setSelectedIds(new Set());
+      setBulkStatus("");
+      await loadApplications();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBulkWorking(false);
+      setBulkDeleteOpen(false);
+    }
   }
 
   async function handleDelete() {
@@ -126,35 +269,81 @@ export function ApplicationsTab() {
       setApplications((prev) => prev.filter((a) => a.id !== deleteTarget.id));
       setDetail(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+      reportError(err);
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
     }
   }
 
+  const comparedApps = useMemo(
+    () =>
+      compareIds
+        .map((id) => applications.find((a) => a.id === id))
+        .filter((a): a is Application => Boolean(a)),
+    [compareIds, applications]
+  );
+
   return (
     <div className="flex flex-col gap-4">
-      {/* Bar filter */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search
-            className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
-            aria-hidden="true"
-          />
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") applySearch();
-            }}
-            onBlur={applySearch}
-            placeholder="Cari nama atau email..."
-            aria-label="Cari nama atau email pelamar"
-            className="h-10 rounded-xl pl-9"
-          />
+      {/* Toolbar filter */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+          <div className="relative flex-1">
+            <Search
+              className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+              aria-hidden="true"
+            />
+            <Input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") applySearch();
+              }}
+              onBlur={applySearch}
+              placeholder="Cari nama atau email..."
+              aria-label="Cari nama atau email pelamar"
+              className="h-10 rounded-xl pl-9"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Toggle tampilan */}
+            <div className="flex items-center gap-1 rounded-xl border p-1">
+              <Button
+                variant={view === "table" ? "secondary" : "ghost"}
+                size="sm"
+                className={cn("h-8", view === "table" && "shadow-xs")}
+                onClick={() => setView("table")}
+                aria-pressed={view === "table"}
+              >
+                <Table2 className="size-4" aria-hidden="true" />
+                Tabel
+              </Button>
+              <Button
+                variant={view === "kanban" ? "secondary" : "ghost"}
+                size="sm"
+                className={cn("h-8", view === "kanban" && "shadow-xs")}
+                onClick={() => setView("kanban")}
+                aria-pressed={view === "kanban"}
+              >
+                <LayoutGrid className="size-4" aria-hidden="true" />
+                Kanban
+              </Button>
+            </div>
+            {/* Export CSV */}
+            <a
+              href={`/api/admin/applications/export${activeQuery}`}
+              download
+              className={cn(buttonVariants({ variant: "outline" }), "h-10 rounded-xl")}
+              aria-label="Ekspor daftar lamaran ke CSV"
+            >
+              <Download className="size-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Export CSV</span>
+            </a>
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex">
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter status">
               <SelectValue placeholder="Semua Status" />
@@ -168,6 +357,7 @@ export function ApplicationsTab() {
               ))}
             </SelectContent>
           </Select>
+
           <Select value={positionFilter} onValueChange={setPositionFilter}>
             <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter posisi">
               <SelectValue placeholder="Semua Posisi" />
@@ -181,17 +371,83 @@ export function ApplicationsTab() {
               ))}
             </SelectContent>
           </Select>
+
+          <Select value={sort} onValueChange={setSort}>
+            <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Urutkan">
+              <SelectValue placeholder="Urutkan" />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={ratingMin} onValueChange={setRatingMin}>
+            <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter rating minimum">
+              <SelectValue placeholder="Semua Rating" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all-rating">Semua Rating</SelectItem>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  Rating &#8805; {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={tag === ALL ? "all-tag" : tag}
+            onValueChange={(v) => setTag(v === "all-tag" ? ALL : v)}
+          >
+            <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter tag">
+              <SelectValue placeholder="Semua Tag" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all-tag">Semua Tag</SelectItem>
+              {allTags.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+            <Switch
+              checked={talentPool}
+              onCheckedChange={setTalentPool}
+              aria-label="Filter Talent Pool"
+            />
+            Talent Pool
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+            <Switch
+              checked={hasInterview}
+              onCheckedChange={setHasInterview}
+              aria-label="Filter ada jadwal wawancara"
+            />
+            Ada Jadwal Wawancara
+          </label>
           {hasActiveFilter ? (
             <Button
               variant="outline"
               onClick={resetFilters}
-              className="h-10 col-span-2 rounded-xl"
+              className="h-9 rounded-xl"
               aria-label="Reset filter"
             >
               <RotateCcw className="size-4" aria-hidden="true" />
               Reset Filter
             </Button>
           ) : null}
+          <p className="ml-auto text-xs text-muted-foreground">
+            {loading ? "Memuat..." : `${applications.length} lamaran ditampilkan`}
+          </p>
         </div>
       </div>
 
@@ -211,134 +467,128 @@ export function ApplicationsTab() {
             </p>
           </CardContent>
         </Card>
+      ) : view === "table" ? (
+        <ApplicationsTable
+          applications={applications}
+          canMutate={canMutate}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          onToggleSelectAll={toggleSelectAll}
+          compareIds={compareIds}
+          onToggleCompare={toggleCompare}
+          onOpenDetail={setDetail}
+          onDeleteRequest={setDeleteTarget}
+          onRate={(app, rating) => void handleRate(app, rating)}
+        />
       ) : (
-        <>
-          {/* Desktop: table */}
-          <Card className="hidden gap-0 overflow-hidden rounded-2xl py-0 md:block">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50 hover:bg-muted/50">
-                  <TableHead className="px-4 py-3">Pelamar</TableHead>
-                  <TableHead className="px-4 py-3">Posisi</TableHead>
-                  <TableHead className="px-4 py-3">Tanggal</TableHead>
-                  <TableHead className="px-4 py-3">Status</TableHead>
-                  <TableHead className="px-4 py-3 text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {applications.map((app) => (
-                  <TableRow key={app.id}>
-                    <TableCell className="max-w-64 px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold text-rose-700">
-                          {initialsOf(app.name)}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold">
-                            {app.name}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {app.email}
-                            {app.phone ? ` · ${app.phone}` : ""}
-                          </p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-sm">
-                      {app.positionTitle ?? "-"}
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-sm whitespace-nowrap text-muted-foreground">
-                      {formatDate(app.createdAt)}
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <StatusBadge status={app.status} />
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-9"
-                          onClick={() => setDetail(app)}
-                          aria-label={`Lihat detail lamaran ${app.name}`}
-                        >
-                          <Eye className="size-4" aria-hidden="true" />
-                          Detail
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-9 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                          onClick={() => setDeleteTarget(app)}
-                          aria-label={`Hapus lamaran ${app.name}`}
-                        >
-                          <Trash2 className="size-4" aria-hidden="true" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
-
-          {/* Mobile: daftar card */}
-          <div className="flex flex-col gap-3 md:hidden">
-            {applications.map((app) => (
-              <Card key={app.id} className="gap-0 rounded-2xl p-4">
-                <CardContent className="px-0">
-                  <div className="flex items-start gap-3">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold text-rose-700">
-                      {initialsOf(app.name)}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{app.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {app.email}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">
-                        {app.positionTitle ?? "-"} · {formatDate(app.createdAt)}
-                      </p>
-                    </div>
-                    <StatusBadge status={app.status} />
-                  </div>
-                  <div className="mt-3 flex items-center gap-2 border-t pt-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-10 flex-1"
-                      onClick={() => setDetail(app)}
-                    >
-                      <Eye className="size-4" aria-hidden="true" />
-                      Detail
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-10 flex-1 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                      onClick={() => setDeleteTarget(app)}
-                    >
-                      <Trash2 className="size-4" aria-hidden="true" />
-                      Hapus
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </>
+        <KanbanBoard
+          apps={applications}
+          canMutate={canMutate}
+          onMove={handleKanbanMove}
+          onOpenDetail={setDetail}
+        />
       )}
 
-      <p className="text-xs text-muted-foreground">
-        {loading ? "Memuat..." : `${applications.length} lamaran ditampilkan`}
-      </p>
+      {/* Bulk bar */}
+      {canMutate && selectedIds.size > 0 ? (
+        <div className="sticky bottom-4 z-20 flex flex-wrap items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/95 p-3 backdrop-blur dark:border-rose-900 dark:bg-rose-950/90">
+          <span className="text-sm font-semibold">
+            {selectedIds.size} dipilih
+          </span>
+          <Select value={bulkStatus || "bulk-empty"} onValueChange={setBulkStatus}>
+            <SelectTrigger
+              className="h-9 w-full rounded-lg bg-background sm:w-48"
+              aria-label="Ubah status terpilih"
+            >
+              <SelectValue placeholder="Ubah status ke..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bulk-empty" disabled>
+                Ubah status ke...
+              </SelectItem>
+              {APPLICATION_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {STATUS_LABELS[s]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            className="h-9"
+            disabled={!bulkStatus || bulkWorking}
+            onClick={() =>
+              void runBulk(
+                { ids: Array.from(selectedIds), action: "status", status: bulkStatus },
+                "{n} lamaran diperbarui"
+              )
+            }
+          >
+            {bulkWorking ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : null}
+            Terapkan
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 bg-background"
+            disabled={bulkWorking}
+            onClick={() =>
+              void runBulk(
+                { ids: Array.from(selectedIds), action: "talentPool", talentPool: true },
+                "{n} lamaran masuk Talent Pool"
+              )
+            }
+          >
+            Talent Pool
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="h-9"
+            disabled={bulkWorking}
+            onClick={() => setBulkDeleteOpen(true)}
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+            Hapus
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9"
+            onClick={() => setSelectedIds(new Set())}
+            disabled={bulkWorking}
+          >
+            Bersihkan pilihan
+          </Button>
+        </div>
+      ) : null}
+
+      {/* Bar perbandingan melayang */}
+      {comparedApps.length > 0 && !compareOpen ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
+          <Button
+            className="pointer-events-auto h-11 rounded-full px-5 shadow-lg"
+            onClick={() => setCompareOpen(true)}
+            aria-label={`Bandingkan ${comparedApps.length} kandidat`}
+          >
+            Bandingkan ({comparedApps.length})
+          </Button>
+        </div>
+      ) : null}
+
+      <ComparisonDialog
+        apps={compareOpen ? comparedApps : []}
+        onOpenChange={setCompareOpen}
+      />
 
       <ApplicationDetailDialog
         application={detail}
         onOpenChange={(open) => {
           if (!open) setDetail(null);
         }}
-        onSaved={() => void loadApplications()}
+        onSaved={updateAppInList}
         onDeleted={(id) =>
           setApplications((prev) => prev.filter((a) => a.id !== id))
         }
@@ -370,11 +620,41 @@ export function ApplicationsTab() {
               className="bg-rose-600 text-white hover:bg-rose-700"
               disabled={deleting}
             >
-              Ya, Hapus
+              {deleting ? "Menghapus..." : "Ya, Hapus"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Konfirmasi hapus massal */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus {selectedIds.size} lamaran?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Semua lamaran terpilih akan dihapus permanen. Tindakan tidak bisa
+              dibatalkan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkWorking}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void runBulk(
+                  { ids: Array.from(selectedIds), action: "delete" },
+                  "{n} lamaran dihapus"
+                );
+              }}
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              disabled={bulkWorking}
+            >
+              {bulkWorking ? "Menghapus..." : "Ya, Hapus Semua"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }

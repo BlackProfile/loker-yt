@@ -1,20 +1,33 @@
-// GET /api/admin/positions — daftar SEMUA posisi (termasuk nonaktif), khusus admin.
-// POST /api/admin/positions — buat posisi baru.
+// GET  /api/admin/positions — daftar SEMUA posisi (termasuk nonaktif), semua role.
+// POST /api/admin/positions — buat posisi baru (OWNER/HR), mendukung closesAt.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/server-auth";
-import { serializePosition } from "@/lib/seed";
+import { getSession } from "@/lib/server-auth";
+import { closeExpiredPositions, serializePosition } from "@/lib/seed";
 import { POSITION_TYPES } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const UNAUTHORIZED = { error: "Tidak diizinkan. Silakan login terlebih dahulu." };
+const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
+const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
+
+/** Parse closesAt dari body: null | undefined | ISO string valid. */
+function parseClosesAt(value: unknown): { ok: true; date: Date | null } | { ok: false } {
+  if (value === undefined) return { ok: true, date: undefined as unknown as null }; // tidak dikirim
+  if (value === null) return { ok: true, date: null };
+  if (typeof value !== "string") return { ok: false };
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return { ok: false };
+  return { ok: true, date: parsed };
+}
 
 export async function GET() {
   try {
-    if (!(await requireAdmin())) {
+    const session = await getSession();
+    if (!session) {
       return NextResponse.json(UNAUTHORIZED, { status: 401 });
     }
+    await closeExpiredPositions();
 
     const rows = await db.position.findMany({
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
@@ -29,8 +42,12 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) {
+    const session = await getSession();
+    if (!session) {
       return NextResponse.json(UNAUTHORIZED, { status: 401 });
+    }
+    if (session.role === "VIEWER") {
+      return NextResponse.json(FORBIDDEN, { status: 403 });
     }
 
     const body: unknown = await req.json().catch(() => null);
@@ -45,7 +62,7 @@ export async function POST(req: NextRequest) {
     const location =
       typeof data.location === "string" && data.location.trim() ? data.location.trim() : "Remote";
 
-    let type = "Remote";
+    let type = "Full-time";
     if (data.type !== undefined) {
       if (typeof data.type !== "string" || !(POSITION_TYPES as readonly string[]).includes(data.type.trim())) {
         return NextResponse.json({ error: "Jenis pekerjaan tidak valid." }, { status: 400 });
@@ -70,6 +87,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "isActive harus berupa boolean." }, { status: 400 });
       }
       isActive = data.isActive;
+    }
+
+    let closesAt: Date | null = null;
+    if (data.closesAt !== undefined && data.closesAt !== null) {
+      const parsed = parseClosesAt(data.closesAt);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: "Tanggal penutupan tidak valid." }, { status: 400 });
+      }
+      closesAt = parsed.date;
     }
 
     let order: number;
@@ -102,6 +128,7 @@ export async function POST(req: NextRequest) {
         description,
         requirements: JSON.stringify(requirements),
         isActive,
+        closesAt,
         order,
       },
     });

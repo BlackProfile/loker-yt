@@ -15,6 +15,18 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
+// Akun admin multi-user dengan role
+model AdminUser {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("VIEWER") // OWNER | HR | VIEWER
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 // Posisi lowongan yang dibuka
 model Position {
   id           String        @id @default(cuid())
@@ -25,26 +37,72 @@ model Position {
   description  String
   requirements String        @default("[]") // JSON string[]
   isActive     Boolean       @default(true)
+  closesAt     DateTime? // auto-tutup setelah tanggal ini (opsional)
   order        Int           @default(0)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   applications Application[]
 }
 
+// Aset file yang diunggah pelamar (CV, audio intro)
+model FileAsset {
+  id             String        @id @default(cuid())
+  filename       String
+  mimeType       String
+  size           Int
+  path           String
+  createdAt      DateTime      @default(now())
+  cvApplications Application[] @relation("cvFile")
+  introApp       Application[] @relation("introFile")
+}
+
 // Lamaran yang masuk dari form publik
 model Application {
-  id           String    @id @default(cuid())
-  name         String
-  email        String
-  phone        String
-  positionId   String?
-  position     Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
-  socialLinks  String?
-  portfolioUrl String?
-  experience   String
-  motivation   String
-  status       String    @default("NEW") // NEW | REVIEWED | INTERVIEW | ACCEPTED | REJECTED
-  adminNotes   String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id               String     @id @default(cuid())
+  name             String
+  email            String
+  phone            String
+  positionId       String?
+  position         Position?  @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  socialLinks      String?
+  portfolioUrl     String?
+  experience       String
+  motivation       String
+  status           String     @default("NEW") // NEW | REVIEWED | INTERVIEW | ACCEPTED | REJECTED
+  adminNotes       String?
+  trackingCode     String?    @unique // kode pelacakan untuk pelamar, mis. LM-ABC123
+  rating           Int        @default(0) // 0-5 bintang dari admin
+  tags             String     @default("[]") // JSON string[]
+  interviewAt      DateTime? // jadwal wawancara
+  talentPool       Boolean    @default(false)
+  aiScore          Int? // 0-100 hasil screening AI
+  aiSummary        String? // ringkasan AI
+  aiRecommendation String? // rekomendasi AI (LAYAK_WAWANCARA | PERTIMBANGKAN | TIDAK_COCCOK)
+  aiAnalyzedAt     DateTime?
+  transcript       String? // hasil transkripsi ASR audio intro
+  cvFileId         String?
+  cvFile           FileAsset? @relation("cvFile", fields: [cvFileId], references: [id], onDelete: SetNull)
+  introFileId      String?
+  introFile        FileAsset? @relation("introFile", fields: [introFileId], references: [id], onDelete: SetNull)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  activityLogs     ActivityLog[]
+}
+
+// Log aktivitas: audit admin + timeline per kandidat + riwayat notifikasi
+model ActivityLog {
+  id            String       @id @default(cuid())
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  actor         String // nama aktor: "Sistem", "AI", nama admin, "Pelamar"
+  action        String // mis. STATUS_CHANGE, NOTE, AI_SCREENING, WEBHOOK, UPLOAD, dll
+  detail        String?
+  createdAt     DateTime     @default(now())
+}
+
+// Email pelamar yang berlangganan notifikasi posisi baru
+model Subscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
 }

@@ -1,4 +1,4 @@
-// Kontrak tipe data bersama untuk aplikasi rekrutmen konten kreator.
+// Kontrak tipe data bersama untuk aplikasi rekrutmen konten kreator (v2).
 // Dipakai oleh API (backend) dan komponen (frontend). Jangan duplikasi tipe di tempat lain.
 
 export type ApplicationStatus = "NEW" | "REVIEWED" | "INTERVIEW" | "ACCEPTED" | "REJECTED";
@@ -19,9 +19,22 @@ export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   REJECTED: "Ditolak",
 };
 
+// Alur pipeline untuk timeline pelacakan pelamar
+export const STATUS_FLOW: ApplicationStatus[] = ["NEW", "REVIEWED", "INTERVIEW"];
+
+export type AiRecommendation = "LAYAK_WAWANCARA" | "PERTIMBANGKAN" | "TIDAK_COCCOK";
+
+export const AI_RECOMMENDATION_LABELS: Record<AiRecommendation, string> = {
+  LAYAK_WAWANCARA: "Layak Wawancara",
+  PERTIMBANGKAN: "Pertimbangkan",
+  TIDAK_COCCOK: "Kurang Cocok",
+};
+
 export type BenefitItem = { icon: string; title: string; description: string };
 
 export type FaqItem = { question: string; answer: string };
+
+export type TeamMember = { name: string; role: string; quote: string };
 
 // Konten situs yang bisa diatur lewat panel admin
 export type SiteContent = {
@@ -36,10 +49,16 @@ export type SiteContent = {
   aboutDescription: string;
   benefits: BenefitItem[];
   faqs: FaqItem[];
+  teamMembers: TeamMember[]; // suara/testimoni tim
   contactEmail: string;
   contactWhatsapp: string; // format internasional tanpa "+", mis. 6281234567890
   instagram: string;
   footerText: string;
+  // Otomasi & integrasi
+  chatbotEnabled: boolean;
+  discordWebhookUrl: string;
+  telegramBotToken: string;
+  telegramChatId: string;
 };
 
 export type Position = {
@@ -51,6 +70,7 @@ export type Position = {
   description: string;
   requirements: string[];
   isActive: boolean;
+  closesAt: string | null; // ISO date atau null
   order: number;
   createdAt: string;
 };
@@ -68,13 +88,60 @@ export type Application = {
   motivation: string;
   status: ApplicationStatus;
   adminNotes: string | null;
+  trackingCode: string;
+  rating: number; // 0-5
+  tags: string[];
+  interviewAt: string | null;
+  talentPool: boolean;
+  aiScore: number | null; // 0-100
+  aiSummary: string | null;
+  aiRecommendation: AiRecommendation | null;
+  aiAnalyzedAt: string | null;
+  transcript: string | null; // hasil ASR audio intro
+  cvFileId: string | null;
+  cvFileName: string | null;
+  introFileId: string | null;
+  introFileName: string | null;
+  createdAt: string;
+};
+
+export type Role = "OWNER" | "HR" | "VIEWER";
+
+export const ROLES: Role[] = ["OWNER", "HR", "VIEWER"];
+
+export const ROLE_LABELS: Record<Role, string> = {
+  OWNER: "Pemilik",
+  HR: "HR",
+  VIEWER: "Pengamat",
+};
+
+export type AdminUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  isActive: boolean;
+  createdAt: string;
+};
+
+export type AdminSession = { id: string; name: string; email: string; role: Role };
+
+export type Subscriber = { id: string; email: string; createdAt: string };
+
+export type LogEntry = {
+  id: string;
+  applicationId: string | null;
+  applicationName: string | null;
+  actor: string;
+  action: string;
+  detail: string | null;
   createdAt: string;
 };
 
 // GET /api/public/content
 export type PublicContentResponse = {
   site: SiteContent;
-  positions: Position[]; // hanya posisi aktif, terurut berdasarkan order
+  positions: Position[]; // hanya aktif & belum lewat closesAt, terurut order
   stats: { openRoles: number; totalApplications: number };
 };
 
@@ -89,7 +156,24 @@ export type AdminOverviewResponse = {
     REJECTED: number;
   };
   recent: Application[]; // 5 lamaran terbaru
+  daily: { date: string; count: number }[]; // 30 hari terakhir (ISO yyyy-MM-dd)
+  upcomingInterviews: Application[]; // maks 5 terdekat
+  stale: Application[]; // lamaran NEW/REVIEWED tanpa perubahan > 7 hari (maks 5)
+  subscriberCount: number;
+  avgAiScore: number | null;
 };
+
+// POST /api/public/track -> { code }
+export type TrackResponse = {
+  found: boolean;
+  status?: ApplicationStatus;
+  positionTitle?: string | null;
+  submittedAt?: string;
+  steps?: { key: string; label: string; done: boolean; at: string | null }[];
+};
+
+// POST /api/chat -> { message, history }
+export type ChatResponse = { reply: string };
 
 // Ikon lucide yang diizinkan untuk item benefit (dipakai admin & landing)
 export const BENEFIT_ICONS = [
@@ -113,3 +197,7 @@ export const BENEFIT_ICONS = [
 
 // Jenis pekerjaan untuk posisi lowongan
 export const POSITION_TYPES = ["Full-time", "Part-time", "Freelance", "Kontrak"] as const;
+
+// Batas unggahan
+export const CV_MAX_BYTES = 5 * 1024 * 1024; // 5 MB, PDF saja
+export const INTRO_MAX_BYTES = 10 * 1024 * 1024; // 10 MB, audio mp3/wav/m4a

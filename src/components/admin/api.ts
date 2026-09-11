@@ -1,10 +1,21 @@
 "use client";
 
 // Helper fetch JSON terpusat untuk panel admin.
-// Melempar Error dengan pesan dari body { error: string },
+// Melempar ApiError dengan status HTTP + pesan dari body { error: string },
 // fallback "Terjadi kesalahan. Coba lagi."
+// ApiError dipakai untuk membedakan 401 (sesi habis -> login) dan 403 (toast akses).
 
 const FALLBACK_MESSAGE = "Terjadi kesalahan. Coba lagi.";
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 function extractError(body: unknown): string | null {
   if (body && typeof body === "object" && "error" in body) {
@@ -19,7 +30,7 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(url, init);
   } catch {
-    throw new Error(FALLBACK_MESSAGE);
+    throw new ApiError(FALLBACK_MESSAGE, 0);
   }
 
   let body: unknown = null;
@@ -30,7 +41,7 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    throw new Error(extractError(body) ?? FALLBACK_MESSAGE);
+    throw new ApiError(extractError(body) ?? FALLBACK_MESSAGE, res.status);
   }
 
   return body as T;
@@ -64,12 +75,15 @@ export function apiDelete<T>(url: string): Promise<T> {
   return apiFetch<T>(url, { method: "DELETE" });
 }
 
-export function buildQuery(params: Record<string, string | undefined>): string {
+export function buildQuery(
+  params: Record<string, string | number | undefined>
+): string {
   const sp = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== "" && value !== "ALL") {
-      sp.set(key, value);
-    }
+    if (value === undefined) continue;
+    const str = String(value);
+    if (str === "" || str === "ALL") continue;
+    sp.set(key, str);
   }
   const qs = sp.toString();
   return qs ? `?${qs}` : "";

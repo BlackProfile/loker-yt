@@ -1,17 +1,21 @@
 // GET /api/public/content — konten landing page publik (site + posisi aktif + statistik).
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { ensureSeeded, parseSiteContent, serializePosition } from "@/lib/seed";
+import { closeExpiredPositions, ensureSeeded, parseSiteContent, serializePosition } from "@/lib/seed";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
     await ensureSeeded();
+    await closeExpiredPositions();
 
     const [positions, totalApplications, siteSetting] = await Promise.all([
       db.position.findMany({
-        where: { isActive: true },
+        where: {
+          isActive: true,
+          OR: [{ closesAt: null }, { closesAt: { gt: new Date() } }],
+        },
         orderBy: [{ order: "asc" }, { createdAt: "asc" }],
       }),
       db.application.count(),

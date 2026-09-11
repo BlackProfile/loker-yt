@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { format } from "date-fns";
+import { id as localeId } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -42,6 +44,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   Briefcase,
+  Copy,
   GripVertical,
   Loader2,
   MapPin,
@@ -52,6 +55,7 @@ import {
 import { toast } from "sonner";
 import { POSITION_TYPES, type Position } from "@/lib/types";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
+import { localInputToIso, isoToLocalInput } from "./format";
 
 type PositionForm = {
   title: string;
@@ -60,6 +64,7 @@ type PositionForm = {
   location: string;
   description: string;
   requirementsText: string;
+  closesAtLocal: string;
   isActive: boolean;
 };
 
@@ -70,8 +75,15 @@ const EMPTY_FORM: PositionForm = {
   location: "Remote",
   description: "",
   requirementsText: "",
+  closesAtLocal: "",
   isActive: true,
 };
+
+function isExpired(closesAt: string | null): boolean {
+  if (!closesAt) return false;
+  const d = new Date(closesAt);
+  return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
+}
 
 function parseRequirements(text: string): string[] {
   return text
@@ -127,6 +139,7 @@ export function PositionsTab() {
       location: position.location || "Remote",
       description: position.description,
       requirementsText: position.requirements.join("\n"),
+      closesAtLocal: isoToLocalInput(position.closesAt),
       isActive: position.isActive,
     });
     setErrors({});
@@ -153,6 +166,7 @@ export function PositionsTab() {
       location: form.location.trim() || "Remote",
       description: form.description.trim(),
       requirements: parseRequirements(form.requirementsText),
+      closesAt: localInputToIso(form.closesAtLocal),
       isActive: form.isActive,
     };
     try {
@@ -191,6 +205,18 @@ export function PositionsTab() {
         )
       );
       toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+    }
+  }
+
+  async function handleDuplicate(position: Position) {
+    try {
+      await apiPost<Position>(`/api/admin/positions/${position.id}/duplicate`);
+      toast.success("Posisi disalin (nonaktif)");
+      await load();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi."
+      );
     }
   }
 
@@ -259,6 +285,18 @@ export function PositionsTab() {
                       <MapPin className="size-3" aria-hidden="true" />
                       {position.location || "-"}
                     </Badge>
+                    {position.closesAt ? (
+                      isExpired(position.closesAt) ? (
+                        <Badge className="border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400">
+                          Kedaluwarsa
+                        </Badge>
+                      ) : (
+                        <Badge className="border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
+                          Tutup otomatis{" "}
+                          {format(new Date(position.closesAt), "dd MMM", { locale: localeId })}
+                        </Badge>
+                      )
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -272,6 +310,15 @@ export function PositionsTab() {
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-10 sm:size-9"
+                    onClick={() => void handleDuplicate(position)}
+                    aria-label={`Duplikat posisi ${position.title}`}
+                  >
+                    <Copy className="size-4" aria-hidden="true" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -377,6 +424,22 @@ export function PositionsTab() {
                   placeholder="Remote"
                   className="h-10"
                 />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="pos-closesAt">Tanggal Penutupan (opsional)</Label>
+                <Input
+                  id="pos-closesAt"
+                  type="datetime-local"
+                  value={form.closesAtLocal}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, closesAtLocal: e.target.value }))
+                  }
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Posisi berhenti tampil di halaman publik setelah waktu ini.
+                </p>
               </div>
 
               <div className="flex flex-col gap-1.5">

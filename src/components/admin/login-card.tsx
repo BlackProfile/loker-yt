@@ -14,9 +14,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Loader2, Lock } from "lucide-react";
 import { toast } from "sonner";
-import { apiPost } from "./api";
+import type { AdminSession } from "@/lib/types";
+import { ApiError, apiPost } from "./api";
 
-export function LoginCard({ onSuccess }: { onSuccess: () => void }) {
+export function LoginCard({
+  onSuccess,
+}: {
+  onSuccess: (session: AdminSession) => void;
+}) {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -28,26 +34,31 @@ export function LoginCard({ onSuccess }: { onSuccess: () => void }) {
     setError(null);
     setLoading(true);
     try {
-      await apiPost<{ ok: boolean }>("/api/admin/login", { password });
+      const data = await apiPost<{ ok: boolean; session: AdminSession }>(
+        "/api/admin/login",
+        { email: email.trim(), password }
+      );
       toast.success("Berhasil masuk");
-      onSuccess();
+      onSuccess(data.session);
     } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : "Password salah. Coba lagi.";
-      setError(message);
+      if (err instanceof ApiError && err.status === 401) {
+        setError(err.message || "Email atau password salah.");
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Terjadi kesalahan. Coba lagi.");
+      }
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-background">
       <Card className="w-full max-w-sm rounded-2xl p-8 shadow-sm">
         <CardHeader className="items-center px-0 text-center">
-          <div className="mx-auto mb-2 flex size-14 items-center justify-center rounded-full bg-rose-100">
-            <Lock className="size-6 text-rose-600" aria-hidden="true" />
+          <div className="mx-auto mb-2 flex size-14 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-950">
+            <Lock className="size-6 text-rose-600 dark:text-rose-400" aria-hidden="true" />
           </div>
           <CardTitle className="text-xl font-bold">Panel Admin</CardTitle>
           <CardDescription>
@@ -57,6 +68,19 @@ export function LoginCard({ onSuccess }: { onSuccess: () => void }) {
         <CardContent className="px-0">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
+              <Label htmlFor="admin-email">Email</Label>
+              <Input
+                id="admin-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="nama@lumina.id"
+                autoComplete="email"
+                className="h-11"
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-2">
               <Label htmlFor="admin-password">Password</Label>
               <div className="relative">
                 <Input
@@ -64,7 +88,7 @@ export function LoginCard({ onSuccess }: { onSuccess: () => void }) {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Masukkan password admin"
+                  placeholder="Masukkan password"
                   autoComplete="current-password"
                   className="h-11 pr-10"
                   required
@@ -85,7 +109,7 @@ export function LoginCard({ onSuccess }: { onSuccess: () => void }) {
                 </button>
               </div>
               {error ? (
-                <p className="text-sm text-rose-600" role="alert">
+                <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">
                   {error}
                 </p>
               ) : null}
@@ -101,10 +125,13 @@ export function LoginCard({ onSuccess }: { onSuccess: () => void }) {
               )}
             </Button>
           </form>
-          <Alert className="mt-4 rounded-lg border-amber-200 bg-amber-50 text-amber-800">
-            <AlertDescription className="text-xs">
-              Password default: <span className="font-semibold">admin123</span>{" "}
-              — segera ganti di tab Pengaturan.
+          <Alert className="mt-4 rounded-lg border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+            <AlertDescription className="text-xs leading-relaxed">
+              Akun demo — Owner:{" "}
+              <span className="font-semibold">admin@lumina.id / admin123</span> ·
+              HR: <span className="font-semibold">hr@lumina.id / admin123</span> ·
+              Pengamat:{" "}
+              <span className="font-semibold">viewer@lumina.id / admin123</span>
             </AlertDescription>
           </Alert>
         </CardContent>

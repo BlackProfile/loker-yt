@@ -1,14 +1,15 @@
-// PATCH /api/admin/positions/[id] — update sebagian field posisi.
-// DELETE /api/admin/positions/[id] — hapus posisi (Application.positionId jadi null via onDelete SetNull).
+// PATCH  /api/admin/positions/[id] — update sebagian field posisi, termasuk closesAt (OWNER/HR).
+// DELETE /api/admin/positions/[id] — hapus posisi (OWNER/HR; Application.positionId jadi null via onDelete SetNull).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/server-auth";
+import { getSession } from "@/lib/server-auth";
 import { serializePosition } from "@/lib/seed";
 import { POSITION_TYPES } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const UNAUTHORIZED = { error: "Tidak diizinkan. Silakan login terlebih dahulu." };
+const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
+const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
 const NOT_FOUND = { error: "Posisi tidak ditemukan" };
 
 type PositionUpdateData = {
@@ -19,13 +20,18 @@ type PositionUpdateData = {
   description?: string;
   requirements?: string;
   isActive?: boolean;
+  closesAt?: Date | null;
   order?: number;
 };
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) {
+    const session = await getSession();
+    if (!session) {
       return NextResponse.json(UNAUTHORIZED, { status: 401 });
+    }
+    if (session.role === "VIEWER") {
+      return NextResponse.json(FORBIDDEN, { status: 403 });
     }
     const { id } = await params;
 
@@ -87,6 +93,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       updateData.isActive = data.isActive;
     }
+    if (data.closesAt !== undefined) {
+      if (data.closesAt === null) {
+        updateData.closesAt = null;
+      } else if (typeof data.closesAt === "string") {
+        const parsed = new Date(data.closesAt);
+        if (Number.isNaN(parsed.getTime())) {
+          return NextResponse.json({ error: "Tanggal penutupan tidak valid." }, { status: 400 });
+        }
+        updateData.closesAt = parsed;
+      } else {
+        return NextResponse.json({ error: "Tanggal penutupan tidak valid." }, { status: 400 });
+      }
+    }
     if (data.order !== undefined) {
       if (typeof data.order !== "number" || !Number.isInteger(data.order)) {
         return NextResponse.json({ error: "Order harus berupa bilangan bulat." }, { status: 400 });
@@ -114,8 +133,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) {
+    const session = await getSession();
+    if (!session) {
       return NextResponse.json(UNAUTHORIZED, { status: 401 });
+    }
+    if (session.role === "VIEWER") {
+      return NextResponse.json(FORBIDDEN, { status: 403 });
     }
     const { id } = await params;
 

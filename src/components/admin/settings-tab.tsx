@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,25 +19,30 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Award,
+  Bot,
   Calendar,
   Camera,
   ChevronDown,
   ChevronUp,
   Clock,
+  Copy,
   Eye,
-  EyeOff,
   Film,
   Globe,
   GraduationCap,
   Heart,
   Loader2,
+  MailCheck,
   Mic,
   PenTool,
   Plus,
+  Quote,
   Rocket,
+  Send,
   Sparkles,
   Trash2,
   TrendingUp,
@@ -51,8 +56,11 @@ import {
   BENEFIT_ICONS,
   type FaqItem,
   type SiteContent,
+  type Subscriber,
+  type TeamMember,
 } from "@/lib/types";
-import { apiGet, apiPut } from "./api";
+import { apiGet, apiPost, apiPut } from "./api";
+import { copyText } from "./format";
 
 // Peta ikon lucide untuk benefit (fallback Sparkles).
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -108,60 +116,14 @@ function Field({
   );
 }
 
-function PasswordInput({
-  id,
-  label,
-  value,
-  onChange,
-  autoComplete,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  autoComplete?: string;
-}) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="relative">
-        <Input
-          id={id}
-          type={show ? "text" : "password"}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          autoComplete={autoComplete}
-          className="h-10 pr-10"
-        />
-        <button
-          type="button"
-          aria-label={show ? `Sembunyikan ${label.toLowerCase()}` : `Lihat ${label.toLowerCase()}`}
-          onClick={() => setShow((v) => !v)}
-          className="text-muted-foreground hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          {show ? (
-            <EyeOff className="size-4" aria-hidden="true" />
-          ) : (
-            <Eye className="size-4" aria-hidden="true" />
-          )}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export function SettingsTab() {
   const [site, setSite] = useState<SiteContent | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [pwError, setPwError] = useState<string | null>(null);
-  const [pwSaving, setPwSaving] = useState(false);
+  const [webhookTesting, setWebhookTesting] = useState(false);
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [origin, setOrigin] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -179,6 +141,25 @@ export function SettingsTab() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Daftar pelanggan notifikasi (bersifat pelengkap).
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<Subscriber[]>("/api/admin/subscribers")
+      .then((data) => {
+        if (!cancelled) setSubscribers(data);
+      })
+      .catch(() => {
+        // Abaikan: daftar pelanggan opsional.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
 
   function updateField<K extends keyof SiteContent>(key: K, value: SiteContent[K]) {
     setSite((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -206,6 +187,19 @@ export function SettingsTab() {
     );
   }
 
+  function updateTeamMember(index: number, patch: Partial<TeamMember>) {
+    setSite((prev) =>
+      prev
+        ? {
+            ...prev,
+            teamMembers: prev.teamMembers.map((m, i) =>
+              i === index ? { ...m, ...patch } : m
+            ),
+          }
+        : prev
+    );
+  }
+
   async function handleSaveSite() {
     if (!site || saving) return;
     setSaving(true);
@@ -223,33 +217,40 @@ export function SettingsTab() {
     }
   }
 
-  async function handleChangePassword(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (pwSaving) return;
-    setPwError(null);
-    if (newPassword.length < 6) {
-      setPwError("Password baru minimal 6 karakter.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPwError("Konfirmasi password tidak sama dengan password baru.");
-      return;
-    }
-    setPwSaving(true);
+  async function handleWebhookTest() {
+    if (webhookTesting) return;
+    setWebhookTesting(true);
     try {
-      await apiPut<{ ok: boolean }>("/api/admin/settings", {
-        currentPassword,
-        newPassword,
-      });
-      toast.success("Password berhasil diganti");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
+      const res = await apiPost<{ discord: string; telegram: string }>(
+        "/api/admin/webhook-test"
+      );
+      for (const [name, result] of [
+        ["Discord", res.discord],
+        ["Telegram", res.telegram],
+      ] as const) {
+        if (result === "ok") toast.success(`${name}: ok`);
+        else if (result === "gagal") toast.error(`${name}: gagal`);
+        else toast.info(`${name}: nonaktif`);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
     } finally {
-      setPwSaving(false);
+      setWebhookTesting(false);
     }
+  }
+
+  async function handleCopySubscribers() {
+    const ok = await copyText(subscribers.map((s) => s.email).join("\n"));
+    if (ok) toast.success("Daftar email disalin");
+    else toast.error("Gagal menyalin ke clipboard");
+  }
+
+  async function handleCopyEmbed() {
+    if (!site) return;
+    const snippet = `<iframe src="${origin}/?embed=1" width="100%" height="600" style="border:0;border-radius:12px" title="Lowongan ${site.siteName}"></iframe>`;
+    const ok = await copyText(snippet);
+    if (ok) toast.success("Kode embed disalin");
+    else toast.error("Gagal menyalin ke clipboard");
   }
 
   if (loading) {
@@ -276,6 +277,8 @@ export function SettingsTab() {
       </Card>
     );
   }
+
+  const embedSnippet = `<iframe src="${origin || "https://domain-anda"}?embed=1" width="100%" height="600" style="border:0;border-radius:12px" title="Lowongan ${site.siteName}"></iframe>`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -417,6 +420,123 @@ export function SettingsTab() {
         </CardContent>
       </Card>
 
+      {/* Suara Tim */}
+      <Card className="gap-4 rounded-2xl p-6">
+        <CardHeader className="px-0">
+          <CardTitle className="text-base">Suara Tim</CardTitle>
+          <CardDescription>
+            Testimoni anggota tim yang tampil di halaman publik.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 px-0">
+          {site.teamMembers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Belum ada testimoni tim. Tambahkan agar halaman lebih hidup.
+            </p>
+          ) : (
+            site.teamMembers.map((member, index) => (
+              <div key={index} className="flex flex-col gap-2 rounded-xl border p-3">
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                  <Input
+                    value={member.name}
+                    onChange={(e) => updateTeamMember(index, { name: e.target.value })}
+                    placeholder="Nama anggota"
+                    aria-label={`Nama anggota tim ${index + 1}`}
+                    className="h-10"
+                  />
+                  <Input
+                    value={member.role}
+                    onChange={(e) => updateTeamMember(index, { role: e.target.value })}
+                    placeholder="Peran, mis. Video Editor"
+                    aria-label={`Peran anggota tim ${index + 1}`}
+                    className="h-10"
+                  />
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-10 sm:size-9"
+                      onClick={() =>
+                        setSite((prev) =>
+                          prev
+                            ? { ...prev, teamMembers: moveItem(prev.teamMembers, index, -1) }
+                            : prev
+                        )
+                      }
+                      disabled={index === 0}
+                      aria-label={`Naikkan testimoni ${index + 1}`}
+                    >
+                      <ChevronUp className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-10 sm:size-9"
+                      onClick={() =>
+                        setSite((prev) =>
+                          prev
+                            ? { ...prev, teamMembers: moveItem(prev.teamMembers, index, 1) }
+                            : prev
+                        )
+                      }
+                      disabled={index === site.teamMembers.length - 1}
+                      aria-label={`Turunkan testimoni ${index + 1}`}
+                    >
+                      <ChevronDown className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
+                      onClick={() =>
+                        setSite((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                teamMembers: prev.teamMembers.filter((_, i) => i !== index),
+                              }
+                            : prev
+                        )
+                      }
+                      aria-label={`Hapus testimoni ${index + 1}`}
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                </div>
+                <Textarea
+                  value={member.quote}
+                  onChange={(e) => updateTeamMember(index, { quote: e.target.value })}
+                  placeholder="Kutipan testimoni..."
+                  aria-label={`Kutipan anggota tim ${index + 1}`}
+                  rows={2}
+                />
+              </div>
+            ))
+          )}
+          <Button
+            variant="outline"
+            className="h-10 w-fit"
+            onClick={() =>
+              setSite((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      teamMembers: [
+                        ...prev.teamMembers,
+                        { name: "", role: "", quote: "" },
+                      ],
+                    }
+                  : prev
+              )
+            }
+          >
+            <Quote className="size-4" aria-hidden="true" />
+            Tambah Anggota
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* Benefit */}
       <Card className="gap-4 rounded-2xl p-6">
         <CardHeader className="px-0">
@@ -437,7 +557,7 @@ export function SettingsTab() {
                 className="flex flex-col gap-2 rounded-xl border p-3 md:grid md:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1.5fr)_auto] md:items-center"
               >
                 <div className="flex items-center gap-2">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
                     <BenefitIcon name={benefit.icon} className="size-4" />
                   </span>
                   <Select
@@ -506,7 +626,7 @@ export function SettingsTab() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9"
+                    className="size-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
                     onClick={() =>
                       setSite((prev) =>
                         prev
@@ -601,7 +721,7 @@ export function SettingsTab() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9"
+                      className="size-10 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
                       onClick={() =>
                         setSite((prev) =>
                           prev ? { ...prev, faqs: prev.faqs.filter((_, i) => i !== index) } : prev
@@ -638,8 +758,150 @@ export function SettingsTab() {
         </CardContent>
       </Card>
 
+      {/* Integrasi & Otomasi */}
+      <Card className="gap-4 rounded-2xl p-6">
+        <CardHeader className="px-0">
+          <CardTitle className="text-base">Integrasi &amp; Otomasi</CardTitle>
+          <CardDescription>
+            Chatbot publik dan notifikasi lamaran baru via Discord / Telegram.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 px-0">
+          <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-medium">
+                <Bot className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                Chatbot Lumina Bot
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Aktifkan chatbot Lumina Bot di halaman publik
+              </p>
+            </div>
+            <Switch
+              checked={site.chatbotEnabled}
+              onCheckedChange={(checked) => updateField("chatbotEnabled", checked)}
+              aria-label="Aktifkan chatbot Lumina Bot di halaman publik"
+            />
+          </div>
+
+          <Field
+            id="f-discord"
+            label="Discord Webhook URL"
+            hint="Notifikasi lamaran baru ke channel Discord."
+          >
+            <Input
+              id="f-discord"
+              value={site.discordWebhookUrl}
+              onChange={(e) => updateField("discordWebhookUrl", e.target.value)}
+              placeholder="https://discord.com/api/webhooks/..."
+              className="h-10"
+            />
+          </Field>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field id="f-telegram-token" label="Telegram Bot Token">
+              <Input
+                id="f-telegram-token"
+                value={site.telegramBotToken}
+                onChange={(e) => updateField("telegramBotToken", e.target.value)}
+                placeholder="123456:ABC-DEF..."
+                className="h-10"
+              />
+            </Field>
+            <Field id="f-telegram-chat" label="Telegram Chat ID">
+              <Input
+                id="f-telegram-chat"
+                value={site.telegramChatId}
+                onChange={(e) => updateField("telegramChatId", e.target.value)}
+                placeholder="-1001234567890"
+                className="h-10"
+              />
+            </Field>
+          </div>
+          <Button
+            variant="outline"
+            className="h-10 w-fit"
+            onClick={() => void handleWebhookTest()}
+            disabled={webhookTesting}
+          >
+            {webhookTesting ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Send className="size-4" aria-hidden="true" />
+            )}
+            Kirim Pesan Uji
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Pelanggan Notifikasi */}
+      <Card className="gap-4 rounded-2xl p-6">
+        <CardHeader className="flex-row items-center justify-between px-0">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MailCheck className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+              Pelanggan Notifikasi
+            </CardTitle>
+            <CardDescription className="mt-1">
+              {subscribers.length} email menerima info lowongan baru.
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            className="h-10"
+            onClick={() => void handleCopySubscribers()}
+            disabled={subscribers.length === 0}
+          >
+            <Copy className="size-4" aria-hidden="true" />
+            Salin Semua
+          </Button>
+        </CardHeader>
+        <CardContent className="px-0">
+          {subscribers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Belum ada pelanggan notifikasi.
+            </p>
+          ) : (
+            <div className="max-h-48 overflow-y-auto rounded-lg border p-3 nice-scrollbar">
+              <ul className="flex flex-col gap-1 font-mono text-sm">
+                {subscribers.map((sub) => (
+                  <li key={sub.id} className="truncate">
+                    {sub.email}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Widget Embed */}
+      <Card className="gap-4 rounded-2xl p-6">
+        <CardHeader className="flex-row items-center justify-between px-0">
+          <div>
+            <CardTitle className="text-base">Widget Embed</CardTitle>
+            <CardDescription className="mt-1">
+              Tampilkan lowongan di situs lain dengan iframe ini.
+            </CardDescription>
+          </div>
+          <Button variant="outline" className="h-10" onClick={() => void handleCopyEmbed()}>
+            <Copy className="size-4" aria-hidden="true" />
+            Salin
+          </Button>
+        </CardHeader>
+        <CardContent className="px-0">
+          <Textarea
+            readOnly
+            value={embedSnippet}
+            aria-label="Kode widget embed"
+            className="font-mono text-xs"
+            rows={4}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+        </CardContent>
+      </Card>
+
       {/* Bar simpan sticky */}
-      <Card className="sticky bottom-4 z-10 flex-row items-center justify-between gap-3 rounded-2xl border-rose-200 bg-rose-50/80 p-4 backdrop-blur">
+      <Card className="sticky bottom-4 z-10 flex-row items-center justify-between gap-3 rounded-2xl border-rose-200 bg-rose-50/80 p-4 backdrop-blur dark:border-rose-900 dark:bg-rose-950/80">
         <p className="text-sm font-medium">
           Perubahan konten situs belum disimpan.
         </p>
@@ -657,60 +919,6 @@ export function SettingsTab() {
             "Simpan Perubahan"
           )}
         </Button>
-      </Card>
-
-      {/* Keamanan */}
-      <Card className="gap-4 rounded-2xl p-6">
-        <CardHeader className="px-0">
-          <CardTitle className="text-base">Keamanan</CardTitle>
-          <CardDescription>
-            Ganti password admin panel. Password disimpan terenkripsi di server.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-0">
-          <form onSubmit={handleChangePassword} className="flex flex-col gap-4">
-            <div className="grid gap-4 md:grid-cols-3">
-              <PasswordInput
-                id="f-currentPassword"
-                label="Password saat ini"
-                value={currentPassword}
-                onChange={setCurrentPassword}
-                autoComplete="current-password"
-              />
-              <PasswordInput
-                id="f-newPassword"
-                label="Password baru"
-                value={newPassword}
-                onChange={setNewPassword}
-                autoComplete="new-password"
-              />
-              <PasswordInput
-                id="f-confirmPassword"
-                label="Konfirmasi password baru"
-                value={confirmPassword}
-                onChange={setConfirmPassword}
-                autoComplete="new-password"
-              />
-            </div>
-            {pwError ? (
-              <p className="text-sm text-rose-600" role="alert">
-                {pwError}
-              </p>
-            ) : null}
-            <div>
-              <Button type="submit" className="h-10" disabled={pwSaving}>
-                {pwSaving ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                    Menyimpan...
-                  </>
-                ) : (
-                  "Ganti Password"
-                )}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
       </Card>
     </div>
   );

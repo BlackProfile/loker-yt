@@ -1,0 +1,935 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useState } from "react";
+     4→     4→import type { ReactNode } from "react";
+     5→     5→import { motion } from "framer-motion";
+     6→     6→import {
+     7→     7→  Calendar,
+     8→     8→  Check,
+     9→     9→  Clapperboard,
+    10→    10→  Clock,
+    11→    11→  FolderOpen,
+    12→    12→  Instagram,
+    13→    13→  Lock,
+    14→    14→  Mail,
+    15→    15→  MapPin,
+    16→    16→  Menu,
+    17→    17→  MessageCircle,
+    18→    18→  Phone,
+    19→    19→  ShieldCheck,
+    20→    20→  Sparkles,
+    21→    21→} from "lucide-react";
+    22→    22→import type { Position, SiteContent } from "@/lib/types";
+    23→    23→import { cn } from "@/lib/utils";
+    24→    24→import {
+    25→    25→  Accordion,
+    26→    26→  AccordionContent,
+    27→    27→  AccordionItem,
+    28→    28→  AccordionTrigger,
+    29→    29→} from "@/components/ui/accordion";
+    30→    30→import { Badge } from "@/components/ui/badge";
+    31→    31→import { Button } from "@/components/ui/button";
+    32→    32→import { Card } from "@/components/ui/card";
+    33→    33→import {
+    34→    34→  Sheet,
+    35→    35→  SheetContent,
+    36→    36→  SheetDescription,
+    37→    37→  SheetHeader,
+    38→    38→  SheetTitle,
+    39→    39→  SheetTrigger,
+    40→    40→} from "@/components/ui/sheet";
+    41→    41→import { ApplyForm } from "@/components/landing/apply-form";
+    42→    42→import { BenefitIcon } from "@/components/landing/benefit-icon";
+    43→    43→
+    44→    44→type LandingPageProps = {
+    45→    45→  content: SiteContent;
+    46→    46→  positions: Position[];
+    47→    47→  stats: { openRoles: number; totalApplications: number };
+    48→    48→  onOpenAdmin: () => void;
+    49→    49→};
+    50→    50→
+    51→    51→const NAV_LINKS = [
+    52→    52→  { href: "#posisi", label: "Posisi" },
+    53→    53→  { href: "#benefit", label: "Benefit" },
+    54→    54→  { href: "#cara-lamar", label: "Cara Lamar" },
+    55→    55→  { href: "#faq", label: "FAQ" },
+    56→    56→] as const;
+    57→    57→
+    58→    58→const STEPS = [
+    59→    59→  {
+    60→    60→    number: "01",
+    61→    61→    title: "Pilih Posisi",
+    62→    62→    description:
+    63→    63→      "Telusuri lowongan yang tersedia dan temukan yang paling cocok dengan keahlianmu.",
+    64→    64→  },
+    65→    65→  {
+    66→    66→    number: "02",
+    67→    67→    title: "Isi Formulir",
+    68→    68→    description:
+    69→    69→      "Lengkapi data diri dan tautan karyamu. Hanya butuh 3 menit.",
+    70→    70→  },
+    71→    71→  {
+    72→    72→    number: "03",
+    73→    73→    title: "Wawancara Online",
+    74→    74→    description:
+    75→    75→      "Tim kami akan menghubungimu via WhatsApp atau email untuk sesi tanya jawab.",
+    76→    76→  },
+    77→    77→  {
+    78→    78→    number: "04",
+    79→    79→    title: "Gabung Tim",
+    80→    80→    description:
+    81→    81→      "Ikuti onboarding singkat dan mulai proyek pertamamu bersama kami.",
+    82→    82→  },
+    83→    83→] as const;
+    84→    84→
+    85→    85→const ROSE_BADGE = "border-rose-200 bg-rose-50 text-rose-600";
+    86→    86→
+    87→    87→function whatsappHref(number: string) {
+    88→    88→  return `https://wa.me/${number.replace(/[^\d]/g, "")}`;
+    89→    89→}
+    90→    90→
+    91→    91→function instagramHref(handle: string) {
+    92→    92→  const trimmed = handle.trim();
+    93→    93→  if (!trimmed) return "#";
+    94→    94→  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    95→    95→  return `https://instagram.com/${trimmed.replace(/^@/, "")}`;
+    96→    96→}
+    97→    97→
+    98→    98→function Container({
+    99→    99→  className,
+   100→   100→  children,
+   101→   101→}: {
+   102→   102→  className?: string;
+   103→   103→  children: ReactNode;
+   104→   104→}) {
+   105→   105→  return (
+   106→   106→    <div className={cn("mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8", className)}>
+   107→   107→      {children}
+   108→   108→    </div>
+   109→   109→  );
+   110→   110→}
+   111→   111→
+   112→   112→function FadeIn({
+   113→   113→  children,
+   114→   114→  className,
+   115→   115→  delay = 0,
+   116→   116→}: {
+   117→   117→  children: ReactNode;
+   118→   118→  className?: string;
+   119→   119→  delay?: number;
+   120→   120→}) {
+   121→   121→  return (
+   122→   122→    <motion.div
+   123→   123→      className={className}
+   124→   124→      initial={{ opacity: 0, y: 24 }}
+   125→   125→      whileInView={{ opacity: 1, y: 0 }}
+   126→   126→      viewport={{ once: true, margin: "-80px" }}
+   127→   127→      transition={{ duration: 0.5, ease: "easeOut", delay }}
+   128→   128→    >
+   129→   129→      {children}
+   130→   130→    </motion.div>
+   131→   131→  );
+   132→   132→}
+   133→   133→
+   134→   134→function BrandMark({ size = "md" }: { size?: "sm" | "md" }) {
+   135→   135→  return (
+   136→   136→    <div
+   137→   137→      className={cn(
+   138→   138→        "rounded-xl bg-gradient-to-br from-rose-600 to-amber-500 text-white",
+   139→   139→        size === "md" ? "p-2" : "p-1.5",
+   140→   140→      )}
+   141→   141→    >
+   142→   142→      <Clapperboard
+   143→   143→        className={size === "md" ? "h-5 w-5" : "h-4 w-4"}
+   144→   144→        aria-hidden="true"
+   145→   145→      />
+   146→   146→    </div>
+   147→   147→  );
+   148→   148→}
+   149→   149→
+   150→   150→function Navbar({
+   151→   151→  siteName,
+   152→   152→  tagline,
+   153→   153→}: {
+   154→   154→  siteName: string;
+   155→   155→  tagline: string;
+   156→   156→}) {
+   157→   157→  const [mobileOpen, setMobileOpen] = useState(false);
+   158→   158→
+   159→   159→  return (
+   160→   160→    <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur">
+   161→   161→      <Container className="flex h-16 items-center justify-between gap-4">
+   162→   162→        <div className="flex items-center gap-3">
+   163→   163→          <BrandMark />
+   164→   164→          <div className="leading-tight">
+   165→   165→            <p className="font-bold">{siteName}</p>
+   166→   166→            <p className="hidden text-xs text-muted-foreground sm:block">
+   167→   167→              {tagline}
+   168→   168→            </p>
+   169→   169→          </div>
+   170→   170→        </div>
+   171→   171→
+   172→   172→        <nav
+   173→   173→          aria-label="Navigasi utama"
+   174→   174→          className="hidden items-center gap-1 md:flex"
+   175→   175→        >
+   176→   176→          {NAV_LINKS.map((link) => (
+   177→   177→            <a
+   178→   178→              key={link.href}
+   179→   179→              href={link.href}
+   180→   180→              className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+   181→   181→            >
+   182→   182→              {link.label}
+   183→   183→            </a>
+   184→   184→          ))}
+   185→   185→          <Button size="sm" asChild className="ml-2">
+   186→   186→            <a href="#lamar">Lamar Sekarang</a>
+   187→   187→          </Button>
+   188→   188→        </nav>
+   189→   189→
+   190→   190→        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+   191→   191→          <SheetTrigger asChild>
+   192→   192→            <Button
+   193→   193→              variant="ghost"
+   194→   194→              size="icon"
+   195→   195→              className="h-11 w-11 md:hidden"
+   196→   196→              aria-label="Buka menu"
+   197→   197→            >
+   198→   198→              <Menu className="h-5 w-5" aria-hidden="true" />
+   199→   199→            </Button>
+   200→   200→          </SheetTrigger>
+   201→   201→          <SheetContent side="right" className="w-80">
+   202→   202→            <SheetHeader>
+   203→   203→              <SheetTitle className="flex items-center gap-2 text-base">
+   204→   204→                <BrandMark size="sm" />
+   205→   205→                {siteName}
+   206→   206→              </SheetTitle>
+   207→   207→              <SheetDescription className="sr-only">
+   208→   208→                Menu navigasi {siteName}
+   209→   209→              </SheetDescription>
+   210→   210→            </SheetHeader>
+   211→   211→            <nav aria-label="Menu seluler" className="flex flex-col gap-1 px-4">
+   212→   212→              {NAV_LINKS.map((link) => (
+   213→   213→                <a
+   214→   214→                  key={link.href}
+   215→   215→                  href={link.href}
+   216→   216→                  onClick={() => setMobileOpen(false)}
+   217→   217→                  className="flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+   218→   218→                >
+   219→   219→                  {link.label}
+   220→   220→                </a>
+   221→   221→              ))}
+   222→   222→              <Button asChild className="mt-3">
+   223→   223→                <a href="#lamar" onClick={() => setMobileOpen(false)}>
+   224→   224→                  Lamar Sekarang
+   225→   225→                </a>
+   226→   226→              </Button>
+   227→   227→            </nav>
+   228→   228→          </SheetContent>
+   229→   229→        </Sheet>
+   230→   230→      </Container>
+   231→   231→    </header>
+   232→   232→  );
+   233→   233→}
+   234→   234→
+   235→   235→function Hero({
+   236→   236→  content,
+   237→   237→  stats,
+   238→   238→}: {
+   239→   239→  content: SiteContent;
+   240→   240→  stats: LandingPageProps["stats"];
+   241→   241→}) {
+   242→   242→  return (
+   243→   243→    <section className="relative overflow-hidden bg-zinc-950 text-zinc-50">
+   244→   244→      <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
+   245→   245→      <div
+   246→   246→        aria-hidden="true"
+   247→   247→        className="absolute -top-32 left-1/2 h-96 w-[44rem] max-w-full -translate-x-1/2 rounded-full bg-rose-600/20 blur-3xl"
+   248→   248→      />
+   249→   249→      <div
+   250→   250→        aria-hidden="true"
+   251→   251→        className="absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-amber-500/10 blur-3xl"
+   252→   252→      />
+   253→   253→
+   254→   254→      <Container className="relative py-20 md:py-28">
+   255→   255→        <FadeIn className="max-w-3xl">
+   256→   256→          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm text-zinc-300">
+   257→   257→            <span
+   258→   258→              className="dot-pulse h-2 w-2 rounded-full bg-emerald-400 text-emerald-400"
+   259→   259→              aria-hidden="true"
+   260→   260→            />
+   261→   261→            {content.heroBadge}
+   262→   262→          </div>
+   263→   263→
+   264→   264→          <h1 className="mt-6 text-4xl font-bold tracking-tight md:text-6xl">
+   265→   265→            {content.heroTitle}{" "}
+   266→   266→            {content.heroHighlight ? (
+   267→   267→              <span className="text-gradient">{content.heroHighlight}</span>
+   268→   268→            ) : null}
+   269→   269→          </h1>
+   270→   270→
+   271→   271→          <p className="mt-6 max-w-2xl text-base text-zinc-400 md:text-lg">
+   272→   272→            {content.heroDescription}
+   273→   273→          </p>
+   274→   274→
+   275→   275→          {content.deadline ? (
+   276→   276→            <p className="mt-4 flex items-center gap-2 text-sm text-zinc-400">
+   277→   277→              <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
+   278→   278→              Pendaftaran ditutup: {content.deadline}
+   279→   279→            </p>
+   280→   280→          ) : null}
+   281→   281→
+   282→   282→          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+   283→   283→            <Button size="lg" className="h-11" asChild>
+   284→   284→              <a href="#lamar">Lamar Sekarang</a>
+   285→   285→            </Button>
+   286→   286→            <Button
+   287→   287→              size="lg"
+   288→   288→              variant="outline"
+   289→   289→              className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+   290→   290→              asChild
+   291→   291→            >
+   292→   292→              <a href="#posisi">Lihat Posisi</a>
+   293→   293→            </Button>
+   294→   294→          </div>
+   295→   295→        </FadeIn>
+   296→   296→
+   297→   297→        <FadeIn delay={0.15} className="mt-14">
+   298→   298→          <div className="grid grid-cols-3 divide-x divide-white/10 border-t border-white/10 pt-8">
+   299→   299→            <div className="pr-4 sm:pr-10">
+   300→   300→              <p className="text-2xl font-bold md:text-3xl">{stats.openRoles}</p>
+   301→   301→              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+   302→   302→                Posisi Terbuka
+   303→   303→              </p>
+   304→   304→            </div>
+   305→   305→            <div className="px-4 sm:px-10">
+   306→   306→              <p className="text-2xl font-bold md:text-3xl">
+   307→   307→                {stats.totalApplications}+
+   308→   308→              </p>
+   309→   309→              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+   310→   310→                Pelamar Masuk
+   311→   311→              </p>
+   312→   312→            </div>
+   313→   313→            <div className="pl-4 sm:pl-10">
+   314→   314→              <p className="text-2xl font-bold md:text-3xl">100%</p>
+   315→   315→              <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+   316→   316→                Tim Remote
+   317→   317→              </p>
+   318→   318→            </div>
+   319→   319→          </div>
+   320→   320→        </FadeIn>
+   321→   321→      </Container>
+   322→   322→    </section>
+   323→   323→  );
+   324→   324→}
+   325→   325→
+   326→   326→function PositionCard({
+   327→   327→  position,
+   328→   328→  onApply,
+   329→   329→}: {
+   330→   330→  position: Position;
+   331→   331→  onApply: (positionId: string) => void;
+   332→   332→}) {
+   333→   333→  return (
+   334→   334→    <Card className="h-full gap-4 rounded-2xl p-6">
+   335→   335→      <div>
+   336→   336→        <Badge className="border-rose-200 bg-rose-50 text-rose-700">
+   337→   337→          {position.department}
+   338→   338→        </Badge>
+   339→   339→        <h3 className="mt-3 text-lg font-semibold">{position.title}</h3>
+   340→   340→        <div className="mt-2 flex flex-wrap items-center gap-2">
+   341→   341→          <Badge variant="secondary">{position.type}</Badge>
+   342→   342→          <Badge variant="secondary" className="gap-1">
+   343→   343→            <MapPin className="h-3 w-3" aria-hidden="true" />
+   344→   344→            {position.location}
+   345→   345→          </Badge>
+   346→   346→        </div>
+   347→   347→      </div>
+   348→   348→
+   349→   349→      <p className="line-clamp-3 text-sm text-muted-foreground">
+   350→   350→        {position.description}
+   351→   351→      </p>
+   352→   352→
+   353→   353→      {position.requirements.length > 0 ? (
+   354→   354→        <ul className="space-y-2">
+   355→   355→          {position.requirements.slice(0, 3).map((requirement, index) => (
+   356→   356→            <li
+   357→   357→              key={`${position.id}-req-${index}`}
+   358→   358→              className="flex items-start gap-2 text-sm text-muted-foreground"
+   359→   359→            >
+   360→   360→              <Check
+   361→   361→                className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"
+   362→   362→                aria-hidden="true"
+   363→   363→              />
+   364→   364→              <span>{requirement}</span>
+   365→   365→            </li>
+   366→   366→          ))}
+   367→   367→        </ul>
+   368→   368→      ) : (
+   369→   369→        <p className="text-sm italic text-muted-foreground">
+   370→   370→          Detail kebutuhan menyusul.
+   371→   371→        </p>
+   372→   372→      )}
+   373→   373→
+   374→   374→      <div className="mt-auto flex items-center justify-between gap-3 border-t pt-4">
+   375→   375→        <span className="text-xs text-muted-foreground">
+   376→   376→          {position.requirements.length > 0
+   377→   377→            ? `${position.requirements.length} persyaratan`
+   378→   378→            : ""}
+   379→   379→        </span>
+   380→   380→        <Button size="sm" onClick={() => onApply(position.id)}>
+   381→   381→          Lamar Posisi Ini
+   382→   382→        </Button>
+   383→   383→      </div>
+   384→   384→    </Card>
+   385→   385→  );
+   386→   386→}
+   387→   387→
+   388→   388→function PositionsSection({
+   389→   389→  positions,
+   390→   390→  onApply,
+   391→   391→}: {
+   392→   392→  positions: Position[];
+   393→   393→  onApply: (positionId: string) => void;
+   394→   394→}) {
+   395→   395→  return (
+   396→   396→    <section id="posisi" className="scroll-mt-24 bg-background py-16 md:py-24">
+   397→   397→      <Container>
+   398→   398→        <FadeIn className="max-w-2xl">
+   399→   399→          <Badge variant="outline" className={ROSE_BADGE}>
+   400→   400→            Lowongan
+   401→   401→          </Badge>
+   402→   402→          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   403→   403→            Posisi yang Dibutuhkan
+   404→   404→          </h2>
+   405→   405→          <p className="mt-3 text-muted-foreground">
+   406→   406→            Semua peran bersifat remote dan fleksibel. Temukan yang paling
+   407→   407→            sesuai dengan keahlianmu.
+   408→   408→          </p>
+   409→   409→        </FadeIn>
+   410→   410→
+   411→   411→        {positions.length === 0 ? (
+   412→   412→          <FadeIn className="mt-10">
+   413→   413→            <Card className="items-center gap-3 rounded-2xl p-10 text-center">
+   414→   414→              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+   415→   415→                <FolderOpen className="h-6 w-6" aria-hidden="true" />
+   416→   416→              </div>
+   417→   417→              <p className="font-semibold">Belum ada posisi yang dibuka.</p>
+   418→   418→              <p className="text-sm text-muted-foreground">
+   419→   419→                Pantau terus halaman ini.
+   420→   420→              </p>
+   421→   421→            </Card>
+   422→   422→          </FadeIn>
+   423→   423→        ) : (
+   424→   424→          <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+   425→   425→            {positions.map((position, index) => (
+   426→   426→              <FadeIn
+   427→   427→                key={position.id}
+   428→   428→                delay={Math.min(index, 5) * 0.06}
+   429→   429→                className="h-full"
+   430→   430→              >
+   431→   431→                <PositionCard position={position} onApply={onApply} />
+   432→   432→              </FadeIn>
+   433→   433→            ))}
+   434→   434→          </div>
+   435→   435→        )}
+   436→   436→      </Container>
+   437→   437→    </section>
+   438→   438→  );
+   439→   439→}
+   440→   440→
+   441→   441→function AboutSection({
+   442→   442→  content,
+   443→   443→  stats,
+   444→   444→}: {
+   445→   445→  content: SiteContent;
+   446→   446→  stats: LandingPageProps["stats"];
+   447→   447→}) {
+   448→   448→  return (
+   449→   449→    <section className="bg-zinc-50 py-16 md:py-24">
+   450→   450→      <Container>
+   451→   451→        <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+   452→   452→          <FadeIn>
+   453→   453→            <Badge variant="outline" className={ROSE_BADGE}>
+   454→   454→              Tentang Kami
+   455→   455→            </Badge>
+   456→   456→            <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   457→   457→              {content.aboutTitle}
+   458→   458→            </h2>
+   459→   459→            <p className="mt-4 text-muted-foreground md:text-lg">
+   460→   460→              {content.aboutDescription}
+   461→   461→            </p>
+   462→   462→          </FadeIn>
+   463→   463→
+   464→   464→          <FadeIn delay={0.1}>
+   465→   465→            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-600 to-amber-500 p-8 text-white shadow-sm">
+   466→   466→              <Sparkles className="h-10 w-10" aria-hidden="true" />
+   467→   467→              <p className="mt-4 text-xl font-semibold">
+   468→   468→                Berkarya bersama, tumbuh bersama.
+   469→   469→              </p>
+   470→   470→              <p className="mt-2 text-sm text-white/80">
+   471→   471→                Kami membangun rumah kreatif tempat ide-ide liar dieksekusi
+   472→   472→                dengan rapi.
+   473→   473→              </p>
+   474→   474→            </div>
+   475→   475→            <div className="mt-4 grid grid-cols-3 gap-4">
+   476→   476→              <Card className="gap-1 rounded-2xl p-4 text-center">
+   477→   477→                <p className="text-xl font-bold md:text-2xl">
+   478→   478→                  {stats.openRoles}
+   479→   479→                </p>
+   480→   480→                <p className="text-xs text-muted-foreground">Posisi Aktif</p>
+   481→   481→              </Card>
+   482→   482→              <Card className="gap-1 rounded-2xl p-4 text-center">
+   483→   483→                <p className="text-xl font-bold md:text-2xl">
+   484→   484→                  {stats.totalApplications}+
+   485→   485→                </p>
+   486→   486→                <p className="text-xs text-muted-foreground">Lamaran Masuk</p>
+   487→   487→              </Card>
+   488→   488→              <Card className="gap-1 rounded-2xl p-4 text-center">
+   489→   489→                <p className="text-xl font-bold md:text-2xl">2 Jt+</p>
+   490→   490→                <p className="text-xs text-muted-foreground">Komunitas</p>
+   491→   491→              </Card>
+   492→   492→            </div>
+   493→   493→          </FadeIn>
+   494→   494→        </div>
+   495→   495→      </Container>
+   496→   496→    </section>
+   497→   497→  );
+   498→   498→}
+   499→   499→
+   500→   500→function BenefitsSection({ content }: { content: SiteContent }) {
+   501→   501→  return (
+   502→   502→    <section id="benefit" className="scroll-mt-24 bg-background py-16 md:py-24">
+   503→   503→      <Container>
+   504→   504→        <FadeIn className="max-w-2xl">
+   505→   505→          <Badge variant="outline" className={ROSE_BADGE}>
+   506→   506→            Benefit
+   507→   507→          </Badge>
+   508→   508→          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   509→   509→            Kenapa Bergabung dengan Kami?
+   510→   510→          </h2>
+   511→   511→          <p className="mt-3 text-muted-foreground">
+   512→   512→            Lebih dari sekadar pekerjaan — kami bantu kamu bertumbuh jadi
+   513→   513→            kreator profesional.
+   514→   514→          </p>
+   515→   515→        </FadeIn>
+   516→   516→
+   517→   517→        {content.benefits.length === 0 ? (
+   518→   518→          <p className="mt-10 text-sm text-muted-foreground">
+   519→   519→            Benefit akan segera diumumkan.
+   520→   520→          </p>
+   521→   521→        ) : (
+   522→   522→          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+   523→   523→            {content.benefits.map((benefit, index) => (
+   524→   524→              <FadeIn
+   525→   525→                key={`${benefit.title}-${index}`}
+   526→   526→                delay={Math.min(index, 5) * 0.06}
+   527→   527→                className="h-full"
+   528→   528→              >
+   529→   529→                <Card className="h-full gap-4 rounded-2xl p-6">
+   530→   530→                  <div className="w-fit rounded-xl bg-rose-100 p-3 text-rose-600">
+   531→   531→                    <BenefitIcon name={benefit.icon} className="h-6 w-6" />
+   532→   532→                  </div>
+   533→   533→                  <h3 className="font-semibold">{benefit.title}</h3>
+   534→   534→                  <p className="text-sm text-muted-foreground">
+   535→   535→                    {benefit.description}
+   536→   536→                  </p>
+   537→   537→                </Card>
+   538→   538→              </FadeIn>
+   539→   539→            ))}
+   540→   540→          </div>
+   541→   541→        )}
+   542→   542→      </Container>
+   543→   543→    </section>
+   544→   544→  );
+   545→   545→}
+   546→   546→
+   547→   547→function HowToApplySection() {
+   548→   548→  return (
+   549→   549→    <section
+   550→   550→      id="cara-lamar"
+   551→   551→      className="scroll-mt-24 bg-zinc-50 py-16 md:py-24"
+   552→   552→    >
+   553→   553→      <Container>
+   554→   554→        <FadeIn className="max-w-2xl">
+   555→   555→          <Badge variant="outline" className={ROSE_BADGE}>
+   556→   556→            Alur
+   557→   557→          </Badge>
+   558→   558→          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   559→   559→            Cara Melamar
+   560→   560→          </h2>
+   561→   561→          <p className="mt-3 text-muted-foreground">
+   562→   562→            Empat langkah sederhana dari menemukan posisi hingga menjadi bagian
+   563→   563→            dari tim.
+   564→   564→          </p>
+   565→   565→        </FadeIn>
+   566→   566→
+   567→   567→        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+   568→   568→          {STEPS.map((step, index) => (
+   569→   569→            <FadeIn key={step.number} delay={index * 0.06} className="h-full">
+   570→   570→              <Card className="h-full gap-3 rounded-2xl p-6">
+   571→   571→                <span
+   572→   572→                  aria-hidden="true"
+   573→   573→                  className="text-4xl font-bold text-rose-600/20"
+   574→   574→                >
+   575→   575→                  {step.number}
+   576→   576→                </span>
+   577→   577→                <h3 className="font-semibold">{step.title}</h3>
+   578→   578→                <p className="text-sm text-muted-foreground">
+   579→   579→                  {step.description}
+   580→   580→                </p>
+   581→   581→              </Card>
+   582→   582→            </FadeIn>
+   583→   583→          ))}
+   584→   584→        </div>
+   585→   585→      </Container>
+   586→   586→    </section>
+   587→   587→  );
+   588→   588→}
+   589→   589→
+   590→   590→function ApplySection({
+   591→   591→  content,
+   592→   592→  positions,
+   593→   593→  positionId,
+   594→   594→  onPositionIdChange,
+   595→   595→}: {
+   596→   596→  content: SiteContent;
+   597→   597→  positions: Position[];
+   598→   598→  positionId: string;
+   599→   599→  onPositionIdChange: (positionId: string) => void;
+   600→   600→}) {
+   601→   601→  return (
+   602→   602→    <section id="lamar" className="scroll-mt-24 bg-background py-16 md:py-24">
+   603→   603→      <Container>
+   604→   604→        <div className="grid gap-8 lg:grid-cols-5 lg:gap-10">
+   605→   605→          <FadeIn className="lg:col-span-2">
+   606→   606→            <Badge variant="outline" className={ROSE_BADGE}>
+   607→   607→              Formulir
+   608→   608→            </Badge>
+   609→   609→            <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   610→   610→              Siap Bergabung dengan Kami?
+   611→   611→            </h2>
+   612→   612→            <p className="mt-4 text-muted-foreground">
+   613→   613→              Isi formulir dengan data terbaikmu. Semakin jelas portofolio dan
+   614→   614→              pengalamanmu, semakin besar peluangmu untuk diterima.
+   615→   615→            </p>
+   616→   616→
+   617→   617→            <ul className="mt-6 space-y-3">
+   618→   618→              <li className="flex items-start gap-3">
+   619→   619→                <ShieldCheck
+   620→   620→                  className="mt-0.5 h-5 w-5 shrink-0 text-rose-600"
+   621→   621→                  aria-hidden="true"
+   622→   622→                />
+   623→   623→                <span className="text-sm text-muted-foreground">
+   624→   624→                  Data kamu aman dan hanya dipakai untuk seleksi
+   625→   625→                </span>
+   626→   626→              </li>
+   627→   627→              <li className="flex items-start gap-3">
+   628→   628→                <Clock
+   629→   629→                  className="mt-0.5 h-5 w-5 shrink-0 text-rose-600"
+   630→   630→                  aria-hidden="true"
+   631→   631→                />
+   632→   632→                <span className="text-sm text-muted-foreground">
+   633→   633→                  Respons dalam 1-3 hari kerja
+   634→   634→                </span>
+   635→   635→              </li>
+   636→   636→              <li className="flex items-start gap-3">
+   637→   637→                <MessageCircle
+   638→   638→                  className="mt-0.5 h-5 w-5 shrink-0 text-rose-600"
+   639→   639→                  aria-hidden="true"
+   640→   640→                />
+   641→   641→                <span className="text-sm text-muted-foreground">
+   642→   642→                  Pertanyaan? Hubungi kami
+   643→   643→                </span>
+   644→   644→              </li>
+   645→   645→            </ul>
+   646→   646→
+   647→   647→            <Card className="mt-8 gap-3 rounded-2xl p-6">
+   648→   648→              <p className="text-sm font-semibold">Kontak</p>
+   649→   649→              <a
+   650→   650→                href={`mailto:${content.contactEmail}`}
+   651→   651→                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   652→   652→              >
+   653→   653→                <Mail
+   654→   654→                  className="h-4 w-4 shrink-0 text-rose-600"
+   655→   655→                  aria-hidden="true"
+   656→   656→                />
+   657→   657→                <span className="break-all">{content.contactEmail}</span>
+   658→   658→              </a>
+   659→   659→              <a
+   660→   660→                href={whatsappHref(content.contactWhatsapp)}
+   661→   661→                target="_blank"
+   662→   662→                rel="noopener noreferrer"
+   663→   663→                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   664→   664→              >
+   665→   665→                <Phone
+   666→   666→                  className="h-4 w-4 shrink-0 text-rose-600"
+   667→   667→                  aria-hidden="true"
+   668→   668→                />
+   669→   669→                <span>WhatsApp {content.contactWhatsapp}</span>
+   670→   670→              </a>
+   671→   671→              <a
+   672→   672→                href={instagramHref(content.instagram)}
+   673→   673→                target="_blank"
+   674→   674→                rel="noopener noreferrer"
+   675→   675→                className="flex min-h-11 items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   676→   676→              >
+   677→   677→                <Instagram
+   678→   678→                  className="h-4 w-4 shrink-0 text-rose-600"
+   679→   679→                  aria-hidden="true"
+   680→   680→                />
+   681→   681→                <span className="break-all">{content.instagram || "Instagram"}</span>
+   682→   682→              </a>
+   683→   683→            </Card>
+   684→   684→          </FadeIn>
+   685→   685→
+   686→   686→          <FadeIn delay={0.1} className="lg:col-span-3">
+   687→   687→            <Card className="rounded-2xl p-6 md:p-8">
+   688→   688→              <ApplyForm
+   689→   689→                positions={positions}
+   690→   690→                positionId={positionId}
+   691→   691→                onPositionIdChange={onPositionIdChange}
+   692→   692→              />
+   693→   693→            </Card>
+   694→   694→          </FadeIn>
+   695→   695→        </div>
+   696→   696→      </Container>
+   697→   697→    </section>
+   698→   698→  );
+   699→   699→}
+   700→   700→
+   701→   701→function FaqSection({ content }: { content: SiteContent }) {
+   702→   702→  return (
+   703→   703→    <section id="faq" className="scroll-mt-24 bg-zinc-50 py-16 md:py-24">
+   704→   704→      <Container>
+   705→   705→        <FadeIn className="mx-auto max-w-3xl">
+   706→   706→          <div className="text-center">
+   707→   707→            <Badge variant="outline" className={ROSE_BADGE}>
+   708→   708→              FAQ
+   709→   709→            </Badge>
+   710→   710→            <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+   711→   711→              Pertanyaan yang Sering Diajukan
+   712→   712→            </h2>
+   713→   713→            <p className="mt-3 text-muted-foreground">
+   714→   714→              Belum menemukan jawaban? Hubungi kami via WhatsApp.
+   715→   715→            </p>
+   716→   716→          </div>
+   717→   717→
+   718→   718→          {content.faqs.length === 0 ? (
+   719→   719→            <p className="mt-10 text-center text-sm text-muted-foreground">
+   720→   720→              Belum ada pertanyaan yang terdaftar.
+   721→   721→            </p>
+   722→   722→          ) : (
+   723→   723→            <Card className="mt-10 rounded-2xl px-6 py-2 md:px-8">
+   724→   724→              <Accordion type="single" collapsible>
+   725→   725→                {content.faqs.map((faq, index) => (
+   726→   726→                  <AccordionItem
+   727→   727→                    key={`${faq.question}-${index}`}
+   728→   728→                    value={`faq-${index}`}
+   729→   729→                  >
+   730→   730→                    <AccordionTrigger className="text-left text-sm font-medium md:text-base">
+   731→   731→                      {faq.question}
+   732→   732→                    </AccordionTrigger>
+   733→   733→                    <AccordionContent className="text-sm text-muted-foreground">
+   734→   734→                      {faq.answer}
+   735→   735→                    </AccordionContent>
+   736→   736→                  </AccordionItem>
+   737→   737→                ))}
+   738→   738→              </Accordion>
+   739→   739→            </Card>
+   740→   740→          )}
+   741→   741→        </FadeIn>
+   742→   742→      </Container>
+   743→   743→    </section>
+   744→   744→  );
+   745→   745→}
+   746→   746→
+   747→   747→function FinalCtaSection({ content }: { content: SiteContent }) {
+   748→   748→  return (
+   749→   749→    <section className="bg-background py-16 md:py-24">
+   750→   750→      <Container>
+   751→   751→        <FadeIn>
+   752→   752→          <div className="relative overflow-hidden rounded-3xl bg-zinc-950 px-6 py-16 text-center text-zinc-50 md:px-12 md:py-20">
+   753→   753→            <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
+   754→   754→            <div
+   755→   755→              aria-hidden="true"
+   756→   756→              className="absolute -top-24 left-1/2 h-72 w-[36rem] max-w-full -translate-x-1/2 rounded-full bg-rose-600/20 blur-3xl"
+   757→   757→            />
+   758→   758→            <div className="relative mx-auto max-w-2xl">
+   759→   759→              <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
+   760→   760→                Masih ragu untuk mulai?
+   761→   761→              </h2>
+   762→   762→              <p className="mt-4 text-zinc-400">
+   763→   763→                Ngobrol dulu santai dengan tim kami. Siapkan portofolio
+   764→   764→                terbaikmu, sisanya kita bantu.
+   765→   765→              </p>
+   766→   766→              <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+   767→   767→                <Button size="lg" className="h-11" asChild>
+   768→   768→                  <a href="#lamar">Lamar Sekarang</a>
+   769→   769→                </Button>
+   770→   770→                <Button
+   771→   771→                  size="lg"
+   772→   772→                  variant="outline"
+   773→   773→                  className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+   774→   774→                  asChild
+   775→   775→                >
+   776→   776→                  <a
+   777→   777→                    href={whatsappHref(content.contactWhatsapp)}
+   778→   778→                    target="_blank"
+   779→   779→                    rel="noopener noreferrer"
+   780→   780→                  >
+   781→   781→                    Chat via WhatsApp
+   782→   782→                  </a>
+   783→   783→                </Button>
+   784→   784→              </div>
+   785→   785→            </div>
+   786→   786→          </div>
+   787→   787→        </FadeIn>
+   788→   788→      </Container>
+   789→   789→    </section>
+   790→   790→  );
+   791→   791→}
+   792→   792→
+   793→   793→function Footer({
+   794→   794→  content,
+   795→   795→  onOpenAdmin,
+   796→   796→}: {
+   797→   797→  content: SiteContent;
+   798→   798→  onOpenAdmin: () => void;
+   799→   799→}) {
+   800→   800→  return (
+   801→   801→    <footer className="mt-auto border-t bg-background">
+   802→   802→      <Container className="py-12 md:py-16">
+   803→   803→        <div className="grid gap-10 md:grid-cols-3">
+   804→   804→          <div>
+   805→   805→            <div className="flex items-center gap-3">
+   806→   806→              <BrandMark />
+   807→   807→              <div className="leading-tight">
+   808→   808→                <p className="font-bold">{content.siteName}</p>
+   809→   809→                <p className="text-xs text-muted-foreground">
+   810→   810→                  {content.tagline}
+   811→   811→                </p>
+   812→   812→              </div>
+   813→   813→            </div>
+   814→   814→            <p className="mt-4 max-w-sm text-sm text-muted-foreground">
+   815→   815→              {content.footerText}
+   816→   816→            </p>
+   817→   817→          </div>
+   818→   818→
+   819→   819→          <nav aria-label="Navigasi footer">
+   820→   820→            <h3 className="text-sm font-semibold">Navigasi</h3>
+   821→   821→            <ul className="mt-4 space-y-1">
+   822→   822→              {NAV_LINKS.map((link) => (
+   823→   823→                <li key={link.href}>
+   824→   824→                  <a
+   825→   825→                    href={link.href}
+   826→   826→                    className="inline-flex min-h-11 items-center text-sm text-muted-foreground transition-colors hover:text-foreground"
+   827→   827→                  >
+   828→   828→                    {link.label}
+   829→   829→                  </a>
+   830→   830→                </li>
+   831→   831→              ))}
+   832→   832→            </ul>
+   833→   833→          </nav>
+   834→   834→
+   835→   835→          <div>
+   836→   836→            <h3 className="text-sm font-semibold">Kontak</h3>
+   837→   837→            <ul className="mt-4 space-y-1">
+   838→   838→              <li>
+   839→   839→                <a
+   840→   840→                  href={`mailto:${content.contactEmail}`}
+   841→   841→                  className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   842→   842→                >
+   843→   843→                  <Mail
+   844→   844→                    className="h-4 w-4 shrink-0 text-rose-600"
+   845→   845→                    aria-hidden="true"
+   846→   846→                  />
+   847→   847→                  <span className="break-all">{content.contactEmail}</span>
+   848→   848→                </a>
+   849→   849→              </li>
+   850→   850→              <li>
+   851→   851→                <a
+   852→   852→                  href={whatsappHref(content.contactWhatsapp)}
+   853→   853→                  target="_blank"
+   854→   854→                  rel="noopener noreferrer"
+   855→   855→                  className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   856→   856→                >
+   857→   857→                  <Phone
+   858→   858→                    className="h-4 w-4 shrink-0 text-rose-600"
+   859→   859→                    aria-hidden="true"
+   860→   860→                  />
+   861→   861→                  <span>WhatsApp</span>
+   862→   862→                </a>
+   863→   863→              </li>
+   864→   864→              <li>
+   865→   865→                <a
+   866→   866→                  href={instagramHref(content.instagram)}
+   867→   867→                  target="_blank"
+   868→   868→                  rel="noopener noreferrer"
+   869→   869→                  className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+   870→   870→                >
+   871→   871→                  <Instagram
+   872→   872→                    className="h-4 w-4 shrink-0 text-rose-600"
+   873→   873→                    aria-hidden="true"
+   874→   874→                  />
+   875→   875→                  <span className="break-all">{content.instagram || "Instagram"}</span>
+   876→   876→                </a>
+   877→   877→              </li>
+   878→   878→            </ul>
+   879→   879→          </div>
+   880→   880→        </div>
+   881→   881→
+   882→   882→        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t pt-6 sm:flex-row">
+   883→   883→          <p className="text-xs text-muted-foreground">{content.footerText}</p>
+   884→   884→          <Button
+   885→   885→            variant="ghost"
+   886→   886→            size="sm"
+   887→   887→            onClick={onOpenAdmin}
+   888→   888→            aria-label="Buka panel admin"
+   889→   889→            className="text-muted-foreground"
+   890→   890→          >
+   891→   891→            <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+   892→   892→            Admin
+   893→   893→          </Button>
+   894→   894→        </div>
+   895→   895→      </Container>
+   896→   896→    </footer>
+   897→   897→  );
+   898→   898→}
+   899→   899→
+   900→   900→export function LandingPage({
+   901→   901→  content,
+   902→   902→  positions,
+   903→   903→  stats,
+   904→   904→  onOpenAdmin,
+   905→   905→}: LandingPageProps) {
+   906→   906→  const [selectedPositionId, setSelectedPositionId] = useState("");
+   907→   907→
+   908→   908→  const handleApplyPosition = (positionId: string) => {
+   909→   909→    setSelectedPositionId(positionId);
+   910→   910→    document.getElementById("lamar")?.scrollIntoView({ behavior: "smooth" });
+   911→   911→  };
+   912→   912→
+   913→   913→  return (
+   914→   914→    <div className="flex min-h-screen flex-col">
+   915→   915→      <Navbar siteName={content.siteName} tagline={content.tagline} />
+   916→   916→      <main className="flex-1">
+   917→   917→        <Hero content={content} stats={stats} />
+   918→   918→        <PositionsSection positions={positions} onApply={handleApplyPosition} />
+   919→   919→        <AboutSection content={content} stats={stats} />
+   920→   920→        <BenefitsSection content={content} />
+   921→   921→        <HowToApplySection />
+   922→   922→        <ApplySection
+   923→   923→          content={content}
+   924→   924→          positions={positions}
+   925→   925→          positionId={selectedPositionId}
+   926→   926→          onPositionIdChange={setSelectedPositionId}
+   927→   927→        />
+   928→   928→        <FaqSection content={content} />
+   929→   929→        <FinalCtaSection content={content} />
+   930→   930→      </main>
+   931→   931→      <Footer content={content} onOpenAdmin={onOpenAdmin} />
+   932→   932→    </div>
+   933→   933→  );
+   934→   934→}
+   935→   935→

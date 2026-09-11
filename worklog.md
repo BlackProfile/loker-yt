@@ -149,3 +149,96 @@ Stage Summary:
 - Aplikasi rekrutmen konten kreator SELESAI dan terverifikasi end-to-end di browser (desktop + mobile).
 - Cara akses admin: tombol "Admin" di footer halaman publik, atau tambahkan #admin pada URL. Password default: admin123 (hash SHA-256 di DB).
 - Artefak: src/app/page.tsx (integrasi), tema rose/amber di globals.css, layout metadata Indonesia + Toaster sonner.
+
+---
+Task ID: 5-fondasi
+Agent: orchestrator (Z.ai Code)
+Task: Fondasi fitur lengkap v2 (skema DB, tipe, tema, dependensi)
+
+Work Log:
+- Membaca skill LLM & ASR (z-ai-web-dev-sdk: zai.chat.completions.create, zai.audio.asr.create).
+- Skema v2: Position+closesAt; Application+trackingCode(unik,nullable di DB)/rating/tags/interviewAt/talentPool/aiScore/aiSummary/aiRecommendation/aiAnalyzedAt/transcript/cvFileId/introFileId; model baru AdminUser, FileAsset, ActivityLog, Subscriber. db:push sukses.
+- src/lib/types.ts v2: TeamMember, Role/AdminUser/AdminSession/Subscriber/LogEntry, TrackResponse, ChatResponse, AiRecommendation, STATUS_FLOW, AdminOverviewResponse diperluas (daily/upcomingInterviews/stale/subscriberCount/avgAiScore), batas upload CV 5MB & audio 10MB.
+- layout.tsx: ThemeProvider (next-themes, class, default light) + Toaster sonner.
+- Install qrcode + @types/qrcode. Folder uploads/ dibuat.
+
+Stage Summary:
+- Kontrak API v2 SIAP di src/lib/types.ts — semua subagent WAJIB import dari sana.
+- Pembagian: 5-a Backend Core, 5-d Backend AI, 5-b Landing v2, 5-c Admin v2 (paralel), lalu orchestrator integrasi + verifikasi.
+- Kontrak lintas-agent yang terkunci:
+  * server-auth.ts (milik 5-a): getSession(): Promise<AdminSession|null>, requireRole(roles: Role[]): Promise<AdminSession|null>, createSessionToken(userId), setSessionCookie(res,userId), clearSessionCookie(res), hashPassword, verifyPassword. Cookie "admin_session" = `${userId}.${expMs}.${hmac}`.
+  * src/lib/ai.ts (milik 5-d): export async function startBackgroundProcessing(applicationId: string): Promise<void> (AI screening + ASR + webhook + log; fire-and-forget aman).
+  * GET /api/admin/session -> { authenticated: boolean; session: AdminSession | null }.
+  * Login demo: admin@lumina.id / admin123 (OWNER), hr@lumina.id / admin123 (HR), viewer@lumina.id / admin123 (VIEWER).
+- File yang DIPEGANG orchestrator: prisma/schema.prisma, src/app/page.tsx, src/app/layout.tsx, src/app/globals.css, src/lib/types.ts.
+
+---
+Task ID: 5-d
+Agent: full-stack-developer
+Task: Backend AI — AI screening, chatbot, ASR audio intro, notifikasi Discord/Telegram
+
+Work Log:
+- Membaca worklog.md (kontrak terkunci 5-fondasi) + src/lib/types.ts (semua tipe diimport dari @/lib/types, tanpa duplikasi); PATUHI kontrak server-auth v2 milik 5-a: `requireRole(roles: Role[]): Promise<AdminSession|null>` & `getSession(): Promise<AdminSession|null>` (file sudah ter-update saat pengecekan; tidak diedit).
+- Membuat src/lib/ai.ts (SERVER-ONLY):
+  * `getZai()` — cache instance z-ai-web-dev-sdk di level modul; `withTimeout(promise, label, timeoutMs=60s)` diexport untuk dipakai lintas modul AI.
+  * `analyzeApplication(applicationId)` → prompt system "Kamu adalah HR screening assistant... Jawab HANYA JSON valid tanpa teks lain." + user prompt (posisi: judul/departemen/jenis/lokasi/deskripsi + requirements di-parse dari JSON via parseRequirements seed.ts; kandidat: nama, pengalaman, alasan, portofolio, sosmed). Parsing aman 3 lapis: strip markdown fence → JSON.parse + validasi rentang (clamp 0-100, rekomendasi harus enum) → fallback regex (angka + kata kunci LAYAK_WAWANCARA/PERTIMBANGKAN/TIDAK_COCCOK, rekomendasi diturunkan dari skor bila kata kunci absen) → null bila benar-benar gagal. Sukses: simpan aiScore/aiSummary/aiRecommendation/aiAnalyzedAt + ActivityLog {actor:"AI", action:"AI_SCREENING", detail:"Skor X/100 — <label>"}.
+  * `generateInterviewQuestions(applicationId)` → 5 pertanyaan wawancara personal (bahasa Indonesia, daftar bernomor 1-5, tanpa markdown bold), return teks, TIDAK disimpan DB.
+  * `generateReplyDraft(applicationId)` → draft balasan sesuai status (Diterima=unduhan onboarding, Wawancara=undangan jadwal, Ditolak=apresiasi+ajakan daftar lagi, Baru/Ditinjau=konfirmasi proses), tanda tangan "Tim HR Lumina Studio", tanpa markdown, return teks.
+  * Semua fungsi: try/catch → return null + console.error ringkas (tanpa stack); Promise.race timeout 60s.
+- Membuat src/lib/notify.ts (SERVER-ONLY):
+  * `getAutomationSettings()` — baca Setting "site" dengan parse defensif (chatbotEnabled default true; URL/token string kosong bila rusak) — tidak bergantung pada sanitizeSiteContent seed.ts.
+  * `sendNewApplicationNotifications({id,name,positionTitle,trackingCode})` — Discord webhook hanya bila URL diawali https://discord.com/api/webhooks atau https://discordapp.com/api/webhooks; POST {content:"", embeds:[{title:"Lamaran Baru Masuk", description:"**Nama** melamar posisi **X**.\nKode: `LM-XXXXXX`", color:15158332}]} timeout 8s (AbortController). Telegram GET sendMessage (token & chatId wajib terisi) timeout 8s. Try/catch per channel terpisah; TIDAK pernah me-log token; SATU ActivityLog {actor:"Sistem", action:"WEBHOOK", detail:"Discord: ok/gagal/nonaktif; Telegram: ..."}.
+  * Juga diexport: sendDiscordNotification/sendTelegramNotification/isValidDiscordWebhook + tipe NotifyChannelResult ("ok"|"gagal"|"nonaktif") untuk dipakai route webhook-test.
+- Membuat src/lib/transcribe.ts — `transcribeIntroAudio(applicationId)`: baca Application+introFile → validasi mimeType audio → resolve path (absolut, atau relatif dari process.cwd(); file di <root>/uploads) → fs.readFile → base64 → zai.audio.asr.create({file_base64}) → simpan transcript + ActivityLog {actor:"AI", action:"TRANSCRIPTION", detail:"Audio intro ditranskripsi (N kata)"}; gagal → ActivityLog detail "Gagal transkripsi audio intro."; tanpa audio → silent no-op. Tidak pernah throw.
+- Membuat src/lib/processing.ts — `startBackgroundProcessing(applicationId)`: DIJAMIN TIDAK THROW; urutan (1) analyzeApplication, (2) transcribeIntroAudio, (3) fetch data lamaran → sendNewApplicationNotifications; tiap langkah try/catch sendiri; guard module-level Set mencegah duplikasi per applicationId (hapus di finally).
+- 5 route baru (semua `export const dynamic = "force-dynamic"`, NextResponse.json, try/catch, params Promise di-await, pesan error Indonesia):
+  * POST /api/chat (publik): validasi message 1..500 char, history disanitasi (hanya user/assistant, konten ≤1000 char, dipotong 8 item terakhir); chatbotEnabled=false → 403 "Chatbot sedang nonaktif."; ambil posisi aktif (isActive & closesAt>null, urut order) → system prompt Lumina Bot sesuai spesifikasi → LLM → {reply}; gagal/LLM kosong → 500 "Bot sedang sibuk, coba lagi sebentar."
+  * POST /api/admin/applications/[id]/ai — requireRole(["OWNER","HR"]); null → dibedakan via getSession(): 403 (login tapi role kurang) / 401 (belum login) — sesuai saran docstring server-auth 5-a; 404 bila lamaran tak ada; analyzeApplication null → 502 "Analisis AI gagal, coba lagi."; sukses → {score, summary, recommendation, aiAnalyzedAt}.
+  * POST /api/admin/applications/[id]/ai-questions — pola sama → {questions} | 502 "Gagal membuat pertanyaan wawancara, coba lagi."
+  * POST /api/admin/applications/[id]/ai-reply — pola sama → {draft} | 502 "Gagal membuat draft balasan, coba lagi."
+  * POST /api/admin/webhook-test — requireRole(["OWNER"]); kirim "Tes konfigurasi notifikasi Lumina Studio - berhasil" ke Discord (content polos) & Telegram yang terkonfigurasi → {discord:"ok"|"gagal"|"nonaktif", telegram:...}; detail hanya ke console (tanpa token).
+- Verifikasi:
+  * `bunx z-ai chat -p "tes"` — SDK siap (GLM menjawab).
+  * Unit parseScreeningResult: JSON bersih, JSON dalam fence ```json, teks berantakan "score: 30/100 ... TIDAK COCCOK", angka saja (rekomendasi diturunkan), sampah total→null, score 250→clamp 100, "Layak Wawancara"→dinormalisasi ke enum. Semua benar.
+  * E2E nyata (bun script langsung, DB + LLM hidup) pada lamaran seed "Rizky Pratama": analyzeApplication → skor 85/LAYAK_WAWANCARA + ringkasan ID tersimpan + ActivityLog AI_SCREENING; generateInterviewQuestions → 5 pertanyaan personal bernomor; generateReplyDraft → draft hangat "Halo Rizky Pratama..."; transcribeIntroAudio tanpa audio → no-op (transcript tetap null); sendNewApplicationNotifications tanpa webhook → ActivityLog "Discord: nonaktif; Telegram: nonaktif", tanpa throw; startBackgroundProcessing dipanggil 2x beruntun → guard anti-duplikasi bekerja (pipeline hanya jalan sekali).
+  * Handler POST /api/chat diuji langsung (di luar dev server): valid+history → 200 {reply} berbahasa Indonesia menyebut lowongan aktif; pesan kosong → 400; >500 char → 400; history 12 item dipotong → 200.
+  * `bun run lint`: 0 error pada 9 file milik 5-d (error lint yang tersisa hanya di file milik agent lain yang sedang dikerjakan: src/components/landing/lang-context.tsx, share-menu.tsx, theme-toggle.tsx (5-b), src/components/admin/application-detail-dialog.tsx, kanban-board.tsx (5-c)). `tsc --noEmit`: 0 error di file-mu; error tersisa milik agent lain (seed.ts/login 5-a mid-flight, admin-tab 5-c, strings.ts 5-b) + folder examples/skills pre-existing.
+  * CATATAN: uji HTTP lewat dev server (port 3000) sempat 500 untuk SEMUA route — penyebabnya build global dev server gagal karena modul milik agent lain belum ada (admin-app.tsx mengimpor ./interview-tab, ./logs-tab, ./users-tab yang belum dibuat 5-c). Bukan berasal dari file 5-d. Logika route sudah terverifikasi via pemanggilan handler langsung (lihat atas).
+
+Stage Summary:
+- 9 file selesai (sesuai batas, tidak ada file lain disentuh):
+  - src/lib/ai.ts → getZai, withTimeout, parseScreeningResult, analyzeApplication, generateInterviewQuestions, generateReplyDraft, type ScreeningResult.
+  - src/lib/notify.ts → getAutomationSettings, isValidDiscordWebhook, sendDiscordNotification, sendTelegramNotification, sendNewApplicationNotifications, tipe NotifyChannelResult/NotifyResult/AutomationSettings.
+  - src/lib/transcribe.ts → transcribeIntroAudio.
+  - src/lib/processing.ts → startBackgroundProcessing (GUARANTEED no-throw + guard Set).
+  - src/app/api/chat/route.ts; src/app/api/admin/applications/[id]/ai/route.ts; .../ai-questions/route.ts; .../ai-reply/route.ts; src/app/api/admin/webhook-test/route.ts.
+- CATATAN INTEGRATOR:
+  1. startBackgroundProcessing ada di `@/lib/processing` (bukan ai.ts seperti tertulis di worklog 5-fondasi). 5-a WAJIB memanggilnya fire-and-forget di akhir POST /api/applications saat sukses create: `void startBackgroundProcessing(created.id)` (import dari "@/lib/processing") — jangan await agar respons tetap cepat.
+  2. Kontrak respons admin AI untuk 5-c: POST ai → {score:number, summary:string, recommendation:AiRecommendation, aiAnalyzedAt:ISO}; ai-questions → {questions:string}; ai-reply → {draft:string}; error {error:string} dengan 401 (belum login), 403 (role kurang — tangani VIEWER), 404 (lamaran tak ada), 502 (AI gagal), 500 (tak terduga). webhook-test → {discord, telegram} masing-masing "ok"|"gagal"|"nonaktif".
+  3. Kontrak /api/chat untuk 5-b: body {message, history?}; sukses 200 {reply} (tipe ChatResponse); error {error} 400/403 (chatbotEnabled=false)/500.
+  4. getAutomationSettings() membaca field otomasi (chatbotEnabled, discordWebhookUrl, telegramBotToken, telegramChatId) dari Setting "site" secara defensif — aman dipakai sebelum/belum ada field tsb di seed.
+  5. Setelah SEMUA agent selesai (khususnya 5-c melengkapi interview-tab/logs-tab/users-tab), verifikasi ulang HTTP end-to-end: POST /api/admin/webhook-test dengan login OWNER (admin@lumina.id/admin123) → {discord:"nonaktif",telegram:"nonaktif"}; isi webhook Discord palsu di Pengaturan → "gagal"; chat publik; tombol AI di panel.
+  6. Isi DB hasil uji 5-d yang sengaja dipertahankan sebagai demo: lamaran pertama (Rizky Pratama) kini punya aiScore 85/aiSummary/aiRecommendation LAYAK_WAWANCARA + beberapa ActivityLog (AI_SCREENING, WEBHOOK). Transkrip & onboarding lain tidak diubah.
+
+---
+Task ID: 5-a, 5-b, 5-c (integrasi & verifikasi oleh orchestrator)
+Agent: orchestrator (Z.ai Code)
+Task: Integrasi lintas-agent + verifikasi end-to-end fitur lengkap v2
+
+Work Log:
+- Ketiga subagent (5-a Backend Core, 5-b Landing v2, 5-c Admin v2) sempat timeout pada laporan akhir Task tool, NAMUN seluruh file mereka tertulis lengkap (16 file landing, 20 file admin, 29 route API) dan lint bersih. 5-d (Backend AI) selesai penuh dengan laporan.
+- Integrasi oleh orchestrator:
+  * Trigger pipeline AI di POST /api/applications: `void startBackgroundProcessing(created.id)` (import dari @/lib/processing).
+  * page.tsx v2: mode embed (?embed=1) dengan EmbedJobs, hook usePublicContent bersama, view landing/admin/embed.
+- Insiden infrastruktur: dev server mati (proses hilang + cache .next korup menyebabkan compile hang 2.1GB RAM). Fix: pkill next, rm -rf .next, restart via .zscripts/dev.sh resmi -> server stabil 200.
+- Verifikasi Agent Browser (SEMUA LULUS):
+  * Landing v2: toggle dark mode (nav gelap), toggle bahasa ID/EN, filter posisi per departemen+jenis, dialog detail posisi (deskripsi+penuh persyaratan+WhatsApp), wizard 3 langkah (stepper Data Diri/Pengalaman/File & Kirim) -> submit -> KODE PELACAKAN LM-E6CUFZ ditampilkan + tombol salin, Cek Status (kode lowercase dinormalisasi, stepper progres + posisi + tanggal), chatbot Lumina Bot (LLM REAL menjawab dari data posisi: "part-time dan remote, boleh dari kota lain"), section subscribe (validasi email bekerja; API 201), RSS XML valid, embed widget (?embed=1) tampil + tombol ke situs utama, JSON-LD, mobile 390px responsif.
+  * Background processing: lamaran Bayu otomatis dianalisis AI (skor 85, ringkasan, Layak Wawancara) + log Notifikasi + log Lamaran Masuk -> timeline riwayat terisi otomatis.
+  * Admin: login email+password (admin@lumina.id/admin123), badge role, 7 tab; dashboard (8 kartu stats termasuk Rata-rata Skor AI 85 & Pelanggan, AreaChart recharts 30 hari, Wawancara Mendatang, Perlu Ditindaklanjuti); tabel pelamar (skor AI badge emerald 85, rating bintang, tag, filter+sort, export CSV 9 baris valid); KANBAN dnd-kit drag-drop BEKERJA (Rizky NEW->REVIEWED via mouse drag, DB ter-update); detail dialog (panel AI Screening + Analisis Ulang, generator Pertanyaan Wawancara AI REAL (personal menyebut portofolio & target video/bulan), Draft Balasan AI, jadwal wawancara tersimpan 2026-09-18T14:00Z, kode pelacakan, catatan, ubah status); kalender wawancara (18 Sep dot+nama, panel jadwal 14.00); Log audit (Pemilik Studio/Sistem/AI + aksi + kandidat); Posisi (duplikat -> "Content Strategist (Salinan)" nonaktif); Pengguna (3 akun seed + switch/edit/hapus + Ganti Password Saya); Pengaturan (integrasi Discord/Telegram + Kirim Pesan Uji -> "Telegram: nonaktif", Pelanggan Notifikasi 1 email, embed code).
+  * Role: HR -> 5 tab (tanpa Pengguna/Pengaturan); VIEWER -> 4 tab + banner "Mode Pengamat"; stats konsisten (7 total, Pelanggan 1).
+- Catatan kecil: countdown hero tidak tampil karena deadline seed (30 Sep 2025) sudah lewat vs tanggal sandbox (Sep 2026) -> fallback teks deadline bekerja sesuai spec. Upload file di wizard tidak diuji visual (artefak automation), namun endpoint multipart tervalidasi dan submit tanpa file sukses.
+
+Stage Summary:
+- PLATFORM REKRUTMEN LENGKAP: 30+ fitur baru terpasang dan terverifikasi end-to-end (AI screening otomatis, chatbot LLM, kalender wawancara, kanban drag-drop, multi-user role, export CSV, tracking pelamar, RSS, embed, dark mode, bilingual, subscribe, webhook notifikasi, audit log, auto-close posisi, dsb).
+- Akun demo: admin@lumina.id (Owner), hr@lumina.id (HR), viewer@lumina.id (Pengamat) — semua password admin123.
+- Lint bersih; server 200 stabil; worklog lengkap.
