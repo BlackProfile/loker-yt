@@ -1,6 +1,6 @@
 // POST /api/chat — chatbot rekrutmen publik (LLM z-ai-web-dev-sdk).
 import { NextRequest, NextResponse } from "next/server";
-import { getZai, withTimeout } from "@/lib/ai";
+import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { getAutomationSettings } from "@/lib/notify";
 
@@ -87,16 +87,17 @@ export async function POST(req: NextRequest) {
       "Aturan: pendaftaran lewat formulir di halaman ini; jika ditanya hal di luar topik, arahkan kembali dengan sopan.",
     ].join("\n");
 
-    const zai = await getZai();
     const completion = await withTimeout(
-      zai.chat.completions.create({
-        messages: [
-          { role: "assistant", content: systemPrompt },
-          ...history,
-          { role: "user", content: message },
-        ],
-        thinking: { type: "disabled" },
-      }),
+      withZaiRetry((zai) =>
+        zai.chat.completions.create({
+          messages: [
+            { role: "assistant", content: systemPrompt },
+            ...history,
+            { role: "user", content: message },
+          ],
+          thinking: { type: "disabled" },
+        }),
+      ),
       "Chatbot",
       CHAT_TIMEOUT_MS,
     );

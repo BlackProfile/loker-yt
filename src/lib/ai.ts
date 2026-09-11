@@ -19,6 +19,30 @@ export async function getZai(): Promise<ZaiInstance> {
   return zaiInstance;
 }
 
+/** Buang instance SDK yang ter-cache (dipakai saat request gagal, mis. token stale). */
+export function resetZai(): void {
+  zaiInstance = null;
+}
+
+/**
+ * Jalankan operasi SDK dengan percobaan ulang sekali memakai instance segar.
+ * Berguna ketika instance ter-cache menjadi tidak valid (mis. error 401/token rotasi).
+ */
+export async function withZaiRetry<T>(operation: (zai: ZaiInstance) => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const zai = await getZai();
+    try {
+      return await operation(zai);
+    } catch (error) {
+      lastError = error;
+      console.error("[ai] request SDK gagal (percobaan " + (attempt + 1) + "):", errorMessage(error));
+      resetZai(); // paksa buat instance baru pada percobaan berikutnya
+    }
+  }
+  throw lastError;
+}
+
 /** Jalankan promise dengan batas waktu; gagal jika melebihi timeoutMs. */
 export function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number = AI_TIMEOUT_MS): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -205,15 +229,16 @@ export async function analyzeApplication(applicationId: string): Promise<Screeni
       '{"score": <0-100 integer>, "summary": "<maksimal 2 kalimat bahasa Indonesia>", "recommendation": "LAYAK_WAWANCARA" | "PERTIMBANGKAN" | "TIDAK_COCCOK"}',
     ].join("\n");
 
-    const zai = await getZai();
     const completion = await withTimeout(
-      zai.chat.completions.create({
-        messages: [
-          { role: "assistant", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        thinking: { type: "disabled" },
-      }),
+      withZaiRetry((zai) =>
+        zai.chat.completions.create({
+          messages: [
+            { role: "assistant", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          thinking: { type: "disabled" },
+        }),
+      ),
       "Analisis AI",
     );
     const raw = completion?.choices?.[0]?.message?.content ?? "";
@@ -277,15 +302,16 @@ export async function generateInterviewQuestions(applicationId: string): Promise
       "- Tanpa markdown bold/italic, tanpa penjelasan tambahan.",
     ].join("\n");
 
-    const zai = await getZai();
     const completion = await withTimeout(
-      zai.chat.completions.create({
-        messages: [
-          { role: "assistant", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        thinking: { type: "disabled" },
-      }),
+      withZaiRetry((zai) =>
+        zai.chat.completions.create({
+          messages: [
+            { role: "assistant", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          thinking: { type: "disabled" },
+        }),
+      ),
       "Pembuatan pertanyaan wawancara",
     );
     const text = (completion?.choices?.[0]?.message?.content ?? "").trim();
@@ -342,15 +368,16 @@ export async function generateReplyDraft(applicationId: string): Promise<string 
       "- Tanpa markdown (tanpa **, #, bullet), tanpa placeholder dalam kurung siku, tanpa penjelasan tambahan di luar isi pesan.",
     ].join("\n");
 
-    const zai = await getZai();
     const completion = await withTimeout(
-      zai.chat.completions.create({
-        messages: [
-          { role: "assistant", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        thinking: { type: "disabled" },
-      }),
+      withZaiRetry((zai) =>
+        zai.chat.completions.create({
+          messages: [
+            { role: "assistant", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          thinking: { type: "disabled" },
+        }),
+      ),
       "Pembuatan draft balasan",
     );
     const text = (completion?.choices?.[0]?.message?.content ?? "").trim();

@@ -2,7 +2,7 @@
 // SERVER-ONLY — jangan pernah diimpor dari komponen klien.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { getZai, withTimeout } from "@/lib/ai";
+import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { db } from "@/lib/db";
 
 const ASR_TIMEOUT_MS = 60_000; // 60 detik
@@ -35,9 +35,8 @@ export async function transcribeIntroAudio(applicationId: string): Promise<void>
     const buffer = await readFile(filePath);
     const base64Audio = buffer.toString("base64");
 
-    const zai = await getZai();
     const res = await withTimeout(
-      zai.audio.asr.create({ file_base64: base64Audio }),
+      withZaiRetry((zai) => zai.audio.asr.create({ file_base64: base64Audio })),
       "Transkripsi audio intro",
       ASR_TIMEOUT_MS,
     );

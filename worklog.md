@@ -242,3 +242,21 @@ Stage Summary:
 - PLATFORM REKRUTMEN LENGKAP: 30+ fitur baru terpasang dan terverifikasi end-to-end (AI screening otomatis, chatbot LLM, kalender wawancara, kanban drag-drop, multi-user role, export CSV, tracking pelamar, RSS, embed, dark mode, bilingual, subscribe, webhook notifikasi, audit log, auto-close posisi, dsb).
 - Akun demo: admin@lumina.id (Owner), hr@lumina.id (HR), viewer@lumina.id (Pengamat) — semua password admin123.
 - Lint bersih; server 200 stabil; worklog lengkap.
+
+---
+Task ID: 8
+Agent: orchestrator (Z.ai Code)
+Task: Pasca-verifikasi "tambahkan semuanya" — perbaikan chatbot 401 X-Token & finalisasi
+
+Work Log:
+- Menemukan dua masalah saat pemeriksaan ulang dev.log: (1) POST /api/chat 500 karena SDK AI mengembalikan 401 "missing X-Token header"; (2) chatbotEnabled=false di Setting "site" sehingga chat menolak (403).
+- Diagnosis: z-ai CLI (instance baru per proses) berhasil, sementara server memakai instance ZAI yang di-cache di level modul ai.ts — token instance cache sudah stale dan tidak pernah di-reset.
+- Fix di src/lib/ai.ts: tambah resetZai() + withZaiRetry(operation) — eksekusi operasi SDK dengan maksimal 2 percobaan; antar percobaan instance cache dibuang (resetZai) agar dibuat segar.
+- Patch 5 titik pemanggilan SDK ke withZaiRetry: ai.ts (analyzeApplication, generateInterviewQuestions, generateReplyDraft), transcribe.ts (ASR), api/chat/route.ts; import getZai yang tak terpakai dihapus.
+- Aktifkan kembali chatbotEnabled=true via Prisma (DB).
+- Verifikasi: curl POST /api/chat → 200 reply LLM nyata; POST /api/admin/applications/[id]/ai → skor 85 + ringkasan + LAYAK_WAWANCARA; Agent Browser: landing penuh (filter, wizard, tracking, subscribe, FAQ, share), widget chat kirim pesan → balasan bot nyata ("Iya, posisi Video Editor (Part-time, Remote) masih buka..."), login admin@lumina.id → 7 tab lengkap, tab Pelamar (filter/kanban/CSV/checkbox bulk+bandingkan) tampil data; console browser bersih; dev.log bersih tanpa 500; bun run lint 0 error.
+
+Stage Summary:
+- Penyebab root 401 X-Token = instance SDK stale yang di-cache permanen; kini semua panggilan AI resilient (auto-retry dengan instance segar).
+- Chatbot & seluruh platform v2 terverifikasi hidup end-to-end kembali setelah perbaikan.
+- Tidak ada perubahan skema/tipe/kontrak; hanya hardening src/lib/ai.ts, transcribe.ts, api/chat/route.ts.
