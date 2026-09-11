@@ -1,8 +1,12 @@
-// POST /api/admin/applications/bulk — aksi massal: ubah status, hapus, atau atur talent pool (OWNER/HR).
+// POST /api/admin/applications/bulk — aksi massal: ubah status, hapus, atur talent pool, atau tolak (OWNER/HR).
+// Aksi "reject": status -> REJECTED + alasan terstruktur + tanggal ditolak (per lamaran, lewat transaksi).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { sanitizeRejectionReason } from "@/lib/seed";
 import { stageLabel } from "@/lib/stages";
+import { REJECTION_REASON_LABELS, type RejectionReason } from "@/lib/types";
+import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +37,7 @@ export async function POST(req: NextRequest) {
     }
 
     const action = typeof data.action === "string" ? data.action : "";
-    if (!["status", "delete", "talentPool"].includes(action)) {
+    if (!["status", "delete", "talentPool", "reject"].includes(action)) {
       return NextResponse.json({ error: "Aksi tidak valid." }, { status: 400 });
     }
 
@@ -63,6 +67,44 @@ export async function POST(req: NextRequest) {
       affected = result.count;
       logAction = "BULK_TALENT_POOL";
       logDetail = `${affected} lamaran ${data.talentPool ? "ditambahkan ke" : "dikeluarkan dari"} talent pool`;
+    } else if (action === "reject") {
+      const reason = sanitizeRejectionReason(data.reason);
+      if (!reason) {
+        return NextResponse.json({ error: "Alasan penolakan tidak valid." }, { status: 400 });
+      }
+      const note =
+        typeof data.note === "string" && data.note.trim() ? data.note.trim().slice(0, 1000) : null;
+      const now = new Date();
+      const rows = await db.application.findMany({
+        where: { id: { in: ids }, status: { not: "REJECTED" } },
+        select: { id: true },
+      });
+      await db.$transaction(
+        rows.map((row) =>
+          db.application.update({
+            where: { id: row.id },
+            data: {
+              status: "REJECTED",
+              rejectionReason: reason,
+              rejectionNote: note,
+              rejectedAt: now,
+            },
+          }),
+        ),
+      );
+      if (rows.length > 0) {
+        await db.activityLog.createMany({
+          data: rows.map((row) => ({
+            applicationId: row.id,
+            actor: session.name,
+            action: "STATUS_CHANGE",
+            detail: `Ditolak massal — alasan: ${REJECTION_REASON_LABELS[reason as RejectionReason]}`,
+          })),
+        });
+      }
+      affected = rows.length;
+      logAction = "BULK_STATUS";
+      logDetail = `${affected} lamaran ditolak massal (alasan: ${REJECTION_REASON_LABELS[reason as RejectionReason]})`;
     } else {
       const result = await db.application.deleteMany({ where: { id: { in: ids } } });
       affected = result.count;
@@ -74,6 +116,7 @@ export async function POST(req: NextRequest) {
       data: { applicationId: null, actor: session.name, action: logAction, detail: logDetail },
     });
 
+    void emitRealtime(REALTIME_EVENTS.applications);
     return NextResponse.json({ ok: true, affected });
   } catch (error) {
     console.error("[POST /api/admin/applications/bulk]", error);

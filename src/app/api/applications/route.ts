@@ -180,6 +180,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Cooldown lamar ulang: posisi dapat membatasi jeda minimal setelah melamar (mis. setelah ditolak).
+    const cooldownDays = position.reapplyCooldownDays ?? 0;
+    if (cooldownDays > 0) {
+      const cutoff = new Date(now.getTime() - cooldownDays * 24 * 60 * 60 * 1000);
+      const recent = await db.application.findFirst({
+        where: { positionId: position.id, email, createdAt: { gt: cutoff } },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true, status: true },
+      });
+      if (recent) {
+        const canReapplyAt = new Date(recent.createdAt.getTime() + cooldownDays * 24 * 60 * 60 * 1000);
+        const dateLabel = canReapplyAt.toLocaleDateString("id-ID", { dateStyle: "long" });
+        const rejectedRecently = recent.status === "REJECTED";
+        return NextResponse.json(
+          {
+            error: rejectedRecently
+              ? `Kamu baru saja ditolak untuk posisi ini. Coba lamar lagi setelah ${dateLabel}.`
+              : `Kamu sudah melamar posisi ini. Lamarmu masih diproses — cek status dengan kode pelacakanmu.`,
+            cooldownUntil: canReapplyAt.toISOString(),
+          },
+          { status: 429 },
+        );
+      }
+    }
+
     // Validasi berkas wajib sesuai konfigurasi posisi.
     if (position.requireCv && !cvFile) {
       return NextResponse.json({ error: "CV wajib diunggah untuk posisi ini." }, { status: 400 });
