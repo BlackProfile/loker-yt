@@ -1006,3 +1006,18 @@ Work Log:
 Stage Summary:
 - 40/40 fitur terpasang & terverifikasi; tsc 0 error; eslint bersih; dev server sehat; screenshots di /tmp/v40-*.png
 - Catatan: email terarsip di Kotak Keluar (SMTP opsional via env); cek-in 30/60/90 otomatis saat offer diterima; lockout login 5 kali/15 menit
+
+---
+Task ID: 21
+Agent: z.ai main session
+Task: Pindahkan formulir lamaran dari kolom kanan ke tengah bawah konten (permintaan user + screenshot)
+
+Work Log:
+- position-detail.tsx: grid 2 kolom (konten kiri 3/5 + form sticky kanan 2/5) diubah jadi satu kolom vertikal — konten full-width (deskripsi max-w-3xl), kartu gerbang/formulir pindah ke bawah konten, mx-auto max-w-2xl (terpusat)
+- Sticky kolom kanan dihapus; auto-scroll unlock tetap ke #form-card (kini di bawah)
+- Tambahan GateProgressPill: pil progres mengambang bottom-center ("x/y bagian dibaca") selama gerbang terkunci, klik = gulir ke formulir; hilang otomatis setelah terbuka
+- Lint bersih; verifikasi agent-browser via :81 (posisi pembersih-halaman): form-card centerX 640/640 (deviasi 0px, lebar 672px), berada 72px di bawah seksi konten terakhir; pil muncul saat terkunci & hilang saat terbuka; auto-unlock + auto-scroll PASS; mobile 390px tanpa overflow; errors console 0
+- Screenshots: /tmp/verify-form-locked-desktop.png, /tmp/verify-form-unlocked-desktop.png, /tmp/verify-form-mobile.png
+
+Stage Summary:
+- Alur baca kini natural top-to-bottom: baca konten → gerbang terbuka → formulir terpusat di bawah; progres baca tetap terlihat via pil mengambang
