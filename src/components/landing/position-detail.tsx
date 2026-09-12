@@ -699,7 +699,7 @@ function PositionDetailViewInner({
                       >
                         <iframe
                           src={`https://www.youtube.com/embed/${id}`}
-                          title={`Contoh karya ${position.title}`}
+                          title={`Contoh karya ${display.title}`}
                           className="h-full w-full"
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           allowFullScreen
@@ -740,7 +740,7 @@ function PositionDetailViewInner({
                           </span>
                           <div className="min-w-0">
                             <p className="text-sm font-semibold leading-tight">
-                              {position.title}
+                              {display.title}
                             </p>
                             <p className="text-xs text-muted-foreground">
                               {t.detail.badge}

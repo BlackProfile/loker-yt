@@ -252,7 +252,6 @@ export function DataTab() {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const parsedRows = useMemo(() => toImportRows(parseCsv(csvText)), [csvText]);
