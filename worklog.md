@@ -805,3 +805,22 @@ Work Log:
 
 Stage Summary:
 - Stepper formulir anti-luber di semua lebar: sempit = ikon saja (dengan tooltip), lebar = ikon + label. Tampilan kartu formulir desktop kini rapi sesuai batas kartu.
+
+---
+Task ID: 19
+Agent: general-purpose (verification)
+Task: Verifikasi perbaikan kartu status — offer disembunyikan saat tahap berubah (REJECTED)
+
+Work Log:
+- Membuat & menjalankan scripts/tmp/get-codes.ts (bun + PrismaClient) untuk mengambil kode pelacakan: Rizky Pratama LM-X6K9P0 (ACCEPTED, offerStatus ACCEPTED), Anisa Rahma LM-V7BHRS (REVIEWED), Bagas Saputra LM-5JDUZN (INTERVIEW), Dewi Lestari LM-LNX1QA (ACCEPTED, offerStatus null), Fajar Nugroho LM-DZO8WL (REJECTED, offerStatus null), juan nisaqi LM-415EDH (REJECTED, offerStatus null — perbaikan DB terkonfirmasi).
+- agent-browser open http://localhost:81/#status (port 81), networkidle, scrollIntoView #status, snapshot -i → textbox "Kode Pelacakan" ref=e21, tombol "Lacak" ref=e22.
+- Kasus REJECTED (juan nisaqi, LM-415EDH): fill e21 + click e22 → wait --text "Tidak Lolos" sukses. Full snapshot disimpan ke /tmp/t19-rejected-snapshot.txt, screenshot /tmp/verify-t19-rejected.png.
+- Verifikasi REJECTED dari DOM (innerText + querySelector, karena snapshot a11y agent-browser mengabaikan paragraf umpan balik): kartu "Tidak Lolos" ada dengan "Alasan: Tidak hadir wawancara" dan kotak umpan balik "Umpan balik untukmu: kayak mana sih" (p.text-rose-700, visible=true); GREP snapshot = 0 hasil untuk "menerima penawaran"/"Terima Penawaran"/"Tolak"/"Diterima"/"onboarding" (innerText hasOfferText=false); kartu riwayat wawancara tetap tampil (Wawancara Ronde 1, Selesai, 16 Sep 2026 03.00, 45 menit, Zoom, pewawancara arip/jawa/ajo) — sesuai ekspektasi; timeline langkah "PROGRES LAMARAN" tetap tampil ("Lamaran Diterima", "Tes Editing").
+- Kasus ACCEPTED (Rizky Pratama, LM-X6K9P0): fill ulang e21 + click e22 → wait --text "Diterima" sukses. Snapshot disimpan ke /tmp/t19-accepted-snapshot.txt, screenshot /tmp/verify-t19-accepted.png.
+- Verifikasi ACCEPTED dari DOM: badge status "Diterima" ada (div role="status" bg-emerald-50 text-emerald-800, visible); kartu "Penawaran diterima" ada (emerald card, "Dijawab 12 Sep 2026, 01.28"); kartu "Onboarding — Langkah Selanjutnya" ada dengan sambutan "Selamat bergabung di Lumina Studio, Rizky Pratama!", "Bergabung sejak 12 September 2026", "Masa percobaan s.d. 5 April 2026"; hasTidakLolos=false (tidak ada kartu "Tidak Lolos"). Catatan: snapshot a11y agent-browser tidak menampilkan kartu-kartu tersebut (quirk tool terhadap region role="status"/animasi), kehadiran dikonfirmasi via innerText & inspeksi elemen.
+- agent-browser errors: kosong (tidak ada page error). agent-browser console: hanya log dev (React DevTools info, [HMR] connected, Fast Refresh) — tidak ada error/warning berarti. Browser ditutup (agent-browser close).
+
+Stage Summary:
+- PASS kasus REJECTED (LM-415EDH, juan nisaqi): hanya kartu "Tidak Lolos" (alasan "Tidak hadir wawancara", umpan balik "kayak mana sih") + kartu riwayat wawancara (Zoom, 16 Sep) + timeline langkah; TIDAK ada kartu penawaran/"Terima Penawaran"/"Tolak"/onboarding. Perbaikan valid.
+- PASS kasus ACCEPTED (LM-X6K9P0, Rizky Pratama): badge "Diterima" + kartu "Penawaran diterima" + kartu onboarding (sambutan & checklist masa percobaan) tampil; tanpa kartu "Tidak Lolos". Tidak ada regresi.
+- Tidak ada page error; console hanya log dev. Artefak: /tmp/t19-rejected-snapshot.txt, /tmp/t19-accepted-snapshot.txt, /tmp/verify-t19-rejected.png, /tmp/verify-t19-accepted.png.
