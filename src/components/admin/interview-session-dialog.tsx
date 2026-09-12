@@ -835,6 +835,28 @@ function InterviewSessionDialogInner({
 
             {/* Form jadwal (create & edit) */}
             <div className="flex flex-col gap-3">
+              {schedulingNextRound ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                  <Sparkles className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    Formulir terisi dari rencana ronde{" "}
+                    <strong>
+                      {schedulingNextRound.round}: {schedulingNextRound.name}
+                    </strong>{" "}
+                    — pilih tanggal &amp; jam, lalu simpan.
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={cancelNextRound}
+                    disabled={saving}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                    Batal
+                  </Button>
+                </div>
+              ) : null}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5">
                   <Label>Mode</Label>
@@ -1005,7 +1027,13 @@ function InterviewSessionDialogInner({
               {canMutate ? (
                 <Button
                   className="h-11 w-fit active:scale-[0.99] sm:h-10"
-                  onClick={() => void (isCreate ? handleCreate() : handleSaveForm())}
+                  onClick={() =>
+                    void (isCreate
+                      ? handleCreate()
+                      : schedulingNextRound
+                        ? handleCreateNextRound()
+                        : handleSaveForm())
+                  }
                   disabled={saving || statusWorking || deleting || savingResult}
                 >
                   {saving ? (
@@ -1013,6 +1041,8 @@ function InterviewSessionDialogInner({
                       <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                       Menyimpan...
                     </>
+                  ) : schedulingNextRound ? (
+                    `Jadwalkan Ronde ${schedulingNextRound.round}`
                   ) : isCreate ? (
                     "Jadwalkan"
                   ) : (
@@ -1049,9 +1079,32 @@ function InterviewSessionDialogInner({
               <>
                 <Separator />
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <ClipboardCheck className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
                     <p className="text-sm font-semibold">Scorecard Hasil Wawancara</p>
+                    {autosaveState !== "idle" ? (
+                      <span
+                        role="status"
+                        className={cn(
+                          "ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                          autosaveState === "saved"
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                            : "bg-muted text-muted-foreground"
+                        )}
+                      >
+                        {autosaveState === "saved" ? (
+                          <>
+                            <Check className="size-3" aria-hidden="true" />
+                            Tersimpan otomatis
+                          </>
+                        ) : (
+                          <>
+                            <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                            Menyimpan...
+                          </>
+                        )}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="flex flex-col gap-3">
                     {criteria.map((criterion) => {
@@ -1071,9 +1124,7 @@ function InterviewSessionDialogInner({
                                 key={n}
                                 type="button"
                                 disabled={savingResult}
-                                onClick={() =>
-                                  setScoreValues((prev) => ({ ...prev, [criterion]: n }))
-                                }
+                                onClick={() => handleScoreSelect(criterion, n)}
                                 aria-label={`${criterion}: nilai ${n} dari 5`}
                                 aria-pressed={value === n}
                                 className={cn(

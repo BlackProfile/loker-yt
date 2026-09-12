@@ -92,9 +92,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json({ error: "Data tidak valid." }, { status: 400 });
     }
-    const text = typeof (body as Record<string, unknown>).body === "string"
-      ? (body as Record<string, unknown>).body.trim()
-      : "";
+    const rawBody = (body as Record<string, unknown>).body;
+    const text = typeof rawBody === "string" ? rawBody.trim() : "";
     if (!text) {
       return NextResponse.json({ error: "Komentar tidak boleh kosong." }, { status: 400 });
     }

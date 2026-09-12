@@ -544,7 +544,7 @@ export function ApplicationsTab() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") void runSemanticSearch();
               }}
-              placeholder="Cari dengan AI — mis. \"editor yang kuat di motion graphics dan pernah di agensi\""
+              placeholder={'Cari dengan AI — mis. "editor yang kuat di motion graphics dan pernah di agensi"'}
               aria-label="Cari kandidat dengan AI"
               maxLength={300}
               className="h-10 rounded-xl pl-9"

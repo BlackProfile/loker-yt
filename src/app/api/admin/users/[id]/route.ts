@@ -2,6 +2,7 @@
 // PATCH  /api/admin/users/[id] — update nama/role/status aktif/password/scope posisi/reset 2FA (OWNER saja).
 // DELETE /api/admin/users/[id] — hapus pengguna (OWNER saja, dengan proteksi owner terakhir).
 import { NextRequest, NextResponse } from "next/server";
+import type { AdminUser as AdminUserRecordModel } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getSession, hashPassword } from "@/lib/server-auth";
 import { parseAssignedPositions, serializeAdminUser } from "@/lib/seed";
@@ -21,16 +22,7 @@ async function requireOwner() {
 }
 
 /** Respons detail user: profil dasar + scope posisi (string[]) + status 2FA. */
-function serializeUserDetail(user: {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  isActive: boolean;
-  createdAt: Date;
-  totpEnabled: boolean;
-  assignedPositions: string;
-}) {
+function serializeUserDetail(user: AdminUserRecordModel) {
   return {
     ...serializeAdminUser(user),
     totpEnabled: user.totpEnabled,

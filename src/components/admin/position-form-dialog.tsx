@@ -34,6 +34,7 @@ import {
   Gift,
   Handshake,
   Image as ImageIcon,
+  Languages,
   ListChecks,
   Loader2,
   MessagesSquare,
@@ -86,6 +87,10 @@ type FormState = {
   location: string;
   description: string;
   requirements: string[];
+  // Konten dua bahasa (opsional) — fallback versi Indonesia bila kosong.
+  titleEn: string;
+  descriptionEn: string;
+  requirementsEn: string[];
   isActive: boolean;
   publishAtLocal: string;
   closesAtLocal: string;
@@ -136,6 +141,9 @@ const EMPTY_FORM: FormState = {
   location: "Remote",
   description: "",
   requirements: [],
+  titleEn: "",
+  descriptionEn: "",
+  requirementsEn: [],
   isActive: true,
   publishAtLocal: "",
   closesAtLocal: "",
@@ -189,6 +197,9 @@ function buildFormState(p: Position): FormState {
     location: p.location || "Remote",
     description: p.description,
     requirements: [...p.requirements],
+    titleEn: p.titleEn ?? "",
+    descriptionEn: p.descriptionEn ?? "",
+    requirementsEn: [...(p.requirementsEn ?? [])],
     isActive: p.isActive,
     publishAtLocal: isoToLocalInput(p.publishAt),
     closesAtLocal: isoToLocalInput(p.closesAt),
@@ -472,6 +483,10 @@ export function PositionFormDialog({
       location: form.location.trim() || "Remote",
       description: form.description.trim(),
       requirements: form.requirements.map((r) => r.trim()).filter(Boolean),
+      // Konten dua bahasa — kosong berarti fallback ke versi Indonesia (null).
+      titleEn: form.titleEn.trim() || null,
+      descriptionEn: form.descriptionEn.trim() || null,
+      requirementsEn: form.requirementsEn.map((r) => r.trim()).filter(Boolean),
       isActive: form.isActive,
       publishAt: localInputToIso(form.publishAtLocal),
       closesAt: localInputToIso(form.closesAtLocal),
@@ -718,6 +733,52 @@ export function PositionFormDialog({
                       maxLength={200}
                       addLabel="Tambah persyaratan"
                       placeholder="mis. Menguasai editing video"
+                    />
+                  </div>
+                </FormSection>
+
+                <FormDivider />
+
+              {/* a2. Konten Bahasa Inggris (opsional) — dipakai publik saat lang "en" */}
+              <FormSection
+                id="bahasa-inggris"
+                icon={Languages}
+                title="Konten Bahasa Inggris (opsional)"
+                hint="Dipakai saat pengunjung memilih Bahasa Inggris; bila kosong otomatis memakai versi Indonesia."
+              >
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pos-titleEn">Nama Posisi (EN)</Label>
+                    <Input
+                      id="pos-titleEn"
+                      value={form.titleEn}
+                      onChange={(e) => set("titleEn", e.target.value)}
+                      placeholder="mis. Video Editor"
+                      className="h-10"
+                      maxLength={120}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pos-descriptionEn">Deskripsi (EN)</Label>
+                    <Textarea
+                      id="pos-descriptionEn"
+                      value={form.descriptionEn}
+                      onChange={(e) => set("descriptionEn", e.target.value)}
+                      placeholder="Describe the role, responsibilities, and overall picture..."
+                      rows={4}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Persyaratan (EN)</Label>
+                    <StringListEditor
+                      name="Persyaratan (EN)"
+                      items={form.requirementsEn}
+                      onChange={(items) => set("requirementsEn", items)}
+                      maxItems={20}
+                      maxLength={200}
+                      addLabel="Tambah persyaratan (EN)"
+                      placeholder="e.g. Proficient in video editing"
                     />
                   </div>
                 </FormSection>

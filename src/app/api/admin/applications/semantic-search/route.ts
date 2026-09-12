@@ -25,9 +25,8 @@ export async function POST(req: NextRequest) {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json({ error: "Data tidak valid." }, { status: 400 });
     }
-    const query = typeof (body as Record<string, unknown>).query === "string"
-      ? (body as Record<string, unknown>).query.trim()
-      : "";
+    const rawQuery = (body as Record<string, unknown>).query;
+    const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
     if (query.length < 3) {
       return NextResponse.json({ error: "Tulis kueri minimal 3 karakter." }, { status: 400 });
     }
