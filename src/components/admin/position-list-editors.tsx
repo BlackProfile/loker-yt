@@ -4,19 +4,39 @@
 // - StringListEditor: daftar teks sederhana (benefit, contoh karya, tahap pipeline, dll).
 //   Batas item & karakter dikunci di sini sesuai batas server (tombol Tambah disable).
 // - ScreeningQuestionsEditor: daftar pertanyaan screening (label + wajib + urutan).
+// - AssignmentBriefEditor: kartu "Tes untuk Pelamar" (judul + catatan) dengan tombol
+//   "Buat brief dengan AI" (POST /api/admin/positions/[id]/generate-brief).
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   ChevronDown,
   ChevronUp,
+  Loader2,
   Plus,
+  Sparkles,
   Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { ScreeningQuestion } from "@/lib/types";
+import { apiPost } from "./api";
+import { useAdminSession } from "./admin-context";
 
 export function StringListEditor({
   items,

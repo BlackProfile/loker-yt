@@ -16,6 +16,7 @@ import {
   Check,
   ChevronDown,
   ClipboardCheck,
+  Copy,
   Eye,
   FileText,
   Inbox,
