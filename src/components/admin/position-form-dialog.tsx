@@ -97,6 +97,9 @@ type FormState = {
   order: string;
   coverFileId: string | null;
   salaryText: string;
+  // Rentang gaji wajar — dipakai peringatan saat membuat offer
+  salaryMin: string;
+  salaryMax: string;
   salaryVisible: boolean;
   benefits: string[];
   examples: string[];
@@ -150,6 +153,8 @@ const EMPTY_FORM: FormState = {
   order: "",
   coverFileId: null,
   salaryText: "",
+  salaryMin: "",
+  salaryMax: "",
   salaryVisible: false,
   benefits: [],
   examples: [],
@@ -206,6 +211,8 @@ function buildFormState(p: Position): FormState {
     order: String(p.order ?? ""),
     coverFileId: p.coverFileId,
     salaryText: p.salaryText ?? "",
+    salaryMin: p.salaryMin != null ? String(p.salaryMin) : "",
+    salaryMax: p.salaryMax != null ? String(p.salaryMax) : "",
     salaryVisible: p.salaryVisible,
     benefits: [...p.benefits],
     examples: [...p.examples],
@@ -492,6 +499,9 @@ export function PositionFormDialog({
       closesAt: localInputToIso(form.closesAtLocal),
       coverFileId: form.coverFileId,
       salaryText: form.salaryText.trim() || null,
+      // Rentang gaji wajar — kosong berarti tanpa batasan (null)
+      salaryMin: form.salaryMin.trim() === "" ? null : Number(form.salaryMin),
+      salaryMax: form.salaryMax.trim() === "" ? null : Number(form.salaryMax),
       salaryVisible: form.salaryVisible,
       benefits: form.benefits.map((b) => b.trim()).filter(Boolean),
       examples: form.examples.map((e) => e.trim()).filter(Boolean),
@@ -993,6 +1003,33 @@ export function PositionFormDialog({
                           aria-label="Tampilkan teks gaji di halaman publik"
                         />
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="pos-salaryMin">Gaji wajar minimum (Rp/bulan)</Label>
+                      <Input
+                        id="pos-salaryMin"
+                        type="number"
+                        min={0}
+                        value={form.salaryMin}
+                        onChange={(e) => set("salaryMin", e.target.value)}
+                        placeholder="mis. 3500000 — kosongkan bila tanpa batas"
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="pos-salaryMax">Gaji wajar maksimum (Rp/bulan)</Label>
+                      <Input
+                        id="pos-salaryMax"
+                        type="number"
+                        min={0}
+                        value={form.salaryMax}
+                        onChange={(e) => set("salaryMax", e.target.value)}
+                        placeholder="mis. 6000000 — dipakai peringatan offer"
+                        className="h-10"
+                      />
                     </div>
                   </div>
 
