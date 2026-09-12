@@ -92,7 +92,10 @@ function parseLogDetail(detail: string | null): {
     target: rawTarget.length > 0 ? rawTarget : null,
     rejected: /^ditolak/i.test(trimmed),
     hired: /diterima \(hired\)/i.test(trimmed),
-    interviewMention: /wawancara/i.test(trimmed),
+    // Penyebutan "wawancara" pada log tanpa panah (mis. "Ditolak dari hasil wawancara
+    // ronde 1") adalah bukti kandidat pernah sampai tahap wawancara — kecuali kasus
+    // "tidak hadir wawancara" yang justru berarti wawancara tidak pernah terlaksana.
+    interviewMention: /wawancara/i.test(trimmed) && !/tidak hadir/i.test(trimmed),
   };
 }
 
