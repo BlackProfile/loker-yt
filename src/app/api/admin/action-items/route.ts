@@ -1,5 +1,7 @@
 // GET /api/admin/action-items — daftar hal yang butuh tindakan admin (semua role):
-// permintaan reschedule, offer menunggu jawaban, wawancara selesai tanpa skor, onboarding belum lengkap.
+// lamaran belum ditinjau > 3 hari, permintaan reschedule, offer menunggu jawaban
+// (dengan urgensi deadline), wawancara selesai tanpa skor, onboarding belum lengkap,
+// dan lamaran duplikat yang perlu dicek.
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
@@ -9,6 +11,20 @@ import type { ActionItemsResponse } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 const SCORE_SLA_DAYS = 3; // wawancara selesai > 3 hari tanpa skor -> perlu tindakan
+const REVIEW_SLA_DAYS = 3; // lamaran baru belum ditinjau > 3 hari -> perlu tindakan
+
+// Perluasan respons untuk Pusat Tugas (Task 20-a) — field tambahan di atas kontrak bawaan.
+type SimpleApplicationItem = {
+  applicationId: string;
+  name: string;
+  positionTitle: string | null;
+  createdAt: string;
+};
+
+export type ExtendedActionItemsResponse = ActionItemsResponse & {
+  staleNewApplications: SimpleApplicationItem[];
+  duplicateApplications: SimpleApplicationItem[];
+};
 
 export async function GET() {
   try {
@@ -17,7 +33,8 @@ export async function GET() {
       return NextResponse.json({ error: "Silakan login terlebih dahulu." }, { status: 401 });
     }
 
-    const [rescheduleRows, offerRows, unscoredRows, onboardingRows] = await Promise.all([
+    const reviewCutoff = new Date(Date.now() - REVIEW_SLA_DAYS * 24 * 60 * 60 * 1000);
+    const [rescheduleRows, offerRows, unscoredRows, onboardingRows, staleNewRows, duplicateRows] = await Promise.all([
       db.interview.findMany({
         where: { status: "RESCHEDULE_REQUESTED" },
         orderBy: { scheduledAt: "asc" },
@@ -59,9 +76,21 @@ export async function GET() {
           position: { select: { title: true } },
         },
       }),
+      db.application.findMany({
+        where: { status: "NEW", createdAt: { lt: reviewCutoff }, talentPool: false },
+        orderBy: { createdAt: "asc" },
+        take: 20,
+        select: { id: true, name: true, createdAt: true, position: { select: { title: true } } },
+      }),
+      db.application.findMany({
+        where: { isDuplicate: true },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, name: true, createdAt: true, position: { select: { title: true } } },
+      }),
     ]);
 
-    const body: ActionItemsResponse = {
+    const body: ExtendedActionItemsResponse = {
       rescheduleRequests: rescheduleRows.map((row) => ({
         interviewId: row.id,
         applicationId: row.applicationId,
@@ -98,6 +127,18 @@ export async function GET() {
         })
         .filter((row) => row.missingDocs.length > 0)
         .slice(0, 20),
+      staleNewApplications: staleNewRows.map((row) => ({
+        applicationId: row.id,
+        name: row.name,
+        positionTitle: row.position?.title ?? null,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      duplicateApplications: duplicateRows.map((row) => ({
+        applicationId: row.id,
+        name: row.name,
+        positionTitle: row.position?.title ?? null,
+        createdAt: row.createdAt.toISOString(),
+      })),
     };
 
     return NextResponse.json(body);

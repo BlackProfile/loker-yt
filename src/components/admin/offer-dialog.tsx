@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CalendarClock, Loader2, MailCheck, Send, XCircle } from "lucide-react";
+import { CalendarClock, FileText, Loader2, MailCheck, Send, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   OFFER_STATUS_LABELS,
@@ -36,6 +36,7 @@ import {
 import { apiPatch, apiPost } from "./api";
 import { formatDate } from "./format";
 import { useAdminSession } from "./admin-context";
+import { TemplatePicker } from "./template-picker";
 
 export function OfferDialog({
   application,
@@ -56,6 +57,7 @@ export function OfferDialog({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [working, setWorking] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const hasPendingOffer = application?.offerStatus === "PENDING";
   const canSend =
@@ -286,7 +288,19 @@ export function OfferDialog({
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="offer-note">Catatan tambahan / benefit</Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label htmlFor="offer-note">Catatan tambahan / benefit</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setPickerOpen(true)}
+                >
+                  <FileText className="size-3.5" aria-hidden="true" />
+                  Dari template
+                </Button>
+              </div>
               <Textarea
                 id="offer-note"
                 value={note}
@@ -322,6 +336,14 @@ export function OfferDialog({
             </DialogFooter>
           </form>
         )}
+
+        {/* Picker template OFFER — mengisi catatan offer dari pustaka template. */}
+        <TemplatePicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          kind="OFFER"
+          onPick={(body) => setNote(body)}
+        />
       </DialogContent>
     </Dialog>
   );
