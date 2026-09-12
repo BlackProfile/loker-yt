@@ -34,7 +34,7 @@ import {
   Info,
   Loader2,
   PauseCircle,
-  RotateCcw,
+  Save,
   ShieldAlert,
   TriangleAlert,
   Upload,
@@ -449,14 +449,20 @@ export function DataTab() {
                   variant="outline"
                   className="h-11 active:scale-[0.99] sm:h-9"
                   disabled={backingUp || restoring}
-                  onClick={() => restoreInputRef.current?.click()}
+                  onClick={() => {
+                    // File sudah dipilih -> tampilkan konfirmasi lagi; belum -> buka pemilih file.
+                    if (restoreFile) setRestoreConfirmOpen(true);
+                    else restoreInputRef.current?.click();
+                  }}
                 >
                   {restoring ? (
                     <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : restoreFile ? (
+                    <TriangleAlert className="size-4" aria-hidden="true" />
                   ) : (
                     <Upload className="size-4" aria-hidden="true" />
                   )}
-                  Pilih File Backup (.db)
+                  {restoreFile ? "Konfirmasi Pulihkan" : "Pilih File Backup (.db)"}
                 </Button>
                 <input
                   ref={restoreInputRef}
@@ -656,7 +662,7 @@ export function DataTab() {
                 {savingSite ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 ) : (
-                  <RotateCcw className="size-4" aria-hidden="true" />
+                  <Save className="size-4" aria-hidden="true" />
                 )}
                 Simpan Pesan
               </Button>
