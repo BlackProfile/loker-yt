@@ -935,3 +935,59 @@ Work Log:
 Stage Summary:
 - 4 fitur selesai: (1) scope posisi granular HR + enforcement filter GET list lamaran dan masking PII VIEWER (phone & CV) di respons list; (2) 2FA TOTP penuh (setup QR otpauth+qrcode, enable/disable dengan verifikasi, reset oleh OWNER, verifikasi kode saat login); (3) proteksi brute force (lockout 5 gagal/15 menit → 429 + audit, delay 300ms password salah, LoginAudit semua percobaan dengan IP/UA terpotong); (4) audit login UI di logs-tab + API /api/admin/logins berbasis role.
 - Catatan jujur: enforcement scope hanya di GET list /api/admin/applications (GET by id & endpoint turunan di luar kepemilikan, tidak diubah); masking VIEWER juga hanya di list; section 2FA berada di tab Pengguna yang di-nav hanya untuk OWNER, tetapi API /api/admin/security/totp terbuka untuk semua role (siap dipakai permukaan UI lain); tipe AdminUser di types.ts tidak diperluas — komponen memakai tipe lokal (AdminUserDetail, LoginAuditEntry) agar tidak menyentuh file bersama.
+
+---
+Task ID: 20-b
+Agent: general-purpose (timeout -> diselesaikan integrasi oleh main session)
+Task: Fitur wawancara — slot self-service, kalender tim, rencana ronde, rubrik live, rekaman+transkrip
+
+Work Log:
+- Routes: /api/admin/slots (+[id]), /api/public/slots, /api/public/slots/book, /api/admin/interviews/[id]/transcribe, /api/admin/interviews/[id]/recording
+- Track API + status-check.tsx: kartu "Pilih Jadwal Wawancara" dari result.slots; TrackResponse.slots/onboardingPlan di types.ts
+- calendar-tab.tsx (kalender mingguan + konflik pewawancara), SlotManagerPanel di interview-tab, autosave rubrik di interview-session-dialog, tombol "Jadwalkan Ronde Berikutnya" dari Position.roundPlan
+- Integrasi main session: wiring roundPlan (position-input sanitize + seed parseRoundPlan + editor UI di position-form-dialog)
+
+Stage Summary:
+- Semua 5 fitur hadir; tsc/lint bersih; verifikasi runtime menyusul (Task 20-verif)
+
+---
+Task ID: 20-d
+Agent: general-purpose (timeout -> diselesaikan integrasi oleh main session)
+Task: Komunikasi — pusat notifikasi, kotak keluar email, pustaka template, tombol WA, cron pengingat + rekap mingguan
+
+Work Log:
+- notification-bell.tsx (badge unread + popover, /api/admin/notifications GET+PATCH)
+- settings-tab: section "Kotak Keluar Email" (/api/admin/outbox GET + resend PATCH)
+- template-picker.tsx + integrasi di offer-dialog & quick-reject-dialog (/api/admin/templates CRUD)
+- applications-table: tombol WhatsApp (wa.me) + badge duplikat
+- cron reminders: OFFER_REMIND_H1 (H-1 deadline offer, queueEmail+pushNotification) + WEEKLY_DIGEST (Senin pagi)
+
+Stage Summary:
+- 5 fitur hadir; SMTP opsional via env; lint bersih
+
+---
+Task ID: 20-f
+Agent: general-purpose (timeout -> diselesaikan integrasi oleh main session)
+Task: Laporan — funnel konversi, sumber lamaran, validasi AI, ekspor profil cetak
+
+Work Log:
+- reports-tab.tsx (funnel per posisi + avg hari per tahap, breakdown source/UTM/referrer, validasi skor AI vs keputusan akhir)
+- profile-print-dialog.tsx (profil kandidat siap cetak, window.print + print CSS)
+- Routes: /api/admin/reports/funnel, /sources, /ai-validation
+
+Stage Summary:
+- 4 fitur hadir; lint bersih
+
+---
+Task ID: 20-h
+Agent: general-purpose (timeout -> diselesaikan integrasi oleh main session)
+Task: Konfigurasi — backup/restore, import CSV, mode tutup rekrutmen, posisi dua bahasa, rentang gaji
+
+Work Log:
+- data-tab.tsx: unduh backup (GET /api/admin/backup), restore upload (POST /api/admin/restore via bun:sqlite), import CSV (/api/admin/import-applications), mode tutup rekrutmen (Setting site.recruitmentClosed)
+- landing-page/apply-wizard: banner + blokir submit saat ditutup; /api/public/site
+- position-form-dialog: konten EN (titleEn/descriptionEn/requirementsEn) — wiring position-input+seed oleh agen
+- Integrasi main session: salaryMin/salaryMax (types+seed+position-input+form UI) & editor roundPlan UI
+
+Stage Summary:
+- 4 fitur hadir; restore destructif dikonfirmasi Owner; lint/tsc bersih
