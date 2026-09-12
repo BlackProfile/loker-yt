@@ -42,6 +42,7 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { LangProvider, useLang } from "@/components/landing/lang-context";
 import {
@@ -107,6 +108,111 @@ function TermRow({
         </p>
         <div className="mt-0.5 text-sm">{children}</div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Gerbang baca: formulir pendaftaran terkunci sampai semua bagian konten
+// (deskripsi, persyaratan, ketentuan, benefit, karya) terbaca. Bagian yang
+// masuk area baca viewport dicentang otomatis lewat IntersectionObserver.
+// ---------------------------------------------------------------------------
+
+type GateSection = { id: string; label: string; done: boolean };
+
+function ApplyGate({
+  sections,
+  readCount,
+  onJump,
+  onOpen,
+}: {
+  sections: GateSection[];
+  readCount: number;
+  onJump: (id: string) => void;
+  onOpen: () => void;
+}) {
+  const { t } = useLang();
+  const total = sections.length;
+  const allRead = readCount >= total;
+  const progressValue = total > 0 ? Math.round((readCount / total) * 100) : 100;
+
+  return (
+    <div className="flex flex-col gap-4" aria-live="polite">
+      <div className="flex items-center gap-2.5">
+        <span
+          className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+            allRead
+              ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
+              : "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
+          )}
+        >
+          <BookOpenCheck className="size-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-tight">{t.detail.gateTitle}</p>
+          <p className="text-xs text-muted-foreground">
+            {allRead ? t.detail.gateReady : fillTemplate(t.detail.gateProgress, { read: readCount, total })}
+          </p>
+        </div>
+      </div>
+
+      <p className="text-sm leading-relaxed text-muted-foreground">{t.detail.gateDesc}</p>
+
+      <div className="flex flex-col gap-2">
+        <Progress
+          value={progressValue}
+          className={cn("h-1.5", allRead && "[&>div]:bg-emerald-500")}
+          aria-label={fillTemplate(t.detail.gateProgress, { read: readCount, total })}
+        />
+        <p className="text-xs text-muted-foreground">{t.detail.gateHint}</p>
+      </div>
+
+      <ul className="flex flex-col gap-1.5">
+        {sections.map((section) => (
+          <li key={section.id}>
+            <button
+              type="button"
+              onClick={() => onJump(section.id)}
+              className={cn(
+                "flex min-h-11 w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                section.done
+                  ? "border-emerald-200 bg-emerald-50/60 text-foreground dark:border-emerald-900 dark:bg-emerald-950/30"
+                  : "bg-zinc-50/60 text-muted-foreground hover:bg-accent hover:text-foreground dark:bg-zinc-900/40",
+              )}
+            >
+              {section.done ? (
+                <BadgeCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+              ) : (
+                <Circle className="size-4 shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
+              )}
+              <span className="min-w-0 flex-1 truncate">{section.label}</span>
+              <ArrowRight
+                className="size-3.5 shrink-0 text-muted-foreground/60"
+                aria-hidden="true"
+              />
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <Button
+        className="min-h-11 w-full"
+        disabled={!allRead}
+        onClick={onOpen}
+      >
+        {allRead ? (
+          <>
+            <ArrowRight className="size-4" aria-hidden="true" />
+            {t.detail.gateOpen}
+          </>
+        ) : (
+          <>
+            <Lock className="size-4" aria-hidden="true" />
+            {t.detail.gateLocked}
+          </>
+        )}
+      </Button>
     </div>
   );
 }
