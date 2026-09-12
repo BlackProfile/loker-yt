@@ -767,3 +767,24 @@ Work Log:
 Stage Summary:
 - Aplikasi kembali online penuh; realtime socket stabil dgn keepalive otomatis (downtime maks ~10-13 detik bila proses dibunuh sandbox, lalu auto-restart).
 - Skrip baru: scripts/realtime-keepalive.sh & scripts/start-realtime.sh (jalankan lagi setelah restart mesin, sama seperti start-auto-push.sh).
+---
+Task ID: 18
+Agent: Z.ai Code (main)
+Task: Halaman detail lowongan — sembunyikan formulir pendaftaran di balik "gerbang baca" (harus baca persyaratan dulu)
+
+Work Log:
+- Permintaan user: form pendaftaran jangan langsung tampil; pengunjung harus membaca persyaratan/ketentuan dulu, setelah itu form baru muncul.
+- strings.ts: 10 kunci baru t.detail.gate* (ID & EN + tipe Dict): gateTitle/gateDesc/gateHint/gateProgress/gateReady/gateOpen/gateLocked/gateUnlockedToast/gateReread.
+- primitives.tsx: FadeIn menerima prop id opsional (jangkar seksi).
+- position-detail.tsx refactor:
+  - State: formUnlocked (init dari sessionStorage per slug), readIds; gerbang seksi = persis seksi yang dirender (deskripsi/persyaratan?/ketentuan/benefit?/karya?) via useMemo (workEmbeds/workLinks dipindah ke useMemo agar kondisi render & gerbang tidak bisa beda).
+  - IntersectionObserver (rootMargin "0px 0px -45% 0px") menandai seksi terbaca saat masuk area baca; semua terbaca → auto-unlock (jeda 650ms) + toast "Formulir pendaftaran terbuka" + scrollIntoView halus ke #form-card; sessionStorage `lumina-read-{slug}` agar tidak baca ulang di sesi sama; fallback tanpa IO → langsung terbuka (setTimeout 0 agar lolos aturan lint set-state-in-effect).
+  - Komponen BARU ApplyGate: header BookOpenCheck (amber → emerald saat siap), progress bar (emerald saat penuh), checklist seksi (BadgeCheck hijau/Circle) yang bisa diklik untuk scroll ke seksi, tombol "Buka Formulir Lamaran" (disabled + ikon Lock sebelum semua terbaca).
+  - Seksi kiri dapat id + scroll-mt-24 (sec-deskripsi/sec-persyaratan/sec-ketentuan/sec-benefit/sec-karya); kartu kanan id form-card; state unlocked menampilkan wizard + link kecil "Baca ulang persyaratan"; kasus kuota penuh/form nonaktif tidak berubah.
+- Lint: 1 error awal (set-state-in-effect) diperbaiki; akhirnya 0 error.
+- Verifikasi agent-browser via gateway :81: gerbang tampil (3/5 auto tercentang sesuai viewport), scroll penuh → toast + form terbuka + auto-scroll, link "Baca ulang" berfungsi tanpa mengunci ulang, sessionStorage bekerja (buka ulang = langsung terbuka), mobile 390px tanpa overflow. dev.log bersih.
+- Catatan data: hanya 1/5 posisi isActive (Video Editor) — 4 lainnya nonaktif dari pengujian fitur sebelumnya (bukan bug); API & realtime sehat (keepalive Task 17 masih jalan).
+
+Stage Summary:
+- Alur halaman lowongan kini: buka detail → baca konten (checklist otomatis tercentang) → formulir terbuka otomatis. Mengurangi lamaran asal tanpa membaca persyaratan.
+- Sync GitHub otomatis oleh watcher.
