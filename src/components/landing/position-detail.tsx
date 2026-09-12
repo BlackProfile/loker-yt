@@ -220,6 +220,49 @@ function ApplyGate({
   );
 }
 
+// Pil progres mengambang: selama gerbang belum terbuka, pembaca tetap melihat
+// progres baca di bawah layar (pengganti info gerbang yang sebelumnya selalu
+// terlihat di kolom kanan). Diklik → gulir ke kartu formulir.
+function GateProgressPill({
+  readCount,
+  total,
+  onClick,
+}: {
+  readCount: number;
+  total: number;
+  onClick: () => void;
+}) {
+  const { t } = useLang();
+  const allRead = total > 0 && readCount >= total;
+
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={fillTemplate(t.detail.gateProgress, { read: readCount, total })}
+        className="pointer-events-auto flex min-h-11 items-center gap-2.5 rounded-full border bg-background/90 py-2 pl-2.5 pr-4 shadow-lg backdrop-blur transition-colors hover:bg-accent"
+      >
+        <span
+          className={cn(
+            "flex size-7 shrink-0 items-center justify-center rounded-full",
+            allRead
+              ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
+              : "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
+          )}
+        >
+          <BookOpenCheck className="size-3.5" aria-hidden="true" />
+        </span>
+        <span className="text-xs font-medium">
+          {allRead
+            ? t.detail.gateReady
+            : fillTemplate(t.detail.gateProgress, { read: readCount, total })}
+        </span>
+      </button>
+    </div>
+  );
+}
+
 export function PositionDetailView(
   props: {
     slug: string;
@@ -822,6 +865,15 @@ function PositionDetailViewInner({
           </div>
         </Container>
       </main>
+
+      {/* Pil progres gerbang baca — tampil selama formulir masih terkunci */}
+      {canApplyOnline && !formUnlocked && gateSections.length > 0 ? (
+        <GateProgressPill
+          readCount={readIds.length}
+          total={gateSections.length}
+          onClick={() => jumpToSection("form-card")}
+        />
+      ) : null}
 
       <footer className="border-t py-6">
         <Container className="flex flex-col items-center justify-between gap-3 text-xs text-muted-foreground sm:flex-row">
