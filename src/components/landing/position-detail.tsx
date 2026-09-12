@@ -5,13 +5,16 @@
 // Data hidup: komponen menerima positions dari useLiveResource (realtime),
 // sehingga posisi yang baru ditutup/diarsip otomatis keluar dari tampilan.
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
+  ArrowRight,
   BadgeCheck,
+  BookOpenCheck,
   Briefcase,
   CalendarClock,
   Check,
+  Circle,
   ClipboardList,
   Copy,
   FileText,
@@ -19,6 +22,7 @@ import {
   Gift,
   Link2,
   ListChecks,
+  Lock,
   Mail,
   MapPin,
   MessageCircle,
