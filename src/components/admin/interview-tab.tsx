@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import {
   format,
   isSameDay,
@@ -18,21 +19,53 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   CalendarClock,
   CalendarCheck,
+  CalendarPlus,
   CalendarX2,
   Inbox,
   MapPin,
+  Trash2,
   Video,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Interview, Position } from "@/lib/types";
-import { apiGet, apiPatch } from "./api";
+import {
+  INTERVIEW_MODE_LABELS,
+  INTERVIEW_MODES,
+  INTERVIEW_PLATFORM_LABELS,
+  INTERVIEW_PLATFORMS,
+  type Interview,
+  type InterviewMode,
+  type InterviewPlatform,
+  type InterviewSlot,
+  type Position,
+} from "@/lib/types";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
-import { formatDateTime, formatTime } from "./format";
+import { formatDateTime, formatTime, isoToLocalInput, localInputToIso } from "./format";
 import { InterviewCalendar } from "./interview-calendar";
 import { InterviewSessionDialog, InterviewStatusChip } from "./interview-session-dialog";
+import { cn } from "@/lib/utils";
 
 // Tab Wawancara: kalender bulanan sesi + banner permintaan ubah jadwal +
 // panel daftar sesi tanggal terpilih. Sumber data: GET /api/admin/interviews.
@@ -335,6 +368,8 @@ export function InterviewTab() {
           </Card>
         </div>
       </div>
+
+      <SlotManagerPanel positions={positions} />
 
       {interviews.length === 0 && !loading ? (
         <Card className="rounded-2xl">

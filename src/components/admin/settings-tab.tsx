@@ -1122,6 +1122,9 @@ export function SettingsTab() {
         </CardContent>
       </Card>
 
+      {/* Kotak Keluar Email (arsip + kirim ulang, ketergantungan SMTP) */}
+      <EmailOutboxCard />
+
       {/* Tampilan Halaman Publik (visibilitas tiap bagian) */}
       <SectionVisibilityCard sections={site.sections} onChange={updateSection} />
 

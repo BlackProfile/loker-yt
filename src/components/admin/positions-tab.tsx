@@ -686,6 +686,130 @@ export function PositionsTab() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog hasil talent rediscovery (AI) */}
+      <Dialog
+        open={!!rediscoverTarget}
+        onOpenChange={(open) => {
+          if (!open) setRediscoverTarget(null);
+        }}
+      >
+        <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+              Cari Talent Lama
+            </DialogTitle>
+            <DialogDescription>
+              {rediscoverTarget ? rediscoverTarget.title : "-"}
+              {rediscoverTarget ? ` — ${rediscoverTarget.department}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="nice-scrollbar -mr-2 max-h-[70vh] overflow-y-auto pr-2">
+            {rediscoverLoading ? (
+              <div className="flex flex-col items-center gap-3 py-10 text-center">
+                <Loader2 className="size-6 animate-spin text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                <p className="text-sm text-muted-foreground">
+                  Menganalisis kandidat dari talent pool & pelamar ditolak dengan AI...
+                </p>
+              </div>
+            ) : rediscoverError ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <p className="text-sm text-rose-600 dark:text-rose-400">{rediscoverError}</p>
+                <Button variant="outline" onClick={() => void retryRediscover()} className="h-9">
+                  <RefreshCw className="size-4" aria-hidden="true" />
+                  Coba Lagi
+                </Button>
+              </div>
+            ) : rediscoverData && rediscoverData.results.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs text-muted-foreground">
+                  Dianalisis dari {rediscoverData.total} kandidat (talent pool & ditolak, maks 150) — 5 teratas.
+                </p>
+                <ul className="flex flex-col gap-2">
+                  {rediscoverData.results.map((result, index) => (
+                    <li key={result.id} className="flex flex-col gap-1.5 rounded-xl border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                          <span className="shrink-0 tabular-nums text-muted-foreground">{index + 1}.</span>
+                          <span className="truncate">{result.name}</span>
+                        </p>
+                        <Badge variant="outline" className={`shrink-0 tabular-nums ${skorBadgeClass(result.skor)}`}>
+                          Skor {result.skor}
+                        </Badge>
+                      </div>
+                      {result.alasan ? (
+                        <p className="text-xs leading-relaxed text-muted-foreground">{result.alasan}</p>
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        Lamar {formatDate(result.appliedAt)}
+                        {result.priorTitle ? ` — ${result.priorTitle}` : ""}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Belum ada kandidat lama yang cocok ditemukan untuk posisi ini.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Konfirmasi nurture kandidat ditolak */}
+      <AlertDialog
+        open={!!nurtureTarget}
+        onOpenChange={(open) => {
+          if (!open) setNurtureTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Nurture Kandidat?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {nurtureLoading ? (
+                "Menghitung kandidat yang memenuhi kriteria..."
+              ) : nurtureCount === 0 ? (
+                <>
+                  Tidak ada kandidat yang memenuhi kriteria: ditolak lebih dari 60 hari lalu (bukan karena menarik
+                  diri) pada posisi ini atau posisi satu departemen dengan &quot;
+                  {nurtureTarget?.title ?? "-"}&quot;.
+                </>
+              ) : (
+                <>
+                  Email &quot;Kabar baik dari Lumina Studio&quot; akan disiapkan untuk{" "}
+                  <span className="font-semibold text-foreground tabular-nums">{nurtureCount}</span> kandidat yang
+                  ditolak lebih dari 60 hari lalu (bukan karena menarik diri) pada posisi ini atau posisi satu
+                  departemen. Email masuk kotak keluar beserta catatan log.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={nurtureSending}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleNurture();
+              }}
+              disabled={nurtureLoading || nurtureCount === 0 || nurtureSending}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              {nurtureSending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menyiapkan...
+                </>
+              ) : (
+                "Ya, Siapkan Email"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
