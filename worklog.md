@@ -729,3 +729,21 @@ Stage Summary:
 - Seluruh ide Fase 1-3 terealisasi: wawancara multi-ronde online/onsite dengan link meeting + kalender (.ics/GCal) + konfirmasi/reschedule pelamar + reminder otomatis + scorecard + rekomendasi auto-pipeline; penolakan terstruktur 8 alasan + mode feedback + bulk reject + cooldown lamar ulang; penawaran (offer) dengan template, batas jawaban, auto-expire, terima/tolak dari halaman status; onboarding (dokumen wajib + unggah pelamar + masa percobaan); analitik (funnel, alasan tolak, time-to-hire, offer acceptance, beban pewawancara).
 - Semua realtime (event interviews:changed baru) & anti-flicker (silent refresh, data lama dipertahankan).
 - Auto-sync GitHub tetap aktif — perubahan akan ter-commit & ter-push otomatis oleh watcher.
+
+---
+Task ID: 22
+Agent: z.ai main session
+Task: Ubah navigasi tab horizontal panel admin menjadi sidebar yang bisa diciutkan (permintaan user + screenshot)
+
+Work Log:
+- admin-app.tsx ditulis ulang: Radix Tabs horizontal diganti sidebar kiri (desktop) + drawer off-canvas (seluler) + controlled state activeTab (nilai tab lama tetap, semua fitur tab tidak berubah)
+- Sidebar: brand row, nav berkelompok (Utama: Dashboard/Pelamar/Wawancara; Analisa: Analitik/Log Aktivitas; Kelola: Posisi/Pengguna/Pengaturan) dengan filter peran (OWNER/HR/VIEWER) seperti sebelumnya
+- Mode ciut: tombol "Ciutkan" -> rail ikon 72px dengan tooltip (Radix) per ikon + avatar awal + logout; state tersimpan localStorage ("lumina-admin-sidebar"); transisi width halus
+- Header baru: hamburger (seluler) + judul seksi aktif + nama situs; kanan: indikator Live, toggle tema, tombol Publik, Keluar; kartu pengguna (avatar inisial, nama, badge peran, logout) di kaki sidebar
+- Seluler: drawer w-72 + overlay (klik overlay/X/Escape/nav item menutup); hamburger di header; guard effectiveTab kembali ke Dashboard bila tab tak tersedia untuk peran
+- Perbaikan hasil QA: desktop aside kini hidden di bawah lg (sebelumnya dobel nav overlap saat drawer terbuka)
+- Lint bersih; verifikasi agent-browser via :81 (login Owner): expanded 256px/3 grup/8 item; ciut 72px tanpa label + tooltip muncul; persistensi reload PASS; navigasi mengubah judul header & konten; seluler tanpa overflow, drawer buka/tutup (hamburger, X, Escape, overlay, nav click) PASS; errors 0
+- Screenshots: /tmp/sidebar-expanded.png, /tmp/sidebar-collapsed.png, /tmp/sidebar-mobile-drawer.png
+
+Stage Summary:
+- Panel admin kini memakai sidebar collapsible bergaya aplikasi; konten lebih lega (max-w-6xl tetap); semua tab & gate peran tidak berubah

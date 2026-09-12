@@ -11,17 +11,32 @@ import {
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   BarChart3,
+  Briefcase,
+  CalendarClock,
   ExternalLink,
   LayoutDashboard,
   Loader2,
   LogOut,
+  Menu,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ScrollText,
+  Settings,
   Sun,
+  UserCog,
+  Users,
   Wifi,
   WifiOff,
+  X,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -50,8 +65,60 @@ import { SettingsTab } from "./settings-tab";
 
 type Phase = "checking" | "login" | "ready";
 
+// ---------------------------------------------------------------------------
+// Navigasi sidebar: item dikelompokkan per peran. Tab "roles" tanpa daftar
+// berarti tampil untuk semua peran; nilai `value` harus tetap sama dengan
+// kunci konten agar seluruh tab lama tetap berfungsi tanpa perubahan.
+// ---------------------------------------------------------------------------
+
+type NavItemDef = {
+  value: string;
+  label: string;
+  icon: LucideIcon;
+  roles?: Role[];
+};
+
+type NavGroupDef = { title: string; items: NavItemDef[] };
+
+const NAV_GROUPS: NavGroupDef[] = [
+  {
+    title: "Utama",
+    items: [
+      { value: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { value: "applications", label: "Pelamar", icon: Users },
+      { value: "interview", label: "Wawancara", icon: CalendarClock },
+    ],
+  },
+  {
+    title: "Analisa",
+    items: [
+      { value: "analytics", label: "Analitik", icon: BarChart3 },
+      { value: "logs", label: "Log Aktivitas", icon: ScrollText },
+    ],
+  },
+  {
+    title: "Kelola",
+    items: [
+      {
+        value: "positions",
+        label: "Posisi",
+        icon: Briefcase,
+        roles: ["OWNER", "HR"],
+      },
+      { value: "users", label: "Pengguna", icon: UserCog, roles: ["OWNER"] },
+      {
+        value: "settings",
+        label: "Pengaturan",
+        icon: Settings,
+        roles: ["OWNER"],
+      },
+    ],
+  },
+];
+
+const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+
 // Konten tab masuk dengan fade + slide horizontal halus (x: 12, 0.2s).
-// Radix Tabs melepas konten nonaktif, sehingga animasi berjalan tiap pergantian tab.
 function TabReveal({ children }: { children: ReactNode }) {
   return (
     <Reveal slideX={12} duration={0.2}>
@@ -169,10 +236,273 @@ function NewApplicationToaster() {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Sidebar
+// ---------------------------------------------------------------------------
+
+function SidebarNavItem({
+  item,
+  active,
+  collapsed,
+  onSelect,
+}: {
+  item: NavItemDef;
+  active: boolean;
+  collapsed: boolean;
+  onSelect: (value: string) => void;
+}) {
+  const button = (
+    <button
+      type="button"
+      onClick={() => onSelect(item.value)}
+      aria-current={active ? "true" : undefined}
+      className={cn(
+        "flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        active
+          ? "bg-rose-600 text-white shadow-sm hover:bg-rose-700"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground",
+        collapsed && "lg:justify-center lg:px-0",
+      )}
+    >
+      <item.icon className="size-4 shrink-0" aria-hidden="true" />
+      <span className={cn("min-w-0 truncate", collapsed && "lg:hidden")}>
+        {item.label}
+      </span>
+    </button>
+  );
+
+  // Saat mode ciut (desktop), label disembunyikan — ganti dengan tooltip.
+  if (!collapsed) return button;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="right">{item.label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SidebarShell({
+  siteName,
+  session,
+  role,
+  activeTab,
+  collapsed,
+  onNavigate,
+  onToggleCollapse,
+  onCloseMobile,
+  onLogout,
+  variant,
+}: {
+  siteName: string;
+  session: AdminSession;
+  role: Role;
+  activeTab: string;
+  collapsed: boolean;
+  onNavigate: (value: string) => void;
+  onToggleCollapse?: () => void;
+  onCloseMobile: () => void;
+  onLogout: () => void;
+  variant: "desktop" | "mobile";
+}) {
+  // Drawer seluler selalu lebar; mode ciut hanya berlaku di desktop.
+  const isCollapsed = variant === "desktop" && collapsed;
+
+  const initials =
+    (session.name ?? "?")
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w.charAt(0).toUpperCase())
+      .join("") || "?";
+
+  const roleBadge = (
+    <Badge variant="outline" className={cn("mt-0.5", roleBadgeClass(role))}>
+      {ROLE_LABELS[role]}
+    </Badge>
+  );
+
+  const avatar = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-600 to-amber-500 text-xs font-bold text-white">
+          {initials}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="right">{session.name}</TooltipContent>
+    </Tooltip>
+  );
+  return (
+    <>
+      {/* Brand */}
+      <div
+        className={cn(
+          "flex items-center gap-3 border-b px-4 py-4",
+          isCollapsed && "lg:justify-center lg:px-2",
+        )}
+      >
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-rose-600 to-amber-500 p-2">
+          <LayoutDashboard className="size-5 text-white" aria-hidden="true" />
+        </div>
+        <div className={cn("min-w-0 flex-1", isCollapsed && "lg:hidden")}>
+          <p className="truncate font-bold leading-tight">Panel Admin</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {siteName || "\u00A0"}
+          </p>
+        </div>
+        {variant === "mobile" ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9 shrink-0"
+            onClick={onCloseMobile}
+            aria-label="Tutup menu navigasi"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        ) : null}
+      </div>
+
+      {/* Navigasi berkelompok */}
+      <nav
+        aria-label="Navigasi panel admin"
+        className="nice-scrollbar flex-1 overflow-y-auto px-3 pb-3"
+      >
+        {NAV_GROUPS.map((group) => {
+          const items = group.items.filter(
+            (item) => !item.roles || item.roles.includes(role),
+          );
+          if (items.length === 0) return null;
+          return (
+            <div key={group.title}>
+              {isCollapsed ? (
+                <div
+                  className="mx-auto my-2 h-px w-6 bg-border"
+                  role="presentation"
+                />
+              ) : (
+                <p
+                  className={cn(
+                    "px-3 pb-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase",
+                    variant === "mobile" ? "pt-4" : "pt-3",
+                  )}
+                >
+                  {group.title}
+                </p>
+              )}
+              <div className="flex flex-col gap-0.5">
+                {items.map((item) => (
+                  <SidebarNavItem
+                    key={item.value}
+                    item={item}
+                    active={item.value === activeTab}
+                    collapsed={isCollapsed}
+                    onSelect={onNavigate}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </nav>
+
+      {/* Kaki sidebar: tombol ciutkan (desktop) + kartu pengguna */}
+      <div className="border-t px-3 py-3">
+        {variant === "desktop" ? (
+          isCollapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="mx-auto flex size-10"
+                  onClick={onToggleCollapse}
+                  aria-label="Perluas sidebar"
+                >
+                  <PanelLeftOpen className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Perluas sidebar</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button
+              variant="ghost"
+              className="h-10 w-full justify-start gap-3 px-3 text-sm text-muted-foreground"
+              onClick={onToggleCollapse}
+            >
+              <PanelLeftClose className="size-4 shrink-0" aria-hidden="true" />
+              Ciutkan
+            </Button>
+          )
+        ) : null}
+
+        <div
+          className={cn(
+            "mt-2 flex items-center gap-3",
+            isCollapsed && "flex-col items-center gap-2",
+          )}
+        >
+          {isCollapsed ? (
+            avatar
+          ) : (
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-600 to-amber-500 text-xs font-bold text-white">
+              {initials}
+            </span>
+          )}
+          <div className={cn("min-w-0 flex-1", isCollapsed && "lg:hidden")}>
+            <p className="truncate text-sm leading-tight font-semibold">
+              {session.name}
+            </p>
+            {isCollapsed ? (
+              <div className="flex justify-center">{roleBadge}</div>
+            ) : (
+              roleBadge
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9 shrink-0 text-muted-foreground"
+            onClick={onLogout}
+            aria-label="Keluar dari panel admin"
+          >
+            <LogOut className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function AdminApp({ onExit }: { onExit: () => void }) {
   const [phase, setPhase] = useState<Phase>("checking");
   const [session, setSession] = useState<AdminSession | null>(null);
   const [siteName, setSiteName] = useState("");
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Mode ciut sidebar — tersimpan di localStorage agar diperlakukan abadi.
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem("lumina-admin-sidebar") === "collapsed";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(
+          "lumina-admin-sidebar",
+          next ? "collapsed" : "open",
+        );
+      } catch {
+        /* penyimpanan tidak tersedia — abaikan */
+      }
+      return next;
+    });
+  }, []);
 
   // Cek sesi saat mount.
   useEffect(() => {
@@ -264,6 +594,16 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
       });
   });
 
+  // Tutup drawer seluler dengan tombol Escape.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
+
   async function handleLogout() {
     try {
       await apiPost<{ ok: boolean }>("/api/admin/logout");
@@ -274,6 +614,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     setSession(null);
     setPhase("login");
   }
+
+  const handleNavigate = useCallback((value: string) => {
+    setActiveTab(value);
+    setMobileOpen(false);
+  }, []);
 
   if (phase === "checking") {
     return (
@@ -295,150 +640,169 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     );
   }
 
+  // Tab aktif harus masih tersedia untuk peran ini (mis. turun peran),
+  // jika tidak, kembali ke dashboard.
+  const effectiveTab = ALL_NAV_ITEMS.some(
+    (item) =>
+      item.value === activeTab && (!item.roles || item.roles.includes(role)),
+  )
+    ? activeTab
+    : "dashboard";
+  const activeLabel =
+    ALL_NAV_ITEMS.find((item) => item.value === effectiveTab)?.label ??
+    "Panel Admin";
+
   return (
     <AdminSessionProvider value={sessionContextValue}>
       <NewApplicationToaster />
-      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-background">
-        <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-rose-600 to-amber-500 p-2">
-                <LayoutDashboard className="size-5 text-white" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="leading-tight font-bold">Panel Admin</p>
-                  <Badge
-                    variant="outline"
-                    className={`hidden sm:inline-flex ${roleBadgeClass(role)}`}
-                  >
-                    {ROLE_LABELS[role]}
-                  </Badge>
-                </div>
-                <p className="truncate text-xs text-muted-foreground">
-                  {siteName || "\u00A0"}
-                </p>
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-              <RealtimeIndicator />
-              <ThemeToggle />
-              <Button
-                variant="outline"
-                className="h-11 active:scale-[0.99] sm:h-10"
-                onClick={onExit}
-                aria-label="Lihat halaman publik"
-              >
-                <ExternalLink className="size-4" aria-hidden="true" />
-                <span className="hidden md:inline">Lihat Halaman Publik</span>
-                <span className="md:hidden">Publik</span>
-              </Button>
-              <Button
-                variant="ghost"
-                className="h-11 sm:h-10"
-                onClick={() => void handleLogout()}
-                aria-label="Keluar dari panel admin"
-              >
-                <LogOut className="size-4" aria-hidden="true" />
-                <span className="hidden sm:inline">Keluar</span>
-              </Button>
-            </div>
-          </div>
-        </header>
-
-        {role === "VIEWER" ? (
-          <div className="border-b border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40">
-            <p className="mx-auto w-full max-w-6xl px-4 py-2 text-xs font-medium text-amber-700 dark:text-amber-400 sm:px-6">
-              Mode Pengamat — hanya lihat. Semua tombol perubahan dinonaktifkan.
-            </p>
-          </div>
+      <div className="flex min-h-screen bg-zinc-50 dark:bg-background">
+        {/* Overlay drawer seluler */}
+        {mobileOpen ? (
+          <div
+            className="fixed inset-0 z-40 bg-zinc-950/40 backdrop-blur-[2px] lg:hidden"
+            onClick={() => setMobileOpen(false)}
+            aria-hidden="true"
+          />
         ) : null}
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-10 sm:px-6">
-          <Tabs defaultValue="dashboard" className="gap-4">
-            <div className="overflow-x-auto nice-scrollbar">
-              <TabsList className="h-10 w-fit" aria-label="Navigasi panel admin">
-                <TabsTrigger value="dashboard" className="h-full px-3 sm:px-4">
-                  Dashboard
-                </TabsTrigger>
-                <TabsTrigger value="applications" className="h-full px-3 sm:px-4">
-                  Pelamar
-                </TabsTrigger>
-                <TabsTrigger value="interview" className="h-full px-3 sm:px-4">
-                  Wawancara
-                </TabsTrigger>
-                <TabsTrigger value="analytics" className="h-full px-3 sm:px-4">
-                  <BarChart3 className="size-4" aria-hidden="true" />
-                  Analitik
-                </TabsTrigger>
-                <TabsTrigger value="logs" className="h-full px-3 sm:px-4">
-                  Log
-                </TabsTrigger>
-                {isOwnerOrHr ? (
-                  <TabsTrigger value="positions" className="h-full px-3 sm:px-4">
-                    Posisi
-                  </TabsTrigger>
-                ) : null}
-                {isOwner ? (
-                  <TabsTrigger value="users" className="h-full px-3 sm:px-4">
-                    Pengguna
-                  </TabsTrigger>
-                ) : null}
-                {isOwner ? (
-                  <TabsTrigger value="settings" className="h-full px-3 sm:px-4">
-                    Pengaturan
-                  </TabsTrigger>
-                ) : null}
-              </TabsList>
+        {/* Sidebar — hanya tampil di desktop; di seluler digantikan drawer */}
+        <aside
+          className={cn(
+            "hidden flex-col border-r bg-background transition-[width] duration-200 lg:sticky lg:top-0 lg:h-screen lg:flex",
+            collapsed ? "lg:w-[4.5rem]" : "lg:w-64",
+          )}
+        >
+          <SidebarShell
+            siteName={siteName}
+            session={session}
+            role={role}
+            activeTab={effectiveTab}
+            collapsed={collapsed}
+            onNavigate={handleNavigate}
+            onToggleCollapse={toggleCollapsed}
+            onCloseMobile={() => setMobileOpen(false)}
+            onLogout={() => void handleLogout()}
+            variant="desktop"
+          />
+        </aside>
+
+        {/* Drawer seluler */}
+        {mobileOpen ? (
+          <aside className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r bg-background shadow-xl lg:hidden">
+            <SidebarShell
+              siteName={siteName}
+              session={session}
+              role={role}
+              activeTab={effectiveTab}
+              collapsed={false}
+              onNavigate={handleNavigate}
+              onCloseMobile={() => setMobileOpen(false)}
+              onLogout={() => void handleLogout()}
+              variant="mobile"
+            />
+          </aside>
+        ) : null}
+
+        {/* Kolom konten */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
+            <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 shrink-0 lg:hidden"
+                  onClick={() => setMobileOpen(true)}
+                  aria-label="Buka menu navigasi"
+                >
+                  <Menu className="size-5" aria-hidden="true" />
+                </Button>
+                <div className="min-w-0">
+                  <p className="truncate leading-tight font-bold">
+                    {activeLabel}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground sm:hidden">
+                    Panel Admin
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                <RealtimeIndicator />
+                <ThemeToggle />
+                <Button
+                  variant="outline"
+                  className="h-11 active:scale-[0.99] sm:h-10"
+                  onClick={onExit}
+                  aria-label="Lihat halaman publik"
+                >
+                  <ExternalLink className="size-4" aria-hidden="true" />
+                  <span className="hidden md:inline">Lihat Halaman Publik</span>
+                  <span className="md:hidden">Publik</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="h-11 sm:h-10"
+                  onClick={() => void handleLogout()}
+                  aria-label="Keluar dari panel admin"
+                >
+                  <LogOut className="size-4" aria-hidden="true" />
+                  <span className="hidden sm:inline">Keluar</span>
+                </Button>
+              </div>
             </div>
-            <TabsContent value="dashboard">
+          </header>
+
+          {role === "VIEWER" ? (
+            <div className="border-b border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40">
+              <p className="mx-auto w-full max-w-6xl px-4 py-2 text-xs font-medium text-amber-700 dark:text-amber-400 sm:px-6">
+                Mode Pengamat — hanya lihat. Semua tombol perubahan dinonaktifkan.
+              </p>
+            </div>
+          ) : null}
+
+          <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-10 sm:px-6">
+            {effectiveTab === "dashboard" ? (
               <TabReveal>
                 <DashboardTab />
               </TabReveal>
-            </TabsContent>
-            <TabsContent value="applications">
+            ) : null}
+            {effectiveTab === "applications" ? (
               <TabReveal>
                 <ApplicationsTab />
               </TabReveal>
-            </TabsContent>
-            <TabsContent value="interview">
+            ) : null}
+            {effectiveTab === "interview" ? (
               <TabReveal>
                 <InterviewTab />
               </TabReveal>
-            </TabsContent>
-            <TabsContent value="analytics">
+            ) : null}
+            {effectiveTab === "analytics" ? (
               <TabReveal>
                 <AnalyticsTab />
               </TabReveal>
-            </TabsContent>
-            <TabsContent value="logs">
+            ) : null}
+            {effectiveTab === "logs" ? (
               <TabReveal>
                 <LogsTab />
               </TabReveal>
-            </TabsContent>
-            {isOwnerOrHr ? (
-              <TabsContent value="positions">
-                <TabReveal>
-                  <PositionsTab />
-                </TabReveal>
-              </TabsContent>
             ) : null}
-            {isOwner ? (
-              <TabsContent value="users">
-                <TabReveal>
-                  <UsersTab />
-                </TabReveal>
-              </TabsContent>
+            {effectiveTab === "positions" && isOwnerOrHr ? (
+              <TabReveal>
+                <PositionsTab />
+              </TabReveal>
             ) : null}
-            {isOwner ? (
-              <TabsContent value="settings">
-                <TabReveal>
-                  <SettingsTab />
-                </TabReveal>
-              </TabsContent>
+            {effectiveTab === "users" && isOwner ? (
+              <TabReveal>
+                <UsersTab />
+              </TabReveal>
             ) : null}
-          </Tabs>
-        </main>
+            {effectiveTab === "settings" && isOwner ? (
+              <TabReveal>
+                <SettingsTab />
+              </TabReveal>
+            ) : null}
+          </main>
+        </div>
       </div>
     </AdminSessionProvider>
   );
