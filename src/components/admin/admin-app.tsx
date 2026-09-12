@@ -50,6 +50,13 @@ import { LogsTab } from "./logs-tab";
 import { PositionsTab } from "./positions-tab";
 import { UsersTab } from "./users-tab";
 import { SettingsTab } from "./settings-tab";
+import { TasksTab } from "./tasks-tab";
+import { CalendarTab } from "./calendar-tab";
+import { HireTab } from "./hire-tab";
+import { ReportsTab } from "./reports-tab";
+import { TemplatesTab } from "./templates-tab";
+import { DataTab } from "./data-tab";
+import { NotificationBell } from "./notification-bell";
 
 type Phase = "checking" | "login" | "ready";
 
@@ -327,6 +334,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <RealtimeIndicator />
               <ThemeToggle />
+              <NotificationBell onOpenTasks={() => setTopTab("tasks")} />
               <Button
                 variant="outline"
                 className="h-11 active:scale-[0.99] sm:h-10"
@@ -365,6 +373,9 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 <TabsTrigger value="dashboard" className="h-full px-3 sm:px-4">
                   Dashboard
                 </TabsTrigger>
+                <TabsTrigger value="tasks" className="h-full px-3 sm:px-4">
+                  Tugas
+                </TabsTrigger>
                 <TabsTrigger value="pipeline" className="h-full px-3 sm:px-4">
                   <Workflow className="size-4" aria-hidden="true" />
                   Pipeline
@@ -376,6 +387,9 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 <TabsTrigger value="interview" className="h-full px-3 sm:px-4">
                   Wawancara
                 </TabsTrigger>
+                <TabsTrigger value="calendar" className="h-full px-3 sm:px-4">
+                  Kalender
+                </TabsTrigger>
                 <TabsTrigger value="analytics" className="h-full px-3 sm:px-4">
                   <BarChart3 className="size-4" aria-hidden="true" />
                   Analitik
@@ -386,6 +400,20 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 {isOwnerOrHr ? (
                   <TabsTrigger value="positions" className="h-full px-3 sm:px-4">
                     Posisi
+                  </TabsTrigger>
+                ) : null}
+                <TabsTrigger value="hire" className="h-full px-3 sm:px-4">
+                  Karyawan
+                </TabsTrigger>
+                <TabsTrigger value="reports" className="h-full px-3 sm:px-4">
+                  Laporan
+                </TabsTrigger>
+                <TabsTrigger value="templates" className="h-full px-3 sm:px-4">
+                  Template
+                </TabsTrigger>
+                {isOwner ? (
+                  <TabsTrigger value="data" className="h-full px-3 sm:px-4">
+                    Data
                   </TabsTrigger>
                 ) : null}
                 {isOwner ? (
@@ -405,6 +433,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 <DashboardTab />
               </TabReveal>
             </TabsContent>
+            <TabsContent value="tasks">
+              <TabReveal>
+                <TasksTab />
+              </TabReveal>
+            </TabsContent>
             <TabsContent value="pipeline">
               <TabReveal>
                 <PipelineTab onNavigate={setTopTab} />
@@ -418,6 +451,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
             <TabsContent value="interview">
               <TabReveal>
                 <InterviewTab />
+              </TabReveal>
+            </TabsContent>
+            <TabsContent value="calendar">
+              <TabReveal>
+                <CalendarTab />
               </TabReveal>
             </TabsContent>
             <TabsContent value="analytics">
@@ -434,6 +472,28 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
               <TabsContent value="positions">
                 <TabReveal>
                   <PositionsTab />
+                </TabReveal>
+              </TabsContent>
+            ) : null}
+            <TabsContent value="hire">
+              <TabReveal>
+                <HireTab />
+              </TabReveal>
+            </TabsContent>
+            <TabsContent value="reports">
+              <TabReveal>
+                <ReportsTab />
+              </TabReveal>
+            </TabsContent>
+            <TabsContent value="templates">
+              <TabReveal>
+                <TemplatesTab />
+              </TabReveal>
+            </TabsContent>
+            {isOwner ? (
+              <TabsContent value="data">
+                <TabReveal>
+                  <DataTab />
                 </TabReveal>
               </TabsContent>
             ) : null}
