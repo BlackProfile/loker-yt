@@ -5,11 +5,13 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ensureUniqueSlug, parseRequirements, slugifyTitle } from "@/lib/seed";
-import { stagesForPosition } from "@/lib/stages";
+import { stagesForPosition, isBuiltInStage } from "@/lib/stages";
 import {
   INTERVIEW_MODES,
   INTERVIEW_PLATFORMS,
   POSITION_TYPES,
+  STAGE_CATEGORIES,
+  type StageCategory,
   type StageKey,
 } from "@/lib/types";
 
@@ -54,6 +56,7 @@ export type PositionFields = {
   maxApplicants?: number | null;
   publishAt?: Date | null;
   stages?: string; // JSON string[]; "[]" = pakai pipeline bawaan
+  stageCategories?: string; // JSON Record<tahap kustom, StageCategory>; "{}" = pakai heuristik bawaan
   aiCriteria?: string | null;
   autoShortlistScore?: number | null;
   autoShortlistStage?: string | null;
@@ -249,6 +252,31 @@ function sanitizeStages(value: unknown): Sanitized<string[] | undefined> {
   return ok(cleaned);
 }
 
+/** Kategori fitur per tahap kustom: objek {tahap: kategori}, hanya tahap kustom yang boleh. */
+function sanitizeStageCategories(
+  value: unknown,
+  effectiveStages: StageKey[],
+): Sanitized<string | undefined> {
+  if (value === undefined) return ok(undefined);
+  if (value === null) return ok("{}");
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return err("Kategori tahap harus berupa objek {tahap: kategori}.");
+  }
+  const customStages = effectiveStages.filter((s) => !isBuiltInStage(s));
+  const out: Record<string, StageCategory> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const stage = typeof key === "string" ? key.trim().slice(0, 40) : "";
+    if (!stage) continue;
+    // Khusus tahap kustom — kategori tahap bawaan bersifat tetap.
+    if (!customStages.includes(stage)) continue;
+    if (typeof raw !== "string" || !(STAGE_CATEGORIES as readonly string[]).includes(raw)) {
+      return err(`Kategori tahap "${stage}" tidak valid.`);
+    }
+    out[stage] = raw as StageCategory;
+  }
+  return ok(JSON.stringify(out));
+}
+
 /** Pertanyaan screening: maks 10, label 3..200, id stabil berdasarkan urutan (q1, q2, ...). */
 function sanitizeScreeningQuestions(value: unknown): Sanitized<string | undefined> {
   if (value === undefined) return ok(undefined);
@@ -427,6 +455,10 @@ export async function sanitizePositionInput(
 
   if (stages.value !== undefined) f.stages = JSON.stringify(stages.value);
 
+  const stageCategories = sanitizeStageCategories(data.stageCategories, effectiveStages);
+  if (!stageCategories.ok) return stageCategories;
+  if (stageCategories.value !== undefined) f.stageCategories = stageCategories.value;
+
   const aiCriteria = sanitizeNullableText(data.aiCriteria, "Kriteria AI", 600);
   if (!aiCriteria.ok) return aiCriteria;
   if (aiCriteria.value !== undefined) f.aiCriteria = aiCriteria.value;
@@ -604,6 +636,7 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.maxApplicants !== undefined) out.maxApplicants = f.maxApplicants;
   if (f.publishAt !== undefined) out.publishAt = f.publishAt;
   if (f.stages !== undefined) out.stages = f.stages;
+  if (f.stageCategories !== undefined) out.stageCategories = f.stageCategories;
   if (f.aiCriteria !== undefined) out.aiCriteria = f.aiCriteria;
   if (f.autoShortlistScore !== undefined) out.autoShortlistScore = f.autoShortlistScore;
   if (f.autoShortlistStage !== undefined) out.autoShortlistStage = f.autoShortlistStage;

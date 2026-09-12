@@ -66,6 +66,7 @@ model Position {
 
   // Pipeline & otomasi per lowongan
   stages               String  @default("[]") // JSON string[]; [] = pipeline default (5 status bawaan)
+  stageCategories      String  @default("{}") // JSON {"tahap kustom": "REVIEW"|"INTERVIEW"|"ACCEPTED"|"REJECTED"} — kategori fitur admin per tahap kustom
   aiCriteria           String? // kriteria AI khusus posisi (pelengkap prompt screening)
   autoShortlistScore   Int? // skor AI minimal untuk auto-shortlist
   autoShortlistStage   String? // tahap tujuan auto-shortlist (harus ada di stages posisi)

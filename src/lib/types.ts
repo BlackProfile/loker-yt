@@ -29,6 +29,17 @@ export const STATUS_FLOW: ApplicationStatus[] = ["NEW", "REVIEWED", "INTERVIEW"]
 // posisi dengan stages kustom memakai label tahapnya sendiri (bebas teks).
 export type StageKey = string;
 
+// Kategori fitur admin per tahap pipeline (tab Pipeline: Ditinjau/Wawancara/Diterima/Ditolak).
+// Tahap bawaan punya kategori tetap; tahap kustom dipetakan lewat Position.stageCategories.
+export type StageCategory = "REVIEW" | "INTERVIEW" | "ACCEPTED" | "REJECTED";
+export const STAGE_CATEGORIES: StageCategory[] = ["REVIEW", "INTERVIEW", "ACCEPTED", "REJECTED"];
+export const STAGE_CATEGORY_LABELS: Record<StageCategory, string> = {
+  REVIEW: "Ditinjau",
+  INTERVIEW: "Wawancara",
+  ACCEPTED: "Diterima",
+  REJECTED: "Ditolak",
+};
+
 export type ScreeningQuestion = { id: string; label: string; required: boolean };
 
 export type ReplyTemplates = {
@@ -168,6 +179,7 @@ export type Position = {
 
   // Pipeline & otomasi
   stages: string[]; // [] = pipeline bawaan (5 status)
+  stageCategories: Record<string, StageCategory>; // kategori tahap kustom: {"Tahap": "REVIEW" | ...}
   aiCriteria: string | null;
   autoShortlistScore: number | null;
   autoShortlistStage: string | null;

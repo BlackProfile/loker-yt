@@ -25,6 +25,7 @@ import {
   OFFER_STATUSES,
   REJECTION_REASONS,
   SECTION_KEYS,
+  STAGE_CATEGORIES,
   type AdminUser,
   type AiRecommendation,
   type Application,
@@ -43,6 +44,7 @@ import {
   type RejectionReason,
   type ReplyTemplates,
   type ScreeningQuestion,
+  type StageCategory,
   type SectionVisibility,
   type SiteContent,
   type TeamMember,
@@ -204,6 +206,26 @@ export function parseOnboardingDocs(raw: string | null | undefined): OnboardingD
   }
 }
 
+/** Parse pemetaan kategori tahap kustom dari JSON string (aman terhadap nilai rusak). */
+export function parseStageCategories(raw: string | null | undefined): Record<string, StageCategory> {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const result: Record<string, StageCategory> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const stage = typeof key === "string" ? key.trim().slice(0, 40) : "";
+      if (!stage) continue;
+      if (typeof value === "string" && (STAGE_CATEGORIES as string[]).includes(value)) {
+        result[stage] = value as StageCategory;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
 /** Sanitasi enum wawancara/offer/rejection dari input tak dikenal. */
 export function sanitizeInterviewMode(value: unknown): InterviewMode {
   return value === "ONSITE" ? "ONSITE" : "ONLINE";
@@ -265,6 +287,7 @@ export function serializePosition(record: PositionRecordModel): Position {
     publishAt: record.publishAt ? record.publishAt.toISOString() : null,
 
     stages: parseRequirements(record.stages),
+    stageCategories: parseStageCategories(record.stageCategories),
     aiCriteria: record.aiCriteria,
     autoShortlistScore: record.autoShortlistScore,
     autoShortlistStage: record.autoShortlistStage,

@@ -20,8 +20,10 @@ import {
   LogOut,
   Moon,
   Sun,
+  Users,
   Wifi,
   WifiOff,
+  Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -40,6 +42,7 @@ import { AdminSessionProvider } from "./admin-context";
 import { Reveal } from "./motion-primitives";
 import { LoginCard } from "./login-card";
 import { DashboardTab } from "./dashboard-tab";
+import { PipelineTab } from "./pipeline-tab";
 import { ApplicationsTab } from "./applications-tab";
 import { InterviewTab } from "./interview-tab";
 import { AnalyticsTab } from "./analytics-tab";
@@ -173,6 +176,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   const [phase, setPhase] = useState<Phase>("checking");
   const [session, setSession] = useState<AdminSession | null>(null);
   const [siteName, setSiteName] = useState("");
+  const [topTab, setTopTab] = useState("dashboard");
 
   // Cek sesi saat mount.
   useEffect(() => {
@@ -355,14 +359,19 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
         ) : null}
 
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-10 sm:px-6">
-          <Tabs defaultValue="dashboard" className="gap-4">
+          <Tabs value={topTab} onValueChange={setTopTab} className="gap-4">
             <div className="overflow-x-auto nice-scrollbar">
               <TabsList className="h-10 w-fit" aria-label="Navigasi panel admin">
                 <TabsTrigger value="dashboard" className="h-full px-3 sm:px-4">
                   Dashboard
                 </TabsTrigger>
+                <TabsTrigger value="pipeline" className="h-full px-3 sm:px-4">
+                  <Workflow className="size-4" aria-hidden="true" />
+                  Pipeline
+                </TabsTrigger>
                 <TabsTrigger value="applications" className="h-full px-3 sm:px-4">
-                  Pelamar
+                  <Users className="size-4" aria-hidden="true" />
+                  Semua Pelamar
                 </TabsTrigger>
                 <TabsTrigger value="interview" className="h-full px-3 sm:px-4">
                   Wawancara
@@ -394,6 +403,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
             <TabsContent value="dashboard">
               <TabReveal>
                 <DashboardTab />
+              </TabReveal>
+            </TabsContent>
+            <TabsContent value="pipeline">
+              <TabReveal>
+                <PipelineTab onNavigate={setTopTab} />
               </TabReveal>
             </TabsContent>
             <TabsContent value="applications">

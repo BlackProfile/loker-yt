@@ -57,6 +57,8 @@ import {
   INTERVIEW_PLATFORM_LABELS,
   INTERVIEW_PLATFORMS,
   POSITION_TYPES,
+  STAGE_CATEGORIES,
+  STAGE_CATEGORY_LABELS,
   type AiCoverResponse,
   type AdminUploadResponse,
   type InterviewMode,
@@ -64,8 +66,14 @@ import {
   type Position,
   type PositionStatsRow,
   type ScreeningQuestion,
+  type StageCategory,
 } from "@/lib/types";
-import { stagesForPosition, stageLabel } from "@/lib/stages";
+import {
+  defaultCategoryForCustomStage,
+  isBuiltInStage,
+  stagesForPosition,
+  stageLabel,
+} from "@/lib/stages";
 import { apiFetch, apiPatch, apiPost } from "./api";
 import { isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
@@ -95,6 +103,7 @@ type FormState = {
   maxApplicants: string;
   screeningQuestions: ScreeningQuestion[];
   stages: string[];
+  stageCategories: Record<string, StageCategory>;
   aiCriteria: string;
   autoShortlistScore: string;
   autoShortlistStage: string; // "" = nonaktif
@@ -144,6 +153,7 @@ const EMPTY_FORM: FormState = {
   maxApplicants: "",
   screeningQuestions: [],
   stages: [],
+  stageCategories: {},
   aiCriteria: "",
   autoShortlistScore: "",
   autoShortlistStage: "",
@@ -196,6 +206,7 @@ function buildFormState(p: Position): FormState {
     maxApplicants: p.maxApplicants == null ? "" : String(p.maxApplicants),
     screeningQuestions: p.screeningQuestions.map((q) => ({ ...q })),
     stages: [...p.stages],
+    stageCategories: { ...p.stageCategories },
     aiCriteria: p.aiCriteria ?? "",
     autoShortlistScore: p.autoShortlistScore == null ? "" : String(p.autoShortlistScore),
     autoShortlistStage: p.autoShortlistStage ?? "",
@@ -368,6 +379,12 @@ export function PositionFormDialog({
     [form.stages]
   );
 
+  // Tahap kustom (di luar 5 bawaan) — untuk editor kategori fitur tab Pipeline.
+  const customStages = useMemo(
+    () => cleanedStages.filter((s) => !isBuiltInStage(s)),
+    [cleanedStages]
+  );
+
   // Lamaran pada tahap di luar daftar pipeline tersimpan (dari stats funnel).
   const outOfStageApps = useMemo(() => {
     if (!editing || !statsRow) return 0;
@@ -476,6 +493,7 @@ export function PositionFormDialog({
         required: q.required,
       })),
       stages: cleanedStages,
+      stageCategories: form.stageCategories,
       aiCriteria: form.aiCriteria.trim() || null,
       autoShortlistScore:
         form.autoShortlistScore.trim() === ""
@@ -1095,6 +1113,54 @@ export function PositionFormDialog({
                       hint="Kosong = pipeline bawaan (Baru/Ditinjau/Wawancara/Diterima/Ditolak)"
                     />
                   </div>
+
+                  {customStages.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <Label>Kategori Fitur Tahap Kustom</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Tentukan di kategori mana tiap tahap kustom muncul di tab Pipeline:
+                        Ditinjau, Wawancara, Diterima, atau Ditolak.
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        {customStages.map((stage) => (
+                          <div key={stage} className="flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate rounded-lg border bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
+                              {stage}
+                            </span>
+                            <Select
+                              value={
+                                form.stageCategories[stage] ??
+                                defaultCategoryForCustomStage(stage)
+                              }
+                              onValueChange={(v) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  stageCategories: {
+                                    ...f.stageCategories,
+                                    [stage]: v as StageCategory,
+                                  },
+                                }))
+                              }
+                            >
+                              <SelectTrigger
+                                className="h-10 w-40 shrink-0"
+                                aria-label={`Kategori fitur untuk tahap ${stage}`}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {STAGE_CATEGORIES.map((c) => (
+                                  <SelectItem key={c} value={c}>
+                                    {STAGE_CATEGORY_LABELS[c]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5">

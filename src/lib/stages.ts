@@ -5,8 +5,10 @@
 
 import {
   APPLICATION_STATUSES,
+  STAGE_CATEGORIES,
   STATUS_LABELS,
   type ApplicationStatus,
+  type StageCategory,
   type StageKey,
 } from "@/lib/types";
 
@@ -192,4 +194,59 @@ export function kanbanColumns(
 /** Bucket dashboard: tahap bawaan dipetakan apa adanya; tahap kustom masuk "CUSTOM". */
 export function dashboardBucket(stage: StageKey): ApplicationStatus | "CUSTOM" {
   return isBuiltInStage(stage) ? stage : "CUSTOM";
+}
+
+/* ---------------------- Kategori fitur per tahap (Pipeline) ---------------------- */
+/* Admin dikelompokkan per kategori: Ditinjau | Wawancara | Diterima | Ditolak.     */
+/* Tahap bawaan kategorinya tetap; tahap kustom dipetakan lewat                       */
+/* Position.stageCategories, dengan heuristik kata kunci sebagai nilai awal.        */
+
+const INTERVIEW_KEYWORDS = [
+  "wawancara", "interview", "tes", "test", "tugas", "assignment", "ujian", "screening",
+];
+const ACCEPTED_KEYWORDS = [
+  "offer", "penawaran", "onboard", "kontrak", "hired", "diterima", "gaji",
+];
+
+/** Nilai awal kategori tahap kustom dari nama tahapnya (heuristik kata kunci). */
+export function defaultCategoryForCustomStage(stage: string): StageCategory {
+  const lower = stage.toLowerCase();
+  if (ACCEPTED_KEYWORDS.some((k) => lower.includes(k))) return "ACCEPTED";
+  if (INTERVIEW_KEYWORDS.some((k) => lower.includes(k))) return "INTERVIEW";
+  return "REVIEW";
+}
+
+function isStageCategory(value: unknown): value is StageCategory {
+  return typeof value === "string" && (STAGE_CATEGORIES as string[]).includes(value);
+}
+
+/**
+ * Kategori fitur untuk sebuah tahap:
+ * - bawaan: tetap (NEW/REVIEWED->Ditinjau, INTERVIEW->Wawancara, dst.)
+ * - kustom: ikut Position.stageCategories bila ada, selain itu heuristik nama.
+ */
+export function categoryForStage(
+  stage: StageKey,
+  stageCategories?: Record<string, StageCategory> | null,
+): StageCategory {
+  if (isBuiltInStage(stage)) {
+    if (stage === "INTERVIEW") return "INTERVIEW";
+    if (stage === "ACCEPTED") return "ACCEPTED";
+    if (stage === "REJECTED") return "REJECTED";
+    return "REVIEW";
+  }
+  const mapped = stageCategories?.[stage];
+  if (mapped && isStageCategory(mapped)) return mapped;
+  return defaultCategoryForCustomStage(stage);
+}
+
+/** Tahap tahap milik satu kategori untuk sebuah posisi (urut sesuai pipeline). */
+export function stagesForCategory(
+  stages: string[] | null | undefined,
+  stageCategories: Record<string, StageCategory> | null | undefined,
+  category: StageCategory,
+): StageKey[] {
+  return stagesForPosition(stages).filter(
+    (s) => categoryForStage(s, stageCategories) === category,
+  );
 }
