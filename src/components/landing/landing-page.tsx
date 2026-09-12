@@ -6,6 +6,7 @@ import {
   Instagram,
   Mail,
   Menu,
+  PauseCircle,
   Phone,
   Quote,
   Sparkles,
@@ -99,14 +100,47 @@ function useScrolled(threshold = 8): boolean {
   );
 }
 
+// Status mode tutup rekrutmen (Setting "site" via /api/public/site).
+// Di-fetch sekali saat mount; gagal dianggap terbuka (publik tidak boleh gagal keras).
+type RecruitmentStatus = { recruitmentClosed: boolean; message: string };
+
+function useRecruitmentStatus(): RecruitmentStatus {
+  const [status, setStatus] = useState<RecruitmentStatus>({
+    recruitmentClosed: false,
+    message: "",
+  });
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/public/site", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: unknown) => {
+        if (!alive || !data || typeof data !== "object") return;
+        const obj = data as Record<string, unknown>;
+        setStatus({
+          recruitmentClosed: obj.recruitmentClosed === true,
+          message: typeof obj.message === "string" ? obj.message : "",
+        });
+      })
+      .catch(() => {
+        // biarkan default (terbuka)
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return status;
+}
+
 function Navbar({
   siteName,
   tagline,
   sections,
+  recruitmentClosed,
 }: {
   siteName: string;
   tagline: string;
   sections: SectionVisibility;
+  recruitmentClosed: boolean;
 }) {
   const { t } = useLang();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -161,9 +195,15 @@ function Navbar({
             <ThemeToggle />
           </div>
           {sections.positions ? (
-            <Button size="sm" asChild className="hidden md:inline-flex">
-              <a href="#posisi">{t.nav.applyNow}</a>
-            </Button>
+            recruitmentClosed ? (
+              <Button size="sm" disabled className="hidden md:inline-flex">
+                {t.nav.applyNow}
+              </Button>
+            ) : (
+              <Button size="sm" asChild className="hidden md:inline-flex">
+                <a href="#posisi">{t.nav.applyNow}</a>
+              </Button>
+            )
           ) : null}
 
           {hasMobileMenu ? (
@@ -203,11 +243,17 @@ function Navbar({
                     </a>
                   ))}
                   {sections.positions ? (
-                    <Button asChild className="mt-3">
-                      <a href="#posisi" onClick={() => setMobileOpen(false)}>
+                    recruitmentClosed ? (
+                      <Button disabled className="mt-3">
                         {t.nav.applyNow}
-                      </a>
-                    </Button>
+                      </Button>
+                    ) : (
+                      <Button asChild className="mt-3">
+                        <a href="#posisi" onClick={() => setMobileOpen(false)}>
+                          {t.nav.applyNow}
+                        </a>
+                      </Button>
+                    )
                   ) : null}
 
                   <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4">
@@ -233,10 +279,12 @@ function Hero({
   content,
   stats,
   sections,
+  recruitmentClosed,
 }: {
   content: SiteContent;
   stats: LandingPageProps["stats"];
   sections: SectionVisibility;
+  recruitmentClosed: boolean;
 }) {
   const { t } = useLang();
 
@@ -298,9 +346,15 @@ function Hero({
           <StaggerItem>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               {sections.positions ? (
-                <Button size="lg" className="h-11" asChild>
-                  <a href="#posisi">{t.nav.applyNow}</a>
-                </Button>
+                recruitmentClosed ? (
+                  <Button size="lg" className="h-11" disabled>
+                    {t.nav.applyNow}
+                  </Button>
+                ) : (
+                  <Button size="lg" className="h-11" asChild>
+                    <a href="#posisi">{t.nav.applyNow}</a>
+                  </Button>
+                )
               ) : null}
               <ShareMenu dark siteName={content.siteName} tagline={content.tagline} />
             </div>
@@ -594,9 +648,11 @@ function FaqSection({ content }: { content: SiteContent }) {
 function FinalCtaSection({
   content,
   sections,
+  recruitmentClosed,
 }: {
   content: SiteContent;
   sections: SectionVisibility;
+  recruitmentClosed: boolean;
 }) {
   const { t } = useLang();
 
@@ -623,9 +679,15 @@ function FinalCtaSection({
               <p className="mt-4 text-zinc-400">{t.cta.desc}</p>
               <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
                 {sections.positions ? (
-                  <Button size="lg" className="h-11" asChild>
-                    <a href="#posisi">{t.cta.apply}</a>
-                  </Button>
+                  recruitmentClosed ? (
+                    <Button size="lg" className="h-11" disabled>
+                      {t.cta.apply}
+                    </Button>
+                  ) : (
+                    <Button size="lg" className="h-11" asChild>
+                      <a href="#posisi">{t.cta.apply}</a>
+                    </Button>
+                  )
                 ) : null}
                 <Button
                   size="lg"

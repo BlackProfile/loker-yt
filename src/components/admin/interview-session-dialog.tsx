@@ -1170,6 +1170,110 @@ function InterviewSessionDialogInner({
                     />
                   </div>
 
+                  {/* Rekaman terunggah & transkrip AI */}
+                  <div className="flex flex-col gap-2 rounded-lg border p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Mic className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                      <p className="text-sm font-semibold">Rekaman &amp; Transkrip AI</p>
+                      <span className="ml-auto text-[11px] text-muted-foreground">
+                        Audio/video maks 25 MB
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        disabled={uploadingRecording || transcribing || savingResult}
+                      >
+                        <label
+                          htmlFor="iv-recording-upload"
+                          className="inline-flex cursor-pointer items-center gap-2"
+                          aria-label="Unggah file rekaman wawancara"
+                        >
+                          {uploadingRecording ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Upload className="size-4" aria-hidden="true" />
+                          )}
+                          {uploadingRecording ? "Mengunggah..." : "Unggah Rekaman"}
+                        </label>
+                        <input
+                          id="iv-recording-upload"
+                          type="file"
+                          accept="audio/*,video/*"
+                          className="sr-only"
+                          disabled={uploadingRecording || transcribing || savingResult}
+                          onChange={(e) => void handleRecordingUpload(e)}
+                        />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() => void handleTranscribe()}
+                        disabled={uploadingRecording || transcribing || !recordingFileUrl}
+                        title={recordingFileUrl ? undefined : "Unggah rekaman terlebih dahulu"}
+                      >
+                        {transcribing ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Sparkles className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                        )}
+                        {transcribing ? "Memproses transkrip..." : "Transkrip AI"}
+                      </Button>
+                    </div>
+                    {recordingFileUrl ? (
+                      <a
+                        href={recordingFileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-rose-600 underline-offset-2 hover:underline dark:text-rose-400"
+                      >
+                        <FileAudio className="size-3.5" aria-hidden="true" />
+                        Rekaman tersimpan — buka / unduh
+                      </a>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Belum ada rekaman yang diunggah. Unggah audio/video dari meeting
+                        untuk ditranskripsi otomatis.
+                      </p>
+                    )}
+
+                    {transcriptSummary ? (
+                      <Collapsible>
+                        <CollapsibleTrigger className="group flex w-fit items-center gap-1 rounded text-xs font-semibold text-foreground outline-none hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-ring/50 dark:hover:text-rose-400">
+                          <ChevronDown
+                            className="size-3.5 transition-transform group-data-[state=open]:rotate-180"
+                            aria-hidden="true"
+                          />
+                          Ringkasan AI
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <p className="mt-2 max-h-96 overflow-y-auto whitespace-pre-wrap rounded-lg bg-muted/60 p-3 text-xs leading-relaxed nice-scrollbar">
+                            {transcriptSummary}
+                          </p>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ) : null}
+                    {transcript ? (
+                      <Collapsible>
+                        <CollapsibleTrigger className="group flex w-fit items-center gap-1 rounded text-xs font-semibold text-foreground outline-none hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-ring/50 dark:hover:text-rose-400">
+                          <ChevronDown
+                            className="size-3.5 transition-transform group-data-[state=open]:rotate-180"
+                            aria-hidden="true"
+                          />
+                          Transkrip Lengkap
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <p className="mt-2 max-h-96 overflow-y-auto whitespace-pre-wrap rounded-lg bg-muted/60 p-3 text-xs leading-relaxed nice-scrollbar">
+                            {transcript}
+                          </p>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ) : null}
+                  </div>
+
                   <div className="flex flex-col gap-1.5">
                     <Label>Rekomendasi</Label>
                     <Select
@@ -1219,6 +1323,19 @@ function InterviewSessionDialogInner({
                       "Simpan Hasil"
                     )}
                   </Button>
+
+                  {/* Rencana ronde berikutnya (Position.roundPlan) — hanya bila sesi selesai */}
+                  {!isCreate && interview.status === "COMPLETED" && nextRoundTemplate ? (
+                    <Button
+                      variant="outline"
+                      className="h-11 w-fit border-amber-300 text-amber-800 hover:bg-amber-50 hover:text-amber-900 sm:h-10 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
+                      onClick={startNextRound}
+                      disabled={saving || savingResult || statusWorking || deleting}
+                    >
+                      <CalendarPlus className="size-4" aria-hidden="true" />
+                      Jadwalkan Ronde Berikutnya ({nextRoundTemplate.round}: {nextRoundTemplate.name})
+                    </Button>
+                  ) : null}
                 </div>
 
                 <Separator />

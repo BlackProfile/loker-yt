@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { errorMessage } from "@/lib/ai-json";
 import { db } from "@/lib/db";
+import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { getSession } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -220,6 +221,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         detail: `Teks CV diekstraksi (${text.length} karakter, metode: ${method})`,
       },
     });
+
+    // Realtime: timeline/log lamaran bertambah — segarkan daftar admin.
+    void emitRealtime(REALTIME_EVENTS.applications);
 
     return NextResponse.json({ cvText: text, cached: false });
   } catch (error) {

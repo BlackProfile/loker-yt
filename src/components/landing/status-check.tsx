@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   BadgeCheck,
   BadgeX,
+  CalendarClock,
   CalendarPlus,
   CheckCircle2,
   ChevronDown,
@@ -163,6 +164,8 @@ export function StatusCheckSection() {
   const [declineReason, setDeclineReason] = useState("");
   // Unggah dokumen onboarding: loading per docId.
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
+  // Slot jadwal self-service: loading per slotId saat memilih.
+  const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
 
   async function handleTrack(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -363,8 +366,27 @@ export function StatusCheckSection() {
     scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
   }
 
-  /** Unggah dokumen onboarding (multipart) langsung saat file dipilih. */
-  async function uploadOnboardingDoc(docId: string, event: ChangeEvent<HTMLInputElement>) {
+  /**
+   * Pilih slot jadwal wawancara (self-service). Server yang memvalidasi slot masih
+   * kosong; setelah sukses halaman di-recheck senyap agar kartu wawancara baru tampil.
+   */
+  async function bookSlot(slotId: string) {
+    if (bookingSlotId) return;
+    setBookingSlotId(slotId);
+    const out = await postAction("/api/public/slots/book", {
+      code: trackedCode,
+      slotId,
+    });
+    setBookingSlotId(null);
+    if (!out.ok) {
+      toast.error(out.error);
+      return;
+    }
+    toast.success("Jadwal wawancara berhasil dipilih — detail tampil di daftar wawancara.");
+    scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
+  }
+
+  /** Unggah dokumen onboarding (multipart) langsung saat file dipilih. */  async function uploadOnboardingDoc(docId: string, event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
     event.target.value = ""; // reset agar file yang sama bisa dipilih ulang
     if (!file) return;

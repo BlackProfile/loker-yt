@@ -127,11 +127,10 @@ export function ProfilePrintDialog({
   const appId = open ? (application?.id ?? null) : null;
 
   // 10 aktivitas terakhir kandidat (log aktivitas per lamaran).
+  // Tanpa reset state saat dialog tertutup — komponen tidak dirender dan data
+  // selalu ditimpa hasil fetch terbaru saat kandidat dibuka.
   useEffect(() => {
-    if (!appId) {
-      setLogs([]);
-      return;
-    }
+    if (!appId) return;
     let cancelled = false;
     setLogsLoading(true);
     apiGet<LogEntry[]>(`/api/admin/logs?applicationId=${encodeURIComponent(appId)}&limit=10`)
