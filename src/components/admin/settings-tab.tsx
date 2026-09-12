@@ -18,8 +18,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Award,
@@ -35,12 +44,16 @@ import {
   Globe,
   GraduationCap,
   Heart,
+  Inbox,
   Loader2,
   MailCheck,
+  MailWarning,
+  Mailbox,
   Mic,
   PenTool,
   Plus,
   Quote,
+  RefreshCw,
   Rocket,
   Send,
   Sparkles,
@@ -60,8 +73,8 @@ import {
   type Subscriber,
   type TeamMember,
 } from "@/lib/types";
-import { apiGet, apiPost, apiPut } from "./api";
-import { copyText } from "./format";
+import { apiGet, apiPatch, apiPost, apiPut } from "./api";
+import { copyText, formatDateTime, formatShortDateTime } from "./format";
 import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
 import { Reveal } from "./motion-primitives";
 
@@ -116,6 +129,270 @@ function Field({
       {children}
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
+  );
+}
+
+// ----------------------------- Kotak Keluar Email -----------------------------
+
+type OutboxRow = {
+  id: string;
+  toEmail: string;
+  subject: string;
+  kind: string;
+  status: string;
+  error: string | null;
+  applicationId: string | null;
+  applicationName: string | null;
+  createdAt: string;
+  sentAt: string | null;
+};
+
+type OutboxResponse = {
+  smtpConfigured: boolean;
+  emails: OutboxRow[];
+};
+
+const OUTBOX_STATUS_LABELS: Record<string, string> = {
+  QUEUED: "Menunggu",
+  SENT: "Terkirim",
+  FAILED: "Gagal",
+  SKIPPED: "Dilewati",
+};
+
+// Warna badge status outbox: QUEUED=zinc, SENT=emerald, FAILED=rose, SKIPPED=amber.
+function outboxStatusBadgeClass(status: string): string {
+  switch (status) {
+    case "SENT":
+      return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-900";
+    case "FAILED":
+      return "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-400 dark:border-rose-900";
+    case "SKIPPED":
+      return "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-900";
+    default:
+      return "bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700";
+  }
+}
+
+function EmailOutboxCard() {
+  const [rows, setRows] = useState<OutboxRow[]>([]);
+  const [smtpConfigured, setSmtpConfigured] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [resendingId, setResendingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await apiGet<OutboxResponse>("/api/admin/outbox");
+      setRows(data.emails ?? []);
+      setSmtpConfigured(data.smtpConfigured ?? false);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const filtered =
+    statusFilter === "ALL" ? rows : rows.filter((row) => row.status === statusFilter);
+
+  async function handleResend(row: OutboxRow) {
+    if (resendingId) return;
+    setResendingId(row.id);
+    try {
+      const res = await apiPatch<{
+        ok: boolean;
+        status: string;
+        message?: string;
+      }>("/api/admin/outbox", { id: row.id });
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === row.id
+            ? { ...r, status: res.status, error: res.status === "FAILED" ? (res.message ?? null) : null }
+            : r
+        )
+      );
+      if (res.status === "SENT") {
+        toast.success("Email berhasil dikirim ulang");
+      } else if (res.status === "SKIPPED") {
+        toast.info(res.message ?? "SMTP belum dikonfigurasi — email terarsip saja.");
+      } else {
+        toast.error(res.message ?? "Gagal mengirim email.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+    } finally {
+      setResendingId(null);
+    }
+  }
+
+  return (
+    <Card className="gap-4 rounded-2xl p-6">
+      <CardHeader className="flex-row items-center justify-between px-0">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Mailbox className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+            Kotak Keluar Email
+          </CardTitle>
+          <CardDescription className="mt-1">
+            Arsip email transaksional (offer, penolakan, pengingat). Tanpa SMTP, email
+            terarsip berstatus menunggu dan bisa dikirim ulang manual.
+          </CardDescription>
+        </div>
+        <div className="flex items-center gap-2">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-9 w-[140px]" aria-label="Filter status email">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Semua status</SelectItem>
+              <SelectItem value="QUEUED">Menunggu</SelectItem>
+              <SelectItem value="SENT">Terkirim</SelectItem>
+              <SelectItem value="FAILED">Gagal</SelectItem>
+              <SelectItem value="SKIPPED">Dilewati</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-9 shrink-0"
+            onClick={() => void load()}
+            disabled={loading}
+            aria-label="Segarkan kotak keluar email"
+          >
+            <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} aria-hidden="true" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 px-0">
+        {!smtpConfigured ? (
+          <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400">
+            <MailWarning className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>
+              SMTP belum dikonfigurasi — email terarsip saja. Set env{" "}
+              <code className="font-mono">SMTP_HOST</code>,{" "}
+              <code className="font-mono">SMTP_PORT</code>,{" "}
+              <code className="font-mono">SMTP_USER</code>,{" "}
+              <code className="font-mono">SMTP_PASS</code>,{" "}
+              <code className="font-mono">SMTP_FROM</code> untuk pengiriman otomatis.
+            </span>
+          </p>
+        ) : null}
+
+        {loading ? (
+          <Skeleton className="h-40 w-full rounded-xl" />
+        ) : loadError ? (
+          <div className="flex flex-col items-center gap-3 py-8">
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <Button variant="outline" className="h-9" onClick={() => void load()}>
+              Coba Lagi
+            </Button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <Inbox className="size-5 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm text-muted-foreground">
+              {rows.length === 0
+                ? "Belum ada email terarsip. Email offer/penolakan/pengingat akan muncul di sini."
+                : "Tidak ada email dengan status ini."}
+            </p>
+          </div>
+        ) : (
+          <div className="max-h-96 overflow-x-auto overflow-y-auto rounded-xl border nice-scrollbar">
+            <Table className="min-w-[640px]">
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead className="w-36 px-3 py-2.5">Waktu</TableHead>
+                  <TableHead className="px-3 py-2.5">Ke</TableHead>
+                  <TableHead className="px-3 py-2.5">Subjek</TableHead>
+                  <TableHead className="w-24 px-3 py-2.5">Jenis</TableHead>
+                  <TableHead className="w-28 px-3 py-2.5">Status</TableHead>
+                  <TableHead className="w-32 px-3 py-2.5 text-right">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="px-3 py-2.5 text-xs whitespace-nowrap text-muted-foreground">
+                      {formatShortDateTime(row.createdAt)}
+                      {row.sentAt ? (
+                        <span className="block text-[11px] text-emerald-700 dark:text-emerald-400">
+                          terkirim {formatShortDateTime(row.sentAt)}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="max-w-44 px-3 py-2.5">
+                      <p className="truncate text-sm" title={row.toEmail}>
+                        {row.toEmail}
+                      </p>
+                      {row.applicationName ? (
+                        <p className="truncate text-xs text-muted-foreground" title={row.applicationName}>
+                          {row.applicationName}
+                        </p>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="max-w-56 px-3 py-2.5">
+                      <p className="truncate text-sm" title={row.subject}>
+                        {row.subject}
+                      </p>
+                      {row.error ? (
+                        <p className="truncate text-xs text-rose-600 dark:text-rose-400" title={row.error}>
+                          {row.error}
+                        </p>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="px-3 py-2.5">
+                      <Badge variant="outline" className="text-[11px]">
+                        {row.kind}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="px-3 py-2.5">
+                      <Badge className={`border ${outboxStatusBadgeClass(row.status)}`}>
+                        {OUTBOX_STATUS_LABELS[row.status] ?? row.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="px-3 py-2.5 text-right">
+                      {row.status === "QUEUED" || row.status === "FAILED" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5 px-2 text-xs"
+                          onClick={() => void handleResend(row)}
+                          disabled={resendingId !== null}
+                          aria-label={`Kirim ulang email "${row.subject}"`}
+                        >
+                          {resendingId === row.id ? (
+                            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <RefreshCw className="size-3.5" aria-hidden="true" />
+                          )}
+                          Kirim ulang
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {rows.length > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Menampilkan {filtered.length} dari {rows.length} email terbaru
+            {formatDateTime(rows[0]?.createdAt).includes("-") ? "" : ""}.
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
