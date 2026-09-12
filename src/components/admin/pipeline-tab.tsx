@@ -59,6 +59,7 @@ import { formatDate, formatDateTime, initialsOf } from "./format";
 import { Reveal } from "./motion-primitives";
 import { StatusBadge, AiScoreBadge } from "./status-badge";
 import { RatingStars } from "./rating-stars";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Collapsible,
   CollapsibleContent,
@@ -196,6 +197,9 @@ const OFFER_BADGE_CLASS: Record<OfferStatus, string> = {
 
 type ReviewSort = "newest" | "aiScore" | "rating";
 
+// Hasil Shortlist AI (POST /api/admin/positions/[id]/shortlist).
+type ShortlistEntryUI = { id: string; name: string; score: number; reason: string };
+
 /* ------------------------------- Komponen utama ------------------------------ */
 
 type SessionTarget =
@@ -228,6 +232,14 @@ export function PipelineTab({ onNavigate }: { onNavigate?: (tab: string) => void
   const [rejectTarget, setRejectTarget] = useState<Application | null>(null);
   const [offerTarget, setOfferTarget] = useState<Application | null>(null);
 
+  // Deteksi duplikat (fitur Task 20-a): hitungan badge peringatan per posisi.
+  const [duplicateIds, setDuplicateIds] = useState<Set<string>>(new Set());
+
+  // Shortlist AI (fitur Task 20-a).
+  const [shortlistOpen, setShortlistOpen] = useState(false);
+  const [shortlistLoading, setShortlistLoading] = useState(false);
+  const [shortlistResults, setShortlistResults] = useState<ShortlistEntryUI[]>([]);
+
   /* ------------------------------ Pemuatan data ------------------------------ */
 
   const loadAll = useCallback(
@@ -255,9 +267,26 @@ export function PipelineTab({ onNavigate }: { onNavigate?: (tab: string) => void
     void loadAll();
   }, [loadAll]);
 
+  // Muat daftar id lamaran duplikat untuk badge peringatan.
+  const loadDuplicates = useCallback(async () => {
+    try {
+      const data = await apiGet<{ ids: string[] }>("/api/admin/duplicates");
+      setDuplicateIds(new Set(data.ids));
+    } catch {
+      // Badge duplikat bersifat pelengkap; biarkan data lama saat gagal.
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDuplicates();
+  }, [loadDuplicates]);
+
   // Realtime: lamaran, sesi wawancara, atau posisi berubah → segarkan senyap
   // (daftar lama tetap tampil sampai data baru siap — anti-flicker).
-  useLiveRefresh("applications:changed", () => void loadAll(true));
+  useLiveRefresh("applications:changed", () => {
+    void loadAll(true);
+    void loadDuplicates();
+  });
   useLiveRefresh("interviews:changed", () => void loadAll(true));
   useLiveRefresh("positions:changed", () => void loadAll(true));
 
@@ -301,6 +330,12 @@ export function PipelineTab({ onNavigate }: { onNavigate?: (tab: string) => void
   const positionApps = useMemo(
     () => applications.filter((a) => a.positionId === positionId),
     [applications, positionId]
+  );
+
+  // Jumlah lamaran duplikat pada posisi aktif (fitur Task 20-a).
+  const duplicateCount = useMemo(
+    () => positionApps.reduce((n, a) => (duplicateIds.has(a.id) ? n + 1 : n), 0),
+    [positionApps, duplicateIds]
   );
 
   const buckets = useMemo(() => {
@@ -469,6 +504,34 @@ export function PipelineTab({ onNavigate }: { onNavigate?: (tab: string) => void
 
   async function handleRestore(app: Application) {
     await handleStageChange(app, reviewStageTarget);
+  }
+
+  // Shortlist AI (fitur Task 20-a): ranking 5 kandidat terbaik posisi aktif.
+  async function runShortlist() {
+    if (!position || shortlistLoading) return;
+    if (!canMutate) {
+      toast.error("Hanya OWNER/HR yang bisa menjalankan Shortlist AI.");
+      return;
+    }
+    setShortlistLoading(true);
+    setShortlistResults([]);
+    setShortlistOpen(true);
+    try {
+      const res = await apiPost<{ results: ShortlistEntryUI[] }>(
+        `/api/admin/positions/${position.id}/shortlist`,
+      );
+      setShortlistResults(res.results);
+      if (res.results.length === 0) {
+        toast.info("Tidak ada kandidat yang bisa direstlist.");
+      } else {
+        toast.success("Shortlist AI selesai");
+      }
+    } catch (err) {
+      setShortlistOpen(false);
+      reportError(err);
+    } finally {
+      setShortlistLoading(false);
+    }
   }
 
   /* ------------------------------- Aksi massal ------------------------------- */
@@ -696,6 +759,39 @@ export function PipelineTab({ onNavigate }: { onNavigate?: (tab: string) => void
                 Kuota {positionApps.length}/{position.maxApplicants}
               </Badge>
             ) : null}
+
+            {/* Badge peringatan duplikat + tombol Shortlist AI (fitur Task 20-a) */}
+            <div className="ml-auto flex items-center gap-2">
+              {duplicateCount > 0 ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="outline"
+                      className="cursor-help rounded-full border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                    >
+                      <Copy className="size-3" aria-hidden="true" />
+                      {duplicateCount} duplikat
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>Kemungkinan lamaran ganda — perlu dicek di Pusat Tugas</TooltipContent>
+                </Tooltip>
+              ) : null}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                disabled={!canMutate || shortlistLoading}
+                onClick={() => void runShortlist()}
+                aria-label="Jalankan Shortlist AI untuk posisi ini"
+              >
+                {shortlistLoading ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Sparkles className="size-4" aria-hidden="true" />
+                )}
+                Shortlist AI
+              </Button>
+            </div>
           </div>
 
           {/* Tab kategori */}
@@ -1030,6 +1126,54 @@ export function PipelineTab({ onNavigate }: { onNavigate?: (tab: string) => void
         working={bulkWorking}
         onSubmit={() => void handleBulkReject()}
       />
+
+      {/* Dialog hasil Shortlist AI (fitur Task 20-a) */}
+      <Dialog
+        open={shortlistOpen}
+        onOpenChange={(open) => {
+          if (!shortlistLoading) setShortlistOpen(open);
+        }}
+      >
+        <DialogContent className="rounded-2xl sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="size-4 text-rose-600" aria-hidden="true" />
+              Shortlist AI{position ? ` — ${position.title}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              Kandidat terbaik versi AI dari lamaran aktif posisi ini (maks 5).
+            </DialogDescription>
+          </DialogHeader>
+          {shortlistLoading ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <Loader2 className="size-6 animate-spin text-rose-600" aria-hidden="true" />
+              <p className="text-sm text-muted-foreground">AI sedang menganalisis kandidat...</p>
+            </div>
+          ) : shortlistResults.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Tidak ada hasil shortlist.
+            </p>
+          ) : (
+            <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
+              {shortlistResults.map((entry, index) => (
+                <div key={entry.id} className="flex flex-col gap-1.5 rounded-xl border p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className="flex size-6 shrink-0 items-center justify-center rounded-full bg-rose-100 text-[11px] font-bold tabular-nums text-rose-700 dark:bg-rose-950 dark:text-rose-400"
+                      aria-label={`Peringkat ${index + 1}`}
+                    >
+                      {index + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{entry.name}</span>
+                    <AiScoreBadge score={entry.score} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">{entry.reason}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

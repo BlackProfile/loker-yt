@@ -146,7 +146,7 @@ function ProbationInfo({ employee }: { employee: Employee }) {
   const hiredMs = new Date(employee.hiredAt).getTime();
   const endMs = employee.probationEnd ? new Date(employee.probationEnd).getTime() : null;
 
-  if (!employee.probationEnd || Number.isNaN(endMs ?? NaN) || Number.isNaN(hiredMs)) {
+  if (!employee.probationEnd || endMs == null || Number.isNaN(endMs) || Number.isNaN(hiredMs)) {
     return (
       <Badge variant="outline" className="shrink-0">
         Tanpa masa percobaan

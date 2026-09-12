@@ -743,6 +743,54 @@ export function UsersTab() {
                 </SelectContent>
               </Select>
             </div>
+            {editing && form.role === "HR" ? (
+              <div className="flex flex-col gap-1.5">
+                <Label>Scope Posisi</Label>
+                <p className="text-xs text-muted-foreground">
+                  Batasi lamaran yang terlihat hanya pada posisi yang dicentang. Kosongkan untuk
+                  mengizinkan semua posisi.
+                </p>
+                <div className="nice-scrollbar max-h-40 overflow-y-auto rounded-lg border p-2">
+                  {positions.length === 0 ? (
+                    <p className="py-2 text-center text-xs text-muted-foreground">
+                      {detailLoading
+                        ? "Memuat detail pengguna..."
+                        : "Belum ada posisi — semua posisi diizinkan."}
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-0.5">
+                      {positions.map((p) => (
+                        <label
+                          key={p.id}
+                          className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                        >
+                          <Checkbox
+                            checked={scopeDraft.includes(p.id)}
+                            onCheckedChange={(checked) =>
+                              setScopeDraft((prev) =>
+                                checked
+                                  ? [...prev, p.id]
+                                  : prev.filter((id) => id !== p.id)
+                              )
+                            }
+                            aria-label={`Posisi ${p.title}`}
+                          />
+                          <span className="min-w-0 flex-1 truncate text-sm">{p.title}</span>
+                          <span className="hidden text-xs text-muted-foreground sm:inline">
+                            {p.department}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {detailLoading
+                    ? "Memuat scope saat ini..."
+                    : `${scopeDraft.length} posisi dipilih${scopeDraft.length === 0 ? " — semua posisi" : ""}`}
+                </p>
+              </div>
+            ) : null}
             <PasswordField
               id="u-password"
               label={editing ? "Password Baru (opsional)" : "Password *"}
@@ -827,6 +875,177 @@ export function UsersTab() {
               disabled={deleting}
             >
               {deleting ? "Menghapus..." : "Ya, Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog aktifkan 2FA: QR + kode verifikasi */}
+      <Dialog
+        open={totpSetupOpen}
+        onOpenChange={(open) => {
+          if (!open) closeTotpDialogs();
+        }}
+      >
+        <DialogContent className="nice-scrollbar max-h-[90vh] overflow-y-auto rounded-2xl sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Aktifkan 2FA</DialogTitle>
+            <DialogDescription>
+              Pindai kode QR dengan aplikasi autentikator, lalu masukkan kode 6 digit yang muncul.
+            </DialogDescription>
+          </DialogHeader>
+          {totpSetup ? (
+            <div className="flex flex-col gap-4">
+              <img
+                src={totpSetup.qrDataUrl}
+                alt="Kode QR 2FA"
+                className="mx-auto size-44 rounded-xl border bg-white p-2"
+              />
+              <div className="rounded-lg border bg-zinc-50 p-2.5 text-center dark:bg-zinc-900">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Kunci manual (bila tak bisa memindai)
+                </p>
+                <p className="break-all font-mono text-xs font-semibold">{totpSetup.secret}</p>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="u-totp-enable">Kode verifikasi</Label>
+                <Input
+                  id="u-totp-enable"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="123456"
+                  className="h-10 text-center font-mono tracking-[0.35em]"
+                />
+                {totpError ? (
+                  <p className="text-xs text-rose-600 dark:text-rose-400" role="alert">
+                    {totpError}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Menyiapkan kode QR...
+            </div>
+          )}
+          <DialogFooter className="gap-2 border-t pt-4">
+            <Button
+              variant="outline"
+              className="h-10"
+              onClick={closeTotpDialogs}
+              disabled={totpBusy}
+            >
+              Batal
+            </Button>
+            <Button
+              className="h-10"
+              onClick={() => void handleTotpEnable()}
+              disabled={totpBusy || totpCode.length !== 6}
+            >
+              {totpBusy ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Memverifikasi...
+                </>
+              ) : (
+                "Verifikasi & Aktifkan"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog nonaktifkan 2FA: butuh kode valid */}
+      <Dialog
+        open={totpDisableOpen}
+        onOpenChange={(open) => {
+          if (!open) closeTotpDialogs();
+        }}
+      >
+        <DialogContent className="rounded-2xl sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Nonaktifkan 2FA</DialogTitle>
+            <DialogDescription>
+              Masukkan kode 6 digit dari aplikasi autentikator untuk konfirmasi.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="u-totp-disable">Kode verifikasi</Label>
+            <Input
+              id="u-totp-disable"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="123456"
+              className="h-10 text-center font-mono tracking-[0.35em]"
+            />
+            {totpError ? (
+              <p className="text-xs text-rose-600 dark:text-rose-400" role="alert">
+                {totpError}
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter className="gap-2 border-t pt-4">
+            <Button
+              variant="outline"
+              className="h-10"
+              onClick={closeTotpDialogs}
+              disabled={totpBusy}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              className="h-10 bg-rose-600 text-white hover:bg-rose-700"
+              onClick={() => void handleTotpDisable()}
+              disabled={totpBusy || totpCode.length !== 6}
+            >
+              {totpBusy ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Memverifikasi...
+                </>
+              ) : (
+                "Nonaktifkan 2FA"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Konfirmasi reset 2FA pengguna lain (OWNER) */}
+      <AlertDialog
+        open={!!resetTarget}
+        onOpenChange={(open) => {
+          if (!open) setResetTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset 2FA pengguna ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {resetTarget
+                ? `Pengaturan 2FA akun ${resetTarget.email} akan dihapus. Pengguna dapat mengaturnya ulang setelah login.`
+                : "Tindakan tidak bisa dibatalkan."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleReset2fa();
+              }}
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              disabled={resetting}
+            >
+              {resetting ? "Mereset..." : "Ya, Reset 2FA"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
