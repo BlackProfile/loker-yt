@@ -1015,7 +1015,7 @@ export function ApplicationDetailDialog({
             </div>
 
             {/* Berkas */}
-            {app.cvFileId || app.introFileId ? (
+            {app.cvFileId || app.introFileId || app.extraDocs.length > 0 ? (
               <div className="flex flex-col gap-2 rounded-lg border p-3">
                 <p className="text-sm font-semibold">Berkas</p>
                 {app.cvFileId ? (
@@ -1070,6 +1070,28 @@ export function ApplicationDetailDialog({
                     )}
                   </div>
                 ) : null}
+                {/* Dokumen wajib tambahan yang diunggah pelamar (customDocs posisi) */}
+                {app.extraDocs.map((doc) => (
+                  <div key={doc.fileId} className="flex items-center gap-2">
+                    <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      <span className="font-medium">{doc.label}</span>
+                      {doc.filename ? (
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          {doc.filename}
+                        </span>
+                      ) : null}
+                    </span>
+                    <a
+                      href={`/api/files/${doc.fileId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                      Unduh
+                    </a>
+                  </div>
+                ))}
               </div>
             ) : null}
 

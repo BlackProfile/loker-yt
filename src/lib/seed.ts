@@ -46,6 +46,7 @@ import {
   type SectionVisibility,
   type SiteContent,
   type TeamMember,
+  type ExtraDoc,
 } from "@/lib/types";
 
 /* ---------------------------------- Serialisasi ---------------------------------- */
@@ -260,6 +261,7 @@ export function serializePosition(record: PositionRecordModel): Position {
     requireCv: record.requireCv,
     requireIntro: record.requireIntro,
     requirePortfolio: record.requirePortfolio,
+    customDocs: parseRequirements(record.customDocs),
     maxApplicants: record.maxApplicants,
 
     publishAt: record.publishAt ? record.publishAt.toISOString() : null,
@@ -289,6 +291,30 @@ export function serializePosition(record: PositionRecordModel): Position {
     reapplyCooldownDays: record.reapplyCooldownDays,
     autoCloseOnHired: record.autoCloseOnHired,
   };
+}
+
+/** Parse JSON {label,filename,fileId}[] dokumen tambahan pelamar — aman terhadap data rusak. */
+export function parseExtraDocs(raw: string | null | undefined): ExtraDoc[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const docs: ExtraDoc[] = [];
+    for (const item of parsed) {
+      const obj = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+      const label = typeof obj.label === "string" ? obj.label.trim().slice(0, 80) : "";
+      const fileId = typeof obj.fileId === "string" ? obj.fileId.trim() : "";
+      if (!label || !fileId) continue;
+      docs.push({
+        label,
+        fileId,
+        filename: typeof obj.filename === "string" ? obj.filename.slice(0, 200) : "",
+      });
+    }
+    return docs.slice(0, 10);
+  } catch {
+    return [];
+  }
 }
 
 const AI_RECOMMENDATION_VALUES = Object.keys(AI_RECOMMENDATION_LABELS);
@@ -334,6 +360,7 @@ export function serializeApplication(record: ApplicationRecord): Application {
     cvFileName: record.cvFile?.filename ?? null,
     introFileId: record.introFileId,
     introFileName: record.introFile?.filename ?? null,
+    extraDocs: parseExtraDocs(record.extraDocs),
 
     rejectionReason: sanitizeRejectionReason(record.rejectionReason),
     rejectionNote: record.rejectionNote,

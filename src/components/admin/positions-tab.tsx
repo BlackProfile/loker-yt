@@ -44,6 +44,7 @@ import {
   Plus,
   QrCode,
   RefreshCw,
+  Settings2,
   TrendingUp,
   Trash2,
   Users,
@@ -58,6 +59,14 @@ import { Reveal } from "./motion-primitives";
 import { PositionFormDialog } from "./position-form-dialog";
 import { PositionStatsDialog } from "./position-stats-dialog";
 import { PositionQrDialog } from "./position-qr-dialog";
+import { PositionManagePage } from "./position-manage-page";
+
+/** Baca id posisi dari deep-link #admin/posisi/<id> (bila ada). */
+function readManageIdFromHash(): string | null {
+  if (typeof window === "undefined") return null;
+  const match = window.location.hash.match(/^#admin\/posisi\/([A-Za-z0-9_-]{1,40})$/);
+  return match ? match[1] : null;
+}
 
 /* ------------------------------ Status publikasi ------------------------------ */
 
@@ -116,6 +125,24 @@ export function PositionsTab() {
 
   const [statsTarget, setStatsTarget] = useState<Position | null>(null);
   const [qrTarget, setQrTarget] = useState<Position | null>(null);
+
+  // Halaman khusus per posisi — mendukung deep-link #admin/posisi/<id>.
+  const [manageId, setManageId] = useState<string | null>(() => readManageIdFromHash());
+  const managing = manageId ? positions.find((p) => p.id === manageId) ?? null : null;
+
+  function openManage(position: Position) {
+    setManageId(position.id);
+    history.replaceState(null, "", `#admin/posisi/${position.id}`);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  function closeManage() {
+    setManageId(null);
+    if (window.location.hash.startsWith("#admin/posisi/")) {
+      history.replaceState(null, "", "#admin");
+    }
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
 
   const load = useCallback(
     async (silent = false) => {
@@ -233,6 +260,22 @@ export function PositionsTab() {
 
   return (
     <div className="flex flex-col gap-4">
+      {managing ? (
+        <PositionManagePage
+          position={managing}
+          stats={statsMap[managing.id] ?? null}
+          onBack={closeManage}
+          onEdit={openEdit}
+          onStats={setStatsTarget}
+          onQr={setQrTarget}
+          onUpdated={(updated) =>
+            setPositions((prev) =>
+              prev.map((p) => (p.id === updated.id ? updated : p))
+            )
+          }
+        />
+      ) : (
+      <>
       <Reveal className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle className="text-lg">Kelola Posisi</CardTitle>
@@ -306,7 +349,14 @@ export function PositionsTab() {
                   {/* Identitas + badge */}
                   <div className="min-w-0 flex-1 basis-64">
                     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                      <p className="truncate text-sm font-semibold">{position.title}</p>
+                      <button
+                        type="button"
+                        onClick={() => openManage(position)}
+                        className="truncate text-sm font-semibold transition-colors hover:text-rose-700 hover:underline dark:hover:text-rose-400"
+                        title="Buka halaman kelola posisi"
+                      >
+                        {position.title}
+                      </button>
                       <span className="flex items-center gap-1.5 text-muted-foreground">
                         {position.featured ? (
                           <Pin
@@ -421,6 +471,16 @@ export function PositionsTab() {
                       variant="ghost"
                       size="icon"
                       className="size-11 sm:size-9"
+                      onClick={() => openManage(position)}
+                      aria-label={`Kelola posisi ${position.title}`}
+                      title="Kelola posisi"
+                    >
+                      <Settings2 className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 sm:size-9"
                       onClick={() => setStatsTarget(position)}
                       aria-label={`Statistik posisi ${position.title}`}
                       title="Statistik"
@@ -486,6 +546,8 @@ export function PositionsTab() {
             );
           })}
         </div>
+      )}
+      </>
       )}
 
       {/* Dialog form posisi lengkap (key memaksa state bersih tiap dibuka) */}

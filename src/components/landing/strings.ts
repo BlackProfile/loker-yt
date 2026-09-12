@@ -246,6 +246,13 @@ const id = {
       required: "Wajib",
       cvRequiredHint: "Posisi ini mewajibkan CV",
       introRequiredHint: "Posisi ini mewajibkan audio/video perkenalan",
+      extraDocsTitle: "Dokumen wajib lainnya",
+      extraDocsDesc:
+        "Posisi ini mewajibkan dokumen tambahan berikut (PDF/gambar/Word, maks 5 MB per berkas).",
+      extraDocRequired: "Dokumen \"{label}\" wajib diunggah.",
+      extraDocType:
+        "Format {label} tidak didukung. Gunakan PDF, gambar (JPG/PNG/WEBP), atau Word.",
+      extraDocSize: "Ukuran {label} maksimal 5 MB.",
     },
     screening: {
       sectionTitle: "Pertanyaan untuk Posisi Ini",
@@ -468,6 +475,16 @@ const id = {
     applyClosedTitle: "Pendaftaran Ditutup",
     applyClosedDesc: "Formulir online untuk lowongan ini sudah ditutup. Silakan hubungi kami untuk info lebih lanjut.",
     applyDisabledDesc: "Pendaftaran online sedang dinonaktifkan. Silakan hubungi kami melalui kontak berikut.",
+    gateTitle: "Baca Dulu, Baru Bisa Lamar",
+    gateDesc:
+      "Sebelum mengisi formulir, baca dulu setiap bagian lowongan ini sampai selesai. Bagian yang sudah terbaca dicentang otomatis saat kamu menggulir halaman.",
+    gateProgress: "{read}/{total} bagian dibaca",
+    gateReady: "Semua bagian sudah dibaca",
+    gateHint: "Gulir halaman seperti biasa — checklist tercentang otomatis.",
+    gateOpen: "Buka Formulir Pendaftaran",
+    gateLocked: "Baca Semua Bagian Dulu",
+    gateUnlockedToast: "Formulir pendaftaran terbuka — selamat melamar!",
+    gateReread: "Baca ulang persyaratan",
   },
 };
 
@@ -670,6 +687,11 @@ type idDictShape = {
       required: string;
       cvRequiredHint: string;
       introRequiredHint: string;
+      extraDocsTitle: string;
+      extraDocsDesc: string;
+      extraDocRequired: string;
+      extraDocType: string;
+      extraDocSize: string;
     };
     screening: {
       sectionTitle: string;
@@ -862,6 +884,15 @@ type idDictShape = {
     applyClosedTitle: string;
     applyClosedDesc: string;
     applyDisabledDesc: string;
+    gateTitle: string;
+    gateDesc: string;
+    gateProgress: string;
+    gateReady: string;
+    gateHint: string;
+    gateOpen: string;
+    gateLocked: string;
+    gateUnlockedToast: string;
+    gateReread: string;
   };
 };
 
@@ -1104,6 +1135,13 @@ const en: Dict = {
       required: "Required",
       cvRequiredHint: "This position requires a CV",
       introRequiredHint: "This position requires an intro audio/video",
+      extraDocsTitle: "Other required documents",
+      extraDocsDesc:
+        "This position requires the following additional documents (PDF/image/Word, max 5 MB each).",
+      extraDocRequired: "The document \"{label}\" is required.",
+      extraDocType:
+        "Unsupported format for {label}. Use PDF, image (JPG/PNG/WEBP), or Word.",
+      extraDocSize: "{label} must be at most 5 MB.",
     },
     screening: {
       sectionTitle: "Questions for This Position",
@@ -1326,6 +1364,16 @@ const en: Dict = {
     applyClosedTitle: "Applications Closed",
     applyClosedDesc: "The online form for this position is closed. Please contact us for more information.",
     applyDisabledDesc: "Online applications are currently disabled. Please reach us through the contacts below.",
+    gateTitle: "Read First, Then Apply",
+    gateDesc:
+      "Before filling in the form, read every section of this opening until the end. Sections you have read are ticked automatically as you scroll.",
+    gateProgress: "{read}/{total} sections read",
+    gateReady: "All sections have been read",
+    gateHint: "Just scroll the page as usual — the checklist ticks itself.",
+    gateOpen: "Open the Application Form",
+    gateLocked: "Read All Sections First",
+    gateUnlockedToast: "Application form unlocked — good luck!",
+    gateReread: "Re-read the requirements",
   },
 };
 

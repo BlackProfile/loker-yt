@@ -476,7 +476,13 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   const [phase, setPhase] = useState<Phase>("checking");
   const [session, setSession] = useState<AdminSession | null>(null);
   const [siteName, setSiteName] = useState("");
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState(() => {
+    // Deep-link #admin/posisi/<id> → buka tab Posisi langsung.
+    if (typeof window !== "undefined" && window.location.hash.startsWith("#admin/posisi")) {
+      return "positions";
+    }
+    return "dashboard";
+  });
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Mode ciut sidebar — tersimpan di localStorage agar diperlakukan abadi.

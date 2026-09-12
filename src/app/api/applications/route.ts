@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateUniqueTrackingCode } from "@/lib/tracking";
-import { parseScreeningQuestions, parseStringRecord } from "@/lib/seed";
+import { parseScreeningQuestions, parseStringRecord, parseRequirements } from "@/lib/seed";
 import { CV_MAX_BYTES, INTRO_MAX_BYTES, type ApplySuccessResponse } from "@/lib/types";
 import { startBackgroundProcessing } from "@/lib/processing";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
@@ -37,6 +37,26 @@ const AUDIO_EXT_MIME: Record<string, string> = {
 };
 
 const SCREENING_ANSWER_MAX = 500; // batas karakter tiap jawaban screening
+
+// Batas & tipe berkas dokumen wajib tambahan (customDocs posisi).
+const EXTRA_DOC_MAX_BYTES = 5 * 1024 * 1024; // 5 MB per dokumen
+const EXTRA_DOC_MAX_COUNT = 8;
+const ALLOWED_EXTRA_DOC_MIMES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+
+/** Tipe berkas dokumen tambahan diterima: PDF, gambar, atau dokumen Word. */
+function isAllowedExtraDocType(file: File): boolean {
+  if (ALLOWED_EXTRA_DOC_MIMES.includes(file.type)) return true;
+  // Tanpa MIME (perangkat tertentu): izinkan lewat ekstensi yang aman.
+  const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+  return [".pdf", ".jpg", ".jpeg", ".png", ".webp", ".doc", ".docx"].includes(ext);
+}
 
 function asTrimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -95,6 +115,7 @@ export async function POST(req: NextRequest) {
     const fields: Record<string, string> = {};
     let cvFile: File | null = null;
     let introFile: File | null = null;
+    const extraDocFiles: File[] = [];
 
     if (contentType.includes("multipart/form-data")) {
       let form: FormData;
@@ -112,6 +133,7 @@ export async function POST(req: NextRequest) {
         if (value.size === 0 || !value.name) continue;
         if (key === "cvFile") cvFile = value;
         else if (key === "introFile") introFile = value;
+        else if (/^extraDoc_\d+$/.test(key)) extraDocFiles.push(value);
       }
     } else {
       const body: unknown = await req.json().catch(() => null);
@@ -278,6 +300,33 @@ export async function POST(req: NextRequest) {
       screeningAnswersJson = JSON.stringify(record);
     }
 
+    // Validasi dokumen wajib tambahan milik posisi (customDocs).
+    // Berkas dipasangkan dengan label berdasarkan urutan pengiriman (extraDoc_0, extraDoc_1, ...).
+    const customDocs = parseRequirements(position.customDocs).slice(0, EXTRA_DOC_MAX_COUNT);
+    if (customDocs.length > 0) {
+      if (extraDocFiles.length < customDocs.length) {
+        const missing = customDocs[extraDocFiles.length] ?? customDocs[0];
+        return NextResponse.json(
+          { error: `Dokumen "${missing}" wajib diunggah untuk posisi ini.` },
+          { status: 400 },
+        );
+      }
+      for (const file of extraDocFiles.slice(0, customDocs.length)) {
+        if (file.size > EXTRA_DOC_MAX_BYTES) {
+          return NextResponse.json(
+            { error: `Ukuran dokumen "${file.name}" maksimal 5 MB.` },
+            { status: 400 },
+          );
+        }
+        if (!isAllowedExtraDocType(file)) {
+          return NextResponse.json(
+            { error: `Format dokumen "${file.name}" tidak didukung. Gunakan PDF, gambar (JPG/PNG/WEBP), atau Word.` },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
     // Simpan file (opsional) ke folder uploads + catat FileAsset
     const cvAsset = cvFile ? await saveUpload(cvFile, "application/pdf") : null;
     const introAsset = introFile
@@ -285,6 +334,19 @@ export async function POST(req: NextRequest) {
       : null;
 
     const trackingCode = await generateUniqueTrackingCode();
+
+    // Simpan dokumen wajib tambahan (urut sesuai customDocs posisi) sebagai JSON.
+    let extraDocsJson: string | null = null;
+    if (customDocs.length > 0) {
+      const docs: { label: string; filename: string; fileId: string }[] = [];
+      for (let i = 0; i < customDocs.length; i++) {
+        const file = extraDocFiles[i];
+        if (!file) break; // sudah divalidasi wajib di atas
+        const asset = await saveUpload(file, "application/octet-stream");
+        docs.push({ label: customDocs[i], filename: file.name, fileId: asset.id });
+      }
+      extraDocsJson = JSON.stringify(docs);
+    }
 
     const created = await db.application.create({
       data: {
@@ -299,6 +361,7 @@ export async function POST(req: NextRequest) {
         trackingCode,
         cvFileId: cvAsset?.id ?? null,
         introFileId: introAsset?.id ?? null,
+        extraDocs: extraDocsJson ?? "[]",
         source,
         utmSource,
         utmMedium,

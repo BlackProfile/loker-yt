@@ -59,6 +59,7 @@ model Position {
   requireCv    Boolean       @default(false)
   requireIntro Boolean       @default(false)
   requirePortfolio Boolean   @default(false)
+  customDocs   String        @default("[]") // JSON string[] label dokumen wajib tambahan dari pelamar
   maxApplicants Int? // kuota pelamar; null = tanpa kuota
 
   // Publikasi & jadwal
@@ -146,6 +147,7 @@ model Application {
   cvFile           FileAsset? @relation("cvFile", fields: [cvFileId], references: [id], onDelete: SetNull)
   introFileId      String?
   introFile        FileAsset? @relation("introFile", fields: [introFileId], references: [id], onDelete: SetNull)
+  extraDocs        String     @default("[]") // JSON {label,filename,fileId}[] dokumen wajib tambahan yang diunggah pelamar
 
   // Penolakan terstruktur (alasan + feedback ke pelamar)
   rejectionReason  String? // KUALIFIKASI | PENGALAMAN | PORTOFOLIO | KUOTA | TIDAK_HADIR | MENARIK_DIRI | TIDAK_RESPON | LAINNYA

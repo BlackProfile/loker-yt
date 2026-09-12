@@ -83,7 +83,8 @@ class ViewErrorBoundary extends Component<
 
 function readLocation(): { view: View; slug: string | null } {
   const params = new URLSearchParams(window.location.search);
-  if (window.location.hash === "#admin") return { view: "admin", slug: null };
+  // "#admin" dan sub-halamannya (mis. "#admin/posisi/<id>") masuk ke panel admin.
+  if (window.location.hash.startsWith("#admin")) return { view: "admin", slug: null };
   if (params.get("embed") === "1") return { view: "embed", slug: null };
   const slug = params.get("posisi");
   if (slug) return { view: "detail", slug: slug.slice(0, 80) };
@@ -173,7 +174,7 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
   }, []);
 
   const exitAdmin = useCallback(() => {
-    if (window.location.hash === "#admin") {
+    if (window.location.hash.startsWith("#admin")) {
       history.replaceState(null, "", window.location.pathname);
     }
     setView("landing");

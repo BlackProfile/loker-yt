@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
         requireCv: f.requireCv ?? false,
         requireIntro: f.requireIntro ?? false,
         requirePortfolio: f.requirePortfolio ?? false,
+        customDocs: JSON.stringify(f.customDocs ?? []),
         maxApplicants: f.maxApplicants ?? null,
 
         publishAt: f.publishAt ?? null,
