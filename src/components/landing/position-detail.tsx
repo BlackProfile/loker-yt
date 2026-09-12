@@ -2,10 +2,13 @@
 
 // Halaman detail per lowongan (?posisi=slug) — persyaratan, ketentuan, benefit,
 // contoh karya, dan FORMULIR PENDAFTARAN khusus lowongan ini.
+// Formulir berada di balik GERBANG BACA: pengunjung harus membaca bagian
+// kontennya dulu (dicentang otomatis via IntersectionObserver), setelah semua
+// terbaca formulir terbuka otomatis. Progres per lowongan disimpan sessionStorage.
 // Data hidup: komponen menerima positions dari useLiveResource (realtime),
 // sehingga posisi yang baru ditutup/diarsip otomatis keluar dari tampilan.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -339,8 +342,8 @@ function PositionDetailViewInner({
   useEffect(() => {
     if (formUnlocked || sectionIdsKey === "") return;
     if (typeof IntersectionObserver === "undefined") {
-      setFormUnlocked(true);
-      return;
+      const fallback = window.setTimeout(() => setFormUnlocked(true), 0);
+      return () => window.clearTimeout(fallback);
     }
     const observer = new IntersectionObserver(
       (entries) => {
@@ -703,32 +706,49 @@ function PositionDetailViewInner({
               ) : null}
             </div>
 
-            {/* Kanan: formulir pendaftaran khusus lowongan ini (sticky) */}
+            {/* Kanan: gerbang baca → formulir pendaftaran khusus lowongan ini (sticky) */}
             <div className="lg:col-span-2">
               <FadeIn delay={0.1} className="lg:sticky lg:top-24">
-                <Card className="gap-4 rounded-2xl p-5 md:p-6">
+                <Card id="form-card" className="scroll-mt-24 gap-4 rounded-2xl p-5 md:p-6">
                   {canApplyOnline ? (
-                    <>
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
-                          <FileText className="size-4" aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold leading-tight">
-                            {position.title}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {t.detail.badge}
-                          </p>
+                    formUnlocked ? (
+                      <>
+                        <div className="flex items-center gap-2.5">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+                            <FileText className="size-4" aria-hidden="true" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold leading-tight">
+                              {position.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {t.detail.badge}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                      <ApplyWizard
-                        positions={[position]}
-                        positionId={position.id}
-                        onPositionIdChange={() => {}}
-                        lockPosition
+                        <ApplyWizard
+                          positions={[position]}
+                          positionId={position.id}
+                          onPositionIdChange={() => {}}
+                          lockPosition
+                        />
+                        <button
+                          type="button"
+                          onClick={() => jumpToSection(gateSections[0]?.id ?? "sec-deskripsi")}
+                          className="flex min-h-9 items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          <BookOpenCheck className="size-3.5" aria-hidden="true" />
+                          {t.detail.gateReread}
+                        </button>
+                      </>
+                    ) : (
+                      <ApplyGate
+                        sections={gateSections}
+                        readCount={readIds.length}
+                        onJump={jumpToSection}
+                        onOpen={() => unlockForm(true)}
                       />
-                    </>
+                    )
                   ) : (
                     <div className="flex flex-col gap-4">
                       <div className="flex items-center gap-2.5">
