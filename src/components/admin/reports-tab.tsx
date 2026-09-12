@@ -319,8 +319,6 @@ export function ReportsTab() {
     void loadFunnel("ALL", false);
     void loadSources(false);
     void loadAi(false);
-    // Muat sekali saat tab dibuka; pembaruan berikutnya lewat refresh senyap realtime.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useLiveRefresh("applications:changed", () => {

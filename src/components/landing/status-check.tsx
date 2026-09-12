@@ -386,7 +386,8 @@ export function StatusCheckSection() {
     scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
   }
 
-  /** Unggah dokumen onboarding (multipart) langsung saat file dipilih. */  async function uploadOnboardingDoc(docId: string, event: ChangeEvent<HTMLInputElement>) {
+  /** Unggah dokumen onboarding (multipart) langsung saat file dipilih. */
+  async function uploadOnboardingDoc(docId: string, event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
     event.target.value = ""; // reset agar file yang sama bisa dipilih ulang
     if (!file) return;
@@ -453,6 +454,8 @@ export function StatusCheckSection() {
   const onboarding = result?.onboarding ?? null;
   const onboardingDocs = onboarding?.docs ?? [];
   const onboardingDoneCount = onboardingDocs.filter((doc) => doc.done).length;
+  // Slot jadwal self-service (dari track API — hanya ada bila tahap belum final).
+  const availableSlots = result?.slots ?? [];
 
   return (
     <section id="status" className="scroll-mt-24 bg-muted/40 py-16 md:py-24">
@@ -932,6 +935,65 @@ export function StatusCheckSection() {
                                 </ul>
                               </CollapsibleContent>
                             </Collapsible>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Pilih jadwal wawancara — slot self-service dari admin */}
+                {availableSlots.length > 0 && !finalStatus ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+                    <p className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                      <CalendarClock className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      Pilih Jadwal Wawancara
+                    </p>
+                    <p className="mt-1 text-sm text-amber-800/85 dark:text-amber-200/80">
+                      Tim membuka jadwal berikut — pilih satu slot untuk sesi wawancaramu:
+                    </p>
+                    <div className="mt-3 flex max-h-96 flex-col gap-2 overflow-y-auto nice-scrollbar">
+                      {availableSlots.map((slot) => {
+                        const busy = bookingSlotId === slot.id;
+                        const slotOnline = slot.mode === "ONLINE";
+                        return (
+                          <div
+                            key={slot.id}
+                            className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-200/80 bg-background/70 p-3 dark:border-amber-500/20"
+                          >
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+                              {slotOnline ? (
+                                <Video className="h-4 w-4" aria-hidden="true" />
+                              ) : (
+                                <MapPin className="h-4 w-4" aria-hidden="true" />
+                              )}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium">
+                                {formatDateTimeId(slot.scheduledAt)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {slot.durationMin} menit · {PLATFORM_LABELS[slot.platform]}
+                                {slot.interviewers.length > 0
+                                  ? ` · ${slot.interviewers.join(", ")}`
+                                  : ""}
+                                {!slotOnline && slot.address ? ` · ${slot.address}` : ""}
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              className="h-11 sm:h-9"
+                              disabled={bookingSlotId !== null}
+                              onClick={() => void bookSlot(slot.id)}
+                              aria-label={`Pilih slot ${formatDateTimeId(slot.scheduledAt)}`}
+                            >
+                              {busy ? (
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+                              )}
+                              Pilih slot ini
+                            </Button>
                           </div>
                         );
                       })}

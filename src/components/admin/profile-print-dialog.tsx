@@ -150,10 +150,7 @@ export function ProfilePrintDialog({
 
   // Riwayat wawancara ringkas: endpoint daftar wawancara yang ada, difilter per lamaran.
   useEffect(() => {
-    if (!appId) {
-      setInterviews([]);
-      return;
-    }
+    if (!appId) return;
     let cancelled = false;
     setInterviewsLoading(true);
     apiGet<Interview[]>("/api/admin/interviews")

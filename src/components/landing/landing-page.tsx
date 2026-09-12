@@ -878,6 +878,8 @@ function LandingShell({
 }: LandingPageProps) {
   // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin).
   const sections = content.sections;
+  // Mode tutup rekrutmen (Setting "site") — banner amber + CTA Lamar nonaktif.
+  const recruitment = useRecruitmentStatus();
 
   useJobPostingJsonLd(positions, content.siteName);
 
@@ -888,10 +890,33 @@ function LandingShell({
           siteName={content.siteName}
           tagline={content.tagline}
           sections={sections}
+          recruitmentClosed={recruitment.recruitmentClosed}
         />
+        {recruitment.recruitmentClosed ? (
+          <div
+            role="alert"
+            className="border-b border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            <Container className="flex items-start gap-3 py-3 sm:items-center">
+              <PauseCircle
+                className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400 sm:mt-0"
+                aria-hidden="true"
+              />
+              <p className="text-sm font-medium leading-relaxed">
+                {recruitment.message.trim() ||
+                  "Rekrutmen sedang ditutup. Pendaftaran sementara tidak dapat dikirim."}
+              </p>
+            </Container>
+          </div>
+        ) : null}
         <main className="flex-1">
           {sections.hero ? (
-            <Hero content={content} stats={stats} sections={sections} />
+            <Hero
+              content={content}
+              stats={stats}
+              sections={sections}
+              recruitmentClosed={recruitment.recruitmentClosed}
+            />
           ) : null}
           {sections.positions ? (
             <PositionsSection
@@ -908,7 +933,11 @@ function LandingShell({
           {sections.testimonials ? <VoicesSection content={content} /> : null}
           {sections.faq ? <FaqSection content={content} /> : null}
           {sections.finalCta ? (
-            <FinalCtaSection content={content} sections={sections} />
+            <FinalCtaSection
+              content={content}
+              sections={sections}
+              recruitmentClosed={recruitment.recruitmentClosed}
+            />
           ) : null}
           {sections.subscribe ? <SubscribeSection /> : null}
         </main>
