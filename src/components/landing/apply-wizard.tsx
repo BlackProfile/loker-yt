@@ -793,6 +793,7 @@ export function ApplyWizard({
               <div className="flex min-w-0 items-center gap-2">
                 <span
                   aria-current={isActive ? "step" : undefined}
+                  title={label}
                   className={cn(
                     "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition-colors",
                     isDone &&

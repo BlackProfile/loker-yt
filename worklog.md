@@ -788,3 +788,20 @@ Work Log:
 Stage Summary:
 - Alur halaman lowongan kini: buka detail → baca konten (checklist otomatis tercentang) → formulir terbuka otomatis. Mengurangi lamaran asal tanpa membaca persyaratan.
 - Sync GitHub otomatis oleh watcher.
+
+---
+Task ID: 19
+Agent: Z.ai Code (main)
+Task: "perbaiki ini" — stepper formulir lamaran meluber keluar kartu (label "4 Pratinjau & Kirim" keluar batas card kolom kanan desktop)
+
+Work Log:
+- Akar masalah: label stepper memakai `hidden sm:block` (berbasis viewport). Di desktop (lg+) kartu formulir hanya ~360px (kolom 2/5), sedangkan 4 label + lingkaran + garis butuh ~420px → label ke-4 terdorong keluar border kartu.
+- apply-wizard.tsx:
+  - Root wizard jadi `@container` (container query Tailwind v4) — label langkah `hidden @xl:block` + `min-w-0 truncate`: tampil hanya bila lebar KARTU ≥ 576px (layout mobile/tablet bertumpuk), tersembunyi di kolom kanan desktop yang sempit (tinggal 4 lingkaran + garis penghubung, rapi dalam kartu).
+  - `li`/wrapper label diberi `min-w-0` anti-luber; lingkaran langkah diberi `title={label}` (tooltip hover pengganti info label).
+  - Banner draft: teks `truncate` ("Lanjutkan mengisi f…") diganti `line-clamp-2` agar terbaca.
+- Verifikasi agent-browser (gateway :81): desktop kartu 360px → overflow=false, stepperRight 1095 < cardRight 1120, labels hidden; 800px kartu 752px → labels visible, tanpa overflow; mobile 390px → overflow=false, docOverflowX=false; lingkaran bertindik aktif (ring) tetap jelas. ApplyWizard kini hanya dipakai di halaman detail (dialog publik sudah dihapus sejak Task 13).
+- Lint 0 error; dev.log bersih.
+
+Stage Summary:
+- Stepper formulir anti-luber di semua lebar: sempit = ikon saja (dengan tooltip), lebar = ikon + label. Tampilan kartu formulir desktop kini rapi sesuai batas kartu.
