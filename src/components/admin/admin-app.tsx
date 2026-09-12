@@ -57,6 +57,7 @@ import { ReportsTab } from "./reports-tab";
 import { TemplatesTab } from "./templates-tab";
 import { DataTab } from "./data-tab";
 import { NotificationBell } from "./notification-bell";
+import { AdminAskWidget } from "./admin-ask-widget";
 
 type Phase = "checking" | "login" | "ready";
 
@@ -335,6 +336,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
               <RealtimeIndicator />
               <ThemeToggle />
               <NotificationBell onOpenTasks={() => setTopTab("tasks")} />
+              <AdminAskWidget />
               <Button
                 variant="outline"
                 className="h-11 active:scale-[0.99] sm:h-10"

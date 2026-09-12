@@ -317,3 +317,141 @@ export function ScreeningQuestionsEditor({
     </div>
   );
 }
+
+const BRIEF_LEVELS = ["Junior", "Mid", "Senior"] as const;
+type BriefLevel = (typeof BRIEF_LEVELS)[number];
+
+/**
+ * Kartu "Tes untuk Pelamar": field Judul Tes + Catatan Tes + tombol "Buat brief dengan AI".
+ * Dipakai form posisi sebagai pengganti field assignmentTitle/assignmentNote manual —
+ * hasil AI diisi ke kedua field dan admin masih bisa menyunting sebelum menyimpan.
+ * positionId null = posisi baru (belum tersimpan) → tombol AI disabled ("Simpan posisi dulu").
+ */
+export function AssignmentBriefEditor({
+  positionId,
+  assignmentTitle,
+  assignmentNote,
+  onTitleChange,
+  onNoteChange,
+  disabled = false,
+}: {
+  positionId: string | null;
+  assignmentTitle: string;
+  assignmentNote: string;
+  onTitleChange: (value: string) => void;
+  onNoteChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const { canMutate, reportError } = useAdminSession();
+  const [level, setLevel] = useState<BriefLevel>("Mid");
+  const [loading, setLoading] = useState(false);
+
+  const aiDisabled = disabled || !canMutate || !positionId || loading;
+
+  async function generateBrief() {
+    if (!positionId || loading) return;
+    setLoading(true);
+    try {
+      const res = await apiPost<{ title: string; note: string }>(
+        `/api/admin/positions/${positionId}/generate-brief`,
+        { level }
+      );
+      onTitleChange(res.title.slice(0, 120));
+      onNoteChange(res.note.slice(0, 400));
+      toast.success("Brief tes dibuat AI — tinjau lalu simpan posisi");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Tes untuk Pelamar</p>
+          <p className="text-xs text-muted-foreground">
+            Info tes/brief dikirim bersama pesan konfirmasi lamaran. Kosongkan bila tidak ada tes.
+          </p>
+        </div>
+        {!positionId ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-block">
+                <Button type="button" variant="outline" size="sm" className="h-11 sm:h-9" disabled>
+                  <Sparkles className="size-4" aria-hidden="true" />
+                  Buat brief dengan AI
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Simpan posisi dulu</TooltipContent>
+          </Tooltip>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Select value={level} onValueChange={(value) => setLevel(value as BriefLevel)}>
+              <SelectTrigger
+                className="h-11 w-[7.5rem] sm:h-9"
+                aria-label="Level kandidat untuk brief tes"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BRIEF_LEVELS.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-11 shrink-0 active:scale-[0.99] sm:h-9"
+              onClick={() => void generateBrief()}
+              disabled={aiDisabled}
+            >
+              {loading ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Sparkles className="size-4" aria-hidden="true" />
+              )}
+              Buat brief dengan AI
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="pos-assignmentTitle">Judul Tes</Label>
+          <Input
+            id="pos-assignmentTitle"
+            value={assignmentTitle}
+            onChange={(e) => onTitleChange(e.target.value)}
+            placeholder="mis. Tes Editing 60 Detik"
+            className="h-10"
+            maxLength={120}
+            disabled={disabled}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="pos-assignmentNote">Catatan Tes</Label>
+          <Textarea
+            id="pos-assignmentNote"
+            value={assignmentNote}
+            onChange={(e) => onNoteChange(e.target.value)}
+            placeholder="Instruksi singkat pengerjaan tes..."
+            rows={4}
+            maxLength={400}
+            disabled={disabled}
+          />
+          <p className="text-xs text-muted-foreground">
+            Brief AI berisi konteks, tugas, dan kriteria penilaian — masih bisa diedit sebelum disimpan.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

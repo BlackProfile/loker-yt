@@ -4,10 +4,12 @@
 // Mode CREATE: form penjadwalan (mode/platform/jadwal/durasi/link/alamat/pewawancara)
 //   + pratinjau pesan undangan dari template posisi.
 // Mode EDIT/DETAIL: info sesi, aksi cepat (gabung/ics/gcalendar), edit form,
-//   aksi status, scorecard hasil (nilai 1-5 per kriteria + rekomendasi), hapus.
+//   aksi status, scorecard hasil (nilai 1-5 per kriteria + rekomendasi + AUTOSAVE 1,2 dtk),
+//   unggah rekaman + transkrip AI, tombol "Jadwalkan Ronde Berikutnya" dari Position.roundPlan,
+//   hapus.
 // Menyimpan hasil otomatis menandai sesi COMPLETED di server (PATCH).
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -39,15 +41,26 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   CalendarPlus,
+  Check,
+  ChevronDown,
   ClipboardCheck,
   Copy,
   Download,
   ExternalLink,
+  FileAudio,
   Loader2,
   MapPin,
   MessageSquareWarning,
+  Mic,
+  Sparkles,
   Trash2,
+  Upload,
   Users,
   Video,
   X,
@@ -68,8 +81,9 @@ import {
   type InterviewRecommendation,
   type InterviewStatus,
   type Position,
+  type RoundPlanTemplate,
 } from "@/lib/types";
-import { apiDelete, apiPatch, apiPost } from "./api";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import { copyText, formatDateTime, isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
 import { cn } from "@/lib/utils";
@@ -244,6 +258,26 @@ function InterviewSessionDialogInner({
   const [recordingUrl, setRecordingUrl] = useState(interview?.recordingUrl ?? "");
   const [savingResult, setSavingResult] = useState(false);
 
+  // ---- Autosave scorecard (debounce 1,2 detik, hanya skor rubrik) ----
+  const [autosaveState, setAutosaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const autosaveTimerRef = useRef<number | null>(null);
+  const autosaveHideRef = useRef<number | null>(null);
+
+  // ---- Rekaman & transkrip AI ----
+  const [recordingFileUrl, setRecordingFileUrl] = useState<string | null>(
+    interview?.recordingUrl?.startsWith("/api/files/") ? interview.recordingUrl : null
+  );
+  const [transcript, setTranscript] = useState<string | null>(interview?.transcript ?? null);
+  const [transcriptSummary, setTranscriptSummary] = useState<string | null>(
+    interview?.transcriptSummary ?? null
+  );
+  const [uploadingRecording, setUploadingRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+
+  // ---- Rencana ronde berikutnya (Position.roundPlan) ----
+  const [roundPlan, setRoundPlan] = useState<RoundPlanTemplate[] | null>(null);
+  const [schedulingNextRound, setSchedulingNextRound] = useState<RoundPlanTemplate | null>(null);
+
   // ---- Aksi status & hapus ----
   const [statusWorking, setStatusWorking] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -261,6 +295,69 @@ function InterviewSessionDialogInner({
 
   const showLinkField = mode === "ONLINE";
   const showAddressField = mode === "ONSITE";
+
+  /* ----------------- Efek: rencana ronde & transkrip tersimpan ----------------- */
+
+  // Muat rencana ronde posisi (untuk tombol "Jadwalkan Ronde Berikutnya").
+  // Serialisasi posisi standar tidak menyertakan roundPlan, jadi diambil dari
+  // endpoint khusus GET /api/admin/interviews/round-plan.
+  useEffect(() => {
+    if (!interview || !position || !canMutate) return;
+    let cancelled = false;
+    apiGet<{ roundPlan: RoundPlanTemplate[] }>(
+      `/api/admin/interviews/round-plan?positionId=${encodeURIComponent(position.id)}`
+    )
+      .then((res) => {
+        if (!cancelled) setRoundPlan(res.roundPlan);
+      })
+      .catch(() => {
+        if (!cancelled) setRoundPlan([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [interview, position, canMutate]);
+
+  // Muat transkrip/ringkasan tersimpan bila rekamannya file lokal (serialisasi
+  // daftar tidak menyertakan kolom transcript).
+  useEffect(() => {
+    if (!interview || !interview.recordingUrl?.startsWith("/api/files/")) return;
+    let cancelled = false;
+    apiGet<{ ok: boolean; transcript: string | null; transcriptSummary: string | null }>(
+      `/api/admin/interviews/${interview.id}/transcribe`
+    )
+      .then((res) => {
+        if (cancelled) return;
+        setTranscript(res.transcript);
+        setTranscriptSummary(res.transcriptSummary);
+      })
+      .catch(() => {
+        // Pelengkap — panel tetap tampil tanpa transkrip.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [interview]);
+
+  // Bersihkan timer autosave saat dialog ditutup/unmount.
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+      if (autosaveHideRef.current) {
+        window.clearTimeout(autosaveHideRef.current);
+        autosaveHideRef.current = null;
+      }
+    };
+  }, []);
+
+  // Template ronde berikutnya: ronde = sesi saat ini + 1 (hanya mode edit).
+  const nextRoundTemplate =
+    interview && roundPlan
+      ? roundPlan.find((r) => r.round === interview.round + 1) ?? null
+      : null;
 
   /* ------------------------- Pratinjau pesan undangan ------------------------ */
 

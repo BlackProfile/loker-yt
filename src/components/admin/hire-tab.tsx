@@ -721,9 +721,10 @@ export function HireTab() {
     for (const employee of employees) {
       const endMs = employee.probationEnd ? new Date(employee.probationEnd).getTime() : null;
       if (endMs != null && !Number.isNaN(endMs) && endMs > now) probationActive += 1;
-      for (const checkIn of employee.checkIns) {
-        if (checkIn.completedAt) continue;
-        const due = dueAtOf(employee, checkIn.day);
+      for (const day of CHECKIN_DAYS) {
+        const record = employee.checkIns.find((c) => c.day === day);
+        if (record?.completedAt) continue;
+        const due = dueAtOf(employee, day);
         if (due && due.getTime() <= now) dueCheckIns += 1;
       }
     }
