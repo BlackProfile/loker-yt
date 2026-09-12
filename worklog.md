@@ -824,3 +824,20 @@ Stage Summary:
 - PASS kasus REJECTED (LM-415EDH, juan nisaqi): hanya kartu "Tidak Lolos" (alasan "Tidak hadir wawancara", umpan balik "kayak mana sih") + kartu riwayat wawancara (Zoom, 16 Sep) + timeline langkah; TIDAK ada kartu penawaran/"Terima Penawaran"/"Tolak"/onboarding. Perbaikan valid.
 - PASS kasus ACCEPTED (LM-X6K9P0, Rizky Pratama): badge "Diterima" + kartu "Penawaran diterima" + kartu onboarding (sambutan & checklist masa percobaan) tampil; tanpa kartu "Tidak Lolos". Tidak ada regresi.
 - Tidak ada page error; console hanya log dev. Artefak: /tmp/t19-rejected-snapshot.txt, /tmp/t19-accepted-snapshot.txt, /tmp/verify-t19-rejected.png, /tmp/verify-t19-accepted.png.
+
+---
+Task ID: 20-fondasi
+Agent: z.ai main session
+Task: Fondasi 40 fitur admin baru — skema DB, shared libs, tab admin
+
+Work Log:
+- Instal otpauth, qrcode, nodemailer (+types)
+- prisma/schema.prisma: AdminUser(+totpSecret/totpEnabled/assignedPositions), Position(+salaryMin/Max, titleEn/descriptionEn/requirementsEn, roundPlan), Application(+onboardingPlan, cvText, isDuplicate/duplicateOfId, referrer, relasi comments/checkIns/emailOut/slotBooking), Interview(+transcript/transcriptSummary/slotId); model baru: Comment, MessageTemplate, NotificationItem, LoginAudit, InterviewSlot, EmailOutbox, CheckIn
+- bun run db:push sukses + prisma generate
+- src/lib/notify.ts: sendSystemEvent kini juga buat NotificationItem; helper baru pushNotification() dan queueEmail() (SMTP opsional via env SMTP_HOST/PORT/USER/PASS/FROM)
+- admin-app.tsx: 6 tab baru (tasks, calendar, hire, reports, templates, data) + NotificationBell di header; stub komponen dibuat untuk semua tab baru
+- tsc: file baru lolos; dev server tetap jalan
+
+Stage Summary:
+- Fondasi siap; 8 subagen area fitur (20-a s.d. 20-h) tinggal mengisi komponen + API
+- ATURAN UNTUK SUBAGEN: dilarang db:push (skema sudah final), dilarang bun run build, dilarang restart dev server, dilarang edit file milik agen lain
