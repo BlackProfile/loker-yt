@@ -38,6 +38,7 @@ import {
   type InterviewPlatform,
   type InterviewRecommendation,
   type InterviewStatus,
+  type RoundPlanTemplate,
   type OfferStatus,
   type OnboardingDoc,
   type Position,
@@ -206,7 +207,29 @@ export function parseOnboardingDocs(raw: string | null | undefined): OnboardingD
   }
 }
 
-/** Parse pemetaan kategori tahap kustom dari JSON string (aman terhadap nilai rusak). */
+/** Parse aman Position.roundPlan (JSON RoundPlanTemplate[]) — fallback [] bila rusak. */
+export function parseRoundPlan(raw: string | null | undefined): RoundPlanTemplate[] {
+  if (!raw || !raw.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+      .map((item, index) => ({
+        round: typeof item.round === "number" && Number.isInteger(item.round) && item.round > 0 ? item.round : index + 1,
+        name: typeof item.name === "string" && item.name.trim() ? item.name.trim().slice(0, 60) : `Ronde ${index + 1}`,
+        mode: typeof item.mode === "string" ? (item.mode as RoundPlanTemplate["mode"]) : undefined,
+        platform: typeof item.platform === "string" ? (item.platform as RoundPlanTemplate["platform"]) : undefined,
+        durationMin: typeof item.durationMin === "number" && item.durationMin > 0 ? item.durationMin : undefined,
+        interviewers: Array.isArray(item.interviewers)
+          ? item.interviewers.filter((n): n is string => typeof n === "string" && n.trim().length > 0)
+          : undefined,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 export function parseStageCategories(raw: string | null | undefined): Record<string, StageCategory> {
   if (!raw) return {};
   try {
