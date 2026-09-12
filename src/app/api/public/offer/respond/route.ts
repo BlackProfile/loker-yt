@@ -61,6 +61,14 @@ export async function POST(req: NextRequest) {
     if (!application) {
       return NextResponse.json({ error: "Kode pelacakan tidak ditemukan." }, { status: 404 });
     }
+    // Tahap sudah berubah ke Ditolak -> penawaran apa pun tidak berlaku lagi
+    // (mencegah kandidat ditolak masih bisa menerima offer sisa yang menggantung).
+    if (application.status === "REJECTED") {
+      return NextResponse.json(
+        { error: "Lamaran sudah ditolak — penawaran tidak berlaku lagi." },
+        { status: 400 },
+      );
+    }
     if (application.offerStatus !== "PENDING") {
       return NextResponse.json(
         { error: "Penawaran tidak sedang menunggu jawabanmu." },

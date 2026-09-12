@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Lazy expiry: offer PENDING yang lewat deadline otomatis ditandai kedaluwarsa.
+    const rawStatus = application.status.trim() || "NEW";
     let offerStatusRaw = application.offerStatus;
     if (offerStatusRaw === "PENDING" && application.offerDeadline && application.offerDeadline.getTime() < Date.now()) {
       await db.application.update({
@@ -77,8 +78,16 @@ export async function POST(req: NextRequest) {
       });
       offerStatusRaw = "EXPIRED";
     }
+    // Lazy repair: lamaran ber tahap Ditolak tidak boleh menyisakan offer PENDING
+    // (sisa data lama) — batalkan senyap agar kartu penawaran tidak tampil lagi.
+    if (offerStatusRaw === "PENDING" && rawStatus === "REJECTED") {
+      await db.application.update({
+        where: { id: application.id },
+        data: { offerStatus: null },
+      });
+      offerStatusRaw = null;
+    }
 
-    const rawStatus = application.status.trim() || "NEW";
     const isTerminal = rawStatus === "ACCEPTED" || rawStatus === "REJECTED";
     const customStages = application.position ? parseRequirements(application.position.stages) : [];
 

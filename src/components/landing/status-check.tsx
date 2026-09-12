@@ -917,8 +917,9 @@ export function StatusCheckSection() {
                   </div>
                 ) : null}
 
-                {/* Penawaran (offer) */}
-                {offer ? (
+                {/* Penawaran (offer) — disembunyikan bila tahap akhir sudah Ditolak
+                    (sudah ganti tahap: kartu penawaran lama tidak relevan lagi). */}
+                {offer && finalStatus !== "REJECTED" ? (
                   <div>
                     {offer.status === "PENDING" ? (
                       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/30 dark:bg-emerald-500/10">
@@ -1100,8 +1101,8 @@ export function StatusCheckSection() {
                   </div>
                 ) : null}
 
-                {/* Onboarding — dokumen & info bergabung */}
-                {onboarding ? (
+                {/* Onboarding — dokumen & info bergabung (tidak tampil bila sudah ditolak) */}
+                {onboarding && finalStatus !== "REJECTED" ? (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/30 dark:bg-emerald-500/10">
                     <p className="flex items-center gap-2 text-sm font-semibold text-emerald-800 dark:text-emerald-300">
                       <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
