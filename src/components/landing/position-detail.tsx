@@ -253,12 +253,127 @@ function PositionDetailViewInner({
   const { t } = useLang();
   const [copied, setCopied] = useState(false);
 
+  // Gerbang baca: formulir terkunci sampai semua bagian konten dibaca.
+  // Progres per slug disimpan sessionStorage — pindah lowongan & kembali lagi
+  // tidak perlu membaca ulang.
+  const [formUnlocked, setFormUnlocked] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.sessionStorage.getItem(`lumina-read-${slug}`) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [readIds, setReadIds] = useState<string[]>([]);
+
   const position = useMemo(
     () => positions.find((p) => p.slug === slug) ?? null,
     [positions, slug],
   );
 
   const shareUrl = position ? buildPositionUrl(position) : "";
+
+  // Contoh karya — dipakai render seksi & penentu seksi gerbang.
+  const workEmbeds = useMemo(
+    () =>
+      (position?.examples ?? [])
+        .map((url) => ({ url, id: youtubeEmbedId(url) }))
+        .filter((x) => x.id !== null)
+        .slice(0, 4),
+    [position],
+  );
+  const workLinks = useMemo(
+    () =>
+      (position?.examples ?? []).filter(
+        (url) => youtubeEmbedId(url) === null && safeExternalUrl(url),
+      ),
+    [position],
+  );
+
+  // Seksi konten yang dirender = seksi yang wajib dibaca (harus persis sama
+  // agar tidak ada seksi yang tak terpantau dan mengunci formulir selamanya).
+  const gateSections = useMemo<GateSection[]>(() => {
+    if (!position) return [];
+    const list: { id: string; label: string }[] = [
+      { id: "sec-deskripsi", label: t.detail.sectionDesc },
+    ];
+    if (position.requirements.length > 0)
+      list.push({ id: "sec-persyaratan", label: t.detail.sectionReq });
+    list.push({ id: "sec-ketentuan", label: t.detail.sectionTerms });
+    if (position.benefits.length > 0)
+      list.push({ id: "sec-benefit", label: t.detail.sectionBenefit });
+    if (workEmbeds.length > 0 || workLinks.length > 0)
+      list.push({ id: "sec-karya", label: t.detail.sectionWorks });
+    return list.map((s) => ({ ...s, done: readIds.includes(s.id) }));
+  }, [position, t, workEmbeds, workLinks, readIds]);
+  const sectionIdsKey = gateSections.map((s) => s.id).join("|");
+
+  const unlockForm = useCallback(
+    (scroll: boolean) => {
+      setFormUnlocked(true);
+      try {
+        window.sessionStorage.setItem(`lumina-read-${slug}`, "1");
+      } catch {
+        /* abaikan */
+      }
+      toast.success(t.detail.gateUnlockedToast);
+      if (scroll) {
+        window.setTimeout(() => {
+          document
+            .getElementById("form-card")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 250);
+      }
+    },
+    [slug, t],
+  );
+
+  const jumpToSection = useCallback((id: string) => {
+    document
+      .getElementById(id)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  // Pelacak baca: bagian dianggap terbaca saat bagian itu masuk area baca
+  // (atas 55% viewport). Fallback tanpa IntersectionObserver → langsung buka.
+  useEffect(() => {
+    if (formUnlocked || sectionIdsKey === "") return;
+    if (typeof IntersectionObserver === "undefined") {
+      setFormUnlocked(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setReadIds((prev) => {
+          const next = new Set(prev);
+          let added = false;
+          for (const entry of entries) {
+            if (entry.isIntersecting && !next.has(entry.target.id)) {
+              next.add(entry.target.id);
+              added = true;
+            }
+          }
+          return added ? [...next] : prev;
+        });
+      },
+      { rootMargin: "0px 0px -45% 0px", threshold: 0 },
+    );
+    for (const id of sectionIdsKey.split("|")) {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [formUnlocked, sectionIdsKey]);
+
+  // Semua bagian terbaca → formulir terbuka otomatis (dengan jeda kecil agar
+  // checklist selesai dulu secara visual), lalu halaman digulir ke formulir.
+  useEffect(() => {
+    if (formUnlocked || gateSections.length === 0) return;
+    if (readIds.length >= gateSections.length) {
+      const timer = window.setTimeout(() => unlockForm(true), 650);
+      return () => window.clearTimeout(timer);
+    }
+  }, [formUnlocked, gateSections.length, readIds.length, unlockForm]);
 
   const copyLink = async () => {
     if (!shareUrl) return;
@@ -318,14 +433,6 @@ function PositionDetailViewInner({
     position.requireIntro ? t.detail.termsFilesIntro : null,
     position.requirePortfolio ? t.detail.termsFilesPortfolio : null,
   ].filter((x): x is string => x !== null);
-
-  const workEmbeds = position.examples
-    .map((url) => ({ url, id: youtubeEmbedId(url) }))
-    .filter((x) => x.id !== null)
-    .slice(0, 4);
-  const workLinks = position.examples.filter(
-    (url) => youtubeEmbedId(url) === null && safeExternalUrl(url),
-  );
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -446,9 +553,10 @@ function PositionDetailViewInner({
           </FadeIn>
 
           <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-5 lg:gap-10">
-            {/* Konten kiri: deskripsi, persyaratan, ketentuan, benefit, karya */}
+            {/* Konten kiri: deskripsi, persyaratan, ketentuan, benefit, karya.
+                Setiap seksi punya id jangkar untuk pelacak baca di gerbang formulir. */}
             <div className="flex flex-col gap-10 lg:col-span-3">
-              <FadeIn>
+              <FadeIn id="sec-deskripsi" className="scroll-mt-24">
                 <SectionTitle icon={FileText}>{t.detail.sectionDesc}</SectionTitle>
                 <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-muted-foreground md:text-base">
                   {position.description}
@@ -456,7 +564,7 @@ function PositionDetailViewInner({
               </FadeIn>
 
               {position.requirements.length > 0 ? (
-                <FadeIn>
+                <FadeIn id="sec-persyaratan" className="scroll-mt-24">
                   <SectionTitle icon={ListChecks}>{t.detail.sectionReq}</SectionTitle>
                   <ul className="mt-3 space-y-2.5">
                     {position.requirements.map((req) => (
@@ -470,7 +578,7 @@ function PositionDetailViewInner({
               ) : null}
 
               {/* Ketentuan lamaran — turunan dari pengaturan posisi */}
-              <FadeIn>
+              <FadeIn id="sec-ketentuan" className="scroll-mt-24">
                 <SectionTitle icon={ClipboardList}>{t.detail.sectionTerms}</SectionTitle>
                 <Card className="mt-3 divide-y rounded-2xl p-2 md:p-3">
                   <TermRow icon={FileText} label={t.detail.termsFiles}>
@@ -540,7 +648,7 @@ function PositionDetailViewInner({
               </FadeIn>
 
               {position.benefits.length > 0 ? (
-                <FadeIn>
+                <FadeIn id="sec-benefit" className="scroll-mt-24">
                   <SectionTitle icon={Gift}>{t.detail.sectionBenefit}</SectionTitle>
                   <ul className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                     {position.benefits.map((benefit) => (
@@ -557,7 +665,7 @@ function PositionDetailViewInner({
               ) : null}
 
               {workEmbeds.length > 0 || workLinks.length > 0 ? (
-                <FadeIn>
+                <FadeIn id="sec-karya" className="scroll-mt-24">
                   <SectionTitle icon={Sparkles}>{t.detail.sectionWorks}</SectionTitle>
                   <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     {workEmbeds.map(({ url, id }) => (
