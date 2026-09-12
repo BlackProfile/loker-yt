@@ -40,6 +40,7 @@ import {
   MessagesSquare,
   Pin,
   Flame,
+  Plus,
   Send,
   Sparkles,
   Trash2,
@@ -1572,6 +1573,103 @@ export function PositionFormDialog({
                       placeholder="mis. Komunikasi"
                       hint="Kosongkan untuk memakai kriteria bawaan (Komunikasi, Portofolio, dll.)"
                     />
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Rencana Ronde Wawancara (opsional)</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        disabled={form.roundPlan.length >= 10}
+                        onClick={() =>
+                          set("roundPlan", [...form.roundPlan, { name: "", durationMin: "", interviewers: "" }])
+                        }
+                      >
+                        <Plus className="size-3.5" aria-hidden="true" />
+                        Tambah ronde
+                      </Button>
+                    </div>
+                    {form.roundPlan.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Contoh: HR Screen 30 menit, lalu User Trial 60 menit. Setelah sebuah ronde selesai, admin bisa
+                        menjadwalkan ronde berikutnya sekali klik dari dialog wawancara.
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {form.roundPlan.map((row, index) => (
+                          <div
+                            key={index}
+                            className="grid grid-cols-1 items-end gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_110px_1fr_auto]"
+                          >
+                            <div className="flex flex-col gap-1">
+                              <Label className="text-xs">Nama ronde {index + 1}</Label>
+                              <Input
+                                value={row.name}
+                                onChange={(e) =>
+                                  set(
+                                    "roundPlan",
+                                    form.roundPlan.map((r, i) =>
+                                      i === index ? { ...r, name: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                placeholder="mis. HR Screen"
+                                className="h-9"
+                                maxLength={60}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <Label className="text-xs">Durasi (menit)</Label>
+                              <Input
+                                type="number"
+                                min={10}
+                                max={480}
+                                value={row.durationMin}
+                                onChange={(e) =>
+                                  set(
+                                    "roundPlan",
+                                    form.roundPlan.map((r, i) =>
+                                      i === index ? { ...r, durationMin: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                placeholder="45"
+                                className="h-9"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <Label className="text-xs">Pewawancara (pisah koma)</Label>
+                              <Input
+                                value={row.interviewers}
+                                onChange={(e) =>
+                                  set(
+                                    "roundPlan",
+                                    form.roundPlan.map((r, i) =>
+                                      i === index ? { ...r, interviewers: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                placeholder="mis. Ajo (HR), Jawa (Owner)"
+                                className="h-9"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-9 px-2 text-rose-600 hover:text-rose-700"
+                              aria-label={`Hapus ronde ${index + 1}`}
+                              onClick={() => set("roundPlan", form.roundPlan.filter((_, i) => i !== index))}
+                            >
+                              <Trash2 className="size-4" aria-hidden="true" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1.5">

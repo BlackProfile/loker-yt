@@ -357,7 +357,13 @@ export type SanitizePositionOptions = {
   /** id posisi yang sedang diedit (untuk pengecualian keunikan slug) */
   excludeId?: string;
   /** record posisi saat ini (untuk validasi autoShortlistStage & perubahan judul) */
-  current?: { title: string; stages: string; autoShortlistStage: string | null } | null;
+  current?: {
+    title: string;
+    stages: string;
+    autoShortlistStage: string | null;
+    salaryMin?: number | null;
+    salaryMax?: number | null;
+  } | null;
 };
 
 /**
