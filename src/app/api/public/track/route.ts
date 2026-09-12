@@ -3,12 +3,14 @@
 // menampilkan satu langkah per tahap kustom.
 // v4: sertakan juga info wawancara (Zoom/Meet), penawaran (offer), alasan penolakan,
 //     dan onboarding (checklist dokumen) agar pelamar bisa bertindak dari halaman status.
+// v5: sertakan slot jadwal self-service (bila tahap belum final) + rencana onboarding.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parseRequirements } from "@/lib/seed";
 import { isBuiltInStage } from "@/lib/stages";
 import {
   INTERVIEW_PLATFORM_LABELS,
+  INTERVIEW_PLATFORMS,
   REJECTION_REASON_LABELS,
   STATUS_FLOW,
   STATUS_LABELS,
@@ -20,6 +22,7 @@ import {
   type RejectionReason,
   type StageKey,
   type TrackResponse,
+  type TrackSlotInfo,
 } from "@/lib/types";
 import { parseOnboardingDocs } from "@/lib/seed";
 
@@ -30,6 +33,43 @@ function fill(template: string, values: Record<string, string>): string {
     (text, [key, value]) => text.split(`{${key}}`).join(value),
     template,
   );
+}
+
+/** Parse JSON interviewers slot/lamaran menjadi daftar nama bersih. */
+function parseInterviewers(raw: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((n): n is string => typeof n === "string" && n.trim().length > 0)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Parse rencana onboarding (JSON {id,label,owner?,dueAt?,done}[]). */
+function parseOnboardingPlan(raw: string): TrackResponse["onboardingPlan"] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    const items: NonNullable<TrackResponse["onboardingPlan"]> = [];
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const obj = entry as Record<string, unknown>;
+      const label = typeof obj.label === "string" ? obj.label.trim() : "";
+      if (!label) continue;
+      items.push({
+        id: typeof obj.id === "string" && obj.id.trim() ? obj.id.trim() : label.slice(0, 40),
+        label: label.slice(0, 200),
+        owner: typeof obj.owner === "string" && obj.owner.trim() ? obj.owner.trim().slice(0, 120) : undefined,
+        dueAt: typeof obj.dueAt === "string" && obj.dueAt ? obj.dueAt : null,
+        done: obj.done === true,
+      });
+    }
+    return items.length > 0 ? items : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -251,8 +291,38 @@ export async function POST(req: NextRequest) {
       offer,
       rejection,
       onboarding,
+      onboardingPlan: parseOnboardingPlan(application.onboardingPlan),
     };
     void INTERVIEW_PLATFORM_LABELS;
+
+    // Slot self-service: hanya bila tahap belum final dan lamaran punya posisi.
+    if (!isTerminal && application.positionId) {
+      const slotRows = await db.interviewSlot.findMany({
+        where: {
+          positionId: application.positionId,
+          bookedByApplicationId: null,
+          scheduledAt: { gt: new Date() },
+        },
+        orderBy: { scheduledAt: "asc" },
+        take: 8,
+      });
+      const slots: TrackSlotInfo[] = slotRows.map((s) => ({
+        id: s.id,
+        scheduledAt: s.scheduledAt.toISOString(),
+        durationMin: s.durationMin,
+        mode: (s.mode === "ONSITE" ? "ONSITE" : "ONLINE") as InterviewMode,
+        platform: ((INTERVIEW_PLATFORMS as string[]).includes(s.platform)
+          ? s.platform
+          : "GOOGLE_MEET") as InterviewPlatform,
+        meetingLink: s.meetingLink,
+        address: s.address,
+        interviewers: parseInterviewers(s.interviewers),
+      }));
+      if (slots.length > 0) {
+        result.slots = slots;
+      }
+    }
+
     return NextResponse.json(result);
   } catch (error) {
     console.error("[POST /api/public/track]", error);

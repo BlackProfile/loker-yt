@@ -427,6 +427,37 @@ export function serializeAdminUser(record: AdminUserRecordModel): AdminUser {
   };
 }
 
+/** Parse kolom AdminUser.assignedPositions (JSON string[] positionId) menjadi daftar unik. */
+export function parseAssignedPositions(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return [
+      ...new Set(
+        parsed
+          .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+          .map((v) => v.trim())
+      ),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Masking data lamaran untuk role VIEWER pada level respons list:
+ * phone disembunyikan dan akses file CV dinolkan (DB tetap utuh).
+ */
+export function maskApplicationForViewer(app: Application): Application {
+  return {
+    ...app,
+    phone: "(disembunyikan)",
+    cvFileId: null,
+    cvFileName: null,
+  };
+}
+
 /* ------------------------------ Parsing konten situs ------------------------------ */
 
 function pickString(source: Record<string, unknown>, key: keyof SiteContent, fallback: string): string {

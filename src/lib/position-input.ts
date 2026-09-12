@@ -83,6 +83,10 @@ export type PositionFields = {
   onboardingDocs?: string[]; // label dokumen wajib
   reapplyCooldownDays?: number;
   autoCloseOnHired?: boolean;
+  // Konten dua bahasa (opsional)
+  titleEn?: string | null;
+  descriptionEn?: string | null;
+  requirementsEn?: string[];
 };
 
 /* ------------------------------- Field sederhana ------------------------------- */
@@ -595,6 +599,21 @@ export async function sanitizePositionInput(
   if (!autoCloseOnHired.ok) return autoCloseOnHired;
   if (autoCloseOnHired.value !== undefined) f.autoCloseOnHired = autoCloseOnHired.value;
 
+  // Konten dua bahasa (opsional): kosong = null (fallback ke versi Indonesia).
+  const titleEn = sanitizeNullableText(data.titleEn, "Judul bahasa Inggris", 120);
+  if (!titleEn.ok) return titleEn;
+  if (titleEn.value !== undefined) f.titleEn = titleEn.value;
+
+  const descriptionEn = sanitizeNullableText(data.descriptionEn, "Deskripsi bahasa Inggris", 5000);
+  if (!descriptionEn.ok) return descriptionEn;
+  if (descriptionEn.value !== undefined) f.descriptionEn = descriptionEn.value;
+
+  const requirementsEn = sanitizeStringList(data.requirementsEn, {
+    name: "Persyaratan bahasa Inggris", maxItems: 20, minLen: 1, maxLen: 200,
+  });
+  if (!requirementsEn.ok) return requirementsEn;
+  if (requirementsEn.value !== undefined) f.requirementsEn = requirementsEn.value;
+
   // Slug: eksplisit divalidasi; bila tidak dikirim tapi judul BERUBA -> regenerate dari judul.
   const slug = await sanitizeSlug(data.slug, opts.excludeId);
   if (!slug.ok) return slug;
@@ -662,6 +681,10 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.onboardingDocs !== undefined) out.onboardingDocs = JSON.stringify(f.onboardingDocs);
   if (f.reapplyCooldownDays !== undefined) out.reapplyCooldownDays = f.reapplyCooldownDays;
   if (f.autoCloseOnHired !== undefined) out.autoCloseOnHired = f.autoCloseOnHired;
+  // Konten dua bahasa (opsional)
+  if (f.titleEn !== undefined) out.titleEn = f.titleEn;
+  if (f.descriptionEn !== undefined) out.descriptionEn = f.descriptionEn;
+  if (f.requirementsEn !== undefined) out.requirementsEn = JSON.stringify(f.requirementsEn);
   // coverFileId hanya tersedia lewat relasi pada input update.
   if (f.coverFileId === null) out.coverFile = { disconnect: true };
   else if (f.coverFileId !== undefined) out.coverFile = { connect: { id: f.coverFileId } };

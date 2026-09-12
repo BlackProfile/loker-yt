@@ -136,6 +136,8 @@ export async function POST(req: NextRequest) {
     const utmSource = asOptionalString(fields.utmSource)?.slice(0, 60) ?? null;
     const utmMedium = asOptionalString(fields.utmMedium)?.slice(0, 60) ?? null;
     const utmCampaign = asOptionalString(fields.utmCampaign)?.slice(0, 60) ?? null;
+    // Referrer: URL halaman saat pelamar mengirim (dikirim client bila ada; null bila tidak).
+    const referrer = asOptionalString(fields.referrer)?.slice(0, 300) ?? null;
 
     if (name.length < 3) {
       return NextResponse.json({ error: "Nama minimal 3 karakter." }, { status: 400 });
@@ -303,6 +305,7 @@ export async function POST(req: NextRequest) {
         utmSource,
         utmMedium,
         utmCampaign,
+        referrer,
         screeningAnswers: screeningAnswersJson,
       },
     });
@@ -316,8 +319,43 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Deteksi duplikat (fitur Task 20-a): email ATAU telepon sama dengan lamaran
+    // lain pada POSISI YANG SAMA dalam 90 hari terakhir -> tandai isDuplicate +
+    // simpan id lamaran pertama. Dibungkus try/catch: kegagalan deteksi tidak
+    // pernah menggagalkan submit.
+    try {
+      const dupCutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      const original = await db.application.findFirst({
+        where: {
+          id: { not: created.id },
+          positionId: created.positionId,
+          createdAt: { gte: dupCutoff },
+          OR: [{ email }, { phone }],
+        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, trackingCode: true },
+      });
+      if (original) {
+        await db.application.update({
+          where: { id: created.id },
+          data: { isDuplicate: true, duplicateOfId: original.id },
+        });
+        await db.activityLog.create({
+          data: {
+            applicationId: created.id,
+            actor: "Sistem",
+            action: "DUPLICATE_DETECTED",
+            detail: `Kemungkinan lamaran ganda dari ${original.trackingCode ?? original.id} — email/telepon sama pada posisi yang sama dalam 90 hari`,
+          },
+        });
+      }
+    } catch (duplicateError) {
+      console.error("[POST /api/applications] deteksi duplikat gagal:", duplicateError);
+    }
+
     // Pipeline latar belakang: AI screening -> transkripsi ASR -> notifikasi webhook.
     // Fire-and-forget: tidak memblokir respons dan dijamin tidak melempar error.
+    // AI screening mengisi aiScore/aiSummary/aiRecommendation/aiAnalyzedAt + log AI_SCREENING (actor "AI").
     void startBackgroundProcessing(created.id).catch(() => {});
 
     // Auto-reply dari template posisi (bila diatur) + info tes/assignment posisi.
