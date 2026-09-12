@@ -750,7 +750,7 @@ export function ApplyWizard({
   const stepLabels = t.apply.steps;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="@container flex flex-col gap-6">
       <div>
         <h3 className="text-lg font-semibold">{t.apply.formTitle}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -763,7 +763,7 @@ export function ApplyWizard({
         <Card className="flex-row items-center justify-between gap-3 rounded-xl border-amber-200 bg-amber-50/60 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
           <div className="min-w-0">
             <p className="text-sm font-semibold">{t.apply.draft.title}</p>
-            <p className="truncate text-xs text-muted-foreground">
+            <p className="line-clamp-2 text-xs text-muted-foreground">
               {t.apply.draft.body}
               {typeof draft.savedAt === "number"
                 ? ` (${t.apply.draft.savedPrefix} ${new Date(draft.savedAt).toLocaleString("id-ID")})`
@@ -781,14 +781,16 @@ export function ApplyWizard({
         </Card>
       ) : null}
 
-      {/* Stepper */}
+      {/* Stepper — label langkah hanya tampil bila lebar KARTU cukup
+          (@container, bukan viewport): di kolom kanan desktop yang sempit
+          hanya lingkaran + garis, tanpa label agar tidak meluber keluar kartu. */}
       <ol className="flex items-center gap-2" aria-label={t.apply.stepOf}>
         {stepLabels.map((label, index) => {
           const isDone = index < step;
           const isActive = index === step;
           return (
-            <li key={label} className="flex flex-1 items-center gap-2 last:flex-none">
-              <div className="flex items-center gap-2">
+            <li key={label} className="flex min-w-0 flex-1 items-center gap-2 last:flex-none">
+              <div className="flex min-w-0 items-center gap-2">
                 <span
                   aria-current={isActive ? "step" : undefined}
                   className={cn(
@@ -807,7 +809,7 @@ export function ApplyWizard({
                 </span>
                 <span
                   className={cn(
-                    "hidden text-xs font-medium sm:block",
+                    "hidden min-w-0 truncate text-xs font-medium @xl:block",
                     isActive ? "text-foreground" : "text-muted-foreground",
                   )}
                 >
