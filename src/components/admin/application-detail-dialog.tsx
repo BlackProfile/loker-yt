@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AudioLines,
   CalendarPlus,
@@ -52,9 +53,11 @@ import {
   MapPin,
   Megaphone,
   MessageSquareText,
+  Send,
   Share2,
   Tag,
   Trash2,
+  Users,
   Video,
   X,
   XCircle,
@@ -64,10 +67,12 @@ import {
   POSITION_TYPES,
   REJECTION_REASONS,
   REJECTION_REASON_LABELS,
+  ROLE_LABELS,
   type Application,
   type Interview,
   type Position,
   type RejectionReason,
+  type Role,
   type StageKey,
   type LogEntry,
 } from "@/lib/types";
@@ -200,6 +205,159 @@ function SourceRow({
   );
 }
 
+/* ------------------------------ Diskusi tim (Task 20-a) ------------------------------ */
+
+export type TeamComment = {
+  id: string;
+  authorName: string;
+  authorRole: string;
+  body: string;
+  mentions: string[];
+  createdAt: string;
+};
+
+// Render isi komentar: @nama ditampilkan tebal rose-600.
+function CommentBody({ body }: { body: string }) {
+  const parts = body.split(/(@[\p{L}\p{N}_.-]{2,30})/gu);
+  return (
+    <p className="text-sm whitespace-pre-wrap">
+      {parts.map((part, i) =>
+        part.startsWith("@") ? (
+          <strong key={i} className="font-semibold text-rose-600 dark:text-rose-400">
+            {part}
+          </strong>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </p>
+  );
+}
+
+// Diskusi internal antar admin pada satu kandidat. Dipasang dengan key={applicationId}
+// agar state reset & data di-refetch saat kandidat berganti / dialog dibuka.
+function TeamDiscussion({
+  applicationId,
+  canMutate,
+}: {
+  applicationId: string;
+  canMutate: boolean;
+}) {
+  const { reportError } = useAdminSession();
+  const [comments, setComments] = useState<TeamComment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const loadComments = useCallback(async () => {
+    try {
+      const rows = await apiGet<TeamComment[]>(
+        `/api/admin/applications/${applicationId}/comments`,
+      );
+      setComments(rows);
+    } catch {
+      // Diskusi bersifat pelengkap; biarkan data lama / kosong saat gagal.
+    } finally {
+      setLoading(false);
+    }
+  }, [applicationId]);
+
+  // Realtime ringan: refetch saat dialog dibuka (mount) — dan setelah kirim.
+  useEffect(() => {
+    setLoading(true);
+    void loadComments();
+  }, [loadComments]);
+
+  async function handleSend(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      await apiPost<TeamComment>(
+        `/api/admin/applications/${applicationId}/comments`,
+        { body: text },
+      );
+      setDraft("");
+      toast.success("Komentar terkirim");
+      await loadComments();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Users className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+        <p className="text-sm font-semibold">Diskusi Tim</p>
+        <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-secondary-foreground">
+          {comments.length}
+        </span>
+      </div>
+      {loading ? (
+        <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Memuat diskusi...
+        </p>
+      ) : comments.length === 0 ? (
+        <p className="py-1 text-sm text-muted-foreground">
+          Belum ada diskusi. Gunakan @nama untuk menyebut rekan tim.
+        </p>
+      ) : (
+        <div className="flex max-h-96 flex-col gap-3 overflow-y-auto pr-1 nice-scrollbar">
+          {comments.map((c) => (
+            <div key={c.id} className="rounded-lg bg-muted/50 p-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold">{c.authorName}</span>
+                <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                  {ROLE_LABELS[(c.authorRole as Role) ?? "HR"] ?? c.authorRole}
+                </Badge>
+                <span className="text-[11px] text-muted-foreground">
+                  {formatShortDateTime(c.createdAt)}
+                </span>
+              </div>
+              <div className="mt-1">
+                <CommentBody body={c.body} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {canMutate ? (
+        <form onSubmit={handleSend} className="flex flex-col gap-2">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Tulis komentar untuk tim... gunakan @nama untuk mention"
+            rows={2}
+            maxLength={2000}
+            disabled={sending}
+            aria-label="Tulis komentar diskusi tim"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            className="h-9 w-fit active:scale-[0.99]"
+            disabled={sending || !draft.trim()}
+          >
+            {sending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Send className="size-4" aria-hidden="true" />
+            )}
+            Kirim Komentar
+          </Button>
+        </form>
+      ) : (
+        <p className="text-xs text-muted-foreground">Hanya OWNER/HR yang dapat menulis komentar.</p>
+      )}
+    </div>
+  );
+}
+
 export function ApplicationDetailDialog({
   application,
   onOpenChange,
@@ -236,6 +394,9 @@ export function ApplicationDetailDialog({
   const [sessionDetail, setSessionDetail] = useState<Interview | null>(null);
   const [sessionCreateOpen, setSessionCreateOpen] = useState(false);
   const [createNonce, setCreateNonce] = useState(0);
+
+  // Deteksi duplikat (fitur Task 20-a): id lamaran yang ditandai ganda.
+  const [duplicateIds, setDuplicateIds] = useState<Set<string>>(new Set());
 
   // Panel Tolak Lamaran.
   const [rejectReason, setRejectReason] = useState<RejectionReason | "">("");
@@ -345,6 +506,22 @@ export function ApplicationDetailDialog({
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
+
+  // Muat daftar id duplikat setiap dialog dibuka / kandidat berganti.
+  useEffect(() => {
+    if (!applicationId) return;
+    let cancelled = false;
+    apiGet<{ ids: string[] }>("/api/admin/duplicates")
+      .then((data) => {
+        if (!cancelled) setDuplicateIds(new Set(data.ids));
+      })
+      .catch(() => {
+        // Badge duplikat bersifat pelengkap; abaikan kegagalan fetch.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applicationId]);
 
   useLiveRefresh("interviews:changed", () => {
     void loadSessions(true);
@@ -839,6 +1016,20 @@ export function ApplicationDetailDialog({
           <DialogTitle className="flex flex-wrap items-center gap-2 pr-6 text-lg font-bold">
             <span>{app.name}</span>
             <StatusBadge status={app.status} />
+            {duplicateIds.has(app.id) ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className="cursor-help border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                  >
+                    <Copy className="size-3" aria-hidden="true" />
+                    Duplikat
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>Kemungkinan lamaran ganda</TooltipContent>
+              </Tooltip>
+            ) : null}
             {app.talentPool ? (
               <Badge
                 variant="outline"
@@ -1773,6 +1964,11 @@ export function ApplicationDetailDialog({
                 ) : null}
               </div>
             ) : null}
+
+            <Separator />
+
+            {/* Diskusi tim (Task 20-a) */}
+            <TeamDiscussion key={app.id} applicationId={app.id} canMutate={canMutate} />
 
             <Separator />
 

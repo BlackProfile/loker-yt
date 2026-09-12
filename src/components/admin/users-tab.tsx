@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -47,6 +48,8 @@ import {
   Pencil,
   Plus,
   ShieldCheck,
+  ShieldOff,
+  Smartphone,
   Trash2,
   Users,
 } from "lucide-react";
@@ -55,9 +58,10 @@ import {
   ROLES,
   ROLE_LABELS,
   type AdminUser,
+  type Position,
   type Role,
 } from "@/lib/types";
-import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import { roleBadgeClass, formatDate } from "./format";
 import { useAdminSession } from "./admin-context";
 import { cn } from "@/lib/utils";
@@ -124,8 +128,21 @@ const EMPTY_FORM: UserForm = {
   isActive: true,
 };
 
+/** Detail user dari GET /api/admin/users/[id]: profil + scope posisi + status 2FA. */
+type AdminUserDetail = AdminUser & {
+  totpEnabled: boolean;
+  assignedPositions: string[];
+};
+
+/** Respons POST /api/admin/security/totp action=setup. */
+type TotpSetupData = {
+  uri: string;
+  secret: string;
+  qrDataUrl: string;
+};
+
 export function UsersTab() {
-  const { reportError } = useAdminSession();
+  const { reportError, session, role } = useAdminSession();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -147,6 +164,24 @@ export function UsersTab() {
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Scope posisi (HR) + detail user yang sedang diedit
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [scopeDraft, setScopeDraft] = useState<string[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  // 2FA (TOTP) akun sendiri
+  const [totpEnabled, setTotpEnabled] = useState<boolean | null>(null);
+  const [totpSetupOpen, setTotpSetupOpen] = useState(false);
+  const [totpDisableOpen, setTotpDisableOpen] = useState(false);
+  const [totpSetup, setTotpSetup] = useState<TotpSetupData | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [totpBusy, setTotpBusy] = useState(false);
+  const [totpError, setTotpError] = useState<string | null>(null);
+
+  // Reset 2FA pengguna lain (OWNER)
+  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
+  const [resetting, setResetting] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -163,14 +198,35 @@ export function UsersTab() {
     void load();
   }, [load]);
 
+  // Status 2FA milik sendiri + daftar posisi untuk editor scope.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const status = await apiGet<{ totpEnabled: boolean }>("/api/admin/security/totp");
+        setTotpEnabled(status.totpEnabled);
+      } catch (err) {
+        setTotpEnabled(false);
+        reportError(err);
+      }
+    })();
+    void (async () => {
+      try {
+        setPositions(await apiGet<Position[]>("/api/admin/positions"));
+      } catch {
+        // Editor scope tetap bisa dipakai: daftar kosong = semua posisi.
+      }
+    })();
+  }, [reportError]);
+
   function openCreate() {
     setEditing(null);
     setForm(EMPTY_FORM);
     setErrors({});
+    setScopeDraft([]);
     setDialogOpen(true);
   }
 
-  function openEdit(user: AdminUser) {
+  async function openEdit(user: AdminUser) {
     setEditing(user);
     setForm({
       name: user.name,
@@ -180,7 +236,20 @@ export function UsersTab() {
       isActive: user.isActive,
     });
     setErrors({});
+    setScopeDraft([]);
     setDialogOpen(true);
+    // Muat detail (scope posisi + status 2FA) untuk dialog edit.
+    setDetailLoading(true);
+    try {
+      const detail = await apiGet<AdminUserDetail>(`/api/admin/users/${user.id}`);
+      setScopeDraft(detail.assignedPositions);
+      setEditing((prev) => (prev && prev.id === detail.id ? detail : prev));
+    } catch (err) {
+      // Gagal memuat detail: scope tetap kosong (semua posisi).
+      reportError(err);
+    } finally {
+      setDetailLoading(false);
+    }
   }
 
   function validate(): boolean {
@@ -210,6 +279,8 @@ export function UsersTab() {
           isActive: form.isActive,
         };
         if (form.password) payload.password = form.password;
+        // Scope posisi hanya dikirim untuk role HR (kosong = semua posisi).
+        if (form.role === "HR") payload.assignedPositions = scopeDraft;
         await apiPatch<AdminUser>(`/api/admin/users/${editing.id}`, payload);
         toast.success("Pengguna diperbarui");
       } else {
@@ -290,6 +361,91 @@ export function UsersTab() {
     }
   }
 
+  /* ------------------------------- 2FA (TOTP) sendiri ------------------------------ */
+
+  function closeTotpDialogs() {
+    setTotpSetupOpen(false);
+    setTotpDisableOpen(false);
+    setTotpSetup(null);
+    setTotpCode("");
+    setTotpError(null);
+  }
+
+  async function openTotpSetup() {
+    setTotpSetup(null);
+    setTotpCode("");
+    setTotpError(null);
+    setTotpSetupOpen(true);
+    setTotpBusy(true);
+    try {
+      const data = await apiPost<TotpSetupData>("/api/admin/security/totp", { action: "setup" });
+      setTotpSetup(data);
+    } catch (err) {
+      setTotpSetupOpen(false);
+      reportError(err);
+    } finally {
+      setTotpBusy(false);
+    }
+  }
+
+  async function handleTotpEnable() {
+    if (totpBusy || totpCode.length !== 6) return;
+    setTotpError(null);
+    setTotpBusy(true);
+    try {
+      await apiPost<{ ok: boolean }>("/api/admin/security/totp", {
+        action: "enable",
+        code: totpCode,
+      });
+      toast.success("2FA berhasil diaktifkan");
+      setTotpEnabled(true);
+      closeTotpDialogs();
+    } catch (err) {
+      setTotpError(
+        err instanceof ApiError ? err.message : "Gagal memverifikasi kode. Coba lagi."
+      );
+    } finally {
+      setTotpBusy(false);
+    }
+  }
+
+  async function handleTotpDisable() {
+    if (totpBusy || totpCode.length !== 6) return;
+    setTotpError(null);
+    setTotpBusy(true);
+    try {
+      await apiPost<{ ok: boolean }>("/api/admin/security/totp", {
+        action: "disable",
+        code: totpCode,
+      });
+      toast.success("2FA dinonaktifkan");
+      setTotpEnabled(false);
+      closeTotpDialogs();
+    } catch (err) {
+      setTotpError(
+        err instanceof ApiError ? err.message : "Gagal memverifikasi kode. Coba lagi."
+      );
+    } finally {
+      setTotpBusy(false);
+    }
+  }
+
+  async function handleReset2fa() {
+    if (!resetTarget || resetting) return;
+    setResetting(true);
+    try {
+      await apiPatch<AdminUser>(`/api/admin/users/${resetTarget.id}`, { totpReset: true });
+      toast.success(`2FA akun ${resetTarget.email} direset`);
+      if (resetTarget.id === session.id) setTotpEnabled(false);
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setResetting(false);
+      setResetTarget(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {/* Ganti Password Saya */}
@@ -346,6 +502,71 @@ export function UsersTab() {
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      {/* Keamanan Akun (2FA) — akun sendiri */}
+      <Card className="gap-4 rounded-2xl p-6">
+        <CardHeader className="px-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Smartphone className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+            Keamanan Akun (2FA)
+          </CardTitle>
+          <CardDescription>
+            Verifikasi dua langkah dengan kode 6 digit dari aplikasi autentikator (mis. Google
+            Authenticator) untuk akun {session.email}.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Status</span>
+              {totpEnabled === null ? (
+                <Skeleton className="h-5 w-16 rounded-full" />
+              ) : totpEnabled ? (
+                <Badge
+                  variant="outline"
+                  className="border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400"
+                >
+                  Aktif
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
+                >
+                  Nonaktif
+                </Badge>
+              )}
+            </div>
+            {totpEnabled ? (
+              <Button
+                variant="outline"
+                className="h-11 active:scale-[0.99] sm:h-10"
+                onClick={() => {
+                  setTotpCode("");
+                  setTotpError(null);
+                  setTotpDisableOpen(true);
+                }}
+              >
+                <ShieldOff className="size-4" aria-hidden="true" />
+                Nonaktifkan
+              </Button>
+            ) : (
+              <Button
+                className="h-11 active:scale-[0.99] sm:h-10"
+                onClick={() => void openTotpSetup()}
+                disabled={totpEnabled === null}
+              >
+                <ShieldCheck className="size-4" aria-hidden="true" />
+                Aktifkan
+              </Button>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Bila 2FA aktif, login wajib menyertakan kode dari aplikasi autentikator. OWNER dapat
+            mereset 2FA pengguna lain lewat tombol perisai di daftar pengguna.
+          </p>
         </CardContent>
       </Card>
 
@@ -434,6 +655,18 @@ export function UsersTab() {
                     >
                       <Trash2 className="size-4" aria-hidden="true" />
                     </Button>
+                    {role === "OWNER" ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-11 sm:size-9"
+                        onClick={() => setResetTarget(user)}
+                        aria-label={`Reset 2FA pengguna ${user.name}`}
+                        title="Reset 2FA"
+                      >
+                        <ShieldOff className="size-4" aria-hidden="true" />
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               ))}
