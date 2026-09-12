@@ -211,7 +211,7 @@ export function ApplicationsTab() {
 
   const loadDuplicates = useCallback(async () => {
     try {
-      const data = await apiGet<{ ids: string[]>("/api/admin/duplicates");
+      const data = await apiGet<{ ids: string[] }>("/api/admin/duplicates");
       setDuplicateIds(new Set(data.ids));
     } catch {
       // Badge duplikat bersifat pelengkap; biarkan data lama saat gagal.

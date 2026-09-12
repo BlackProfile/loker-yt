@@ -31,6 +31,32 @@ async function assetFromRecordingUrl(recordingUrl: string | null) {
   return db.fileAsset.findUnique({ where: { id: match[1] } });
 }
 
+/** GET — ambang transkrip & ringkasan yang sudah tersimpan (dipakai dialog saat membuka sesi). */
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json(UNAUTHORIZED, { status: 401 });
+    }
+    const { id } = await params;
+    const interview = await db.interview.findUnique({
+      where: { id },
+      select: { transcript: true, transcriptSummary: true },
+    });
+    if (!interview) {
+      return NextResponse.json(NOT_FOUND, { status: 404 });
+    }
+    return NextResponse.json({
+      ok: true,
+      transcript: interview.transcript,
+      transcriptSummary: interview.transcriptSummary,
+    });
+  } catch (error) {
+    console.error("[GET /api/admin/interviews/[id]/transcribe]", error);
+    return NextResponse.json({ error: "Gagal memuat transkrip." }, { status: 500 });
+  }
+}
+
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getSession();

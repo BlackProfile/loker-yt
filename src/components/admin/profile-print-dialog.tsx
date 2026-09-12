@@ -183,11 +183,10 @@ export function ProfilePrintDialog({
     ? (positions.find((p) => p.id === app.positionId) ?? null)
     : null;
 
-  // Baris rubrik: kriteria milik posisi + kriteria yang sudah dinilai.
-  const rubricKeys = Array.from(
-    new Set([...(position?.rubricScores ? [] : []), ...Object.keys(app.rubricScores ?? {})])
+  // Baris rubrik: kriteria milik posisi digabung kriteria yang sudah dinilai.
+  const rubricAll = Array.from(
+    new Set([...(position?.rubricCriteria ?? []), ...Object.keys(app.rubricScores ?? {})])
   );
-  const rubricAll = Array.from(new Set([...(position?.rubricCriteria ?? []), ...rubricKeys]));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

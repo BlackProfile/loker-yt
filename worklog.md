@@ -841,3 +841,24 @@ Work Log:
 Stage Summary:
 - Fondasi siap; 8 subagen area fitur (20-a s.d. 20-h) tinggal mengisi komponen + API
 - ATURAN UNTUK SUBAGEN: dilarang db:push (skema sudah final), dilarang bun run build, dilarang restart dev server, dilarang edit file milik agen lain
+
+---
+Task ID: 20-e
+Agent: subagent onboarding & talenta (Z.ai Code)
+Task: Onboarding & talenta — tab Karyawan, talent rediscovery, nurture kandidat, cek-in 30/60/90
+
+Work Log:
+- Route baru GET /api/admin/hire: application hiredAt != null (include position title + checkIns), urut hiredAt desc; onboardingPlan diparse aman jadi {id,label,owner,dueAt,done}[].
+- Route baru PATCH /api/admin/hire/[id]: simpan onboardingPlan (sanitasi maks 30 item, label 120, owner 60, dueAt valid ISO) + ActivityLog ONBOARDING_PLAN + emitRealtime applications. VIEWER 403.
+- Route baru POST/PATCH /api/admin/hire/[id]/checkins: POST buat cek-in day 30|60|90 (dueAt = hiredAt + n hari, completedAt = now, 409 bila sudah ada), PATCH edit rating/notes milik application tsb; keduanya ActivityLog CHECK_IN + realtime. VIEWER 403.
+- Route baru POST /api/admin/positions/[id]/rediscover: kandidat talentPool=true ATAU REJECTED (maks 150, exclude ditolak posisi sama 30 hari terakhir, exclude hired) -> LLM (helper ZAI lokal pola withZaiRetry di dalam route, ai.ts tidak disentuh) -> top 5 {id,name,skor,alasan} dengan robust JSON parse (strip fence + fallback regex array) -> hasil dilengkapi appliedAt + posisi asal.
+- Route baru POST /api/admin/positions/[id]/nurture (+ ?preview=1 untuk hitung tanpa efek): REJECTED posisi tsb/satu departemen, rejectionReason != MENARIK_DIRI, rejectedAt > 60 hari lalu, maks 50 -> queueEmail("Kabar baik dari Lumina Studio", body sebut posisi + kode pelacakan lama, kind NURTURE) + ActivityLog NURTURE_SENT per kandidat -> {queued}.
+- src/app/api/public/offer/respond (cabang ACCEPT saja): setelah update + ActivityLog, buat 3 CheckIn (30/60/90, dueAt = hiredAt + n) via createMany hanya bila application belum punya CheckIn. Logika lain tidak diubah.
+- hire-tab.tsx diganti penuh (bukan stub): ringkasan 3 angka (total karyawan, masa percobaan berjalan, cek-in jatuh tempo), daftar karyawan max-h-96 overflow-y-auto, Card per karyawan (nama + posisi + "Bergabung {tanggal}" formatDate + progres masa percobaan bar sisa hari + badge amber "Masa percobaan n hari lagi" / emerald "Masa percobaan selesai"), editor Rencana Onboarding (tambah item label+PIC+tenggat, centang done, hapus, Simpan via PATCH), bagian Cek-in 30/60/90 (badge zinc "Belum waktunya" / amber "Jatuh tempo" / emerald "Selesai", Isi/Edit via dialog rating bintang Button Star + textarea catatan). Auto-refresh useLiveRefresh("applications:changed"). VIEWER: semua aksi mutasi disabled.
+- positions-tab.tsx: tombol "Cari Talent Lama" (Search) + "Nurture Kandidat" (Sprout) khusus posisi aktif (disabled utk VIEWER); Dialog hasil rediscovery (nama, badge skor emerald/amber/zinc, alasan, tanggal lamaran, tombol Coba Lagi) + AlertDialog konfirmasi nurture yang menyebut jumlah kandidat (fetch preview saat dibuka) -> toast "{n} email disiapkan".
+- Verifikasi: eslint file milik 20-e bersih; tsc terisolasi (tsconfig sementara, sudah dihapus) bersih. bun run lint global masih 2 error di file agen lain yang sedang dikerjakan paralel (applications-tab.tsx line 214 parse error, interview-tab.tsx SlotManagerPanel undefined) — di luar kepemilikan 20-e, tidak disentuh. Dev server sedang mati sehingga uji HTTP runtime tidak bisa dilakukan (dilarang start/restart).
+
+Stage Summary:
+- 4 fitur onboarding & talenta selesai; skema DB tak berubah (CheckIn + onboardingPlan sudah dari 20-fondasi).
+- File: src/app/api/admin/hire/route.ts, src/app/api/admin/hire/[id]/route.ts, src/app/api/admin/hire/[id]/checkins/route.ts, src/app/api/admin/positions/[id]/rediscover/route.ts, src/app/api/admin/positions/[id]/nurture/route.ts, src/components/admin/hire-tab.tsx, src/components/admin/positions-tab.tsx, src/app/api/public/offer/respond/route.ts.
+- position-stats-dialog.tsx tidak perlu diubah.

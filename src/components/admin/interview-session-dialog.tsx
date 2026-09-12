@@ -514,6 +514,34 @@ function InterviewSessionDialogInner({
 
   async function handleSaveResult() {
     if (savingResult || !interview) return;
+    const scores = buildScoresPayload();
+    // recordingUrl dari file lokal (/api/files/...) dikelola route upload — tidak
+    // dikirim lewat PATCH agar tidak ditolak validasi http.
+    const isLocalRecording = recordingUrl.trim().startsWith("/api/files/");
+    const recordingChanged =
+      !isLocalRecording && recordingUrl.trim() !== (interview.recordingUrl ?? "");
+    setSavingResult(true);
+    await handlePatch(
+      {
+        scores,
+        recommendation: recommendation || null,
+        notes: notes.trim() || null,
+        ...(recordingChanged ? { recordingUrl: recordingUrl.trim() || null } : {}),
+      },
+      "Hasil wawancara disimpan"
+    );
+    // Simpan manual menggantikan autosave — hentikan timer yang tertunda.
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    setAutosaveState("idle");
+    setSavingResult(false);
+  }
+
+  /* ------------------- Autosave scorecard (debounce 1,2 dtk) ------------------- */
+
+  function buildScoresPayload(): Record<string, number> {
     const scores: Record<string, number> = {};
     for (const c of criteria) {
       const v = scoreValues[c];
@@ -521,17 +549,152 @@ function InterviewSessionDialogInner({
         scores[c] = v;
       }
     }
-    setSavingResult(true);
-    await handlePatch(
-      {
-        scores,
-        recommendation: recommendation || null,
-        notes: notes.trim() || null,
-        recordingUrl: recordingUrl.trim() || null,
-      },
-      "Hasil wawancara disimpan"
+    return scores;
+  }
+
+  /** Setiap perubahan skor rubrik menjadwalkan PATCH skor otomatis (debounce 1,2 detik). */
+  function handleScoreSelect(criterion: string, value: number) {
+    setScoreValues((prev) => ({ ...prev, [criterion]: value }));
+    if (!interview || !canMutate) return;
+    if (autosaveHideRef.current) {
+      window.clearTimeout(autosaveHideRef.current);
+      autosaveHideRef.current = null;
+    }
+    setAutosaveState("saving");
+    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null;
+      void autosaveScoresNow();
+    }, 1200);
+  }
+
+  async function autosaveScoresNow() {
+    if (!interview || savingResult) return;
+    try {
+      await apiPatch<{ interview: Interview }>(
+        `/api/admin/interviews/${interview.id}`,
+        { scores: buildScoresPayload() }
+      );
+      // Tidak memanggil onSaved — hindari remount dialog (state transkrip/unggahan
+      // tetap utuh); daftar sesi di parent diperbarui via event realtime.
+      setAutosaveState("saved");
+      if (autosaveHideRef.current) window.clearTimeout(autosaveHideRef.current);
+      autosaveHideRef.current = window.setTimeout(() => {
+        autosaveHideRef.current = null;
+        setAutosaveState("idle");
+      }, 4000);
+    } catch (err) {
+      setAutosaveState("idle");
+      reportError(err);
+    }
+  }
+
+  /* ------------------- Rencana ronde berikutnya (roundPlan) ------------------- */
+
+  function startNextRound() {
+    if (!nextRoundTemplate) return;
+    setSchedulingNextRound(nextRoundTemplate);
+    setMode(nextRoundTemplate.mode ?? pos?.interviewMode ?? "ONLINE");
+    setPlatform(nextRoundTemplate.platform ?? pos?.interviewPlatform ?? "GOOGLE_MEET");
+    setDurationMin(String(nextRoundTemplate.durationMin ?? pos?.interviewDuration ?? 45));
+    setInterviewers(nextRoundTemplate.interviewers ? [...nextRoundTemplate.interviewers] : []);
+    setScheduledAtLocal("");
+    toast.info(
+      `Formulir diisi dari rencana "${nextRoundTemplate.name}" — pilih tanggal & jam lalu simpan.`
     );
-    setSavingResult(false);
+  }
+
+  function cancelNextRound() {
+    setSchedulingNextRound(null);
+    if (!interview) return;
+    // Kembalikan form ke nilai sesi saat ini.
+    setMode(interview.mode);
+    setPlatform(interview.platform);
+    setDurationMin(String(interview.durationMin));
+    setInterviewers([...interview.interviewers]);
+    setScheduledAtLocal(isoToLocalInput(interview.scheduledAt));
+  }
+
+  async function handleCreateNextRound() {
+    if (saving || !interview || !schedulingNextRound) return;
+    const payload = buildSchedulePayload();
+    if (!payload) return;
+    setSaving(true);
+    try {
+      const created = await apiPost<Interview>("/api/admin/interviews", {
+        ...payload,
+        applicationId: interview.applicationId,
+      });
+      toast.success(
+        `Ronde ${created.round} (${schedulingNextRound.name}) dijadwalkan`
+      );
+      setSchedulingNextRound(null);
+      onSaved(created);
+      onOpenChange(false);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /* --------------------- Rekaman & transkrip AI (hasil) --------------------- */
+
+  const RECORDING_MAX_BYTES = 25 * 1024 * 1024; // 25 MB
+
+  async function handleRecordingUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = ""; // reset agar file yang sama bisa dipilih ulang
+    if (!file || !interview) return;
+    if (file.size > RECORDING_MAX_BYTES) {
+      toast.error("Ukuran file maksimal 25 MB.");
+      return;
+    }
+    setUploadingRecording(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/admin/interviews/${interview.id}/recording`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: unknown; recordingUrl?: unknown; error?: unknown }
+        | null;
+      if (!res.ok || !data || data.ok !== true || typeof data.recordingUrl !== "string") {
+        const msg = typeof data?.error === "string" && data.error ? data.error : "Gagal mengunggah rekaman.";
+        toast.error(msg);
+        return;
+      }
+      const url = data.recordingUrl;
+      setRecordingFileUrl(url);
+      setRecordingUrl(url); // tampil di kolom URL rekaman (tanpa dikirim ulang saat simpan)
+      toast.success("Rekaman terunggah — siap ditranskripsi");
+    } catch {
+      toast.error("Gagal mengunggah rekaman. Coba lagi nanti.");
+    } finally {
+      setUploadingRecording(false);
+    }
+  }
+
+  async function handleTranscribe() {
+    if (transcribing || !interview || !recordingFileUrl) return;
+    setTranscribing(true);
+    toast.info("Transkripsi berjalan — proses bisa memakan waktu beberapa menit.");
+    try {
+      const res = await apiPost<{
+        ok: boolean;
+        transcript: string | null;
+        transcriptSummary: string | null;
+      }>(`/api/admin/interviews/${interview.id}/transcribe`);
+      setTranscript(res.transcript);
+      setTranscriptSummary(res.transcriptSummary);
+      toast.success("Transkrip & ringkasan AI siap");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setTranscribing(false);
+    }
   }
 
   async function handleDelete() {
