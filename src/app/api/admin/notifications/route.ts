@@ -19,10 +19,21 @@ export async function GET() {
       db.notificationItem.findMany({
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: 50,
-        include: { application: { select: { name: true } } },
       }),
       db.notificationItem.count({ where: { isRead: false } }),
     ]);
+
+    // NotificationItem hanya menyimpan applicationId (tanpa relasi) — nama pelamar
+    // dicari terpisah agar daftar bisa menampilkan konteks kandidat.
+    const appIds = [...new Set(rows.map((row) => row.applicationId).filter((v): v is string => Boolean(v)))];
+    const apps =
+      appIds.length > 0
+        ? await db.application.findMany({
+            where: { id: { in: appIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const nameById = new Map(apps.map((app) => [app.id, app.name]));
 
     return NextResponse.json({
       notifications: rows.map((row) => ({
@@ -31,7 +42,7 @@ export async function GET() {
         body: row.body,
         category: row.category,
         applicationId: row.applicationId,
-        applicationName: row.application?.name ?? null,
+        applicationName: row.applicationId ? (nameById.get(row.applicationId) ?? null) : null,
         isRead: row.isRead,
         createdAt: row.createdAt.toISOString(),
       })),

@@ -105,13 +105,16 @@ function looksLikeRealText(text: string): boolean {
 
 /** Panggil VLM (createVision) dan kembalikan teks hasilnya. */
 async function vlmExtract(content: VisionContentItem[]): Promise<string> {
+  // Endpoint vision SDK memakai model default server (pola README & CLI SDK tidak
+  // mengirim `model`), sehingga body di-cast ke tipe parameternya tanpa model.
+  type ZaiInstance = Awaited<ReturnType<typeof import("z-ai-web-dev-sdk").default.create>>;
+  type CreateVisionBody = Parameters<ZaiInstance["chat"]["completions"]["createVision"]>[0];
+  const body = {
+    messages: [{ role: "user", content }],
+    thinking: { type: "disabled" },
+  } as CreateVisionBody;
   const completion = await withTimeout(
-    withZaiRetry((zai) =>
-      zai.chat.completions.createVision({
-        messages: [{ role: "user", content }],
-        thinking: { type: "disabled" },
-      }),
-    ),
+    withZaiRetry((zai) => zai.chat.completions.createVision(body)),
     "OCR CV (VLM)",
     AI_TIMEOUT_MS,
   );

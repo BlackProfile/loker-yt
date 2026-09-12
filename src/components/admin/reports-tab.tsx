@@ -764,6 +764,7 @@ export function ReportsTab() {
       </SectionCard>
 
       <ProfilePrintDialog
+        key={selectedAppId || "none"}
         application={selectedApp}
         positions={positions}
         open={printOpen}

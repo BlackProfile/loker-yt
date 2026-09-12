@@ -29,6 +29,25 @@ function formatScores(record: Record<string, number> | null): string {
     .join("; ");
 }
 
+/** Parse string JSON kolom skor (rubrik/scorecard) menjadi record aman. */
+function tryParseScores(raw: string | null): Record<string, number> | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const result: Record<string, number> = {};
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        const num = typeof value === "number" ? value : Number(value);
+        if (Number.isFinite(num)) result[key] = num;
+      }
+      return Object.keys(result).length > 0 ? result : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function candidateSection(app: {
   id: string;
   name: string;
@@ -51,21 +70,10 @@ function candidateSection(app: {
     ? app.interviews
         .map(
           (interview) =>
-            `  - Ronde ${interview.round} (${interview.status}): skor [${formatScores(interview.scores)}]; rekomendasi pewawancara: ${interview.recommendation ?? "-"}; ringkasan: ${interview.transcriptSummary ?? "-"}`
+            `  - Ronde ${interview.round} (${interview.status}): skor [${formatScores(tryParseScores(interview.scores))}]; rekomendasi pewawancara: ${interview.recommendation ?? "-"}; ringkasan: ${interview.transcriptSummary ?? "-"}`
         )
         .join("\n")
     : "  - (belum ada sesi wawancara)";
-  let rubric: Record<string, number> | null = null;
-  if (app.rubricScores) {
-    try {
-      const parsedRubric: unknown = JSON.parse(app.rubricScores);
-      if (parsedRubric && typeof parsedRubric === "object" && !Array.isArray(parsedRubric)) {
-        rubric = parsedRubric as Record<string, number>;
-      }
-    } catch {
-      rubric = null;
-    }
-  }
   return [
     `ID: ${app.id}`,
     `Nama: ${app.name}`,
@@ -74,7 +82,7 @@ function candidateSection(app: {
     `Alasan melamar: ${app.motivation.slice(0, 500) || "-"}`,
     `Skor AI screening: ${app.aiScore ?? "belum dinilai"}/100`,
     `Ringkasan AI: ${app.aiSummary?.slice(0, 400) ?? "-"}`,
-    `Rubrik admin: ${formatScores(rubric)}`,
+    `Rubrik admin: ${formatScores(tryParseScores(app.rubricScores))}`,
     `Transkrip audio intro: ${app.transcript?.slice(0, 500) ?? "-"}`,
     "Wawancara:",
     interviewLines,

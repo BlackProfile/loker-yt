@@ -15,6 +15,7 @@ import {
   Loader2,
   MessageSquareText,
   Mic,
+  PauseCircle,
   PencilLine,
   ShieldCheck,
   Upload,
@@ -197,6 +198,10 @@ export function ApplyWizard({
   const [screeningAnswers, setScreeningAnswers] = useState<Record<string, string>>({});
   // Sumber pelamar ("dari mana tahu lowongan ini") — opsional.
   const [source, setSource] = useState("");
+  // Mode tutup rekrutmen (Setting "site" via /api/public/site) — saat aktif,
+  // tombol kirim di langkah akhir dinonaktifkan dan pengiriman diblokir.
+  const [recruitmentClosed, setRecruitmentClosed] = useState(false);
+  const [recruitmentClosedMessage, setRecruitmentClosedMessage] = useState("");
   // UTM dibaca SEKALI saat mount via useState initializer (aman SSR; tidak dirender).
   const [utm] = useState(() => {
     if (typeof window === "undefined") {
@@ -213,6 +218,27 @@ export function ApplyWizard({
 
   const selectedPosition = positions.find((p) => p.id === positionId);
   const screeningQuestions = selectedPosition?.screeningQuestions ?? [];
+
+  // Status rekrutmen dibaca sekali saat mount; gagal dianggap terbuka.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/public/site", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: unknown) => {
+        if (!alive || !data || typeof data !== "object") return;
+        const obj = data as Record<string, unknown>;
+        setRecruitmentClosed(obj.recruitmentClosed === true);
+        setRecruitmentClosedMessage(
+          typeof obj.message === "string" ? obj.message : "",
+        );
+      })
+      .catch(() => {
+        // biarkan default (terbuka)
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Reset jawaban screening saat posisi berubah (termasuk perubahan dari luar
   // wizard lewat dialog posisi) — pola "adjust state during render", tanpa effect.
@@ -464,6 +490,14 @@ export function ApplyWizard({
    * dan menekan konfirmasi pada dialog — tidak pernah kirim otomatis.
    */
   async function doSubmit() {
+    if (recruitmentClosed) {
+      // Pengaman ekstra: jangan kirim bila rekrutmen ditutup di tengah alur.
+      toast.error(
+        recruitmentClosedMessage.trim() ||
+          "Rekrutmen sedang ditutup. Lamaran tidak dapat dikirim saat ini.",
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       const fd = new FormData();
@@ -558,6 +592,13 @@ export function ApplyWizard({
     // Langkah 3 (Pratinjau): wajib pernyataan kebenaran data sebelum konfirmasi.
     if (!agreed) {
       toast.error(t.apply.preview.agreeRequired);
+      return;
+    }
+    if (recruitmentClosed) {
+      toast.error(
+        recruitmentClosedMessage.trim() ||
+          "Rekrutmen sedang ditutup. Lamaran tidak dapat dikirim saat ini.",
+      );
       return;
     }
     setConfirmOpen(true);
@@ -1504,6 +1545,23 @@ export function ApplyWizard({
           </motion.div>
         </AnimatePresence>
 
+        {/* Notifikasi rekrutmen ditutup — langkah akhir (pratinjau) */}
+        {step === 3 && recruitmentClosed ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            <PauseCircle
+              className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
+              aria-hidden="true"
+            />
+            <span>
+              {recruitmentClosedMessage.trim() ||
+                "Rekrutmen sedang ditutup. Pengiriman lamaran dinonaktifkan sementara."}
+            </span>
+          </div>
+        ) : null}
+
         {/* Navigasi langkah */}
         <div className="flex items-center justify-between gap-3">
           <Button
@@ -1526,7 +1584,11 @@ export function ApplyWizard({
               {t.apply.buttons.review}
             </Button>
           ) : (
-            <Button type="submit" className="h-11 min-w-40" disabled={submitting}>
+            <Button
+              type="submit"
+              className="h-11 min-w-40"
+              disabled={submitting || recruitmentClosed}
+            >
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

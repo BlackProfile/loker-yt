@@ -120,24 +120,24 @@ export function ProfilePrintDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(true);
   const [interviews, setInterviews] = useState<Interview[]>([]);
-  const [interviewsLoading, setInterviewsLoading] = useState(false);
+  const [interviewsLoading, setInterviewsLoading] = useState(true);
 
   const appId = open ? (application?.id ?? null) : null;
 
   // 10 aktivitas terakhir kandidat (log aktivitas per lamaran).
-  // Tanpa reset state saat dialog tertutup — komponen tidak dirender dan data
-  // selalu ditimpa hasil fetch terbaru saat kandidat dibuka.
+  // Komponen di-remount per kandidat (key dari pemanggil), sehingga loading cukup
+  // sebagai state awal dan setState hanya dilakukan pada callback async.
   useEffect(() => {
     if (!appId) return;
     let cancelled = false;
-    setLogsLoading(true);
     apiGet<LogEntry[]>(`/api/admin/logs?applicationId=${encodeURIComponent(appId)}&limit=10`)
       .then((rows) => {
         if (!cancelled) setLogs(rows);
       })
       .catch(() => {
+        // Riwayat aktivitas bersifat pelengkap; tampilkan kosong saat gagal.
         if (!cancelled) setLogs([]);
       })
       .finally(() => {
@@ -152,7 +152,6 @@ export function ProfilePrintDialog({
   useEffect(() => {
     if (!appId) return;
     let cancelled = false;
-    setInterviewsLoading(true);
     apiGet<Interview[]>("/api/admin/interviews")
       .then((rows) => {
         if (cancelled) return;

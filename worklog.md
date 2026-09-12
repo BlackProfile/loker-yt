@@ -862,3 +862,28 @@ Stage Summary:
 - 4 fitur onboarding & talenta selesai; skema DB tak berubah (CheckIn + onboardingPlan sudah dari 20-fondasi).
 - File: src/app/api/admin/hire/route.ts, src/app/api/admin/hire/[id]/route.ts, src/app/api/admin/hire/[id]/checkins/route.ts, src/app/api/admin/positions/[id]/rediscover/route.ts, src/app/api/admin/positions/[id]/nurture/route.ts, src/components/admin/hire-tab.tsx, src/components/admin/positions-tab.tsx, src/app/api/public/offer/respond/route.ts.
 - position-stats-dialog.tsx tidak perlu diubah.
+
+---
+Task ID: 20-a
+Agent: subagent pipeline & screening (Z.ai Code)
+Task: Fitur pipeline & screening — ringkasan AI kartu, auto-screening + deteksi duplikat lamaran baru, Pusat Tugas, Shortlist AI, pencarian semantik, diskusi tim (comments), badge duplikat, hitungan duplikat pipeline
+
+Work Log:
+- src/lib/ai.ts (HANYA tambah fungsi baru): generateApplicationSummaryText (ringkasan 2-3 kalimat dari experience/motivation/aiScore/transcript/cvText), rankPositionShortlist (top 5 per posisi, JSON ketat), semanticSearchCandidates (maks 100 kandidat terbaru -> skor 0-100 + alasan, top 10), plus parser JSON tervalidasi (extractJsonArray/normalizeRankedEntries, id harus nyata, skor 0-100)
+- Route baru POST /api/admin/applications/[id]/ai-summary: simpan aiSummary+aiAnalyzedAt, ActivityLog AI_SUMMARY, emitRealtime(applications)
+- Route baru POST /api/admin/positions/[id]/shortlist dan POST /api/admin/applications/semantic-search (getSession; query 3-300 char; tangani error 502)
+- Route baru GET/POST /api/admin/applications/[id]/comments: authorName/authorRole dari session, parse @mention -> JSON mentions (unik, maks 10), ActivityLog COMMENT; GET semua role, POST OWNER/HR
+- Route baru GET /api/admin/duplicates: { ids } untuk badge duplikat (serializer Application milik seed.ts tidak menyertakan isDuplicate, jadi data diambil terpisah)
+- src/app/api/applications/route.ts (POST): simpan referrer (opsional, dipotong 300 char); deteksi duplikat email ATAU phone sama pada posisi sama dalam 90 hari -> isDuplicate+duplicateOfId (id lamaran pertama) + ActivityLog DUPLICATE_DETECTED (try/catch, tak bisa menggagalkan submit); AI screening fire-and-forget SUDAH ADA via startBackgroundProcessing (analyzeApplication menulis aiScore/aiSummary/aiRecommendation/aiAnalyzedAt + log AI_SCREENING actor "AI") — tidak diduplikasi
+- src/app/api/admin/action-items/route.ts: tambah staleNewApplications (status NEW > 3 hari) dan duplicateApplications (isDuplicate) dengan tipe perluasan ExtendedActionItemsResponse (kontrak types.ts tidak diubah)
+- kanban-board.tsx: kartu menampilkan aiSummary (line-clamp-2) bila ada; tombol ikon Sparkles "Buat ringkasan AI" bila belum ada (disabled VIEWER via prop canMutate dari useAdminSession di applications-tab, loading + toast sonner, stopPropagation agar tidak memicu drag/klik detail); Badge amber "Duplikat" + tooltip "Kemungkinan lamaran ganda" (data dari prop duplicateIds); prop baru duplicateIds/onUpdated (opsional, backward compatible)
+- applications-tab.tsx: fetch /api/admin/duplicates (awal + realtime) -> Kirim ke KanbanBoard; onUpdated menyimpan ringkasan baru; input "Cari dengan AI" + tombol (Enter juga) -> Dialog hasil (peringkat, nama, badge skor, alasan, tombol "Buka Detail Kandidat" bila kandidat ada di daftar — mekanisme setDetail sudah ada; bila tidak, tampil info saja)
+- application-detail-dialog.tsx: Badge amber "Duplikat" + tooltip di judul (fetch duplicates saat dialog dibuka); section "Diskusi Tim": list komentar (max-h-96 overflow-y-auto), textarea kirim (OWNER/HR), @nama dirender bold rose-600, refetch saat dibuka (mount per kandidat via key) + setelah kirim, badge role
+- pipeline-tab.tsx: tombol "Shortlist AI" di toolbar info posisi (disabled VIEWER/loading) + Dialog hasil (peringkat, nama, skor, alasan, loading state); Badge amber hitungan "N duplikat" + tooltip bila ada lamaran duplikat pada posisi aktif; refresh duplicates realtime
+- tasks-tab.tsx (pengganti stub): Pusat Tugas — 5 kelompok (Belum Ditinjau >3 hari, Penawaran Menunggu Jawaban + urgensi lewat batas/sisa hari, Permintaan Ubah Jadwal, Wawancara Belum Dinilai, Lamaran Duplikat), badge hitungan per kategori, tiap item tombol "Buka Detail" (membuka ApplicationDetailDialog asli bila kandidat ada di daftar), auto-refresh useLiveRefresh (applications + interviews), empty state "Semua beres!"
+- Verifikasi: bunx tsc --noEmit -> 0 error di semua file saya (error tersisa milik agen lain); bunx eslint pada 13 file saya -> bersih; tanpa emoji, tanpa biru/indigo/ungu; tidak ada db:push/build/restart server
+- Catatan: dev server tidak sedang berjalan (port 3000 connection refused saat smoke test), jadi pengujian runtime HTTP dilewati — validasi via tsc+eslint; apply-wizard (milik agen lain) belum mengirim field referrer, server siap menerima bila nanti ditambahkan
+
+Stage Summary:
+- 8 fitur pipeline & screening selesai: (1) ringkasan AI kartu kanban, (2) auto-screening (sudah ada) + referrer + deteksi duplikat 90 hari, (3) Pusat Tugas 5 kategori, (4) Shortlist AI per posisi, (5) pencarian semantik top 10, (6) diskusi tim dengan @mention, (7) badge Duplikat kanban+detail, (8) hitungan duplikat pipeline
+- File dibuat: ai-summary/comments/shortlist/semantic-search/duplicates routes; file diubah: lib/ai.ts (append saja), api/applications, api/admin/action-items, kanban-board, applications-tab, application-detail-dialog, pipeline-tab, tasks-tab; api/admin/applications/route.ts TIDAK disentuh; types.ts & seed.ts tidak diubah (tipe perluasan didefinisikan lokal)
