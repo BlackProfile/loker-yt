@@ -750,3 +750,20 @@ Stage Summary:
 - Panel admin kini punya tab "Pipeline": pilih lowongan → 4 kategori (Ditinjau/Wawancara/Diterima/Ditolak) masing-masing dengan daftar fiturnya sendiri ("Fitur tahap ini") dan aksi cepat yang relevan, sehingga HR tahu persis apa yang bisa dikerjakan di tiap tahap.
 - Kategori bekerja utk pipeline bawaan & kustom: tahap kustom dipetakan via editor baru di form posisi (dgn default heuristik kata kunci); offer pending/diterima otomatis tampil di kategori Diterima; restore & talent pool tersedia di Ditolak.
 - Semua aksi realtime + anti-flicker; data demo ikut teruji (interview, scorecard, offer, reject); GitHub auto-sync aktif kembali (commit cd58cc5 ter-push).
+
+---
+Task ID: 17
+Agent: Z.ai Code (main)
+Task: "aplikasi offline" — realtime service mati setelah restart sandbox; buat keepalive daemon
+
+Work Log:
+- Diagnosis: dev server (port 3000) & auto-push watcher hidup, tapi mini-service realtime (socket.io, port 3003) MATI — semua tab user fallback ke "Mode hemat — pembaruan otomatis terbatas" (indikator !realtimeUp di home-view.tsx), sehingga terlihat "offline".
+- Percobaan start langsung (nohup & setsid bun run dev) selalu mati antar sesi bash; hanya daemon berpola bash-loop (auto-push.sh) yang terbukti survive.
+- Solusi: scripts/realtime-keepalive.sh (bash loop daemon, cek GET /health port 3003 tiap 10 detik, restart `bun run dev` bila down, log ke realtime.log) + scripts/start-realtime.sh (starter idempoten, pidfile /tmp/lumina-realtime.pid, pola sama dgn start-auto-push.sh).
+- Start keepalive (pid 7149) → service hidup, client browser user auto-reconnect (total 4 klien termasuk sesi uji).
+- Verifikasi agent-browser via gateway :81 (bukan port 3000 langsung): landing OK; indikator "Mode hemat" HILANG; detail posisi Video Editor OK dgn badge "Pembaruan langsung" aktif; login admin admin@lumina.id OK, dashboard + 9 tab tampil; console 0 error.
+- Catatan penting: akses langsung localhost:3000 TIDAK bisa konek socket (XTransformPort hanya diproses Caddy :81) — verifikasi realtime SELALU lewat gateway.
+
+Stage Summary:
+- Aplikasi kembali online penuh; realtime socket stabil dgn keepalive otomatis (downtime maks ~10-13 detik bila proses dibunuh sandbox, lalu auto-restart).
+- Skrip baru: scripts/realtime-keepalive.sh & scripts/start-realtime.sh (jalankan lagi setelah restart mesin, sama seperti start-auto-push.sh).
