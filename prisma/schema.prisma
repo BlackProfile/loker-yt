@@ -25,6 +25,11 @@ model AdminUser {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  // Keamanan tambahan
+  totpSecret        String? // secret TOTP (2FA) — null = belum diaktifkan
+  totpEnabled       Boolean @default(false)
+  assignedPositions String  @default("[]") // JSON string[] positionId — scope kandidat untuk HR (kosong = semua)
 }
 
 // Posisi lowongan yang dibuka — v3: fitur lengkap per lowongan
@@ -97,6 +102,20 @@ model Position {
   onboardingDocs     String  @default("[]") // JSON string[] dokumen wajib onboarding
   reapplyCooldownDays Int    @default(0) // jeda minimal lamar ulang setelah ditolak (hari); 0 = bebas
   autoCloseOnHired   Boolean @default(true) // tandai kuota terpenuhi otomatis saat kandidat diterima
+
+  // Rentang gaji wajar (validasi offer) — angka bulat bulanan
+  salaryMin Int?
+  salaryMax Int?
+
+  // Konten dua bahasa (ID default; EN opsional)
+  titleEn       String?
+  descriptionEn String?
+  requirementsEn String  @default("[]") // JSON string[]
+
+  // Rencana ronde wawancara bawaan: JSON {round,name,mode?,platform?,durationMin?,interviewers?[]}[]
+  roundPlan String @default("[]")
+
+  interviewSlots InterviewSlot[]
 }
 
 // Aset file yang diunggah pelamar (CV, audio intro)
