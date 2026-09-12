@@ -376,6 +376,8 @@ export function serializeApplication(record: ApplicationRecord): Application {
     probationEnd: record.probationEnd ? record.probationEnd.toISOString() : null,
     onboardingDocs: parseOnboardingDocs(record.onboardingDocs),
 
+    isDuplicate: record.isDuplicate,
+
     createdAt: record.createdAt.toISOString(),
   };
 }

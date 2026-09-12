@@ -282,6 +282,9 @@ export type Application = {
   probationEnd: string | null;
   onboardingDocs: OnboardingDoc[];
 
+  // Kualitas data
+  isDuplicate?: boolean; // true = lamaran ganda terdeteksi (badge "Duplikat" di tabel)
+
   createdAt: string;
 };
 
