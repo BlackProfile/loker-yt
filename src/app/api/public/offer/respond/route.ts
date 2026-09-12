@@ -173,6 +173,19 @@ export async function POST(req: NextRequest) {
       ],
     });
 
+    // Cek-in masa percobaan 30/60/90 hari: dibuat sekali di awal onboarding
+    // (dueAt = hiredAt + n hari), hanya bila application ini belum punya CheckIn.
+    const existingCheckIns = await db.checkIn.count({ where: { applicationId: application.id } });
+    if (existingCheckIns === 0) {
+      await db.checkIn.createMany({
+        data: [30, 60, 90].map((day) => ({
+          applicationId: application.id,
+          day,
+          dueAt: new Date(nowDate.getTime() + day * 24 * 60 * 60 * 1000),
+        })),
+      });
+    }
+
     void sendSystemEvent({
       title: "Offer Diterima",
       detail: `${application.name} MENERIMA penawaran posisi ${application.position?.title ?? "-"}! Mulai onboarding${probationEnd ? ` — masa percobaan s.d. ${probationEnd.toLocaleDateString("id-ID", { dateStyle: "long" })}` : ""}.`,

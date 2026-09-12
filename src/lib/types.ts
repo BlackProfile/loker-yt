@@ -91,6 +91,10 @@ export type SiteContent = {
   discordWebhookUrl: string;
   telegramBotToken: string;
   telegramChatId: string;
+  // Mode tutup rekrutmen — saat true, halaman publik menampilkan banner
+  // pengumuman dan formulir lamaran tidak bisa dikirim.
+  recruitmentClosed: boolean;
+  recruitmentClosedMessage: string;
   // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin)
   sections: SectionVisibility;
 };
@@ -209,6 +213,12 @@ export type Position = {
 
   // Rencana ronde wawancara bawaan (opsional — tidak semua API menyertakan)
   roundPlan?: RoundPlanTemplate[];
+
+  // Konten dua bahasa (opsional) — dipakai publik bila lang aktif "en"
+  // dan field terisi (non-kosong); selain itu fallback ke versi Indonesia.
+  titleEn: string | null;
+  descriptionEn: string | null;
+  requirementsEn: string[];
 };
 
 /** Satu entri rencana ronde wawancara pada Position.roundPlan (JSON). */

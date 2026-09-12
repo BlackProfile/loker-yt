@@ -299,6 +299,11 @@ export function serializePosition(record: PositionRecordModel): Position {
     noteTemplates: parseRequirements(record.noteTemplates),
     views: record.views,
 
+    // Konten dua bahasa (opsional)
+    titleEn: record.titleEn,
+    descriptionEn: record.descriptionEn,
+    requirementsEn: parseRequirements(record.requirementsEn),
+
     interviewMode: sanitizeInterviewMode(record.interviewMode),
     interviewPlatform: sanitizeInterviewPlatform(record.interviewPlatform),
     interviewDuration: record.interviewDuration,
@@ -512,6 +517,8 @@ export function sanitizeSiteContent(value: unknown, fallback: SiteContent = DEFA
     discordWebhookUrl: pickString(obj, "discordWebhookUrl", fallback.discordWebhookUrl),
     telegramBotToken: pickString(obj, "telegramBotToken", fallback.telegramBotToken),
     telegramChatId: pickString(obj, "telegramChatId", fallback.telegramChatId),
+    recruitmentClosed: pickBoolean(obj, "recruitmentClosed", fallback.recruitmentClosed),
+    recruitmentClosedMessage: pickString(obj, "recruitmentClosedMessage", fallback.recruitmentClosedMessage),
     sections: sanitizeSections(obj.sections, fallback.sections),
   };
 }
