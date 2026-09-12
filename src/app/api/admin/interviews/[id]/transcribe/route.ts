@@ -7,6 +7,7 @@ import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { db } from "@/lib/db";
+import { getSession } from "@/lib/server-auth";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";

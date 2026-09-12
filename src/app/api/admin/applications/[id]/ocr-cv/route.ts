@@ -6,6 +6,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { inflateSync } from "node:zlib";
+import ZAI from "z-ai-web-dev-sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { errorMessage } from "@/lib/ai-json";
@@ -107,7 +108,7 @@ function looksLikeRealText(text: string): boolean {
 async function vlmExtract(content: VisionContentItem[]): Promise<string> {
   // Endpoint vision SDK memakai model default server (pola README & CLI SDK tidak
   // mengirim `model`), sehingga body di-cast ke tipe parameternya tanpa model.
-  type ZaiInstance = Awaited<ReturnType<typeof import("z-ai-web-dev-sdk").default.create>>;
+  type ZaiInstance = Awaited<ReturnType<typeof ZAI.create>>;
   type CreateVisionBody = Parameters<ZaiInstance["chat"]["completions"]["createVision"]>[0];
   const body = {
     messages: [{ role: "user", content }],
