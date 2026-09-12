@@ -206,6 +206,19 @@ export type Position = {
   onboardingDocs: string[]; // label dokumen wajib onboarding
   reapplyCooldownDays: number;
   autoCloseOnHired: boolean;
+
+  // Rencana ronde wawancara bawaan (opsional — tidak semua API menyertakan)
+  roundPlan?: RoundPlanTemplate[];
+};
+
+/** Satu entri rencana ronde wawancara pada Position.roundPlan (JSON). */
+export type RoundPlanTemplate = {
+  round: number; // ronde ke-n (1, 2, ...)
+  name: string; // mis. "HR Screen", "User Trial", "Final"
+  mode?: InterviewMode;
+  platform?: InterviewPlatform;
+  durationMin?: number;
+  interviewers?: string[]; // pewawancara default
 };
 
 export type PositionPublicStats = {
@@ -373,6 +386,10 @@ export type TrackResponse = {
   rejection?: { reasonLabel: string; note: string | null } | null; // note hanya jika admin memberi feedback
   onboarding?: TrackOnboardingInfo | null;
   cooldown?: { until: string; days: number } | null; // pelamar masih dalam masa jeda lamar ulang
+  // Slot jadwal yang bisa dipilih pelamar (hanya bila tahap belum final; maks 8, urut terdekat)
+  slots?: TrackSlotInfo[];
+  // Rencana onboarding dari admin (agenda hari pertama; tampil terpisah dari checklist dokumen)
+  onboardingPlan?: OnboardingPlanItem[] | null;
 };
 
 // GET /api/admin/analytics — data tab analitik
@@ -542,7 +559,55 @@ export type Interview = {
   applicationPhone?: string;
   positionTitle?: string | null;
   trackingCode?: string;
+  // rekaman & transkrip (diisi route transcribe; opsional pada serialisasi lama)
+  transcript?: string | null;
+  transcriptSummary?: string | null;
+  slotId?: string | null; // slot self-service yang dipilih pelamar
 };
+
+/* ------------------------------ Slot wawancara self-service ------------------------------ */
+
+/** Slot jadwal yang dibuka admin — dipilih sendiri oleh pelamar dari halaman status. */
+export type InterviewSlot = {
+  id: string;
+  positionId: string | null;
+  positionTitle: string | null;
+  scheduledAt: string; // ISO
+  durationMin: number;
+  mode: InterviewMode;
+  platform: InterviewPlatform;
+  meetingLink: string | null;
+  address: string | null;
+  interviewers: string[];
+  bookedByApplicationId: string | null;
+  bookedByName: string | null; // nama pelamar yang membooking (dari API admin)
+  bookedAt: string | null;
+  createdAt: string;
+};
+
+/** Slot tersedia pada TrackResponse (versi publik, tanpa data booking). */
+export type TrackSlotInfo = {
+  id: string;
+  scheduledAt: string;
+  durationMin: number;
+  mode: InterviewMode;
+  platform: InterviewPlatform;
+  meetingLink: string | null;
+  address: string | null;
+  interviewers: string[];
+};
+
+/** Item rencana onboarding (agenda hari pertama, mentor, target). */
+export type OnboardingPlanItem = {
+  id: string;
+  label: string;
+  owner?: string;
+  dueAt?: string | null;
+  done: boolean;
+};
+
+// POST /api/public/slots/book -> sukses
+export type SlotBookResponse = { ok: true; round: number; scheduledAt: string };
 
 /* ---------------------------------- Penolakan terstruktur ---------------------------------- */
 
