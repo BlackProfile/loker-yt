@@ -316,6 +316,13 @@ export function serializePosition(record: PositionRecordModel): Position {
     onboardingDocs: parseRequirements(record.onboardingDocs),
     reapplyCooldownDays: record.reapplyCooldownDays,
     autoCloseOnHired: record.autoCloseOnHired,
+
+    // Rentang gaji wajar (null = tanpa batas)
+    salaryMin: record.salaryMin ?? null,
+    salaryMax: record.salaryMax ?? null,
+
+    // Rencana ronde wawancara bawaan
+    roundPlan: parseRoundPlan(record.roundPlan),
   };
 }
 

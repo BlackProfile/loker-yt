@@ -211,6 +211,10 @@ export type Position = {
   reapplyCooldownDays: number;
   autoCloseOnHired: boolean;
 
+  // Rentang gaji wajar (validasi offer) — null = tanpa batas
+  salaryMin: number | null;
+  salaryMax: number | null;
+
   // Rencana ronde wawancara bawaan (opsional — tidak semua API menyertakan)
   roundPlan?: RoundPlanTemplate[];
 
