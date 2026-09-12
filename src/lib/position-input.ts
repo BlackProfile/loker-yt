@@ -87,6 +87,10 @@ export type PositionFields = {
   titleEn?: string | null;
   descriptionEn?: string | null;
   requirementsEn?: string[];
+  // Rentang gaji wajar (null = tanpa batas) + rencana ronde (JSON string)
+  salaryMin?: number | null;
+  salaryMax?: number | null;
+  roundPlan?: string; // JSON RoundPlanTemplate[]
 };
 
 /* ------------------------------- Field sederhana ------------------------------- */
@@ -614,6 +618,51 @@ export async function sanitizePositionInput(
   if (!requirementsEn.ok) return requirementsEn;
   if (requirementsEn.value !== undefined) f.requirementsEn = requirementsEn.value;
 
+  // Rentang gaji wajar (opsional, rupiah bulanan; kosong = null)
+  const salaryMin = sanitizeNullableInt(data.salaryMin, "Gaji wajar minimum", 0, 1_000_000_000);
+  if (!salaryMin.ok) return salaryMin;
+  if (salaryMin.value !== undefined) f.salaryMin = salaryMin.value;
+
+  const salaryMax = sanitizeNullableInt(data.salaryMax, "Gaji wajar maksimum", 0, 1_000_000_000);
+  if (!salaryMax.ok) return salaryMax;
+  if (salaryMax.value !== undefined) f.salaryMax = salaryMax.value;
+
+  const minFinal = f.salaryMin !== undefined ? f.salaryMin : opts.current?.salaryMin ?? null;
+  const maxFinal = f.salaryMax !== undefined ? f.salaryMax : opts.current?.salaryMax ?? null;
+  if (minFinal != null && maxFinal != null && minFinal > maxFinal) {
+    return err("Gaji wajar minimum tidak boleh lebih besar dari maksimum.");
+  }
+
+  // Rencana ronde wawancara (opsional) — array {round,name,mode?,platform?,durationMin?,interviewers?[]}
+  if (data.roundPlan !== undefined) {
+    if (data.roundPlan === null || data.roundPlan === "") {
+      f.roundPlan = "[]";
+    } else if (Array.isArray(data.roundPlan)) {
+      const rows = data.roundPlan.filter(
+        (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object",
+      );
+      if (rows.length > 10) return err("Rencana ronde maksimal 10 ronde.");
+      const cleaned = rows.map((item, index) => {
+        const name = typeof item.name === "string" && item.name.trim() ? item.name.trim().slice(0, 60) : `Ronde ${index + 1}`;
+        const round = typeof item.round === "number" && Number.isInteger(item.round) && item.round > 0 ? item.round : index + 1;
+        const entry: Record<string, unknown> = { round, name };
+        if (typeof item.mode === "string" && ["ONLINE", "ONSITE"].includes(item.mode)) entry.mode = item.mode;
+        if (typeof item.platform === "string" && item.platform.trim()) entry.platform = item.platform.trim().slice(0, 40);
+        if (typeof item.durationMin === "number" && item.durationMin >= 10 && item.durationMin <= 480) entry.durationMin = item.durationMin;
+        if (Array.isArray(item.interviewers)) {
+          const names = item.interviewers
+            .filter((n): n is string => typeof n === "string" && n.trim().length > 0)
+            .map((n) => n.trim().slice(0, 60));
+          if (names.length > 0) entry.interviewers = names;
+        }
+        return entry;
+      });
+      f.roundPlan = JSON.stringify(cleaned);
+    } else {
+      return err("Rencana ronde tidak valid.");
+    }
+  }
+
   // Slug: eksplisit divalidasi; bila tidak dikirim tapi judul BERUBA -> regenerate dari judul.
   const slug = await sanitizeSlug(data.slug, opts.excludeId);
   if (!slug.ok) return slug;
@@ -685,6 +734,10 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.titleEn !== undefined) out.titleEn = f.titleEn;
   if (f.descriptionEn !== undefined) out.descriptionEn = f.descriptionEn;
   if (f.requirementsEn !== undefined) out.requirementsEn = JSON.stringify(f.requirementsEn);
+  // Rentang gaji wajar + rencana ronde
+  if (f.salaryMin !== undefined) out.salaryMin = f.salaryMin;
+  if (f.salaryMax !== undefined) out.salaryMax = f.salaryMax;
+  if (f.roundPlan !== undefined) out.roundPlan = f.roundPlan;
   // coverFileId hanya tersedia lewat relasi pada input update.
   if (f.coverFileId === null) out.coverFile = { disconnect: true };
   else if (f.coverFileId !== undefined) out.coverFile = { connect: { id: f.coverFileId } };

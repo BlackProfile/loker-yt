@@ -127,6 +127,8 @@ type FormState = {
   interviewMode: InterviewMode;
   interviewPlatform: InterviewPlatform;
   interviewDuration: string;
+  // Rencana ronde wawancara (template untuk "Jadwalkan Ronde Berikutnya")
+  roundPlan: { name: string; durationMin: string; interviewers: string }[];
   interviewCriteria: string[];
   interviewInviteTemplate: string;
   offerTemplate: string;
@@ -182,6 +184,7 @@ const EMPTY_FORM: FormState = {
   interviewMode: "ONLINE",
   interviewPlatform: "GOOGLE_MEET",
   interviewDuration: "45",
+  roundPlan: [],
   interviewCriteria: [],
   interviewInviteTemplate: "",
   offerTemplate: "",
@@ -240,6 +243,11 @@ function buildFormState(p: Position): FormState {
     interviewMode: p.interviewMode,
     interviewPlatform: p.interviewPlatform,
     interviewDuration: String(p.interviewDuration ?? 45),
+    roundPlan: (p.roundPlan ?? []).map((r) => ({
+      name: r.name,
+      durationMin: r.durationMin != null ? String(r.durationMin) : "",
+      interviewers: (r.interviewers ?? []).join(", "),
+    })),
     interviewCriteria: [...p.interviewCriteria],
     interviewInviteTemplate: p.interviewInviteTemplate ?? "",
     offerTemplate: p.offerTemplate ?? "",
@@ -541,6 +549,16 @@ export function PositionFormDialog({
       interviewDuration:
         form.interviewDuration.trim() === "" ? null : Number(form.interviewDuration),
       interviewCriteria: form.interviewCriteria.map((c) => c.trim()).filter(Boolean),
+      // Rencana ronde wawancara — hanya baris bernama yang disimpan
+      roundPlan: form.roundPlan
+        .filter((r) => r.name.trim())
+        .map((r, index) => ({
+          round: index + 1,
+          name: r.name.trim(),
+          durationMin:
+            r.durationMin.trim() !== "" && isInt(r.durationMin) ? Number(r.durationMin) : undefined,
+          interviewers: r.interviewers.split(",").map((n) => n.trim()).filter(Boolean),
+        })),
       interviewInviteTemplate: form.interviewInviteTemplate.trim() || null,
       // Penawaran & onboarding
       offerTemplate: form.offerTemplate.trim() || null,
