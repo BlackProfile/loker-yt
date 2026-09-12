@@ -51,7 +51,12 @@ export async function POST(req: NextRequest) {
       if (!status || status.length > 40) {
         return NextResponse.json({ error: "Status tidak valid." }, { status: 400 });
       }
-      const result = await db.application.updateMany({ where: { id: { in: ids } }, data: { status } });
+      // Tahap berubah -> bila ditujukan ke Ditolak, penawaran aktif ikut dibatalkan
+      // agar halaman status pelamar tidak menampilkan kartu offer yang tak relevan.
+      const result = await db.application.updateMany({
+        where: { id: { in: ids } },
+        data: { status, ...(status === "REJECTED" ? { offerStatus: null } : {}) },
+      });
       affected = result.count;
       const label = stageLabel(status);
       logAction = "BULK_STATUS";
@@ -88,6 +93,7 @@ export async function POST(req: NextRequest) {
               rejectionReason: reason,
               rejectionNote: note,
               rejectedAt: now,
+              offerStatus: null, // penawaran aktif dibatalkan saat lamaran ditolak
             },
           }),
         ),

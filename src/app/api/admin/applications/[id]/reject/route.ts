@@ -67,6 +67,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const now = new Date();
+    // Tahap berubah ke Ditolak -> penawaran aktif otomatis dibatalkan agar halaman
+    // status pelamar tidak menampilkan kartu offer (Terima/Tolak) yang sudah tak relevan.
+    const offerWasPending = existing.offerStatus === "PENDING";
     const updated = await db.application.update({
       where: { id },
       data: {
@@ -74,6 +77,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         rejectionReason: reason,
         rejectionNote: feedback ? note : note, // catatan selalu tersimpan internal; tampil publik hanya bila feedback
         rejectedAt: now,
+        ...(offerWasPending ? { offerStatus: null } : {}),
       },
       include: APPLICATION_INCLUDE,
     });
@@ -87,6 +91,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           action: "STATUS_CHANGE",
           detail: `Ditolak — alasan: ${reasonLabel}`,
         },
+        ...(offerWasPending
+          ? [
+              {
+                applicationId: id,
+                actor: "Sistem" as const,
+                action: "OFFER_CANCELLED",
+                detail: "Penawaran aktif dibatalkan otomatis — lamaran ditolak",
+              },
+            ]
+          : []),
         {
           applicationId: id,
           actor: "Sistem",
