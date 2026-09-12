@@ -2,16 +2,28 @@
 
 // Halaman detail per lowongan (?posisi=slug) — persyaratan, ketentuan, benefit,
 // contoh karya, dan FORMULIR PENDAFTARAN khusus lowongan ini.
+// Formulir berada di bawah konten (satu kolom) dan di balik GERBANG BACA:
+// pengunjung harus membaca bagian kontennya dulu (dicentang otomatis via
+// IntersectionObserver), setelah semua terbaca formulir terbuka otomatis.
+// Progres per lowongan disimpan sessionStorage.
 // Data hidup: komponen menerima positions dari useLiveResource (realtime),
 // sehingga posisi yang baru ditutup/diarsip otomatis keluar dari tampilan.
 
-import { useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   ArrowLeft,
+  ArrowRight,
   BadgeCheck,
+  BookOpenCheck,
   Briefcase,
   CalendarClock,
   Check,
+  Circle,
   ClipboardList,
   Copy,
   FileText,
@@ -19,6 +31,7 @@ import {
   Gift,
   Link2,
   ListChecks,
+  Lock,
   Mail,
   MapPin,
   MessageCircle,
@@ -38,6 +51,7 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { LangProvider, useLang } from "@/components/landing/lang-context";
 import {
@@ -107,6 +121,153 @@ function TermRow({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Gerbang baca: formulir pendaftaran terkunci sampai semua bagian konten
+// (deskripsi, persyaratan, ketentuan, benefit, karya) terbaca. Bagian yang
+// masuk area baca viewport dicentang otomatis lewat IntersectionObserver.
+// ---------------------------------------------------------------------------
+
+type GateSection = { id: string; label: string; done: boolean };
+
+function ApplyGate({
+  sections,
+  readCount,
+  onJump,
+  onOpen,
+}: {
+  sections: GateSection[];
+  readCount: number;
+  onJump: (id: string) => void;
+  onOpen: () => void;
+}) {
+  const { t } = useLang();
+  const total = sections.length;
+  const allRead = readCount >= total;
+  const progressValue = total > 0 ? Math.round((readCount / total) * 100) : 100;
+
+  return (
+    <div className="flex flex-col gap-4" aria-live="polite">
+      <div className="flex items-center gap-2.5">
+        <span
+          className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+            allRead
+              ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
+              : "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
+          )}
+        >
+          <BookOpenCheck className="size-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-tight">{t.detail.gateTitle}</p>
+          <p className="text-xs text-muted-foreground">
+            {allRead ? t.detail.gateReady : fillTemplate(t.detail.gateProgress, { read: readCount, total })}
+          </p>
+        </div>
+      </div>
+
+      <p className="text-sm leading-relaxed text-muted-foreground">{t.detail.gateDesc}</p>
+
+      <div className="flex flex-col gap-2">
+        <Progress
+          value={progressValue}
+          className={cn("h-1.5", allRead && "[&>div]:bg-emerald-500")}
+          aria-label={fillTemplate(t.detail.gateProgress, { read: readCount, total })}
+        />
+        <p className="text-xs text-muted-foreground">{t.detail.gateHint}</p>
+      </div>
+
+      <ul className="flex flex-col gap-1.5">
+        {sections.map((section) => (
+          <li key={section.id}>
+            <button
+              type="button"
+              onClick={() => onJump(section.id)}
+              className={cn(
+                "flex min-h-11 w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                section.done
+                  ? "border-emerald-200 bg-emerald-50/60 text-foreground dark:border-emerald-900 dark:bg-emerald-950/30"
+                  : "bg-zinc-50/60 text-muted-foreground hover:bg-accent hover:text-foreground dark:bg-zinc-900/40",
+              )}
+            >
+              {section.done ? (
+                <BadgeCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+              ) : (
+                <Circle className="size-4 shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
+              )}
+              <span className="min-w-0 flex-1 truncate">{section.label}</span>
+              <ArrowRight
+                className="size-3.5 shrink-0 text-muted-foreground/60"
+                aria-hidden="true"
+              />
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <Button
+        className="min-h-11 w-full"
+        disabled={!allRead}
+        onClick={onOpen}
+      >
+        {allRead ? (
+          <>
+            <ArrowRight className="size-4" aria-hidden="true" />
+            {t.detail.gateOpen}
+          </>
+        ) : (
+          <>
+            <Lock className="size-4" aria-hidden="true" />
+            {t.detail.gateLocked}
+          </>
+        )}
+      </Button>
+    </div>
+  );
+}
+
+// Pil progres mengambang: selama gerbang belum terbuka, pembaca tetap melihat
+// progres baca di bawah layar. Diklik → gulir ke kartu formulir.
+function GateProgressPill({
+  readCount,
+  total,
+  onClick,
+}: {
+  readCount: number;
+  total: number;
+  onClick: () => void;
+}) {
+  const { t } = useLang();
+  const allRead = total > 0 && readCount >= total;
+
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={fillTemplate(t.detail.gateProgress, { read: readCount, total })}
+        className="pointer-events-auto flex min-h-11 items-center gap-2.5 rounded-full border bg-background/90 py-2 pl-2.5 pr-4 shadow-lg backdrop-blur transition-colors hover:bg-accent"
+      >
+        <span
+          className={cn(
+            "flex size-7 shrink-0 items-center justify-center rounded-full",
+            allRead
+              ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
+              : "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
+          )}
+        >
+          <BookOpenCheck className="size-3.5" aria-hidden="true" />
+        </span>
+        <span className="text-xs font-medium">
+          {allRead
+            ? t.detail.gateReady
+            : fillTemplate(t.detail.gateProgress, { read: readCount, total })}
+        </span>
+      </button>
+    </div>
+  );
+}
+
 export function PositionDetailView(
   props: {
     slug: string;
@@ -143,12 +304,127 @@ function PositionDetailViewInner({
   const { t } = useLang();
   const [copied, setCopied] = useState(false);
 
+  // Gerbang baca: formulir terkunci sampai semua bagian konten dibaca.
+  // Progres per slug disimpan sessionStorage — pindah lowongan & kembali lagi
+  // tidak perlu membaca ulang.
+  const [formUnlocked, setFormUnlocked] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.sessionStorage.getItem(`lumina-read-${slug}`) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [readIds, setReadIds] = useState<string[]>([]);
+
   const position = useMemo(
     () => positions.find((p) => p.slug === slug) ?? null,
     [positions, slug],
   );
 
   const shareUrl = position ? buildPositionUrl(position) : "";
+
+  // Contoh karya — dipakai render seksi & penentu seksi gerbang.
+  const workEmbeds = useMemo(
+    () =>
+      (position?.examples ?? [])
+        .map((url) => ({ url, id: youtubeEmbedId(url) }))
+        .filter((x) => x.id !== null)
+        .slice(0, 4),
+    [position],
+  );
+  const workLinks = useMemo(
+    () =>
+      (position?.examples ?? []).filter(
+        (url) => youtubeEmbedId(url) === null && safeExternalUrl(url),
+      ),
+    [position],
+  );
+
+  // Seksi konten yang dirender = seksi yang wajib dibaca (harus persis sama
+  // agar tidak ada seksi yang tak terpantau dan mengunci formulir selamanya).
+  const gateSections = useMemo<GateSection[]>(() => {
+    if (!position) return [];
+    const list: { id: string; label: string }[] = [
+      { id: "sec-deskripsi", label: t.detail.sectionDesc },
+    ];
+    if (position.requirements.length > 0)
+      list.push({ id: "sec-persyaratan", label: t.detail.sectionReq });
+    list.push({ id: "sec-ketentuan", label: t.detail.sectionTerms });
+    if (position.benefits.length > 0)
+      list.push({ id: "sec-benefit", label: t.detail.sectionBenefit });
+    if (workEmbeds.length > 0 || workLinks.length > 0)
+      list.push({ id: "sec-karya", label: t.detail.sectionWorks });
+    return list.map((s) => ({ ...s, done: readIds.includes(s.id) }));
+  }, [position, t, readIds, workEmbeds, workLinks]);
+  const sectionIdsKey = gateSections.map((s) => s.id).join("|");
+
+  const unlockForm = useCallback(
+    (scroll: boolean) => {
+      setFormUnlocked(true);
+      try {
+        window.sessionStorage.setItem(`lumina-read-${slug}`, "1");
+      } catch {
+        /* abaikan */
+      }
+      toast.success(t.detail.gateUnlockedToast);
+      if (scroll) {
+        window.setTimeout(() => {
+          document
+            .getElementById("form-card")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 250);
+      }
+    },
+    [slug, t],
+  );
+
+  const jumpToSection = useCallback((id: string) => {
+    document
+      .getElementById(id)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  // Pelacak baca: bagian dianggap terbaca saat bagian itu masuk area baca
+  // (atas 55% viewport). Fallback tanpa IntersectionObserver → langsung buka.
+  useEffect(() => {
+    if (formUnlocked || sectionIdsKey === "") return;
+    if (typeof IntersectionObserver === "undefined") {
+      const fallback = window.setTimeout(() => setFormUnlocked(true), 0);
+      return () => window.clearTimeout(fallback);
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setReadIds((prev) => {
+          const next = new Set(prev);
+          let added = false;
+          for (const entry of entries) {
+            if (entry.isIntersecting && !next.has(entry.target.id)) {
+              next.add(entry.target.id);
+              added = true;
+            }
+          }
+          return added ? [...next] : prev;
+        });
+      },
+      { rootMargin: "0px 0px -45% 0px", threshold: 0 },
+    );
+    for (const id of sectionIdsKey.split("|")) {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [formUnlocked, sectionIdsKey]);
+
+  // Semua bagian terbaca → formulir terbuka otomatis (dengan jeda kecil agar
+  // checklist selesai dulu secara visual), lalu halaman digulir ke formulir.
+  useEffect(() => {
+    if (formUnlocked || gateSections.length === 0) return;
+    if (readIds.length >= gateSections.length) {
+      const timer = window.setTimeout(() => unlockForm(true), 650);
+      return () => window.clearTimeout(timer);
+    }
+  }, [formUnlocked, gateSections.length, readIds.length, unlockForm]);
 
   const copyLink = async () => {
     if (!shareUrl) return;
@@ -207,15 +483,9 @@ function PositionDetailViewInner({
     position.requireCv ? t.detail.termsFilesCv : null,
     position.requireIntro ? t.detail.termsFilesIntro : null,
     position.requirePortfolio ? t.detail.termsFilesPortfolio : null,
+    // Dokumen wajib tambahan yang diatur admin per lowongan.
+    ...(position.customDocs ?? []),
   ].filter((x): x is string => x !== null);
-
-  const workEmbeds = position.examples
-    .map((url) => ({ url, id: youtubeEmbedId(url) }))
-    .filter((x) => x.id !== null)
-    .slice(0, 4);
-  const workLinks = position.examples.filter(
-    (url) => youtubeEmbedId(url) === null && safeExternalUrl(url),
-  );
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -335,18 +605,19 @@ function PositionDetailViewInner({
             ) : null}
           </FadeIn>
 
-          <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-5 lg:gap-10">
-            {/* Konten kiri: deskripsi, persyaratan, ketentuan, benefit, karya */}
-            <div className="flex flex-col gap-10 lg:col-span-3">
-              <FadeIn>
+          <div className="mt-10 flex flex-col gap-12">
+            {/* Konten: deskripsi, persyaratan, ketentuan, benefit, karya.
+                Setiap seksi punya id jangkar untuk pelacak baca di gerbang formulir. */}
+            <div className="flex flex-col gap-10">
+              <FadeIn id="sec-deskripsi" className="scroll-mt-24">
                 <SectionTitle icon={FileText}>{t.detail.sectionDesc}</SectionTitle>
-                <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-muted-foreground md:text-base">
+                <p className="mt-3 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground md:text-base">
                   {position.description}
                 </p>
               </FadeIn>
 
               {position.requirements.length > 0 ? (
-                <FadeIn>
+                <FadeIn id="sec-persyaratan" className="scroll-mt-24">
                   <SectionTitle icon={ListChecks}>{t.detail.sectionReq}</SectionTitle>
                   <ul className="mt-3 space-y-2.5">
                     {position.requirements.map((req) => (
@@ -360,7 +631,7 @@ function PositionDetailViewInner({
               ) : null}
 
               {/* Ketentuan lamaran — turunan dari pengaturan posisi */}
-              <FadeIn>
+              <FadeIn id="sec-ketentuan" className="scroll-mt-24">
                 <SectionTitle icon={ClipboardList}>{t.detail.sectionTerms}</SectionTitle>
                 <Card className="mt-3 divide-y rounded-2xl p-2 md:p-3">
                   <TermRow icon={FileText} label={t.detail.termsFiles}>
@@ -430,7 +701,7 @@ function PositionDetailViewInner({
               </FadeIn>
 
               {position.benefits.length > 0 ? (
-                <FadeIn>
+                <FadeIn id="sec-benefit" className="scroll-mt-24">
                   <SectionTitle icon={Gift}>{t.detail.sectionBenefit}</SectionTitle>
                   <ul className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                     {position.benefits.map((benefit) => (
@@ -447,7 +718,7 @@ function PositionDetailViewInner({
               ) : null}
 
               {workEmbeds.length > 0 || workLinks.length > 0 ? (
-                <FadeIn>
+                <FadeIn id="sec-karya" className="scroll-mt-24">
                   <SectionTitle icon={Sparkles}>{t.detail.sectionWorks}</SectionTitle>
                   <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     {workEmbeds.map(({ url, id }) => (
@@ -485,32 +756,49 @@ function PositionDetailViewInner({
               ) : null}
             </div>
 
-            {/* Kanan: formulir pendaftaran khusus lowongan ini (sticky) */}
-            <div className="lg:col-span-2">
-              <FadeIn delay={0.1} className="lg:sticky lg:top-24">
-                <Card className="gap-4 rounded-2xl p-5 md:p-6">
+            {/* Setelah konten: gerbang baca → formulir pendaftaran, di tengah halaman */}
+            <div className="mx-auto w-full max-w-2xl">
+              <FadeIn delay={0.1}>
+                <Card id="form-card" className="scroll-mt-24 gap-4 rounded-2xl p-5 md:p-6">
                   {canApplyOnline ? (
-                    <>
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
-                          <FileText className="size-4" aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold leading-tight">
-                            {position.title}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {t.detail.badge}
-                          </p>
+                    formUnlocked ? (
+                      <>
+                        <div className="flex items-center gap-2.5">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+                            <FileText className="size-4" aria-hidden="true" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold leading-tight">
+                              {position.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {t.detail.badge}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                      <ApplyWizard
-                        positions={[position]}
-                        positionId={position.id}
-                        onPositionIdChange={() => {}}
-                        lockPosition
+                        <ApplyWizard
+                          positions={[position]}
+                          positionId={position.id}
+                          onPositionIdChange={() => {}}
+                          lockPosition
+                        />
+                        <button
+                          type="button"
+                          onClick={() => jumpToSection(gateSections[0]?.id ?? "sec-deskripsi")}
+                          className="flex min-h-9 items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          <BookOpenCheck className="size-3.5" aria-hidden="true" />
+                          {t.detail.gateReread}
+                        </button>
+                      </>
+                    ) : (
+                      <ApplyGate
+                        sections={gateSections}
+                        readCount={readIds.length}
+                        onJump={jumpToSection}
+                        onOpen={() => unlockForm(true)}
                       />
-                    </>
+                    )
                   ) : (
                     <div className="flex flex-col gap-4">
                       <div className="flex items-center gap-2.5">
@@ -529,7 +817,7 @@ function PositionDetailViewInner({
                     </div>
                   )}
 
-                  {/* Kontak (selalu tampil di kartu kanan) */}
+                  {/* Kontak (selalu tampil di kartu formulir) */}
                   <div className="flex flex-col gap-1 border-t pt-4">
                     <a
                       href={`mailto:${content.contactEmail}`}
@@ -563,6 +851,15 @@ function PositionDetailViewInner({
           </div>
         </Container>
       </main>
+
+      {/* Pil progres gerbang baca — tampil selama formulir masih terkunci */}
+      {canApplyOnline && !formUnlocked && gateSections.length > 0 ? (
+        <GateProgressPill
+          readCount={readIds.length}
+          total={gateSections.length}
+          onClick={() => jumpToSection("form-card")}
+        />
+      ) : null}
 
       <footer className="border-t py-6">
         <Container className="flex flex-col items-center justify-between gap-3 text-xs text-muted-foreground sm:flex-row">

@@ -57,6 +57,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         requireCv: existing.requireCv,
         requireIntro: existing.requireIntro,
         requirePortfolio: existing.requirePortfolio,
+        customDocs: existing.customDocs,
         maxApplicants: existing.maxApplicants,
 
         publishAt: existing.publishAt,

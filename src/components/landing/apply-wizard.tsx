@@ -61,6 +61,25 @@ const MIN_TEXT_LENGTH = 10;
 const SCREENING_MAX = 500; // batas karakter tiap jawaban screening (sinkron dengan server)
 const SCREENING_KEY_PREFIX = "screening:";
 
+// Dokumen wajib tambahan (customDocs posisi) — sinkron dengan server.
+const EXTRA_DOC_MAX_BYTES = 5 * 1024 * 1024; // 5 MB per dokumen
+const ALLOWED_EXTRA_DOC_MIMES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+const ALLOWED_EXTRA_DOC_EXTS = [".pdf", ".jpg", ".jpeg", ".png", ".webp", ".doc", ".docx"];
+
+/** Tipe dokumen tambahan diterima: PDF, gambar, atau dokumen Word. */
+function isAllowedExtraDoc(file: File): boolean {
+  if (ALLOWED_EXTRA_DOC_MIMES.includes(file.type)) return true;
+  const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+  return ALLOWED_EXTRA_DOC_EXTS.includes(ext);
+}
+
 /* ------------------------- Komponen pratinjau lamaran ------------------------- */
 
 function PreviewRow({
@@ -195,6 +214,9 @@ export function ApplyWizard({
 
   // Jawaban pertanyaan screening posisi: {questionId: jawaban}
   const [screeningAnswers, setScreeningAnswers] = useState<Record<string, string>>({});
+  // Dokumen wajib tambahan per posisi: {index urutan customDocs: file}
+  const [extraFiles, setExtraFiles] = useState<Record<number, File>>({});
+  const [extraErrors, setExtraErrors] = useState<Record<number, string | undefined>>({});
   // Sumber pelamar ("dari mana tahu lowongan ini") — opsional.
   const [source, setSource] = useState("");
   // UTM dibaca SEKALI saat mount via useState initializer (aman SSR; tidak dirender).
@@ -213,13 +235,16 @@ export function ApplyWizard({
 
   const selectedPosition = positions.find((p) => p.id === positionId);
   const screeningQuestions = selectedPosition?.screeningQuestions ?? [];
+  const customDocs = selectedPosition?.customDocs ?? [];
 
-  // Reset jawaban screening saat posisi berubah (termasuk perubahan dari luar
+  // Reset jawaban screening & dokumen tambahan saat posisi berubah (termasuk perubahan dari luar
   // wizard lewat dialog posisi) — pola "adjust state during render", tanpa effect.
   const [lastPositionId, setLastPositionId] = useState(positionId);
   if (lastPositionId !== positionId) {
     setLastPositionId(positionId);
     setScreeningAnswers({});
+    setExtraFiles({});
+    setExtraErrors({});
   }
 
   // File unggahan (tidak masuk draft).
@@ -229,6 +254,7 @@ export function ApplyWizard({
   const [introError, setIntroError] = useState<string | null>(null);
   const [cvDragging, setCvDragging] = useState(false);
   const [introDragging, setIntroDragging] = useState(false);
+  const [extraDraggingIdx, setExtraDraggingIdx] = useState<number | null>(null);
 
   // Draft autosave.
   const [draft, setDraft] = useState<StoredDraft | null>(null);
@@ -389,7 +415,7 @@ export function ApplyWizard({
     return true;
   }
 
-  /** Berkas wajib per posisi (CV/audio intro) — dipakai sebelum masuk pratinjau. */
+  /** Berkas wajib per posisi (CV/audio intro + dokumen tambahan) — dipakai sebelum masuk pratinjau. */
   function validateRequiredFiles(): boolean {
     if (selectedPosition?.requireCv && !cvFile) {
       setCvError(t.apply.errors.cvRequired);
@@ -400,6 +426,16 @@ export function ApplyWizard({
       setIntroError(t.apply.errors.introRequired);
       toast.error(t.apply.errors.introRequired);
       return false;
+    }
+    for (let i = 0; i < customDocs.length; i++) {
+      if (!extraFiles[i]) {
+        const msg = fillTemplate(t.apply.uploads.extraDocRequired, {
+          label: customDocs[i],
+        });
+        setExtraErrors((prev) => ({ ...prev, [i]: msg }));
+        toast.error(msg);
+        return false;
+      }
     }
     return true;
   }
@@ -448,6 +484,32 @@ export function ApplyWizard({
     event.target.value = "";
   }
 
+  function acceptExtra(index: number, file: File | null) {
+    if (!file) return;
+    const label = customDocs[index] ?? "dokumen";
+    if (!isAllowedExtraDoc(file)) {
+      const msg = fillTemplate(t.apply.uploads.extraDocType, { label });
+      setExtraErrors((prev) => ({ ...prev, [index]: msg }));
+      toast.error(msg);
+      return;
+    }
+    if (file.size > EXTRA_DOC_MAX_BYTES) {
+      const msg = fillTemplate(t.apply.uploads.extraDocSize, { label });
+      setExtraErrors((prev) => ({ ...prev, [index]: msg }));
+      toast.error(msg);
+      return;
+    }
+    setExtraFiles((prev) => ({ ...prev, [index]: file }));
+    setExtraErrors((prev) => ({ ...prev, [index]: undefined }));
+  }
+
+  function onExtraInput(index: number) {
+    return (event: ChangeEvent<HTMLInputElement>) => {
+      acceptExtra(index, event.target.files?.[0] ?? null);
+      event.target.value = "";
+    };
+  }
+
   function onDropFactory(
     acceptor: (file: File | null) => void,
     setDragging: (value: boolean) => void,
@@ -493,6 +555,12 @@ export function ApplyWizard({
       if (utm.campaign) fd.append("utmCampaign", utm.campaign);
       if (cvFile) fd.append("cvFile", cvFile);
       if (introFile) fd.append("introFile", introFile);
+      // Dokumen wajib tambahan — urutan pengiriman dipasangkan dengan urutan
+      // customDocs posisi di server (extraDoc_0, extraDoc_1, ...).
+      for (let i = 0; i < customDocs.length; i++) {
+        const file = extraFiles[i];
+        if (file) fd.append(`extraDoc_${i}`, file);
+      }
 
       const res = await fetch("/api/applications", { method: "POST", body: fd });
       const data: unknown = await res.json().catch(() => null);
@@ -1304,6 +1372,104 @@ export function ApplyWizard({
               ) : null}
             </div>
 
+            {/* Dokumen wajib tambahan milik posisi (customDocs) */}
+            {customDocs.length > 0 ? (
+              <div className="flex flex-col gap-3 rounded-2xl border bg-zinc-50/60 p-4 dark:bg-zinc-900/40">
+                <div>
+                  <p className="text-sm font-semibold">
+                    {t.apply.uploads.extraDocsTitle}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {t.apply.uploads.extraDocsDesc}
+                  </p>
+                </div>
+                {customDocs.map((label, index) => {
+                  const file = extraFiles[index];
+                  const error = extraErrors[index];
+                  const dragging = extraDraggingIdx === index;
+                  return (
+                    <div key={`${label}-${index}`} className="flex flex-col gap-2">
+                      <Label htmlFor={`apply-extra-${index}`} className="gap-2">
+                        {label}
+                        <span className="text-xs font-normal text-rose-600">
+                          ({t.apply.uploads.required})
+                        </span>
+                      </Label>
+                      <label
+                        htmlFor={`apply-extra-${index}`}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setExtraDraggingIdx(index);
+                        }}
+                        onDragLeave={() =>
+                          setExtraDraggingIdx((prev) => (prev === index ? null : prev))
+                        }
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setExtraDraggingIdx(null);
+                          acceptExtra(index, e.dataTransfer.files?.[0] ?? null);
+                        }}
+                        className={cn(
+                          "flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-4 text-center transition-colors",
+                          dragging
+                            ? "border-primary bg-rose-50 dark:bg-rose-500/10"
+                            : "hover:bg-accent/50",
+                          error && "border-rose-400 dark:border-rose-500",
+                        )}
+                      >
+                        <Upload
+                          className="h-5 w-5 text-rose-600 dark:text-rose-400"
+                          aria-hidden="true"
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          {t.apply.uploads.dropHint}
+                        </span>
+                        <input
+                          id={`apply-extra-${index}`}
+                          name={`extraDoc_${index}`}
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,application/pdf,image/*"
+                          className="sr-only"
+                          onChange={onExtraInput(index)}
+                        />
+                      </label>
+                      {file ? (
+                        <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
+                          <span className="flex min-w-0 items-center gap-2 text-sm">
+                            <FileText
+                              className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                              aria-hidden="true"
+                            />
+                            <span className="truncate">{file.name}</span>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {formatMb(file.size)}
+                            </span>
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            aria-label={t.apply.uploads.remove}
+                            onClick={() =>
+                              setExtraFiles((prev) => {
+                                const next = { ...prev };
+                                delete next[index];
+                                return next;
+                              })
+                            }
+                          >
+                            <X className="h-4 w-4" aria-hidden="true" />
+                          </Button>
+                        </div>
+                      ) : null}
+                      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+
             <p className="flex items-center gap-2 text-xs text-muted-foreground">
               <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
               {t.apply.trust[0]}
@@ -1464,6 +1630,38 @@ export function ApplyWizard({
                   ({selectedPosition?.requireIntro ? t.apply.uploads.required : t.apply.uploads.optional})
                 </span>
               </div>
+              {/* Dokumen wajib tambahan — pratinjau berkas terunggah per label */}
+              {customDocs.map((label, index) => {
+                const file = extraFiles[index];
+                return (
+                  <div key={`${label}-${index}`} className="flex items-center gap-2.5 text-sm">
+                    <FileText
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        file
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-rose-600 dark:text-rose-400",
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {label}
+                      {file ? (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {file.name} ({formatMb(file.size)})
+                        </span>
+                      ) : (
+                        <span className="ml-2 text-xs italic text-muted-foreground/70">
+                          {t.apply.preview.notFilled}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      ({t.apply.uploads.required})
+                    </span>
+                  </div>
+                );
+              })}
             </PreviewSection>
 
             {/* Pernyataan kebenaran data — wajib dicentang sebelum konfirmasi */}

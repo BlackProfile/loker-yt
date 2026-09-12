@@ -161,6 +161,7 @@ export type Position = {
   requireCv: boolean;
   requireIntro: boolean;
   requirePortfolio: boolean;
+  customDocs: string[]; // label dokumen wajib tambahan (bebas, mis. "KTP", "Ijazah")
   maxApplicants: number | null;
 
   // Publikasi
@@ -201,6 +202,13 @@ export type PositionPublicStats = {
   remainingQuota: number | null; // null = tanpa kuota
 };
 
+/** Dokumen wajib tambahan yang diunggah pelamar (dari customDocs posisi). */
+export type ExtraDoc = {
+  label: string;
+  filename: string;
+  fileId: string; // URL publik admin: /api/files/{fileId}
+};
+
 export type Application = {
   id: string;
   name: string;
@@ -235,6 +243,7 @@ export type Application = {
   cvFileName: string | null;
   introFileId: string | null;
   introFileName: string | null;
+  extraDocs: ExtraDoc[]; // dokumen wajib tambahan yang diunggah pelamar
 
   // Penolakan terstruktur
   rejectionReason: RejectionReason | null;
