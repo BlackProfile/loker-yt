@@ -576,13 +576,13 @@ function PositionDetailViewInner({
             ) : null}
           </FadeIn>
 
-          <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-5 lg:gap-10">
-            {/* Konten kiri: deskripsi, persyaratan, ketentuan, benefit, karya.
+          <div className="mt-10 flex flex-col gap-12">
+            {/* Konten: deskripsi, persyaratan, ketentuan, benefit, karya.
                 Setiap seksi punya id jangkar untuk pelacak baca di gerbang formulir. */}
-            <div className="flex flex-col gap-10 lg:col-span-3">
+            <div className="flex flex-col gap-10">
               <FadeIn id="sec-deskripsi" className="scroll-mt-24">
                 <SectionTitle icon={FileText}>{t.detail.sectionDesc}</SectionTitle>
-                <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-muted-foreground md:text-base">
+                <p className="mt-3 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground md:text-base">
                   {display.description}
                 </p>
               </FadeIn>
@@ -727,9 +727,9 @@ function PositionDetailViewInner({
               ) : null}
             </div>
 
-            {/* Kanan: gerbang baca → formulir pendaftaran khusus lowongan ini (sticky) */}
-            <div className="lg:col-span-2">
-              <FadeIn delay={0.1} className="lg:sticky lg:top-24">
+            {/* Setelah konten: gerbang baca → formulir pendaftaran, di tengah halaman */}
+            <div className="mx-auto w-full max-w-2xl">
+              <FadeIn delay={0.1}>
                 <Card id="form-card" className="scroll-mt-24 gap-4 rounded-2xl p-5 md:p-6">
                   {canApplyOnline ? (
                     formUnlocked ? (
@@ -788,7 +788,7 @@ function PositionDetailViewInner({
                     </div>
                   )}
 
-                  {/* Kontak (selalu tampil di kartu kanan) */}
+                  {/* Kontak (selalu tampil di kartu formulir) */}
                   <div className="flex flex-col gap-1 border-t pt-4">
                     <a
                       href={`mailto:${content.contactEmail}`}
