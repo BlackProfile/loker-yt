@@ -54,8 +54,8 @@ model Position {
   coverFile    FileAsset?    @relation("coverFile", fields: [coverFileId], references: [id], onDelete: SetNull)
   salaryText   String? // teks bebas, mis. "Rp 3-5 juta/bulan"
   salaryVisible Boolean      @default(false)
-  benefits     String        @default("[]") // JSON string[]
-  examples     String        @default("[]") // JSON string[] URL contoh karya (YouTube/TikTok/IG)
+  benefits     String        @default("[]") // JSON string[] URL contoh karya (YouTube/TikTok/IG)
+  examples     String        @default("[]") // JSON string[]
   urgent       Boolean       @default(false) // badge "Urgent"
   featured     Boolean       @default(false) // pin di urutan atas
 
@@ -71,7 +71,7 @@ model Position {
 
   // Pipeline & otomasi per lowongan
   stages               String  @default("[]") // JSON string[]; [] = pipeline default (5 status bawaan)
-  stageCategories      String  @default("{}") // JSON {"tahap kustom": "REVIEW"|"INTERVIEW"|"ACCEPTED"|"REJECTED"} — kategori fitur admin per tahap kustom
+  stageCategories      String  @default("{}") // JSON {"tahap kustom": "REVIEW"|"INTERVIEW"|"ACCEPTED"|"REJECTED"}
   aiCriteria           String? // kriteria AI khusus posisi (pelengkap prompt screening)
   autoShortlistScore   Int? // skor AI minimal untuk auto-shortlist
   autoShortlistStage   String? // tahap tujuan auto-shortlist (harus ada di stages posisi)
@@ -103,13 +103,13 @@ model Position {
   reapplyCooldownDays Int    @default(0) // jeda minimal lamar ulang setelah ditolak (hari); 0 = bebas
   autoCloseOnHired   Boolean @default(true) // tandai kuota terpenuhi otomatis saat kandidat diterima
 
-  // Rentang gaji wajar (validasi offer) — angka bulat bulanan
+  // Rentang gaji wajar (validasi offer) — angka bulanan
   salaryMin Int?
   salaryMax Int?
 
   // Konten dua bahasa (ID default; EN opsional)
-  titleEn       String?
-  descriptionEn String?
+  titleEn        String?
+  descriptionEn  String?
   requirementsEn String  @default("[]") // JSON string[]
 
   // Rencana ronde wawancara bawaan: JSON {round,name,mode?,platform?,durationMin?,interviewers?[]}[]
@@ -188,6 +188,20 @@ model Application {
   probationEnd     DateTime? // akhir masa percobaan
   onboardingDocs   String    @default("[]") // JSON {id,label,required,done,fileId}[]
 
+  // Rencana onboarding (agenda hari pertama, mentor, target): JSON {id,label,owner?,dueAt?,done}[]
+  onboardingPlan String @default("[]")
+
+  // Kualitas data & pelacakan sumber
+  cvText        String? // teks hasil ekstraksi/OCR CV — dipakai pencarian semantik
+  isDuplicate   Boolean @default(false) // terdeteksi lamaran ganda (email/CV sama)
+  duplicateOfId String? // id lamaran pertama yang diduplikasi
+  referrer      String? // URL halaman saat mengirim lamaran (sumber)
+
+  comments    Comment[]
+  checkIns    CheckIn[]
+  emailOut    EmailOutbox[]
+  slotBooking InterviewSlot[] @relation("slotBooking")
+
   interviews       Interview[]
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
@@ -224,6 +238,11 @@ model Interview {
   reminderDaySent  Boolean @default(false)
   reminderHourSent Boolean @default(false)
 
+  // Rekaman & transkrip wawancara
+  transcript        String? // transkrip ASR dari rekaman
+  transcriptSummary String? // ringkasan AI dari transkrip
+  slotId            String? // slot self-service yang dipilih pelamar (bila ada)
+
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -248,4 +267,107 @@ model Subscriber {
   id        String   @id @default(cuid())
   email     String   @unique
   createdAt DateTime @default(now())
+}
+
+// Diskusi internal antar admin pada satu kandidat
+model Comment {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  authorName    String
+  authorRole    String      @default("HR") // OWNER | HR | VIEWER
+  body          String
+  mentions      String      @default("[]") // JSON string[] nama yang di-@mention
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId])
+}
+
+// Pustaka template pesan global (lintas posisi)
+model MessageTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  kind      String   @default("CUSTOM") // OFFER | REJECT | INVITE | CUSTOM
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Notifikasi in-app untuk admin (ikon lonceng)
+model NotificationItem {
+  id            String   @id @default(cuid())
+  title         String
+  body          String?
+  category      String   @default("SYSTEM") // SYSTEM | OFFER | INTERVIEW | APPLICATION | LOGIN
+  applicationId String?
+  isRead        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([isRead])
+}
+
+// Jejak audit login admin (sukses/gagal + lockout brute force)
+model LoginAudit {
+  id        String   @id @default(cuid())
+  email     String
+  userId    String?
+  success   Boolean
+  reason    String? // PASSWORD_SALAH | AKUN_NONAKTIF | TOTP_SALAH | LOCKOUT | OK
+  userAgent String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+// Slot jadwal wawancara yang dibuka admin — dipilih sendiri oleh pelamar
+model InterviewSlot {
+  id                    String       @id @default(cuid())
+  positionId            String?
+  position              Position?    @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  scheduledAt           DateTime
+  durationMin           Int          @default(45)
+  mode                  String       @default("ONLINE")
+  platform              String       @default("GOOGLE_MEET")
+  meetingLink           String?
+  address               String?
+  interviewers          String       @default("[]") // JSON string[]
+  bookedByApplicationId String?
+  application           Application? @relation("slotBooking", fields: [bookedByApplicationId], references: [id], onDelete: SetNull)
+  bookedAt              DateTime?
+  createdAt             DateTime     @default(now())
+
+  @@index([scheduledAt])
+}
+
+// Kotak keluar email (antrian email transaksional; terkirim bila SMTP terkonfigurasi)
+model EmailOutbox {
+  id            String       @id @default(cuid())
+  toEmail       String
+  subject       String
+  body          String
+  kind          String       @default("SYSTEM") // OFFER | REJECT | INVITE | REMINDER | SYSTEM
+  status        String       @default("QUEUED") // QUEUED | SENT | FAILED | SKIPPED
+  error         String?
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now())
+  sentAt        DateTime?
+
+  @@index([status])
+}
+
+// Cek-in masa percobaan 30/60/90 hari untuk karyawan baru
+model CheckIn {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  day           Int // 30 | 60 | 90
+  dueAt         DateTime?
+  rating        Int? // 1-5
+  notes         String?
+  completedAt   DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId])
 }
