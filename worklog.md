@@ -1021,3 +1021,42 @@ Work Log:
 
 Stage Summary:
 - Alur baca kini natural top-to-bottom: baca konten → gerbang terbuka → formulir terpusat di bawah; progres baca tetap terlihat via pil mengambang
+---
+Task ID: 22
+Agent: z.ai main session
+Task: Ubah navigasi tab horizontal panel admin menjadi sidebar yang bisa diciutkan (permintaan user + screenshot)
+
+Work Log:
+- admin-app.tsx ditulis ulang: Radix Tabs horizontal diganti sidebar kiri (desktop) + drawer off-canvas (seluler) + controlled state activeTab (nilai tab lama tetap, semua fitur tab tidak berubah)
+- Sidebar: brand row, nav berkelompok (Utama: Dashboard/Pelamar/Wawancara; Analisa: Analitik/Log Aktivitas; Kelola: Posisi/Pengguna/Pengaturan) dengan filter peran (OWNER/HR/VIEWER) seperti sebelumnya
+- Mode ciut: tombol "Ciutkan" -> rail ikon 72px dengan tooltip (Radix) per ikon + avatar awal + logout; state tersimpan localStorage ("lumina-admin-sidebar"); transisi width halus
+- Header baru: hamburger (seluler) + judul seksi aktif + nama situs; kanan: indikator Live, toggle tema, tombol Publik, Keluar; kartu pengguna (avatar inisial, nama, badge peran, logout) di kaki sidebar
+- Seluler: drawer w-72 + overlay (klik overlay/X/Escape/nav item menutup); hamburger di header; guard effectiveTab kembali ke Dashboard bila tab tak tersedia untuk peran
+- Perbaikan hasil QA: desktop aside kini hidden di bawah lg (sebelumnya dobel nav overlap saat drawer terbuka)
+- Lint bersih; verifikasi agent-browser via :81 (login Owner): expanded 256px/3 grup/8 item; ciut 72px tanpa label + tooltip muncul; persistensi reload PASS; navigasi mengubah judul header & konten; seluler tanpa overflow, drawer buka/tutup (hamburger, X, Escape, overlay, nav click) PASS; errors 0
+- Screenshots: /tmp/sidebar-expanded.png, /tmp/sidebar-collapsed.png, /tmp/sidebar-mobile-drawer.png
+
+Stage Summary:
+- Panel admin kini memakai sidebar collapsible bergaya aplikasi; konten lebih lega (max-w-6xl tetap); semua tab & gate peran tidak berubah
+
+---
+Task ID: 23
+Agent: z.ai main session
+Task: Halaman khusus per lowongan di admin + editor dokumen wajib pendaftar; restorasi gerbang baca & tata letak formulir yang ter-reset
+
+Work Log:
+- PENTING (temuan): sandbox direset ke snapshot lama — kode Task 18 (gerbang baca), 19 (fix offer/reject), 20 (40 fitur admin), 21 (formulir tengah bawah) HILANG dari codebase meski ada di worklog. Task 22 (sidebar) yang dikerjakan sesi ini tetap utuh.
+- Schema: Position.customDocs (JSON string[]) + Application.extraDocs (JSON {label,filename,fileId}[]) + db:push
+- Types & serializer: types.ts (customDocs, ExtraDoc, extraDocs), seed.ts (parseExtraDocs, serializePosition/Application), position-input.ts (sanitize customDocs max 8 x 80 char), route create/duplicate posisi ikut menyalin customDocs
+- API /api/applications: terima extraDoc_0..7 (wajib sesuai customDocs posisi, maks 5 MB, PDF/gambar/Word), simpan FileAsset + JSON extraDocs di lamaran
+- Admin: position-manage-page.tsx BARU (halaman khusus per lowongan: header aksi Edit Lengkap/Statistik/QR/Salin/Publik, 4 kartu statistik, editor "Dokumen dari Pendaftar" = 3 toggle + daftar dokumen tambahan + Simpan (PATCH), pratinjau konten, daftar pelamar posisi live); positions-tab: tombol Kelola (Settings2) + judul klikabel + state managing; deep-link #admin/posisi/<id> (home-view hash startsWith "#admin", AdminApp initialTab, PositionsTab parse hash)
+- Publik: apply-wizard langkah Berkas menampilkan "Dokumen wajib lainnya" per customDoc (wajib, dropzone, validasi tipe/ukuran, pratinjau, kirim extraDoc_N); strings gate* (9 kunci ID/EN) + uploads.extraDoc* (5 kunci ID/EN)
+- RESTORASI Task 18+21: position-detail.tsx kembali satu kolom (konten penuh, formulir mx-auto max-w-2xl di bawah), ApplyGate + GateProgressPill + IntersectionObserver + sessionStorage, FadeIn kini menerima prop id
+- Admin application-detail-dialog: seksi Berkas menampilkan dokumen tambahan dengan tombol Unduh
+- Lint bersih; tsc bersih (src); E2E via :81: daftar posisi → Kelola → editor dokumen (tambah KTP, simpan, reload persist), deep-link PASS; alur publik lengkap: gerbang terkunci (pil 1/5, form 0px dari tengah, di bawah konten) → buka otomatis → wizard KTP wajib (blok tanpa file) → kirim sukses LM-V06BYC → dialog admin tampil KTP + Unduh; mobile tanpa overflow; errors 0
+- Screenshots: /tmp/pos-list.png, /tmp/pos-manage.png, /tmp/docs-editor.png, /tmp/apply-extra-required.png, /tmp/apply-preview.png, /tmp/apply-success.png, /tmp/apply-detail-docs.png, /tmp/gate-locked.png, /tmp/gate-unlocked.png, /tmp/gate-mobile.png
+
+Stage Summary:
+- Fitur baru: halaman kelola per lowongan (deep-linkable) + dokumen wajib pendaftar yang bisa diatur admin per posisi
+- Gerbang baca & formulir tengah-bawah dipulihkan
+- BELUM dipulihkan (hilang karena reset, perlu keputusan user): Task 19 (fix offer tampil saat ditolak), Task 20 (40 fitur admin: 2FA, backup, template, notifikasi, dll), cek keepalive Task 17

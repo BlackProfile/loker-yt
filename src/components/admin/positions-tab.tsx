@@ -216,6 +216,18 @@ export function PositionsTab() {
     void load();
   }, [load]);
 
+  // Sinkronkan tombol back/forward browser & perubahan hash saat tab ini
+  // terbuka: #admin/posisi/<id> membuka halaman kelola, hash lain menutupnya.
+  useEffect(() => {
+    const onHash = () => {
+      const id = readManageIdFromHash();
+      setManageId((prev) => (prev === id ? prev : id));
+      if (!id) setManageEdit(false);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   // Realtime: posisi dibuat/diubah/dihapus (admin lain maupun aksi sendiri) →
   // segarkan daftar & statistik di belakang (senyap, mode silent dari tombol
   // Segarkan). Dialog form yang sedang terbuka TIDAK terpengaruh: key dialog
