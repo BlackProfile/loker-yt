@@ -164,7 +164,9 @@ export function PositionsTab() {
   function openManage(position: Position, edit = false) {
     setManageId(position.id);
     setManageEdit(edit);
-    history.replaceState(null, "", `#admin/posisi/${position.id}`);
+    // pushState (bukan replace) agar tombol Back browser kembali ke daftar;
+    // listener hashchange di bawah menyinkronkan UI saat Back/Forward.
+    history.pushState(null, "", `#admin/posisi/${position.id}`);
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 
