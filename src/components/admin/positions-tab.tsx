@@ -65,7 +65,7 @@ import { copyText, formatDate } from "./format";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { Reveal } from "./motion-primitives";
-import { PositionFormDialog } from "./position-form-dialog";
+import { PositionFormPage } from "./position-form-page";
 import { PositionStatsDialog } from "./position-stats-dialog";
 import { PositionQrDialog } from "./position-qr-dialog";
 import { PositionManagePage } from "./position-manage-page";
@@ -147,9 +147,8 @@ export function PositionsTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [formSession, setFormSession] = useState(0); // reset state form tiap buka
-  const [editing, setEditing] = useState<Position | null>(null);
+  // Mode "tambah posisi" sebagai halaman penuh (bukan popup).
+  const [creating, setCreating] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<Position | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -159,16 +158,19 @@ export function PositionsTab() {
 
   // Halaman khusus per posisi — mendukung deep-link #admin/posisi/<id>.
   const [manageId, setManageId] = useState<string | null>(() => readManageIdFromHash());
+  const [manageEdit, setManageEdit] = useState(false); // buka langsung mode edit
   const managing = manageId ? positions.find((p) => p.id === manageId) ?? null : null;
 
-  function openManage(position: Position) {
+  function openManage(position: Position, edit = false) {
     setManageId(position.id);
+    setManageEdit(edit);
     history.replaceState(null, "", `#admin/posisi/${position.id}`);
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 
   function closeManage() {
     setManageId(null);
+    setManageEdit(false);
     if (window.location.hash.startsWith("#admin/posisi/")) {
       history.replaceState(null, "", "#admin");
     }
@@ -224,15 +226,14 @@ export function PositionsTab() {
   });
 
   function openCreate() {
-    setEditing(null);
-    setFormSession((s) => s + 1);
-    setFormOpen(true);
+    setCreating(true);
+    window.scrollTo({ top: 0, behavior: "auto" });
   }
 
   function openEdit(position: Position) {
-    setEditing(position);
-    setFormSession((s) => s + 1);
-    setFormOpen(true);
+    // Edit lengkap kini berupa halaman khusus (bukan popup): buka halaman
+    // kelola posisi langsung dalam mode edit.
+    openManage(position, true);
   }
 
   async function handleToggle(position: Position, isActive: boolean) {
@@ -365,12 +366,24 @@ export function PositionsTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      {managing ? (
+      {creating ? (
+        <PositionFormPage
+          editing={null}
+          statsRow={null}
+          onCancel={() => setCreating(false)}
+          onSaved={(created) => {
+            setCreating(false);
+            void load(true);
+            openManage(created);
+          }}
+        />
+      ) : managing ? (
         <PositionManagePage
+          key={`${managing.id}-${manageEdit ? "edit" : "view"}`}
           position={managing}
           stats={statsMap[managing.id] ?? null}
+          startInEdit={manageEdit}
           onBack={closeManage}
-          onEdit={openEdit}
           onStats={setStatsTarget}
           onQr={setQrTarget}
           onUpdated={(updated) =>
@@ -680,16 +693,6 @@ export function PositionsTab() {
       )}
       </>
       )}
-
-      {/* Dialog form posisi lengkap (key memaksa state bersih tiap dibuka) */}
-      <PositionFormDialog
-        key={`${editing?.id ?? "new"}-${formSession}`}
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        editing={editing}
-        statsRow={editing ? statsMap[editing.id] ?? null : null}
-        onSaved={() => void load(true)}
-      />
 
       {/* Dialog statistik per posisi */}
       <PositionStatsDialog
