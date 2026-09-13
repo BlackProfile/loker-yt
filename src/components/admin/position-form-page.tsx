@@ -1,20 +1,15 @@
 "use client";
 
-// Dialog form posisi v3 — pusat kendali semua field per lowongan.
+// Halaman formulir posisi (bukan popup) — pusat kendali semua field per
+// lowongan, dirender inline di halaman kelola. Dipakai untuk EDIT (dari
+// PositionManagePage) maupun TAMBAH posisi baru (dari daftar Posisi).
 // Layout: section fitur FLAT selebar layar (tanpa accordion), dipisah garis
 // panjang (hairline) sebagai pembatas antar fitur agar mudah dipindai.
 // Batas karakter/item dikunci via maxLength & maxItems editor (selaras server).
 
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -29,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
+  ArrowLeft,
   Briefcase,
   ClipboardCheck,
   Gift,
@@ -375,18 +371,16 @@ function isInt(value: string): boolean {
   return /^-?\d+$/.test(value.trim());
 }
 
-export function PositionFormDialog({
-  open,
-  onOpenChange,
+export function PositionFormPage({
   editing,
   statsRow,
   onSaved,
+  onCancel,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   editing: Position | null;
   statsRow: PositionStatsRow | null;
-  onSaved: () => void;
+  onSaved: (updated: Position) => void;
+  onCancel: () => void;
 }) {
   const { reportError } = useAdminSession();
   const [form, setForm] = useState<FormState>(() =>
@@ -574,15 +568,15 @@ export function PositionFormDialog({
     if (form.order.trim() !== "") payload.order = Number(form.order);
 
     try {
+      let updated: Position;
       if (editing) {
-        await apiPatch<Position>(`/api/admin/positions/${editing.id}`, payload);
+        updated = await apiPatch<Position>(`/api/admin/positions/${editing.id}`, payload);
         toast.success("Posisi diperbarui");
       } else {
-        await apiPost<Position>("/api/admin/positions", payload);
+        updated = await apiPost<Position>("/api/admin/positions", payload);
         toast.success("Posisi ditambahkan");
       }
-      onOpenChange(false);
-      onSaved();
+      onSaved(updated);
     } catch (err) {
       reportError(err);
     } finally {
@@ -628,7 +622,8 @@ export function PositionFormDialog({
         if (res.ok) {
           set("coverFileId", res.fileId);
           toast.success("Cover AI berhasil dibuat", { id: tid });
-          onSaved();
+          // Daftar posisi di latar sudah diperbarui otomatis lewat realtime
+          // (route AI memancarkan positions:changed).
         } else {
           toast.error(res.error, { id: tid });
         }
