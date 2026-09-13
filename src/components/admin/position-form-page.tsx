@@ -636,25 +636,41 @@ export function PositionFormPage({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[94vh] overflow-hidden rounded-2xl sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>{editing ? "Edit Posisi" : "Tambah Posisi"}</DialogTitle>
-          <DialogDescription>
-            {editing
-              ? "Perbarui semua pengaturan posisi lowongan."
-              : "Tambahkan posisi lowongan baru untuk halaman publik."}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="-mr-2 max-h-[68vh] overflow-y-auto pr-2 nice-scrollbar sm:max-h-[70vh]">
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void handleSave();
-            }}
+    <div className="flex flex-col gap-4">
+      {/* Kepala halaman: tombol kembali + judul */}
+      <div className="flex flex-col gap-3">
+        <div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-11 gap-2 sm:h-9"
+            onClick={onCancel}
+            aria-label="Kembali tanpa menyimpan"
           >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            {editing ? "Kelola Posisi" : "Daftar Posisi"}
+          </Button>
+        </div>
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-bold leading-tight">
+            {editing ? `Edit: ${editing.title}` : "Tambah Posisi"}
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {editing
+              ? "Perbarui semua pengaturan posisi lowongan, lalu klik Simpan."
+              : "Lengkapi detail posisi lowongan baru untuk halaman publik."}
+          </p>
+        </div>
+      </div>
+
+      <Card className="gap-0 rounded-2xl p-5 md:p-6">
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleSave();
+          }}
+        >
             {validationErrors.length > 0 ? (
               <div
                 className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
@@ -1791,36 +1807,47 @@ export function PositionFormPage({
 
             {/* Tombol submit tersembunyi agar Enter mensubmit form */}
             <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
-          </form>
-        </div>
+        </form>
+      </Card>
 
-        <DialogFooter className="gap-2 border-t pt-4">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-            className="h-11 sm:h-10"
-          >
-            Batal
-          </Button>
-          <Button
-            onClick={() => void handleSave()}
-            disabled={saving}
-            className="h-11 active:scale-[0.99] sm:h-10"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                Menyimpan...
-              </>
-            ) : editing ? (
-              "Simpan Perubahan"
-            ) : (
-              "Tambah Posisi"
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {/* Bilah aksi menempel di bawah layar — tetap terlihat di formulir panjang */}
+      <div className="sticky bottom-4 z-20">
+        <div className="flex items-center justify-between gap-3 rounded-2xl border bg-background/95 p-3 shadow-lg backdrop-blur">
+          <p className="hidden text-xs text-muted-foreground sm:block">
+            {editing
+              ? "Perubahan berlaku setelah tombol Simpan diklik."
+              : "Posisi tampil di halaman publik setelah disimpan."}
+          </p>
+          <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={saving}
+              className="h-11 sm:h-10"
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+              className="h-11 min-w-36 active:scale-[0.99] sm:h-10"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menyimpan...
+                </>
+              ) : editing ? (
+                "Simpan Perubahan"
+              ) : (
+                "Tambah Posisi"
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
