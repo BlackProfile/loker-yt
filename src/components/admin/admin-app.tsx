@@ -638,6 +638,18 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [mobileOpen]);
 
+  // Deep-link #admin/posisi/<id> juga berlaku saat aplikasi sudah terbuka:
+  // perubahan hash (mis. menempel link atau back/forward) memindahkan tab.
+  useEffect(() => {
+    const onHash = () => {
+      if (window.location.hash.startsWith("#admin/posisi")) {
+        setActiveTab("positions");
+      }
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   async function handleLogout() {
     try {
       await apiPost<{ ok: boolean }>("/api/admin/logout");
