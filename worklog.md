@@ -1060,3 +1060,23 @@ Stage Summary:
 - Fitur baru: halaman kelola per lowongan (deep-linkable) + dokumen wajib pendaftar yang bisa diatur admin per posisi
 - Gerbang baca & formulir tengah-bawah dipulihkan
 - BELUM dipulihkan (hilang karena reset, perlu keputusan user): Task 19 (fix offer tampil saat ditolak), Task 20 (40 fitur admin: 2FA, backup, template, notifikasi, dll), cek keepalive Task 17
+
+---
+Task ID: 24
+Agent: z.ai main session
+Task: "pulihkan semuanya" + edit lengkap posisi jadi halaman (bukan popup)
+
+Work Log:
+- PULIHKAN: kode Task 17-21 yang hilang karena reset sandbox dipulihkan lewat MERGE origin/main (GitHub menyimpan riwayat pra-reset, 109 commit vs 52 lokal). Merge commit f0c8601 menggabungkan dua garis: Task 20 (40 fitur admin: Pipeline, Karyawan, Kalender, Laporan, Template, Data, Tugas, 2FA/TOTP, notifikasi bell, ask-data, backup, offer-dialog, quick-reject, dst), Task 19 (fix offer/reject), Task 18+21 versi asli (gerbang baca + formulir tengah), skrip keepalive Task 17.
+- Konflik merge diselesaikan manual (7 file): admin-app.tsx (sidebar Task 22 dipertahankan + 7 tab baru Task 20 masuk NAV_GROUPS dengan ikon & filter peran; NotificationBell + AdminAskWidget masuk header; PipelineTab onNavigate=setActiveTab), positions-tab.tsx (union state kelola + rediscover/nurture), apply-wizard.tsx (union: extraDocs lokal + recruitment-closed origin), strings.ts/primitives.tsx (gate strings versi origin), position-detail.tsx (versi origin penuh — asli Task 18/21 + bilingual), worklog.md.
+- deps dipasang ulang: nodemailer, otpauth, @types/nodemailer; tmp-check-20f.ts dihapus; db:push (schema union: customDocs/extraDocs + totpSecret/totpEnabled/assignedPositions/LoginAudit dll); tsc & lint bersih.
+- Daemon dipulihkan: auto-push (start-auto-push.sh), realtime keepalive (start-realtime.sh), DAN BARU dev-keepalive (scripts/dev-keepalive.sh + start-dev-keepalive.sh, pidfile /tmp/lumina-dev.pid) — dev server di-restart karena proses lama memegang Prisma client basi (login/PATCH 500); keepalive menghidupkan ulang otomatis bila :3000 mati.
+- worklog.md: entri Task 22 & 23 yang terpotong oleh merge dikembalikan dari commit bf937ce.
+- EDIT DI HALAMAN (permintaan user): position-form-dialog.tsx (1832 baris) dikonversi jadi position-form-page.tsx — formulir lengkap 11 section inline di halaman (bukan Dialog), header tombol kembali + judul, bilah aksi sticky bottom-4 (Batal/Simpan), onSaved(updated) mengembalikan entitas; AI cover tidak lagi memanggil onSaved (realtime menangani). Semua popup edit dihapus: file dialog dihapus.
+- PositionManagePage: mode editOpen internal (startInEdit prop), tombol "Edit Lengkap" & "Edit Konten Lengkap" menampilkan formulir halaman; positions-tab: "Tambah Posisi" juga halaman penuh (setelah simpan → buka halaman kelola posisi baru), tombol Pencil → halaman kelola mode edit; key remount per posisi+mode.
+- Deep-link: hashchange listener di AdminApp (pindah tab Posisi) & PositionsTab (sync manageId, Back/Forward); openManage kini pushState agar tombol Back browser kembali ke daftar (verifikasi: Back → list, Forward → manage, tidak lagi keluar ke halaman publik).
+
+Stage Summary:
+- Seluruh fitur yang hilang (Task 17-21) kembali + Task 22/23 tetap; riwayat GitHub & lokal menyatu.
+- Edit lengkap posisi kini HALAMAN penuh (tambah & edit), tanpa popup; dokumen wajib pendaftar tetap bisa diatur dari halaman kelola.
+- Verifikasi E2E via :81 (subagent 24-a/b/c): login asli OK, simpan posisi OK (persist), editor dokumen OK, 7 tab baru OK, deep-link & Back/Forward OK, mobile 390px tanpa overflow, 0 console error. Screenshot /tmp/v24-*, /tmp/v24b-*, /tmp/v24c-*.
