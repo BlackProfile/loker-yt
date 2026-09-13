@@ -731,41 +731,293 @@ Stage Summary:
 - Auto-sync GitHub tetap aktif — perubahan akan ter-commit & ter-push otomatis oleh watcher.
 
 ---
-Task ID: 22
-Agent: z.ai main session
-Task: Ubah navigasi tab horizontal panel admin menjadi sidebar yang bisa diciutkan (permintaan user + screenshot)
+Task ID: 16
+Agent: Z.ai Code (main)
+Task: "pada admin sesuaikan fitur jadi per kategori per lowongan" — tab Pipeline: fitur dikelompokkan per kategori tahap (Ditinjau/Wawancara/Diterima/Ditolak) per lowongan
 
 Work Log:
-- admin-app.tsx ditulis ulang: Radix Tabs horizontal diganti sidebar kiri (desktop) + drawer off-canvas (seluler) + controlled state activeTab (nilai tab lama tetap, semua fitur tab tidak berubah)
-- Sidebar: brand row, nav berkelompok (Utama: Dashboard/Pelamar/Wawancara; Analisa: Analitik/Log Aktivitas; Kelola: Posisi/Pengguna/Pengaturan) dengan filter peran (OWNER/HR/VIEWER) seperti sebelumnya
-- Mode ciut: tombol "Ciutkan" -> rail ikon 72px dengan tooltip (Radix) per ikon + avatar awal + logout; state tersimpan localStorage ("lumina-admin-sidebar"); transisi width halus
-- Header baru: hamburger (seluler) + judul seksi aktif + nama situs; kanan: indikator Live, toggle tema, tombol Publik, Keluar; kartu pengguna (avatar inisial, nama, badge peran, logout) di kaki sidebar
-- Seluler: drawer w-72 + overlay (klik overlay/X/Escape/nav item menutup); hamburger di header; guard effectiveTab kembali ke Dashboard bila tab tak tersedia untuk peran
-- Perbaikan hasil QA: desktop aside kini hidden di bawah lg (sebelumnya dobel nav overlap saat drawer terbuka)
-- Lint bersih; verifikasi agent-browser via :81 (login Owner): expanded 256px/3 grup/8 item; ciut 72px tanpa label + tooltip muncul; persistensi reload PASS; navigasi mengubah judul header & konten; seluler tanpa overflow, drawer buka/tutup (hamburger, X, Escape, overlay, nav click) PASS; errors 0
-- Screenshots: /tmp/sidebar-expanded.png, /tmp/sidebar-collapsed.png, /tmp/sidebar-mobile-drawer.png
+- Backend: schema.prisma + field Position.stageCategories (JSON {"tahap kustom": REVIEW|INTERVIEW|ACCEPTED|REJECTED}); bun run db:push OK; types.ts + StageCategory/STAGE_CATEGORIES/STAGE_CATEGORY_LABELS + Position.stageCategories; seed.ts + parseStageCategories & serialisasi; position-input.ts + sanitizeStageCategories (hanya tahap kustom, kategori bawaan tetap) + positionFieldsToDb.
+- stages.ts: categoryForStage (bawaan tetap; kustom ikut stageCategories, fallback heuristik kata kunci "tes/wawancara/offer/..."), defaultCategoryForCustomStage, stagesForCategory.
+- Komponen BARU pipeline-tab.tsx: pemilih lowongan chip (jumlah pelamar, persist localStorage), info posisi (dept/tipe/aktif/kuota), 4 tab kategori berikon dengan hitungan kandidat, kartu "Fitur tahap ini" (Collapsible: daftar fitur per kategori + chip tahap anggota + tombol Buka Kalender utk Wawancara), pencarian, kartu kandidat per kategori dengan aksi cepat: Ditinjau (checkbox massal, pindah tahap, rating bintang, Jadwalkan Wawancara, Tolak, Detail, urut terbaru/skor AI/rating, bulk bar: pindah tahap/talent pool/tolak massal), Wawancara (info sesi berikutnya + status + alert minta ubah jadwal / sesi terakhir + rekomendasi, aksi + Ronde/Skor/Penawaran/Tolak/Detail), Diterima (chip status offer + gaji/jenis/batas jawaban + countdown, progres onboarding + masa percobaan, Kirim Penawaran/Detail/Tolak utk declined), Ditolak (alasan + tanggal + cooldown, catatan feedback, switch Talent Pool, Pulihkan, Detail). Bucket kategori: status tahap via categoryForStage; offerStatus PENDING/ACCEPTED ikut Diterima.
+- Komponen BARU quick-reject-dialog.tsx (alasan 8 kategori + catatan + switch feedback → POST reject) dan offer-dialog.tsx (gaji/jenis/tanggal mulai/batas 1-30 hari/catatan; status PENDING → kirim ulang (perpanjang batas) & batalkan).
+- admin-app.tsx: tabs dikontrol (topTab state), tab BARU "Pipeline" (ikon Workflow) urut kedua, "Pelamar" diganti "Semua Pelamar", onNavigate dari Pipeline → tab kalender.
+- position-form-dialog.tsx: form.stageCategories + editor "Kategori Fitur Tahap Kustom" (muncul saat ada tahap kustom; default heuristik; Select 4 kategori per tahap) + payload.
+- Realtime: pipeline-tab berlangganan applications/interviews/positions:changed dengan load senyap (anti-flicker).
+- Kendala & fix: (1) import InterviewCreateContext salah sumber → pindah ke interview-session-dialog; (2) sisa import/dialog duplikat di pipeline-tab dirapikan (eslint --fix); (3) PATCH posisi 500 "Unknown argument stageCategories" karena Prisma client lama ter-cache di next-server → restart chain dev server (kill 1134/1104/1103/1102 + rm .next/dev/lock + nohup bun run dev) — pola sama dgn Task 15; (4) watcher auto-push mati (tidak selamat restart mesin) → start-auto-push.sh lagi (pid 6393) & push cd58cc5 sukses.
+- Verifikasi browser end-to-end (agent-browser): login → tab Pipeline tampil; pilih lowongan chip; kategori + hitungan benar; kartu fitur expand; Ditolak: Pulihkan → pindah kategori Ditinjau (toast + hitungan update); Ditinjau: Jadwalkan Wawancara → dialog sesi (link meet.google.com, tanggal) → simpan → kandidat otomatis naik ke kategori Wawancara; Skor → scorecard 4 kriteria + rekomendasi LANJUT → sesi "Selesai"; Penawaran → dialog offer (gaji/jenis/mulai/batas) → kirim → kandidat pindah ke Diterima + toast kode pelamar; halaman status publik (LM-X6K9P0): kartu wawancara (Gabung Meeting/kalender) + kartu "Kamu menerima penawaran!" dgn countdown; quick reject (alasan+feedback) → Ditolak; toggle Talent Pool; navigasi Buka Kalender → tab Wawancara; form posisi: tambah tahap kustom "Tes Editing" → editor kategori muncul (default Wawancara via heuristik) → simpan → chip "Tes Editing" tampil di kategori Wawancara; mobile 390px rapi (grid 2 kolom, chip scroll); realtime "Offline" hanya karena akses langsung port 3000 — handshake via gateway :81 OK; lint & tsc 0 error; dev.log bersih.
 
 Stage Summary:
-- Panel admin kini memakai sidebar collapsible bergaya aplikasi; konten lebih lega (max-w-6xl tetap); semua tab & gate peran tidak berubah
+- Panel admin kini punya tab "Pipeline": pilih lowongan → 4 kategori (Ditinjau/Wawancara/Diterima/Ditolak) masing-masing dengan daftar fiturnya sendiri ("Fitur tahap ini") dan aksi cepat yang relevan, sehingga HR tahu persis apa yang bisa dikerjakan di tiap tahap.
+- Kategori bekerja utk pipeline bawaan & kustom: tahap kustom dipetakan via editor baru di form posisi (dgn default heuristik kata kunci); offer pending/diterima otomatis tampil di kategori Diterima; restore & talent pool tersedia di Ditolak.
+- Semua aksi realtime + anti-flicker; data demo ikut teruji (interview, scorecard, offer, reject); GitHub auto-sync aktif kembali (commit cd58cc5 ter-push).
 
 ---
-Task ID: 23
-Agent: z.ai main session
-Task: Halaman khusus per lowongan di admin + editor dokumen wajib pendaftar; restorasi gerbang baca & tata letak formulir yang ter-reset
+Task ID: 17
+Agent: Z.ai Code (main)
+Task: "aplikasi offline" — realtime service mati setelah restart sandbox; buat keepalive daemon
 
 Work Log:
-- PENTING (temuan): sandbox direset ke snapshot lama — kode Task 18 (gerbang baca), 19 (fix offer/reject), 20 (40 fitur admin), 21 (formulir tengah bawah) HILANG dari codebase meski ada di worklog. Task 22 (sidebar) yang dikerjakan sesi ini tetap utuh.
-- Schema: Position.customDocs (JSON string[]) + Application.extraDocs (JSON {label,filename,fileId}[]) + db:push
-- Types & serializer: types.ts (customDocs, ExtraDoc, extraDocs), seed.ts (parseExtraDocs, serializePosition/Application), position-input.ts (sanitize customDocs max 8 x 80 char), route create/duplicate posisi ikut menyalin customDocs
-- API /api/applications: terima extraDoc_0..7 (wajib sesuai customDocs posisi, maks 5 MB, PDF/gambar/Word), simpan FileAsset + JSON extraDocs di lamaran
-- Admin: position-manage-page.tsx BARU (halaman khusus per lowongan: header aksi Edit Lengkap/Statistik/QR/Salin/Publik, 4 kartu statistik, editor "Dokumen dari Pendaftar" = 3 toggle + daftar dokumen tambahan + Simpan (PATCH), pratinjau konten, daftar pelamar posisi live); positions-tab: tombol Kelola (Settings2) + judul klikabel + state managing; deep-link #admin/posisi/<id> (home-view hash startsWith "#admin", AdminApp initialTab, PositionsTab parse hash)
-- Publik: apply-wizard langkah Berkas menampilkan "Dokumen wajib lainnya" per customDoc (wajib, dropzone, validasi tipe/ukuran, pratinjau, kirim extraDoc_N); strings gate* (9 kunci ID/EN) + uploads.extraDoc* (5 kunci ID/EN)
-- RESTORASI Task 18+21: position-detail.tsx kembali satu kolom (konten penuh, formulir mx-auto max-w-2xl di bawah), ApplyGate + GateProgressPill + IntersectionObserver + sessionStorage, FadeIn kini menerima prop id
-- Admin application-detail-dialog: seksi Berkas menampilkan dokumen tambahan dengan tombol Unduh
-- Lint bersih; tsc bersih (src); E2E via :81: daftar posisi → Kelola → editor dokumen (tambah KTP, simpan, reload persist), deep-link PASS; alur publik lengkap: gerbang terkunci (pil 1/5, form 0px dari tengah, di bawah konten) → buka otomatis → wizard KTP wajib (blok tanpa file) → kirim sukses LM-V06BYC → dialog admin tampil KTP + Unduh; mobile tanpa overflow; errors 0
-- Screenshots: /tmp/pos-list.png, /tmp/pos-manage.png, /tmp/docs-editor.png, /tmp/apply-extra-required.png, /tmp/apply-preview.png, /tmp/apply-success.png, /tmp/apply-detail-docs.png, /tmp/gate-locked.png, /tmp/gate-unlocked.png, /tmp/gate-mobile.png
+- Diagnosis: dev server (port 3000) & auto-push watcher hidup, tapi mini-service realtime (socket.io, port 3003) MATI — semua tab user fallback ke "Mode hemat — pembaruan otomatis terbatas" (indikator !realtimeUp di home-view.tsx), sehingga terlihat "offline".
+- Percobaan start langsung (nohup & setsid bun run dev) selalu mati antar sesi bash; hanya daemon berpola bash-loop (auto-push.sh) yang terbukti survive.
+- Solusi: scripts/realtime-keepalive.sh (bash loop daemon, cek GET /health port 3003 tiap 10 detik, restart `bun run dev` bila down, log ke realtime.log) + scripts/start-realtime.sh (starter idempoten, pidfile /tmp/lumina-realtime.pid, pola sama dgn start-auto-push.sh).
+- Start keepalive (pid 7149) → service hidup, client browser user auto-reconnect (total 4 klien termasuk sesi uji).
+- Verifikasi agent-browser via gateway :81 (bukan port 3000 langsung): landing OK; indikator "Mode hemat" HILANG; detail posisi Video Editor OK dgn badge "Pembaruan langsung" aktif; login admin admin@lumina.id OK, dashboard + 9 tab tampil; console 0 error.
+- Catatan penting: akses langsung localhost:3000 TIDAK bisa konek socket (XTransformPort hanya diproses Caddy :81) — verifikasi realtime SELALU lewat gateway.
 
 Stage Summary:
-- Fitur baru: halaman kelola per lowongan (deep-linkable) + dokumen wajib pendaftar yang bisa diatur admin per posisi
-- Gerbang baca & formulir tengah-bawah dipulihkan
-- BELUM dipulihkan (hilang karena reset, perlu keputusan user): Task 19 (fix offer tampil saat ditolak), Task 20 (40 fitur admin: 2FA, backup, template, notifikasi, dll), cek keepalive Task 17
+- Aplikasi kembali online penuh; realtime socket stabil dgn keepalive otomatis (downtime maks ~10-13 detik bila proses dibunuh sandbox, lalu auto-restart).
+- Skrip baru: scripts/realtime-keepalive.sh & scripts/start-realtime.sh (jalankan lagi setelah restart mesin, sama seperti start-auto-push.sh).
+---
+Task ID: 18
+Agent: Z.ai Code (main)
+Task: Halaman detail lowongan — sembunyikan formulir pendaftaran di balik "gerbang baca" (harus baca persyaratan dulu)
+
+Work Log:
+- Permintaan user: form pendaftaran jangan langsung tampil; pengunjung harus membaca persyaratan/ketentuan dulu, setelah itu form baru muncul.
+- strings.ts: 10 kunci baru t.detail.gate* (ID & EN + tipe Dict): gateTitle/gateDesc/gateHint/gateProgress/gateReady/gateOpen/gateLocked/gateUnlockedToast/gateReread.
+- primitives.tsx: FadeIn menerima prop id opsional (jangkar seksi).
+- position-detail.tsx refactor:
+  - State: formUnlocked (init dari sessionStorage per slug), readIds; gerbang seksi = persis seksi yang dirender (deskripsi/persyaratan?/ketentuan/benefit?/karya?) via useMemo (workEmbeds/workLinks dipindah ke useMemo agar kondisi render & gerbang tidak bisa beda).
+  - IntersectionObserver (rootMargin "0px 0px -45% 0px") menandai seksi terbaca saat masuk area baca; semua terbaca → auto-unlock (jeda 650ms) + toast "Formulir pendaftaran terbuka" + scrollIntoView halus ke #form-card; sessionStorage `lumina-read-{slug}` agar tidak baca ulang di sesi sama; fallback tanpa IO → langsung terbuka (setTimeout 0 agar lolos aturan lint set-state-in-effect).
+  - Komponen BARU ApplyGate: header BookOpenCheck (amber → emerald saat siap), progress bar (emerald saat penuh), checklist seksi (BadgeCheck hijau/Circle) yang bisa diklik untuk scroll ke seksi, tombol "Buka Formulir Lamaran" (disabled + ikon Lock sebelum semua terbaca).
+  - Seksi kiri dapat id + scroll-mt-24 (sec-deskripsi/sec-persyaratan/sec-ketentuan/sec-benefit/sec-karya); kartu kanan id form-card; state unlocked menampilkan wizard + link kecil "Baca ulang persyaratan"; kasus kuota penuh/form nonaktif tidak berubah.
+- Lint: 1 error awal (set-state-in-effect) diperbaiki; akhirnya 0 error.
+- Verifikasi agent-browser via gateway :81: gerbang tampil (3/5 auto tercentang sesuai viewport), scroll penuh → toast + form terbuka + auto-scroll, link "Baca ulang" berfungsi tanpa mengunci ulang, sessionStorage bekerja (buka ulang = langsung terbuka), mobile 390px tanpa overflow. dev.log bersih.
+- Catatan data: hanya 1/5 posisi isActive (Video Editor) — 4 lainnya nonaktif dari pengujian fitur sebelumnya (bukan bug); API & realtime sehat (keepalive Task 17 masih jalan).
+
+Stage Summary:
+- Alur halaman lowongan kini: buka detail → baca konten (checklist otomatis tercentang) → formulir terbuka otomatis. Mengurangi lamaran asal tanpa membaca persyaratan.
+- Sync GitHub otomatis oleh watcher.
+
+---
+Task ID: 19
+Agent: Z.ai Code (main)
+Task: "perbaiki ini" — stepper formulir lamaran meluber keluar kartu (label "4 Pratinjau & Kirim" keluar batas card kolom kanan desktop)
+
+Work Log:
+- Akar masalah: label stepper memakai `hidden sm:block` (berbasis viewport). Di desktop (lg+) kartu formulir hanya ~360px (kolom 2/5), sedangkan 4 label + lingkaran + garis butuh ~420px → label ke-4 terdorong keluar border kartu.
+- apply-wizard.tsx:
+  - Root wizard jadi `@container` (container query Tailwind v4) — label langkah `hidden @xl:block` + `min-w-0 truncate`: tampil hanya bila lebar KARTU ≥ 576px (layout mobile/tablet bertumpuk), tersembunyi di kolom kanan desktop yang sempit (tinggal 4 lingkaran + garis penghubung, rapi dalam kartu).
+  - `li`/wrapper label diberi `min-w-0` anti-luber; lingkaran langkah diberi `title={label}` (tooltip hover pengganti info label).
+  - Banner draft: teks `truncate` ("Lanjutkan mengisi f…") diganti `line-clamp-2` agar terbaca.
+- Verifikasi agent-browser (gateway :81): desktop kartu 360px → overflow=false, stepperRight 1095 < cardRight 1120, labels hidden; 800px kartu 752px → labels visible, tanpa overflow; mobile 390px → overflow=false, docOverflowX=false; lingkaran bertindik aktif (ring) tetap jelas. ApplyWizard kini hanya dipakai di halaman detail (dialog publik sudah dihapus sejak Task 13).
+- Lint 0 error; dev.log bersih.
+
+Stage Summary:
+- Stepper formulir anti-luber di semua lebar: sempit = ikon saja (dengan tooltip), lebar = ikon + label. Tampilan kartu formulir desktop kini rapi sesuai batas kartu.
+
+---
+Task ID: 19
+Agent: general-purpose (verification)
+Task: Verifikasi perbaikan kartu status — offer disembunyikan saat tahap berubah (REJECTED)
+
+Work Log:
+- Membuat & menjalankan scripts/tmp/get-codes.ts (bun + PrismaClient) untuk mengambil kode pelacakan: Rizky Pratama LM-X6K9P0 (ACCEPTED, offerStatus ACCEPTED), Anisa Rahma LM-V7BHRS (REVIEWED), Bagas Saputra LM-5JDUZN (INTERVIEW), Dewi Lestari LM-LNX1QA (ACCEPTED, offerStatus null), Fajar Nugroho LM-DZO8WL (REJECTED, offerStatus null), juan nisaqi LM-415EDH (REJECTED, offerStatus null — perbaikan DB terkonfirmasi).
+- agent-browser open http://localhost:81/#status (port 81), networkidle, scrollIntoView #status, snapshot -i → textbox "Kode Pelacakan" ref=e21, tombol "Lacak" ref=e22.
+- Kasus REJECTED (juan nisaqi, LM-415EDH): fill e21 + click e22 → wait --text "Tidak Lolos" sukses. Full snapshot disimpan ke /tmp/t19-rejected-snapshot.txt, screenshot /tmp/verify-t19-rejected.png.
+- Verifikasi REJECTED dari DOM (innerText + querySelector, karena snapshot a11y agent-browser mengabaikan paragraf umpan balik): kartu "Tidak Lolos" ada dengan "Alasan: Tidak hadir wawancara" dan kotak umpan balik "Umpan balik untukmu: kayak mana sih" (p.text-rose-700, visible=true); GREP snapshot = 0 hasil untuk "menerima penawaran"/"Terima Penawaran"/"Tolak"/"Diterima"/"onboarding" (innerText hasOfferText=false); kartu riwayat wawancara tetap tampil (Wawancara Ronde 1, Selesai, 16 Sep 2026 03.00, 45 menit, Zoom, pewawancara arip/jawa/ajo) — sesuai ekspektasi; timeline langkah "PROGRES LAMARAN" tetap tampil ("Lamaran Diterima", "Tes Editing").
+- Kasus ACCEPTED (Rizky Pratama, LM-X6K9P0): fill ulang e21 + click e22 → wait --text "Diterima" sukses. Snapshot disimpan ke /tmp/t19-accepted-snapshot.txt, screenshot /tmp/verify-t19-accepted.png.
+- Verifikasi ACCEPTED dari DOM: badge status "Diterima" ada (div role="status" bg-emerald-50 text-emerald-800, visible); kartu "Penawaran diterima" ada (emerald card, "Dijawab 12 Sep 2026, 01.28"); kartu "Onboarding — Langkah Selanjutnya" ada dengan sambutan "Selamat bergabung di Lumina Studio, Rizky Pratama!", "Bergabung sejak 12 September 2026", "Masa percobaan s.d. 5 April 2026"; hasTidakLolos=false (tidak ada kartu "Tidak Lolos"). Catatan: snapshot a11y agent-browser tidak menampilkan kartu-kartu tersebut (quirk tool terhadap region role="status"/animasi), kehadiran dikonfirmasi via innerText & inspeksi elemen.
+- agent-browser errors: kosong (tidak ada page error). agent-browser console: hanya log dev (React DevTools info, [HMR] connected, Fast Refresh) — tidak ada error/warning berarti. Browser ditutup (agent-browser close).
+
+Stage Summary:
+- PASS kasus REJECTED (LM-415EDH, juan nisaqi): hanya kartu "Tidak Lolos" (alasan "Tidak hadir wawancara", umpan balik "kayak mana sih") + kartu riwayat wawancara (Zoom, 16 Sep) + timeline langkah; TIDAK ada kartu penawaran/"Terima Penawaran"/"Tolak"/onboarding. Perbaikan valid.
+- PASS kasus ACCEPTED (LM-X6K9P0, Rizky Pratama): badge "Diterima" + kartu "Penawaran diterima" + kartu onboarding (sambutan & checklist masa percobaan) tampil; tanpa kartu "Tidak Lolos". Tidak ada regresi.
+- Tidak ada page error; console hanya log dev. Artefak: /tmp/t19-rejected-snapshot.txt, /tmp/t19-accepted-snapshot.txt, /tmp/verify-t19-rejected.png, /tmp/verify-t19-accepted.png.
+
+---
+Task ID: 20-fondasi
+Agent: z.ai main session
+Task: Fondasi 40 fitur admin baru — skema DB, shared libs, tab admin
+
+Work Log:
+- Instal otpauth, qrcode, nodemailer (+types)
+- prisma/schema.prisma: AdminUser(+totpSecret/totpEnabled/assignedPositions), Position(+salaryMin/Max, titleEn/descriptionEn/requirementsEn, roundPlan), Application(+onboardingPlan, cvText, isDuplicate/duplicateOfId, referrer, relasi comments/checkIns/emailOut/slotBooking), Interview(+transcript/transcriptSummary/slotId); model baru: Comment, MessageTemplate, NotificationItem, LoginAudit, InterviewSlot, EmailOutbox, CheckIn
+- bun run db:push sukses + prisma generate
+- src/lib/notify.ts: sendSystemEvent kini juga buat NotificationItem; helper baru pushNotification() dan queueEmail() (SMTP opsional via env SMTP_HOST/PORT/USER/PASS/FROM)
+- admin-app.tsx: 6 tab baru (tasks, calendar, hire, reports, templates, data) + NotificationBell di header; stub komponen dibuat untuk semua tab baru
+- tsc: file baru lolos; dev server tetap jalan
+
+Stage Summary:
+- Fondasi siap; 8 subagen area fitur (20-a s.d. 20-h) tinggal mengisi komponen + API
+- ATURAN UNTUK SUBAGEN: dilarang db:push (skema sudah final), dilarang bun run build, dilarang restart dev server, dilarang edit file milik agen lain
+
+---
+Task ID: 20-e
+Agent: subagent onboarding & talenta (Z.ai Code)
+Task: Onboarding & talenta — tab Karyawan, talent rediscovery, nurture kandidat, cek-in 30/60/90
+
+Work Log:
+- Route baru GET /api/admin/hire: application hiredAt != null (include position title + checkIns), urut hiredAt desc; onboardingPlan diparse aman jadi {id,label,owner,dueAt,done}[].
+- Route baru PATCH /api/admin/hire/[id]: simpan onboardingPlan (sanitasi maks 30 item, label 120, owner 60, dueAt valid ISO) + ActivityLog ONBOARDING_PLAN + emitRealtime applications. VIEWER 403.
+- Route baru POST/PATCH /api/admin/hire/[id]/checkins: POST buat cek-in day 30|60|90 (dueAt = hiredAt + n hari, completedAt = now, 409 bila sudah ada), PATCH edit rating/notes milik application tsb; keduanya ActivityLog CHECK_IN + realtime. VIEWER 403.
+- Route baru POST /api/admin/positions/[id]/rediscover: kandidat talentPool=true ATAU REJECTED (maks 150, exclude ditolak posisi sama 30 hari terakhir, exclude hired) -> LLM (helper ZAI lokal pola withZaiRetry di dalam route, ai.ts tidak disentuh) -> top 5 {id,name,skor,alasan} dengan robust JSON parse (strip fence + fallback regex array) -> hasil dilengkapi appliedAt + posisi asal.
+- Route baru POST /api/admin/positions/[id]/nurture (+ ?preview=1 untuk hitung tanpa efek): REJECTED posisi tsb/satu departemen, rejectionReason != MENARIK_DIRI, rejectedAt > 60 hari lalu, maks 50 -> queueEmail("Kabar baik dari Lumina Studio", body sebut posisi + kode pelacakan lama, kind NURTURE) + ActivityLog NURTURE_SENT per kandidat -> {queued}.
+- src/app/api/public/offer/respond (cabang ACCEPT saja): setelah update + ActivityLog, buat 3 CheckIn (30/60/90, dueAt = hiredAt + n) via createMany hanya bila application belum punya CheckIn. Logika lain tidak diubah.
+- hire-tab.tsx diganti penuh (bukan stub): ringkasan 3 angka (total karyawan, masa percobaan berjalan, cek-in jatuh tempo), daftar karyawan max-h-96 overflow-y-auto, Card per karyawan (nama + posisi + "Bergabung {tanggal}" formatDate + progres masa percobaan bar sisa hari + badge amber "Masa percobaan n hari lagi" / emerald "Masa percobaan selesai"), editor Rencana Onboarding (tambah item label+PIC+tenggat, centang done, hapus, Simpan via PATCH), bagian Cek-in 30/60/90 (badge zinc "Belum waktunya" / amber "Jatuh tempo" / emerald "Selesai", Isi/Edit via dialog rating bintang Button Star + textarea catatan). Auto-refresh useLiveRefresh("applications:changed"). VIEWER: semua aksi mutasi disabled.
+- positions-tab.tsx: tombol "Cari Talent Lama" (Search) + "Nurture Kandidat" (Sprout) khusus posisi aktif (disabled utk VIEWER); Dialog hasil rediscovery (nama, badge skor emerald/amber/zinc, alasan, tanggal lamaran, tombol Coba Lagi) + AlertDialog konfirmasi nurture yang menyebut jumlah kandidat (fetch preview saat dibuka) -> toast "{n} email disiapkan".
+- Verifikasi: eslint file milik 20-e bersih; tsc terisolasi (tsconfig sementara, sudah dihapus) bersih. bun run lint global masih 2 error di file agen lain yang sedang dikerjakan paralel (applications-tab.tsx line 214 parse error, interview-tab.tsx SlotManagerPanel undefined) — di luar kepemilikan 20-e, tidak disentuh. Dev server sedang mati sehingga uji HTTP runtime tidak bisa dilakukan (dilarang start/restart).
+
+Stage Summary:
+- 4 fitur onboarding & talenta selesai; skema DB tak berubah (CheckIn + onboardingPlan sudah dari 20-fondasi).
+- File: src/app/api/admin/hire/route.ts, src/app/api/admin/hire/[id]/route.ts, src/app/api/admin/hire/[id]/checkins/route.ts, src/app/api/admin/positions/[id]/rediscover/route.ts, src/app/api/admin/positions/[id]/nurture/route.ts, src/components/admin/hire-tab.tsx, src/components/admin/positions-tab.tsx, src/app/api/public/offer/respond/route.ts.
+- position-stats-dialog.tsx tidak perlu diubah.
+
+---
+Task ID: 20-a
+Agent: subagent pipeline & screening (Z.ai Code)
+Task: Fitur pipeline & screening — ringkasan AI kartu, auto-screening + deteksi duplikat lamaran baru, Pusat Tugas, Shortlist AI, pencarian semantik, diskusi tim (comments), badge duplikat, hitungan duplikat pipeline
+
+Work Log:
+- src/lib/ai.ts (HANYA tambah fungsi baru): generateApplicationSummaryText (ringkasan 2-3 kalimat dari experience/motivation/aiScore/transcript/cvText), rankPositionShortlist (top 5 per posisi, JSON ketat), semanticSearchCandidates (maks 100 kandidat terbaru -> skor 0-100 + alasan, top 10), plus parser JSON tervalidasi (extractJsonArray/normalizeRankedEntries, id harus nyata, skor 0-100)
+- Route baru POST /api/admin/applications/[id]/ai-summary: simpan aiSummary+aiAnalyzedAt, ActivityLog AI_SUMMARY, emitRealtime(applications)
+- Route baru POST /api/admin/positions/[id]/shortlist dan POST /api/admin/applications/semantic-search (getSession; query 3-300 char; tangani error 502)
+- Route baru GET/POST /api/admin/applications/[id]/comments: authorName/authorRole dari session, parse @mention -> JSON mentions (unik, maks 10), ActivityLog COMMENT; GET semua role, POST OWNER/HR
+- Route baru GET /api/admin/duplicates: { ids } untuk badge duplikat (serializer Application milik seed.ts tidak menyertakan isDuplicate, jadi data diambil terpisah)
+- src/app/api/applications/route.ts (POST): simpan referrer (opsional, dipotong 300 char); deteksi duplikat email ATAU phone sama pada posisi sama dalam 90 hari -> isDuplicate+duplicateOfId (id lamaran pertama) + ActivityLog DUPLICATE_DETECTED (try/catch, tak bisa menggagalkan submit); AI screening fire-and-forget SUDAH ADA via startBackgroundProcessing (analyzeApplication menulis aiScore/aiSummary/aiRecommendation/aiAnalyzedAt + log AI_SCREENING actor "AI") — tidak diduplikasi
+- src/app/api/admin/action-items/route.ts: tambah staleNewApplications (status NEW > 3 hari) dan duplicateApplications (isDuplicate) dengan tipe perluasan ExtendedActionItemsResponse (kontrak types.ts tidak diubah)
+- kanban-board.tsx: kartu menampilkan aiSummary (line-clamp-2) bila ada; tombol ikon Sparkles "Buat ringkasan AI" bila belum ada (disabled VIEWER via prop canMutate dari useAdminSession di applications-tab, loading + toast sonner, stopPropagation agar tidak memicu drag/klik detail); Badge amber "Duplikat" + tooltip "Kemungkinan lamaran ganda" (data dari prop duplicateIds); prop baru duplicateIds/onUpdated (opsional, backward compatible)
+- applications-tab.tsx: fetch /api/admin/duplicates (awal + realtime) -> Kirim ke KanbanBoard; onUpdated menyimpan ringkasan baru; input "Cari dengan AI" + tombol (Enter juga) -> Dialog hasil (peringkat, nama, badge skor, alasan, tombol "Buka Detail Kandidat" bila kandidat ada di daftar — mekanisme setDetail sudah ada; bila tidak, tampil info saja)
+- application-detail-dialog.tsx: Badge amber "Duplikat" + tooltip di judul (fetch duplicates saat dialog dibuka); section "Diskusi Tim": list komentar (max-h-96 overflow-y-auto), textarea kirim (OWNER/HR), @nama dirender bold rose-600, refetch saat dibuka (mount per kandidat via key) + setelah kirim, badge role
+- pipeline-tab.tsx: tombol "Shortlist AI" di toolbar info posisi (disabled VIEWER/loading) + Dialog hasil (peringkat, nama, skor, alasan, loading state); Badge amber hitungan "N duplikat" + tooltip bila ada lamaran duplikat pada posisi aktif; refresh duplicates realtime
+- tasks-tab.tsx (pengganti stub): Pusat Tugas — 5 kelompok (Belum Ditinjau >3 hari, Penawaran Menunggu Jawaban + urgensi lewat batas/sisa hari, Permintaan Ubah Jadwal, Wawancara Belum Dinilai, Lamaran Duplikat), badge hitungan per kategori, tiap item tombol "Buka Detail" (membuka ApplicationDetailDialog asli bila kandidat ada di daftar), auto-refresh useLiveRefresh (applications + interviews), empty state "Semua beres!"
+- Verifikasi: bunx tsc --noEmit -> 0 error di semua file saya (error tersisa milik agen lain); bunx eslint pada 13 file saya -> bersih; tanpa emoji, tanpa biru/indigo/ungu; tidak ada db:push/build/restart server
+- Catatan: dev server tidak sedang berjalan (port 3000 connection refused saat smoke test), jadi pengujian runtime HTTP dilewati — validasi via tsc+eslint; apply-wizard (milik agen lain) belum mengirim field referrer, server siap menerima bila nanti ditambahkan
+
+Stage Summary:
+- 8 fitur pipeline & screening selesai: (1) ringkasan AI kartu kanban, (2) auto-screening (sudah ada) + referrer + deteksi duplikat 90 hari, (3) Pusat Tugas 5 kategori, (4) Shortlist AI per posisi, (5) pencarian semantik top 10, (6) diskusi tim dengan @mention, (7) badge Duplikat kanban+detail, (8) hitungan duplikat pipeline
+- File dibuat: ai-summary/comments/shortlist/semantic-search/duplicates routes; file diubah: lib/ai.ts (append saja), api/applications, api/admin/action-items, kanban-board, applications-tab, application-detail-dialog, pipeline-tab, tasks-tab; api/admin/applications/route.ts TIDAK disentuh; types.ts & seed.ts tidak diubah (tipe perluasan didefinisikan lokal)
+
+---
+Task ID: 20-c
+Agent: subagent 20-c (Fitur AI lanjutan admin)
+Task: 5 fitur AI admin — rekomendasi head-to-head, generator brief tes, OCR CV, Tanya Data, bias guard
+
+Work Log:
+- Membaca worklog (20-fondasi: cvText tersedia di skema, AdminUser ada) + mempelajari ai-panel/comparison-dialog/position-list-editors, pola route admin (getSession, 401/403, params Promise), pola ZAI chat.completions + withZaiRetry/withTimeout di src/lib/ai.ts (TIDAK diubah), pola baca file CV (FileAsset.path — files/[id] & transcribe.ts), pola VLM SDK (createVision: content text/image_url/file_url, tanpa field model — sesuai README & CLI SDK).
+- File baru src/lib/ai-json.ts (SERVER-ONLY, milik 20-c): errorMessage, stripJsonFence (buang ```json fence), extractJsonObject (JSON.parse penuh → fallback cari blok {...} seimbang — robust), asTrimmedString, clampPercent, asLooseBoolean (untuk bool LLM "ya/true/selaras").
+- Route 1 POST /api/admin/applications/compare-ai: body {ids: 2-3}; validasi unik; ambil Application + position.title + interviews (ronde, status, scores, recommendation, transcriptSummary); prompt kandidat terstruktur (nama, pengalaman, motivasi, aiScore, aiSummary, rubrik admin, transkrip intro, wawancara); LLM JSON {winner, confidence TINGGI|SEDANG|RENDAH, alasan, kekuatan_per_kandidat, risiko_per_kandidat}; validasi winner ∈ ids (502 ramah bila di luar daftar); map per-kandidat dipastikan berisi semua id; VIEWER 403.
+- Route 2 POST /api/admin/positions/[id]/generate-brief: body {level? Junior|Mid|Senior default Mid}; prompt berisi judul/departemen/jenis/deskripsi/6 persyaratan posisi; JSON {title, note} — note 80-150 kata struktur konteks/tugas/kriteria penilaian; fallback title "<posisi> — Tes Praktik (<level>)"; tidak menulis DB (hasil mengisi form, user simpan sendiri); VIEWER 403.
+- Route 3 POST /api/admin/applications/[id]/ocr-cv: body {peek?: true} → baca cvText tersimpan saja (read-only, semua role); OCR penuh butuh OWNER/HR; idempoten (cvText ada → return cached tanpa OCR ulang); gambar → VLM createVision image_url data:base64; PDF → ekstraktor teks internal (node:zlib inflateSync per stream + dekode string literal operator Tj/TJ, heuristik looksLikeRealText) → bila tak terbaca (PDF pindai) fallback VLM file_url data:application/pdf;base64; hasil trim + maks 8000 char → simpan Application.cvText + ActivityLog OCR_CV (actor AI, detail karakter+metode) + emitRealtime applications; VIEWER 403 untuk OCR.
+- Route 4 POST /api/admin/ask-data: body {question 3-500 char}; kumpulkan statistik via Prisma groupBy/aggregate/count paralel: lamaran per status, per posisi (dengan judul), rata-rata aiScore, ditolak per rejectionReason bulan ini, offer per offerStatus, wawancara per status, karyawan hiredAt bulan ini; prompt "Jawab pertanyaan admin BERDASARKAN data berikut saja, bahasa Indonesia, ringkas, bila data tak tersedia katakan jujur" + label Indonesia (STATUS/REJECTION/OFFER/INTERVIEW); jawaban teks {reply}; VIEWER 403.
+- Route 5 POST /api/admin/applications/[id]/bias-check: bandingkan rating+rubricScores+adminNotes vs bukti (experience, motivation, cvText, aiScore, transkrip intro, scorecard wawancara); skor_admin dihitung deterministik server (rating×20, fallback rata-rata rubrik×20); guard 400 bila belum ada penilaian admin; JSON {selaras, skor_admin, skor_bukti_estimasi, catatan} — selaras via asLooseBoolean, skor clamp 0-100; VIEWER 403.
+- UI comparison-dialog.tsx: bar tombol "Minta Rekomendasi AI" (disabled VIEWER/loading/<2 kandidat; VIEWER diberi teks penjelas); panel hasil di bawah grid: kartu pemenang highlight emerald (ring + badge Trophy "Pilihan AI"), badge confidence (TINGGI emerald/SEDANG amber/RENDAH rose), alasan, grid kekuatan (ThumbsUp) & risiko (TriangleAlert) per kandidat, catatan kecil "AI hanya bahan pertimbangan, keputusan tetap milikmu."; state reset saat daftar kandidat berganti; props eksternal tidak berubah (kompatibel applications-tab).
+- UI position-list-editors.tsx: komponen baru AssignmentBriefEditor — kartu "Tes untuk Pelamar" berisi Judul Tes (maks 120) + Catatan Tes (maks 400) + Select level Junior/Mid/Senior + tombol "Buat brief dengan AI" (hasil diisi ke field, masih bisa diedit sebelum simpan); posisi baru (positionId null) → tombol disabled dibungkus Tooltip "Simpan posisi dulu" (pola cover AI); VIEWER disabled.
+- UI ai-panel.tsx: bagian "Teks CV" — peek otomatis POST {peek:true} saat panel dibuka (tampilkan cvText tersimpan); cvText ada → Collapsible (maks-h-40 overflow-y-auto nice-scrollbar) + tombol Salin; kosong + ada CV + canMutate → tombol "Baca CV dengan OCR" (ScanText, spinner "Membaca CV..."); tanpa CV → teks info; bagian "Cek Bias Penilaian" (tombol Scale) → panel hasil: badge emerald "Selaras" / amber "Perlu ditinjau" + "Skor admin X/100 · Estimasi bukti Y/100" + catatan; semua state reset per app.id.
+- Widget baru admin-ask-widget.tsx: tombol bulat floating kanan-bawah (Bot, fixed bottom-5 right-5 z-50, size-14 rounded-full shadow); Dialog "Tanya Data": riwayat chat (bubble user rose kanan, assistant border kiri), max-h-96 overflow-y-auto nice-scrollbar, empty state + 3 chip saran pertanyaan, input + Enter kirim, loading "Menganalisis data...", tombol bersihkan riwayat, jawaban panjang aman (scroll); VIEWER → note amber + input disabled; gagal → bubble user ditarik kembali ke input agar mudah dikirim ulang.
+- admin-app.tsx (satu-satunya pengecualian yang diizinkan): import AdminAskWidget + mount persis setelah <NotificationBell onOpenTasks={...} />.
+- Validasi: tsc --noEmit → 0 error di seluruh file 20-c; eslint 11 file milik 20-c → 0 masalah. CATATAN: `bun run lint` full-project masih GAGAL karena file milik agen lain yang sedang/sudah diedit paralel (applications-tab.tsx parse error baris 214; profile-print-dialog.tsx react-hooks set-state-in-effect) — di luar kepemilikan 20-c, tidak disentuh.
+- Catatan: dev server TIDAK berjalan (port 3000 connection refused saat hendak smoke test; dilarang restart), sehingga pengujian runtime HTTP dilewati — validasi via tsc + eslint + pola identik route existing. Perhatian juga: selama sesi berjalan, file-file agen lain (data-tab, applications-tab, hire-tab, dll.) terus berubah — tidak ada konflik dengan file 20-c.
+
+Stage Summary:
+- 5 fitur AI admin selesai di sisi backend & UI: (1) Rekomendasi finalis head-to-head di comparison-dialog, (2) generator brief tes praktik, (3) OCR CV tersimpan ke Application.cvText (maks 8000, siap dipakai pencarian semantik agen lain) + bagian "Teks CV" di ai-panel, (4) chatbot "Tanya Data" floating widget, (5) bias guard "Cek Bias Penilaian" di ai-panel. Semua route: getSession, VIEWER 403 (kecuali peek OCR yang read-only), try/catch + console.error("[POST /api/...]") + pesan error Indonesia, ekstraksi JSON LLM robust via lib/ai-json.
+- File dibuat: src/lib/ai-json.ts, admin-ask-widget.tsx, 5 route baru. File diubah: ai-panel.tsx, comparison-dialog.tsx, position-list-editors.tsx, admin-app.tsx (hanya import+mount sesuai pengecualian). /api/admin/applications/route.ts & /api/applications/route.ts & src/lib/ai.ts TIDAK disentuh.
+- GAP SATU-SATUNYA (jujur): mount <AssignmentBriefEditor /> di position-form-dialog.tsx (mengganti field Judul Tes + Catatan Tes di kartu "Tes untuk Pelamar", section Otomasi Pesan ~baris 1290-1330) TIDAK dilakukan karena file itu milik agen lain (dilarang edit; tidak ada pengecualian seperti admin-app.tsx). Integrasi tinggal 2 langkah oleh pemilik file: (a) tambah AssignmentBriefEditor ke import "./position-list-editors"; (b) ganti div card "Tes untuk Pelamar" dengan <AssignmentBriefEditor positionId={editing?.id ?? null} assignmentTitle={form.assignmentTitle} assignmentNote={form.assignmentNote} onTitleChange={(v)=>set("assignmentTitle", v)} onNoteChange={(v)=>set("assignmentNote", v)} /> (biarkan field assignmentUrl tetap seperti sekarang). Route backend-nya sudah lengkap & teruji tipe.
+
+---
+Task ID: 20-g
+Agent: general-purpose (subagent keamanan & audit)
+Task: Fitur keamanan & audit — scope granular + masking VIEWER, 2FA TOTP, proteksi brute force, audit login UI
+
+Work Log:
+- src/lib/totp.ts (BARU): helper TOTP via otpauth — generateTotpSecret(label) (Secret 20 byte → base32, new TOTP({issuer:"Lumina Studio", label, digits:6, period:30}).toString() = URI otpauth) dan verifyTotpCode(secret, code) (validate window ±1 → delta !== null).
+- src/lib/seed.ts: HANYA menambah helper baru (fungsi existing tidak diubah): parseAssignedPositions(raw) → string[] unik dari JSON kolom AdminUser.assignedPositions, dan maskApplicationForViewer(app) → phone="(disembunyikan)", cvFileId=null, cvFileName=null (kebijakan VIEWER tidak boleh lihat phone & CV, level respons list saja).
+- src/app/api/admin/security/totp/route.ts (BARU): GET status {totpEnabled} sesi sendiri; POST action=setup (ditolak bila sudah enabled; simpan totpSecret pending; return uri+secret+qrDataUrl via QRCode.toDataURL), action=enable {code} (verify → totpEnabled=true), action=disable {code} (verify dulu → totpSecret=null, totpEnabled=false). Semua terbatas pada user sesi sendiri.
+- src/app/api/admin/logins/route.ts (BARU): GET 100 LoginAudit terakhir (OWNER semua email, role lain hanya email sendiri, lowercased).
+- src/app/api/admin/login/route.ts: (1) lockout brute force — hitung LoginAudit success=false reason!=LOCKOUT email tsb dalam 15 menit >= 5 → 429 {error:"LOCKOUT"} + audit reason LOCKOUT (tanpa ekspos sisa waktu); (2) setelah password benar, bila totpEnabled dan totpCode tidak valid → 401 {error:"KODE_2FA"} + audit TOTP_SALAH; (3) LoginAudit ditulis untuk SEMUA percobaan (OK/PASSWORD_SALAH/TOTP_SALAH/LOCKOUT; email diturunkan ke lowercase termasuk email tak dikenal, userId, ip=x-forwarded-for slice 50, userAgent slice 200); (4) delay 300ms saat password salah. Login demo admin@lumina.id/admin123 (totpEnabled=false) tidak berubah perilaku; legacy password-only tetap jalan.
+- src/app/api/admin/users/[id]/route.ts: GET BARU (OWNER) → detail user + totpEnabled + assignedPositions: string[]; PATCH ditambah handling assignedPositions (validasi array string → dedupe/trim/slice → JSON.stringify) dan totpReset: true (kosongkan totpSecret + totpEnabled=false; cara OWNER reset 2FA user lain). Respons PATCH kini serializeUserDetail. Route /api/admin/users/route.ts (list/create) TIDAK disentuh (bukan kepemilikan) — scope & status 2FA dimuat per-user via GET [id] di dialog edit.
+- src/app/api/admin/applications/route.ts: GET list saja — session.role HR → fetch assignedPositions user (by email) dan bila tidak kosong tambah where.AND positionId in scope (kosong = semua posisi); VIEWER → respons list di-mask via maskApplicationForViewer. Filter/sort/hidup existing tidak diubah; applications/[id]/route.ts tidak disentuh.
+- users-tab.tsx: (a) editor "Scope Posisi" di dialog edit untuk role HR — checkbox daftar posisi (fetch /api/admin/positions, max-h-40 scroll), draft dari GET /api/admin/users/[id], disimpan via PATCH assignedPositions, kosong = semua; (b) section "Keamanan Akun (2FA)" akun sendiri — badge Aktif emerald/Nonaktif zinc (status via GET /api/admin/security/totp), tombol Aktifkan → dialog QR (img data URL + kunci manual + input 6 digit → enable), Nonaktifkan → dialog input kode → disable; (c) tombol Reset 2FA per baris (OWNER) dengan AlertDialog konfirmasi → PATCH totpReset.
+- logs-tab.tsx: section BARU "Audit Login" DI ATAS kartu "Log Aktivitas" existing (fitur log lama utuh) — tabel Waktu/Email/Status (Sukses emerald, Gagal rose + alasan: password salah/kode 2FA salah/diblokir sementara)/Perangkat (userAgent diringkas "Chrome · Windows", fallback potong 40)/IP; Select filter email untuk OWNER (client-side di atas data 100 baris); desktop tabel + mobile card; max-h-96 overflow-y-auto nice-scrollbar.
+- login-card.tsx: bila respons 401 {error:"KODE_2FA"} → tampilkan input "Kode 2FA (6 digit)" (inputMode numeric, one-time-code, tracking mono) dan kirim totpCode pada login berikutnya; 429 LOCKOUT dipetakan ke pesan ramah tanpa ekspos sisa waktu. Alur login normal tidak berubah.
+- Validasi: `bun run lint` final = exit 0 bersih (repo penuh, 0 error 0 warning); eslint terisolasi 10 file milik 20-g = 0 masalah; tsc --noEmit = 0 error pada seluruh file milik 20-g (error tsc yang tersisa hanya di file agen lain yang masih berubah paralel — tidak disentuh). db:push/build/restart dev server tidak dilakukan sesuai aturan; uji HTTP curl dilewati sesuai instruksi (cukup lint + typecheck).
+
+Stage Summary:
+- 4 fitur selesai: (1) scope posisi granular HR + enforcement filter GET list lamaran dan masking PII VIEWER (phone & CV) di respons list; (2) 2FA TOTP penuh (setup QR otpauth+qrcode, enable/disable dengan verifikasi, reset oleh OWNER, verifikasi kode saat login); (3) proteksi brute force (lockout 5 gagal/15 menit → 429 + audit, delay 300ms password salah, LoginAudit semua percobaan dengan IP/UA terpotong); (4) audit login UI di logs-tab + API /api/admin/logins berbasis role.
+- Catatan jujur: enforcement scope hanya di GET list /api/admin/applications (GET by id & endpoint turunan di luar kepemilikan, tidak diubah); masking VIEWER juga hanya di list; section 2FA berada di tab Pengguna yang di-nav hanya untuk OWNER, tetapi API /api/admin/security/totp terbuka untuk semua role (siap dipakai permukaan UI lain); tipe AdminUser di types.ts tidak diperluas — komponen memakai tipe lokal (AdminUserDetail, LoginAuditEntry) agar tidak menyentuh file bersama.
+
+---
+Task ID: 20-b
+Agent: general-purpose (timeout -> diselesaikan integrasi oleh main session)
+Task: Fitur wawancara — slot self-service, kalender tim, rencana ronde, rubrik live, rekaman+transkrip
+
+Work Log:
+- Routes: /api/admin/slots (+[id]), /api/public/slots, /api/public/slots/book, /api/admin/interviews/[id]/transcribe, /api/admin/interviews/[id]/recording
+- Track API + status-check.tsx: kartu "Pilih Jadwal Wawancara" dari result.slots; TrackResponse.slots/onboardingPlan di types.ts
+- calendar-tab.tsx (kalender mingguan + konflik pewawancara), SlotManagerPanel di interview-tab, autosave rubrik di interview-session-dialog, tombol "Jadwalkan Ronde Berikutnya" dari Position.roundPlan
+- Integrasi main session: wiring roundPlan (position-input sanitize + seed parseRoundPlan + editor UI di position-form-dialog)
+
+Stage Summary:
+- Semua 5 fitur hadir; tsc/lint bersih; verifikasi runtime menyusul (Task 20-verif)
+
+---
+Task ID: 20-d
+Agent: general-purpose (timeout -> diselesaikan integrasi oleh main session)
+Task: Komunikasi — pusat notifikasi, kotak keluar email, pustaka template, tombol WA, cron pengingat + rekap mingguan
+
+Work Log:
+- notification-bell.tsx (badge unread + popover, /api/admin/notifications GET+PATCH)
+- settings-tab: section "Kotak Keluar Email" (/api/admin/outbox GET + resend PATCH)
+- template-picker.tsx + integrasi di offer-dialog & quick-reject-dialog (/api/admin/templates CRUD)
+- applications-table: tombol WhatsApp (wa.me) + badge duplikat
+- cron reminders: OFFER_REMIND_H1 (H-1 deadline offer, queueEmail+pushNotification) + WEEKLY_DIGEST (Senin pagi)
+
+Stage Summary:
+- 5 fitur hadir; SMTP opsional via env; lint bersih
+
+---
+Task ID: 20-f
+Agent: general-purpose (timeout -> diselesaikan integrasi oleh main session)
+Task: Laporan — funnel konversi, sumber lamaran, validasi AI, ekspor profil cetak
+
+Work Log:
+- reports-tab.tsx (funnel per posisi + avg hari per tahap, breakdown source/UTM/referrer, validasi skor AI vs keputusan akhir)
+- profile-print-dialog.tsx (profil kandidat siap cetak, window.print + print CSS)
+- Routes: /api/admin/reports/funnel, /sources, /ai-validation
+
+Stage Summary:
+- 4 fitur hadir; lint bersih
+
+---
+Task ID: 20-h
+Agent: general-purpose (timeout -> diselesaikan integrasi oleh main session)
+Task: Konfigurasi — backup/restore, import CSV, mode tutup rekrutmen, posisi dua bahasa, rentang gaji
+
+Work Log:
+- data-tab.tsx: unduh backup (GET /api/admin/backup), restore upload (POST /api/admin/restore via bun:sqlite), import CSV (/api/admin/import-applications), mode tutup rekrutmen (Setting site.recruitmentClosed)
+- landing-page/apply-wizard: banner + blokir submit saat ditutup; /api/public/site
+- position-form-dialog: konten EN (titleEn/descriptionEn/requirementsEn) — wiring position-input+seed oleh agen
+- Integrasi main session: salaryMin/salaryMax (types+seed+position-input+form UI) & editor roundPlan UI
+
+Stage Summary:
+- 4 fitur hadir; restore destructif dikonfirmasi Owner; lint/tsc bersih
+
+---
+Task ID: 20 (utama) + 20-verif
+Agent: z.ai main session
+Task: Menuntaskan & memverifikasi 40 fitur admin ("tambahkan semuanya")
+
+Work Log:
+- Fondasi: skema (AdminUser 2FA+scope, Position salary range/EN/roundPlan, Application onboardingPlan/cvText/duplikat/referrer; model Comment, MessageTemplate, NotificationItem, LoginAudit, InterviewSlot, EmailOutbox, CheckIn) + db:push; notify.ts pushNotification/queueEmail; admin-app 6 tab baru + NotificationBell
+- 8 subagen paralel: 20-a (pipeline/screening), 20-c (AI: head-to-head, brief, OCR, Tanya Data, bias guard), 20-e (onboarding/talenta), 20-g (keamanan/2FA/audit) selesai penuh; 20-b/d/f/h timeout tetapi deliverable hampir lengkap
+- Integrasi main session: salaryMin/Max + roundPlan (types, seed.parseRoundPlan, position-input sanitize, form UI editor ronde), templates-tab.tsx ditulis penuh (satu-satunya FAIL QA)
+- QA agent-browser via :81: landing/track regresi PASS, login + 15 tab PASS, Tugas/Kalender/Karyawan/Laporan/Data/Outbox/Pipeline/Diskusi Tim/Form posisi (gaji+ronde+EN)/Tanya Data (jawaban dari DB)/Bell PASS; Tab Template FAIL -> diperbaiki -> re-verify 8/8 PASS; errors 0
+
+Stage Summary:
+- 40/40 fitur terpasang & terverifikasi; tsc 0 error; eslint bersih; dev server sehat; screenshots di /tmp/v40-*.png
+- Catatan: email terarsip di Kotak Keluar (SMTP opsional via env); cek-in 30/60/90 otomatis saat offer diterima; lockout login 5 kali/15 menit
+
+---
+Task ID: 21
+Agent: z.ai main session
+Task: Pindahkan formulir lamaran dari kolom kanan ke tengah bawah konten (permintaan user + screenshot)
+
+Work Log:
+- position-detail.tsx: grid 2 kolom (konten kiri 3/5 + form sticky kanan 2/5) diubah jadi satu kolom vertikal — konten full-width (deskripsi max-w-3xl), kartu gerbang/formulir pindah ke bawah konten, mx-auto max-w-2xl (terpusat)
+- Sticky kolom kanan dihapus; auto-scroll unlock tetap ke #form-card (kini di bawah)
+- Tambahan GateProgressPill: pil progres mengambang bottom-center ("x/y bagian dibaca") selama gerbang terkunci, klik = gulir ke formulir; hilang otomatis setelah terbuka
+- Lint bersih; verifikasi agent-browser via :81 (posisi pembersih-halaman): form-card centerX 640/640 (deviasi 0px, lebar 672px), berada 72px di bawah seksi konten terakhir; pil muncul saat terkunci & hilang saat terbuka; auto-unlock + auto-scroll PASS; mobile 390px tanpa overflow; errors console 0
+- Screenshots: /tmp/verify-form-locked-desktop.png, /tmp/verify-form-unlocked-desktop.png, /tmp/verify-form-mobile.png
+
+Stage Summary:
+- Alur baca kini natural top-to-bottom: baca konten → gerbang terbuka → formulir terpusat di bawah; progres baca tetap terlihat via pil mengambang

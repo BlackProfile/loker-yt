@@ -20,8 +20,14 @@ import {
   BarChart3,
   Briefcase,
   CalendarClock,
+  CalendarDays,
+  Database,
   ExternalLink,
+  FileBarChart,
+  FileText,
+  Handshake,
   LayoutDashboard,
+  ListChecks,
   Loader2,
   LogOut,
   Menu,
@@ -35,6 +41,7 @@ import {
   Users,
   Wifi,
   WifiOff,
+  Workflow,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -55,6 +62,7 @@ import { AdminSessionProvider } from "./admin-context";
 import { Reveal } from "./motion-primitives";
 import { LoginCard } from "./login-card";
 import { DashboardTab } from "./dashboard-tab";
+import { PipelineTab } from "./pipeline-tab";
 import { ApplicationsTab } from "./applications-tab";
 import { InterviewTab } from "./interview-tab";
 import { AnalyticsTab } from "./analytics-tab";
@@ -62,6 +70,14 @@ import { LogsTab } from "./logs-tab";
 import { PositionsTab } from "./positions-tab";
 import { UsersTab } from "./users-tab";
 import { SettingsTab } from "./settings-tab";
+import { TasksTab } from "./tasks-tab";
+import { CalendarTab } from "./calendar-tab";
+import { HireTab } from "./hire-tab";
+import { ReportsTab } from "./reports-tab";
+import { TemplatesTab } from "./templates-tab";
+import { DataTab } from "./data-tab";
+import { NotificationBell } from "./notification-bell";
+import { AdminAskWidget } from "./admin-ask-widget";
 
 type Phase = "checking" | "login" | "ready";
 
@@ -85,14 +101,18 @@ const NAV_GROUPS: NavGroupDef[] = [
     title: "Utama",
     items: [
       { value: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { value: "tasks", label: "Tugas", icon: ListChecks },
+      { value: "pipeline", label: "Pipeline", icon: Workflow },
       { value: "applications", label: "Pelamar", icon: Users },
       { value: "interview", label: "Wawancara", icon: CalendarClock },
+      { value: "calendar", label: "Kalender", icon: CalendarDays },
     ],
   },
   {
     title: "Analisa",
     items: [
       { value: "analytics", label: "Analitik", icon: BarChart3 },
+      { value: "reports", label: "Laporan", icon: FileBarChart },
       { value: "logs", label: "Log Aktivitas", icon: ScrollText },
     ],
   },
@@ -104,6 +124,14 @@ const NAV_GROUPS: NavGroupDef[] = [
         label: "Posisi",
         icon: Briefcase,
         roles: ["OWNER", "HR"],
+      },
+      { value: "hire", label: "Karyawan", icon: Handshake },
+      { value: "templates", label: "Template", icon: FileText },
+      {
+        value: "data",
+        label: "Data",
+        icon: Database,
+        roles: ["OWNER"],
       },
       { value: "users", label: "Pengguna", icon: UserCog, roles: ["OWNER"] },
       {
@@ -735,6 +763,8 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
               <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                 <RealtimeIndicator />
                 <ThemeToggle />
+                <NotificationBell onOpenTasks={() => setActiveTab("tasks")} />
+                <AdminAskWidget />
                 <Button
                   variant="outline"
                   className="h-11 active:scale-[0.99] sm:h-10"
@@ -772,6 +802,16 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 <DashboardTab />
               </TabReveal>
             ) : null}
+            {effectiveTab === "tasks" ? (
+              <TabReveal>
+                <TasksTab />
+              </TabReveal>
+            ) : null}
+            {effectiveTab === "pipeline" ? (
+              <TabReveal>
+                <PipelineTab onNavigate={setActiveTab} />
+              </TabReveal>
+            ) : null}
             {effectiveTab === "applications" ? (
               <TabReveal>
                 <ApplicationsTab />
@@ -780,6 +820,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
             {effectiveTab === "interview" ? (
               <TabReveal>
                 <InterviewTab />
+              </TabReveal>
+            ) : null}
+            {effectiveTab === "calendar" ? (
+              <TabReveal>
+                <CalendarTab />
               </TabReveal>
             ) : null}
             {effectiveTab === "analytics" ? (
@@ -795,6 +840,26 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
             {effectiveTab === "positions" && isOwnerOrHr ? (
               <TabReveal>
                 <PositionsTab />
+              </TabReveal>
+            ) : null}
+            {effectiveTab === "hire" ? (
+              <TabReveal>
+                <HireTab />
+              </TabReveal>
+            ) : null}
+            {effectiveTab === "reports" ? (
+              <TabReveal>
+                <ReportsTab />
+              </TabReveal>
+            ) : null}
+            {effectiveTab === "templates" ? (
+              <TabReveal>
+                <TemplatesTab />
+              </TabReveal>
+            ) : null}
+            {effectiveTab === "data" && isOwner ? (
+              <TabReveal>
+                <DataTab />
               </TabReveal>
             ) : null}
             {effectiveTab === "users" && isOwner ? (

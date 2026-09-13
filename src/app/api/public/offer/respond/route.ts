@@ -61,6 +61,14 @@ export async function POST(req: NextRequest) {
     if (!application) {
       return NextResponse.json({ error: "Kode pelacakan tidak ditemukan." }, { status: 404 });
     }
+    // Tahap sudah berubah ke Ditolak -> penawaran apa pun tidak berlaku lagi
+    // (mencegah kandidat ditolak masih bisa menerima offer sisa yang menggantung).
+    if (application.status === "REJECTED") {
+      return NextResponse.json(
+        { error: "Lamaran sudah ditolak — penawaran tidak berlaku lagi." },
+        { status: 400 },
+      );
+    }
     if (application.offerStatus !== "PENDING") {
       return NextResponse.json(
         { error: "Penawaran tidak sedang menunggu jawabanmu." },
@@ -164,6 +172,19 @@ export async function POST(req: NextRequest) {
         },
       ],
     });
+
+    // Cek-in masa percobaan 30/60/90 hari: dibuat sekali di awal onboarding
+    // (dueAt = hiredAt + n hari), hanya bila application ini belum punya CheckIn.
+    const existingCheckIns = await db.checkIn.count({ where: { applicationId: application.id } });
+    if (existingCheckIns === 0) {
+      await db.checkIn.createMany({
+        data: [30, 60, 90].map((day) => ({
+          applicationId: application.id,
+          day,
+          dueAt: new Date(nowDate.getTime() + day * 24 * 60 * 60 * 1000),
+        })),
+      });
+    }
 
     void sendSystemEvent({
       title: "Offer Diterima",

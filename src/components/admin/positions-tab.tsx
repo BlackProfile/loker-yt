@@ -9,6 +9,13 @@ import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -44,7 +51,9 @@ import {
   Plus,
   QrCode,
   RefreshCw,
+  Search,
   Settings2,
+  Sprout,
   TrendingUp,
   Trash2,
   Users,
@@ -52,7 +61,7 @@ import {
 import { toast } from "sonner";
 import type { Position, PositionStatsRow } from "@/lib/types";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
-import { copyText } from "./format";
+import { copyText, formatDate } from "./format";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { Reveal } from "./motion-primitives";
@@ -107,6 +116,28 @@ function isExpired(closesAt: string | null): boolean {
   return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
 }
 
+/* ------------------------- Talent rediscovery & nurture ------------------------- */
+
+type RediscoverResult = {
+  id: string;
+  name: string;
+  skor: number;
+  alasan: string;
+  appliedAt: string;
+  priorTitle: string | null;
+};
+
+// Warna badge skor kecocokan (emerald kuat, amber menengah, zinc sisanya).
+function skorBadgeClass(skor: number): string {
+  if (skor >= 75) {
+    return "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400";
+  }
+  if (skor >= 45) {
+    return "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400";
+  }
+  return "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+}
+
 /* ---------------------------------- Komponen ---------------------------------- */
 
 export function PositionsTab() {
@@ -143,6 +174,18 @@ export function PositionsTab() {
     }
     window.scrollTo({ top: 0, behavior: "auto" });
   }
+
+  // Talent rediscovery (AI) — dipicu per posisi aktif.
+  const [rediscoverTarget, setRediscoverTarget] = useState<Position | null>(null);
+  const [rediscoverLoading, setRediscoverLoading] = useState(false);
+  const [rediscoverError, setRediscoverError] = useState<string | null>(null);
+  const [rediscoverData, setRediscoverData] = useState<{ total: number; results: RediscoverResult[] } | null>(null);
+
+  // Nurture kandidat ditolak — AlertDialog konfirmasi dengan jumlah kandidat.
+  const [nurtureTarget, setNurtureTarget] = useState<Position | null>(null);
+  const [nurtureCount, setNurtureCount] = useState<number | null>(null);
+  const [nurtureLoading, setNurtureLoading] = useState(false);
+  const [nurtureSending, setNurtureSending] = useState(false);
 
   const load = useCallback(
     async (silent = false) => {
@@ -250,6 +293,68 @@ export function PositionsTab() {
     const ok = await copyText(link);
     if (ok) toast.success("Tautan posisi disalin");
     else toast.error("Gagal menyalin tautan");
+  }
+
+  /* --------------------------- Talent rediscovery (AI) --------------------------- */
+
+  async function openRediscover(position: Position) {
+    setRediscoverTarget(position);
+    setRediscoverData(null);
+    setRediscoverError(null);
+    setRediscoverLoading(true);
+    try {
+      const data = await apiPost<{ total: number; results: RediscoverResult[] }>(
+        `/api/admin/positions/${position.id}/rediscover`
+      );
+      setRediscoverData(data);
+    } catch (err) {
+      setRediscoverError(
+        err instanceof Error ? err.message : "Gagal mencari talent lama. Coba lagi."
+      );
+    } finally {
+      setRediscoverLoading(false);
+    }
+  }
+
+  async function retryRediscover() {
+    if (rediscoverTarget) await openRediscover(rediscoverTarget);
+  }
+
+  /* ----------------------------- Nurture kandidat ----------------------------- */
+
+  async function openNurture(position: Position) {
+    setNurtureTarget(position);
+    setNurtureCount(null);
+    setNurtureLoading(true);
+    try {
+      const data = await apiGet<{ count: number }>(
+        `/api/admin/positions/${position.id}/nurture?preview=1`
+      );
+      setNurtureCount(data.count);
+    } catch (err) {
+      setNurtureTarget(null);
+      reportError(err);
+    } finally {
+      setNurtureLoading(false);
+    }
+  }
+
+  async function handleNurture() {
+    if (!nurtureTarget || nurtureSending) return;
+    setNurtureSending(true);
+    try {
+      const data = await apiPost<{ queued: number }>(
+        `/api/admin/positions/${nurtureTarget.id}/nurture`
+      );
+      toast.success(`${data.queued} email disiapkan`, {
+        description: `Email nurture untuk posisi ${nurtureTarget.title} masuk kotak keluar.`,
+      });
+      setNurtureTarget(null);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setNurtureSending(false);
+    }
   }
 
   const totalApplications = useMemo(
@@ -497,6 +602,32 @@ export function PositionsTab() {
                     >
                       <QrCode className="size-4" aria-hidden="true" />
                     </Button>
+                    {position.isActive ? (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-11 sm:size-9"
+                          onClick={() => void openRediscover(position)}
+                          disabled={!canMutate || rediscoverLoading}
+                          aria-label={`Cari talent lama untuk posisi ${position.title}`}
+                          title="Cari Talent Lama"
+                        >
+                          <Search className="size-4" aria-hidden="true" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-11 sm:size-9"
+                          onClick={() => void openNurture(position)}
+                          disabled={!canMutate || nurtureSending}
+                          aria-label={`Nurture kandidat untuk posisi ${position.title}`}
+                          title="Nurture Kandidat"
+                        >
+                          <Sprout className="size-4" aria-hidden="true" />
+                        </Button>
+                      </>
+                    ) : null}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -612,6 +743,130 @@ export function PositionsTab() {
                 </>
               ) : (
                 "Ya, Hapus"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog hasil talent rediscovery (AI) */}
+      <Dialog
+        open={!!rediscoverTarget}
+        onOpenChange={(open) => {
+          if (!open) setRediscoverTarget(null);
+        }}
+      >
+        <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+              Cari Talent Lama
+            </DialogTitle>
+            <DialogDescription>
+              {rediscoverTarget ? rediscoverTarget.title : "-"}
+              {rediscoverTarget ? ` — ${rediscoverTarget.department}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="nice-scrollbar -mr-2 max-h-[70vh] overflow-y-auto pr-2">
+            {rediscoverLoading ? (
+              <div className="flex flex-col items-center gap-3 py-10 text-center">
+                <Loader2 className="size-6 animate-spin text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                <p className="text-sm text-muted-foreground">
+                  Menganalisis kandidat dari talent pool & pelamar ditolak dengan AI...
+                </p>
+              </div>
+            ) : rediscoverError ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <p className="text-sm text-rose-600 dark:text-rose-400">{rediscoverError}</p>
+                <Button variant="outline" onClick={() => void retryRediscover()} className="h-9">
+                  <RefreshCw className="size-4" aria-hidden="true" />
+                  Coba Lagi
+                </Button>
+              </div>
+            ) : rediscoverData && rediscoverData.results.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs text-muted-foreground">
+                  Dianalisis dari {rediscoverData.total} kandidat (talent pool & ditolak, maks 150) — 5 teratas.
+                </p>
+                <ul className="flex flex-col gap-2">
+                  {rediscoverData.results.map((result, index) => (
+                    <li key={result.id} className="flex flex-col gap-1.5 rounded-xl border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                          <span className="shrink-0 tabular-nums text-muted-foreground">{index + 1}.</span>
+                          <span className="truncate">{result.name}</span>
+                        </p>
+                        <Badge variant="outline" className={`shrink-0 tabular-nums ${skorBadgeClass(result.skor)}`}>
+                          Skor {result.skor}
+                        </Badge>
+                      </div>
+                      {result.alasan ? (
+                        <p className="text-xs leading-relaxed text-muted-foreground">{result.alasan}</p>
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        Lamar {formatDate(result.appliedAt)}
+                        {result.priorTitle ? ` — ${result.priorTitle}` : ""}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Belum ada kandidat lama yang cocok ditemukan untuk posisi ini.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Konfirmasi nurture kandidat ditolak */}
+      <AlertDialog
+        open={!!nurtureTarget}
+        onOpenChange={(open) => {
+          if (!open) setNurtureTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Nurture Kandidat?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {nurtureLoading ? (
+                "Menghitung kandidat yang memenuhi kriteria..."
+              ) : nurtureCount === 0 ? (
+                <>
+                  Tidak ada kandidat yang memenuhi kriteria: ditolak lebih dari 60 hari lalu (bukan karena menarik
+                  diri) pada posisi ini atau posisi satu departemen dengan &quot;
+                  {nurtureTarget?.title ?? "-"}&quot;.
+                </>
+              ) : (
+                <>
+                  Email &quot;Kabar baik dari Lumina Studio&quot; akan disiapkan untuk{" "}
+                  <span className="font-semibold text-foreground tabular-nums">{nurtureCount}</span> kandidat yang
+                  ditolak lebih dari 60 hari lalu (bukan karena menarik diri) pada posisi ini atau posisi satu
+                  departemen. Email masuk kotak keluar beserta catatan log.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={nurtureSending}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleNurture();
+              }}
+              disabled={nurtureLoading || nurtureCount === 0 || nurtureSending}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              {nurtureSending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menyiapkan...
+                </>
+              ) : (
+                "Ya, Siapkan Email"
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

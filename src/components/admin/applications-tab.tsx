@@ -35,11 +35,13 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Download,
+  Eye,
   Inbox,
   LayoutGrid,
   Loader2,
   RotateCcw,
   Search,
+  Sparkles,
   Table2,
   Trash2,
   XCircle,
@@ -68,6 +70,7 @@ import { ApplicationDetailDialog } from "./application-detail-dialog";
 import { ApplicationsTable } from "./applications-table";
 import { KanbanBoard } from "./kanban-board";
 import { ComparisonDialog } from "./comparison-dialog";
+import { AiScoreBadge } from "./status-badge";
 import { Reveal } from "./motion-primitives";
 import { cn } from "@/lib/utils";
 
@@ -82,6 +85,9 @@ const SORT_OPTIONS = [
 ] as const;
 
 type ViewMode = "table" | "kanban";
+
+// Hasil pencarian semantik AI (POST /api/admin/applications/semantic-search).
+type SemanticSearchEntryUI = { id: string; name: string; score: number; reason: string };
 
 export function ApplicationsTab() {
   const { canMutate, reportError } = useAdminSession();
@@ -117,6 +123,15 @@ export function ApplicationsTab() {
   const [deleteTarget, setDeleteTarget] = useState<Application | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+
+  // Deteksi duplikat: id lamaran ganda (fitur Task 20-a) untuk badge kanban.
+  const [duplicateIds, setDuplicateIds] = useState<Set<string>>(new Set());
+
+  // Pencarian semantik AI.
+  const [semanticInput, setSemanticInput] = useState("");
+  const [semanticLoading, setSemanticLoading] = useState(false);
+  const [semanticOpen, setSemanticOpen] = useState(false);
+  const [semanticResults, setSemanticResults] = useState<SemanticSearchEntryUI[]>([]);
 
   // Posisi terpilih menentukan opsi tahap (pipeline kustom vs bawaan).
   const selectedPosition = useMemo(
@@ -194,6 +209,15 @@ export function ApplicationsTab() {
     }
   }, []);
 
+  const loadDuplicates = useCallback(async () => {
+    try {
+      const data = await apiGet<{ ids: string[] }>("/api/admin/duplicates");
+      setDuplicateIds(new Set(data.ids));
+    } catch {
+      // Badge duplikat bersifat pelengkap; biarkan data lama saat gagal.
+    }
+  }, []);
+
   // silent: refresh senyap (dipakai event realtime) — daftar lama tetap tampil
   // sampai data baru siap, tanpa skeleton ulang dan tanpa flash kosong.
   const loadApplications = useCallback(
@@ -224,12 +248,17 @@ export function ApplicationsTab() {
   }, [loadPositions]);
 
   useEffect(() => {
+    void loadDuplicates();
+  }, [loadDuplicates]);
+
+  useEffect(() => {
     void loadApplications();
   }, [loadApplications]);
 
   // Realtime: lamaran baru/perubahan status/skor AI → segarkan daftar senyap.
   useLiveRefresh("applications:changed", () => {
     void loadApplications(true);
+    void loadDuplicates();
   });
   // Posisi baru/diubah/hapus → opsi filter posisi tetap segar (senyap).
   useLiveRefresh("positions:changed", () => {
@@ -405,6 +434,36 @@ export function ApplicationsTab() {
     }
   }
 
+  // Pencarian semantik AI (fitur Task 20-a): kueri bebas -> top 10 kandidat.
+  async function runSemanticSearch() {
+    const query = semanticInput.trim();
+    if (semanticLoading) return;
+    if (query.length < 3) {
+      toast.error("Tulis kueri minimal 3 karakter.");
+      return;
+    }
+    setSemanticLoading(true);
+    toast.loading("AI mencari kandidat...", { id: "semantic-search" });
+    try {
+      const res = await apiPost<{ results: SemanticSearchEntryUI[] }>(
+        "/api/admin/applications/semantic-search",
+        { query }
+      );
+      setSemanticResults(res.results);
+      setSemanticOpen(true);
+      if (res.results.length === 0) {
+        toast.info("Tidak ada kandidat yang cocok dengan kueri.", { id: "semantic-search" });
+      } else {
+        toast.success(`${res.results.length} kandidat ditemukan`, { id: "semantic-search" });
+      }
+    } catch (err) {
+      toast.dismiss("semantic-search");
+      reportError(err);
+    } finally {
+      setSemanticLoading(false);
+    }
+  }
+
   const comparedApps = useMemo(
     () =>
       compareIds
@@ -470,6 +529,39 @@ export function ApplicationsTab() {
               <span className="hidden sm:inline">Export CSV</span>
             </a>
           </div>
+        </div>
+
+        {/* Pencarian semantik AI (fitur Task 20-a): kueri bebas, AI memilih kandidat. */}
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative flex-1">
+            <Sparkles
+              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-rose-500"
+              aria-hidden="true"
+            />
+            <Input
+              value={semanticInput}
+              onChange={(e) => setSemanticInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void runSemanticSearch();
+              }}
+              placeholder={'Cari dengan AI — mis. "editor yang kuat di motion graphics dan pernah di agensi"'}
+              aria-label="Cari kandidat dengan AI"
+              maxLength={300}
+              className="h-10 rounded-xl pl-9"
+            />
+          </div>
+          <Button
+            className="h-10 rounded-xl active:scale-[0.99]"
+            onClick={() => void runSemanticSearch()}
+            disabled={semanticLoading}
+          >
+            {semanticLoading ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Sparkles className="size-4" aria-hidden="true" />
+            )}
+            Cari dengan AI
+          </Button>
         </div>
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -635,8 +727,10 @@ export function ApplicationsTab() {
           canMutate={canMutate}
           stages={selectedPosition?.stages}
           hasPositionFilter={positionFilter !== ALL}
+          duplicateIds={duplicateIds}
           onMove={handleKanbanMove}
           onOpenDetail={setDetail}
+          onUpdated={updateAppInList}
         />
       )}
 
@@ -757,6 +851,65 @@ export function ApplicationsTab() {
         apps={compareOpen ? comparedApps : []}
         onOpenChange={setCompareOpen}
       />
+
+      {/* Dialog hasil pencarian semantik AI */}
+      <Dialog open={semanticOpen} onOpenChange={setSemanticOpen}>
+        <DialogContent className="rounded-2xl sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="size-4 text-rose-600" aria-hidden="true" />
+              Hasil Pencarian AI
+            </DialogTitle>
+            <DialogDescription>
+              Kandidat paling cocok dengan kueri Anda, dinilai AI (0-100).
+            </DialogDescription>
+          </DialogHeader>
+          {semanticResults.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              Tidak ada kandidat yang cocok dengan kueri.
+            </p>
+          ) : (
+            <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
+              {semanticResults.map((entry, index) => {
+                const app = applications.find((a) => a.id === entry.id);
+                return (
+                  <div key={entry.id} className="flex flex-col gap-1.5 rounded-xl border p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[11px] font-bold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                        aria-label={`Peringkat ${index + 1}`}
+                      >
+                        {index + 1}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold">{entry.name}</span>
+                      <AiScoreBadge score={entry.score} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">{entry.reason}</p>
+                    {app ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-fit"
+                        onClick={() => {
+                          setSemanticOpen(false);
+                          setDetail(app);
+                        }}
+                      >
+                        <Eye className="size-3.5" aria-hidden="true" />
+                        Buka Detail Kandidat
+                      </Button>
+                    ) : (
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        Kandidat tidak ada di daftar yang sedang ditampilkan — sesuaikan filter untuk membuka detailnya.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <ApplicationDetailDialog
         application={detail}

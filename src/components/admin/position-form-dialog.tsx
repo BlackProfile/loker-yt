@@ -34,11 +34,13 @@ import {
   Gift,
   Handshake,
   Image as ImageIcon,
+  Languages,
   ListChecks,
   Loader2,
   MessagesSquare,
   Pin,
   Flame,
+  Plus,
   Send,
   Sparkles,
   Trash2,
@@ -57,6 +59,8 @@ import {
   INTERVIEW_PLATFORM_LABELS,
   INTERVIEW_PLATFORMS,
   POSITION_TYPES,
+  STAGE_CATEGORIES,
+  STAGE_CATEGORY_LABELS,
   type AiCoverResponse,
   type AdminUploadResponse,
   type InterviewMode,
@@ -64,8 +68,14 @@ import {
   type Position,
   type PositionStatsRow,
   type ScreeningQuestion,
+  type StageCategory,
 } from "@/lib/types";
-import { stagesForPosition, stageLabel } from "@/lib/stages";
+import {
+  defaultCategoryForCustomStage,
+  isBuiltInStage,
+  stagesForPosition,
+  stageLabel,
+} from "@/lib/stages";
 import { apiFetch, apiPatch, apiPost } from "./api";
 import { isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
@@ -78,12 +88,19 @@ type FormState = {
   location: string;
   description: string;
   requirements: string[];
+  // Konten dua bahasa (opsional) — fallback versi Indonesia bila kosong.
+  titleEn: string;
+  descriptionEn: string;
+  requirementsEn: string[];
   isActive: boolean;
   publishAtLocal: string;
   closesAtLocal: string;
   order: string;
   coverFileId: string | null;
   salaryText: string;
+  // Rentang gaji wajar — dipakai peringatan saat membuat offer
+  salaryMin: string;
+  salaryMax: string;
   salaryVisible: boolean;
   benefits: string[];
   examples: string[];
@@ -95,6 +112,7 @@ type FormState = {
   maxApplicants: string;
   screeningQuestions: ScreeningQuestion[];
   stages: string[];
+  stageCategories: Record<string, StageCategory>;
   aiCriteria: string;
   autoShortlistScore: string;
   autoShortlistStage: string; // "" = nonaktif
@@ -110,6 +128,8 @@ type FormState = {
   interviewMode: InterviewMode;
   interviewPlatform: InterviewPlatform;
   interviewDuration: string;
+  // Rencana ronde wawancara (template untuk "Jadwalkan Ronde Berikutnya")
+  roundPlan: { name: string; durationMin: string; interviewers: string }[];
   interviewCriteria: string[];
   interviewInviteTemplate: string;
   offerTemplate: string;
@@ -127,12 +147,17 @@ const EMPTY_FORM: FormState = {
   location: "Remote",
   description: "",
   requirements: [],
+  titleEn: "",
+  descriptionEn: "",
+  requirementsEn: [],
   isActive: true,
   publishAtLocal: "",
   closesAtLocal: "",
   order: "",
   coverFileId: null,
   salaryText: "",
+  salaryMin: "",
+  salaryMax: "",
   salaryVisible: false,
   benefits: [],
   examples: [],
@@ -144,6 +169,7 @@ const EMPTY_FORM: FormState = {
   maxApplicants: "",
   screeningQuestions: [],
   stages: [],
+  stageCategories: {},
   aiCriteria: "",
   autoShortlistScore: "",
   autoShortlistStage: "",
@@ -159,6 +185,7 @@ const EMPTY_FORM: FormState = {
   interviewMode: "ONLINE",
   interviewPlatform: "GOOGLE_MEET",
   interviewDuration: "45",
+  roundPlan: [],
   interviewCriteria: [],
   interviewInviteTemplate: "",
   offerTemplate: "",
@@ -179,12 +206,17 @@ function buildFormState(p: Position): FormState {
     location: p.location || "Remote",
     description: p.description,
     requirements: [...p.requirements],
+    titleEn: p.titleEn ?? "",
+    descriptionEn: p.descriptionEn ?? "",
+    requirementsEn: [...(p.requirementsEn ?? [])],
     isActive: p.isActive,
     publishAtLocal: isoToLocalInput(p.publishAt),
     closesAtLocal: isoToLocalInput(p.closesAt),
     order: String(p.order ?? ""),
     coverFileId: p.coverFileId,
     salaryText: p.salaryText ?? "",
+    salaryMin: p.salaryMin != null ? String(p.salaryMin) : "",
+    salaryMax: p.salaryMax != null ? String(p.salaryMax) : "",
     salaryVisible: p.salaryVisible,
     benefits: [...p.benefits],
     examples: [...p.examples],
@@ -196,6 +228,7 @@ function buildFormState(p: Position): FormState {
     maxApplicants: p.maxApplicants == null ? "" : String(p.maxApplicants),
     screeningQuestions: p.screeningQuestions.map((q) => ({ ...q })),
     stages: [...p.stages],
+    stageCategories: { ...p.stageCategories },
     aiCriteria: p.aiCriteria ?? "",
     autoShortlistScore: p.autoShortlistScore == null ? "" : String(p.autoShortlistScore),
     autoShortlistStage: p.autoShortlistStage ?? "",
@@ -211,6 +244,11 @@ function buildFormState(p: Position): FormState {
     interviewMode: p.interviewMode,
     interviewPlatform: p.interviewPlatform,
     interviewDuration: String(p.interviewDuration ?? 45),
+    roundPlan: (p.roundPlan ?? []).map((r) => ({
+      name: r.name,
+      durationMin: r.durationMin != null ? String(r.durationMin) : "",
+      interviewers: (r.interviewers ?? []).join(", "),
+    })),
     interviewCriteria: [...p.interviewCriteria],
     interviewInviteTemplate: p.interviewInviteTemplate ?? "",
     offerTemplate: p.offerTemplate ?? "",
@@ -368,6 +406,12 @@ export function PositionFormDialog({
     [form.stages]
   );
 
+  // Tahap kustom (di luar 5 bawaan) — untuk editor kategori fitur tab Pipeline.
+  const customStages = useMemo(
+    () => cleanedStages.filter((s) => !isBuiltInStage(s)),
+    [cleanedStages]
+  );
+
   // Lamaran pada tahap di luar daftar pipeline tersimpan (dari stats funnel).
   const outOfStageApps = useMemo(() => {
     if (!editing || !statsRow) return 0;
@@ -455,11 +499,18 @@ export function PositionFormDialog({
       location: form.location.trim() || "Remote",
       description: form.description.trim(),
       requirements: form.requirements.map((r) => r.trim()).filter(Boolean),
+      // Konten dua bahasa — kosong berarti fallback ke versi Indonesia (null).
+      titleEn: form.titleEn.trim() || null,
+      descriptionEn: form.descriptionEn.trim() || null,
+      requirementsEn: form.requirementsEn.map((r) => r.trim()).filter(Boolean),
       isActive: form.isActive,
       publishAt: localInputToIso(form.publishAtLocal),
       closesAt: localInputToIso(form.closesAtLocal),
       coverFileId: form.coverFileId,
       salaryText: form.salaryText.trim() || null,
+      // Rentang gaji wajar — kosong berarti tanpa batasan (null)
+      salaryMin: form.salaryMin.trim() === "" ? null : Number(form.salaryMin),
+      salaryMax: form.salaryMax.trim() === "" ? null : Number(form.salaryMax),
       salaryVisible: form.salaryVisible,
       benefits: form.benefits.map((b) => b.trim()).filter(Boolean),
       examples: form.examples.map((e) => e.trim()).filter(Boolean),
@@ -476,6 +527,7 @@ export function PositionFormDialog({
         required: q.required,
       })),
       stages: cleanedStages,
+      stageCategories: form.stageCategories,
       aiCriteria: form.aiCriteria.trim() || null,
       autoShortlistScore:
         form.autoShortlistScore.trim() === ""
@@ -498,6 +550,16 @@ export function PositionFormDialog({
       interviewDuration:
         form.interviewDuration.trim() === "" ? null : Number(form.interviewDuration),
       interviewCriteria: form.interviewCriteria.map((c) => c.trim()).filter(Boolean),
+      // Rencana ronde wawancara — hanya baris bernama yang disimpan
+      roundPlan: form.roundPlan
+        .filter((r) => r.name.trim())
+        .map((r, index) => ({
+          round: index + 1,
+          name: r.name.trim(),
+          durationMin:
+            r.durationMin.trim() !== "" && isInt(r.durationMin) ? Number(r.durationMin) : undefined,
+          interviewers: r.interviewers.split(",").map((n) => n.trim()).filter(Boolean),
+        })),
       interviewInviteTemplate: form.interviewInviteTemplate.trim() || null,
       // Penawaran & onboarding
       offerTemplate: form.offerTemplate.trim() || null,
@@ -700,6 +762,52 @@ export function PositionFormDialog({
                       maxLength={200}
                       addLabel="Tambah persyaratan"
                       placeholder="mis. Menguasai editing video"
+                    />
+                  </div>
+                </FormSection>
+
+                <FormDivider />
+
+              {/* a2. Konten Bahasa Inggris (opsional) — dipakai publik saat lang "en" */}
+              <FormSection
+                id="bahasa-inggris"
+                icon={Languages}
+                title="Konten Bahasa Inggris (opsional)"
+                hint="Dipakai saat pengunjung memilih Bahasa Inggris; bila kosong otomatis memakai versi Indonesia."
+              >
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pos-titleEn">Nama Posisi (EN)</Label>
+                    <Input
+                      id="pos-titleEn"
+                      value={form.titleEn}
+                      onChange={(e) => set("titleEn", e.target.value)}
+                      placeholder="mis. Video Editor"
+                      className="h-10"
+                      maxLength={120}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pos-descriptionEn">Deskripsi (EN)</Label>
+                    <Textarea
+                      id="pos-descriptionEn"
+                      value={form.descriptionEn}
+                      onChange={(e) => set("descriptionEn", e.target.value)}
+                      placeholder="Describe the role, responsibilities, and overall picture..."
+                      rows={4}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Persyaratan (EN)</Label>
+                    <StringListEditor
+                      name="Persyaratan (EN)"
+                      items={form.requirementsEn}
+                      onChange={(items) => set("requirementsEn", items)}
+                      maxItems={20}
+                      maxLength={200}
+                      addLabel="Tambah persyaratan (EN)"
+                      placeholder="e.g. Proficient in video editing"
                     />
                   </div>
                 </FormSection>
@@ -917,6 +1025,33 @@ export function PositionFormDialog({
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="pos-salaryMin">Gaji wajar minimum (Rp/bulan)</Label>
+                      <Input
+                        id="pos-salaryMin"
+                        type="number"
+                        min={0}
+                        value={form.salaryMin}
+                        onChange={(e) => set("salaryMin", e.target.value)}
+                        placeholder="mis. 3500000 — kosongkan bila tanpa batas"
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="pos-salaryMax">Gaji wajar maksimum (Rp/bulan)</Label>
+                      <Input
+                        id="pos-salaryMax"
+                        type="number"
+                        min={0}
+                        value={form.salaryMax}
+                        onChange={(e) => set("salaryMax", e.target.value)}
+                        placeholder="mis. 6000000 — dipakai peringatan offer"
+                        className="h-10"
+                      />
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
                       <div>
@@ -1095,6 +1230,54 @@ export function PositionFormDialog({
                       hint="Kosong = pipeline bawaan (Baru/Ditinjau/Wawancara/Diterima/Ditolak)"
                     />
                   </div>
+
+                  {customStages.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <Label>Kategori Fitur Tahap Kustom</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Tentukan di kategori mana tiap tahap kustom muncul di tab Pipeline:
+                        Ditinjau, Wawancara, Diterima, atau Ditolak.
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        {customStages.map((stage) => (
+                          <div key={stage} className="flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate rounded-lg border bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
+                              {stage}
+                            </span>
+                            <Select
+                              value={
+                                form.stageCategories[stage] ??
+                                defaultCategoryForCustomStage(stage)
+                              }
+                              onValueChange={(v) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  stageCategories: {
+                                    ...f.stageCategories,
+                                    [stage]: v as StageCategory,
+                                  },
+                                }))
+                              }
+                            >
+                              <SelectTrigger
+                                className="h-10 w-40 shrink-0"
+                                aria-label={`Kategori fitur untuk tahap ${stage}`}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {STAGE_CATEGORIES.map((c) => (
+                                  <SelectItem key={c} value={c}>
+                                    {STAGE_CATEGORY_LABELS[c]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5">
@@ -1390,6 +1573,103 @@ export function PositionFormDialog({
                       placeholder="mis. Komunikasi"
                       hint="Kosongkan untuk memakai kriteria bawaan (Komunikasi, Portofolio, dll.)"
                     />
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Rencana Ronde Wawancara (opsional)</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        disabled={form.roundPlan.length >= 10}
+                        onClick={() =>
+                          set("roundPlan", [...form.roundPlan, { name: "", durationMin: "", interviewers: "" }])
+                        }
+                      >
+                        <Plus className="size-3.5" aria-hidden="true" />
+                        Tambah ronde
+                      </Button>
+                    </div>
+                    {form.roundPlan.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Contoh: HR Screen 30 menit, lalu User Trial 60 menit. Setelah sebuah ronde selesai, admin bisa
+                        menjadwalkan ronde berikutnya sekali klik dari dialog wawancara.
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {form.roundPlan.map((row, index) => (
+                          <div
+                            key={index}
+                            className="grid grid-cols-1 items-end gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_110px_1fr_auto]"
+                          >
+                            <div className="flex flex-col gap-1">
+                              <Label className="text-xs">Nama ronde {index + 1}</Label>
+                              <Input
+                                value={row.name}
+                                onChange={(e) =>
+                                  set(
+                                    "roundPlan",
+                                    form.roundPlan.map((r, i) =>
+                                      i === index ? { ...r, name: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                placeholder="mis. HR Screen"
+                                className="h-9"
+                                maxLength={60}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <Label className="text-xs">Durasi (menit)</Label>
+                              <Input
+                                type="number"
+                                min={10}
+                                max={480}
+                                value={row.durationMin}
+                                onChange={(e) =>
+                                  set(
+                                    "roundPlan",
+                                    form.roundPlan.map((r, i) =>
+                                      i === index ? { ...r, durationMin: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                placeholder="45"
+                                className="h-9"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <Label className="text-xs">Pewawancara (pisah koma)</Label>
+                              <Input
+                                value={row.interviewers}
+                                onChange={(e) =>
+                                  set(
+                                    "roundPlan",
+                                    form.roundPlan.map((r, i) =>
+                                      i === index ? { ...r, interviewers: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                placeholder="mis. Ajo (HR), Jawa (Owner)"
+                                className="h-9"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-9 px-2 text-rose-600 hover:text-rose-700"
+                              aria-label={`Hapus ronde ${index + 1}`}
+                              onClick={() => set("roundPlan", form.roundPlan.filter((_, i) => i !== index))}
+                            >
+                              <Trash2 className="size-4" aria-hidden="true" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1.5">

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,11 +12,58 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Eye, Share2, Trash2 } from "lucide-react";
+import { Eye, MessageCircle, Share2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import type { Application } from "@/lib/types";
+import { apiGet } from "./api";
 import { formatDate, initialsOf } from "./format";
 import { StatusBadge, AiScoreBadge } from "./status-badge";
 import { RatingStars } from "./rating-stars";
+
+// Baris template dari /api/admin/templates (dipakai untuk pesan WhatsApp).
+type TemplateRow = {
+  id: string;
+  name: string;
+  kind: string;
+  body: string;
+};
+
+// Pesan default bila belum ada template OFFER di pustaka.
+const WA_FALLBACK_TEMPLATE =
+  "Halo {nama}, kami dari Lumina Studio terkait lamaran {posisi} kamu.";
+
+/**
+ * Normalisasi nomor WhatsApp ke format internasional tanpa "+" (basis 62):
+ * strip non-digit; awalan "0" diganti "62"; awalan "8" diberi "62";
+ * selain itu dibiarkan (mis. sudah 62... atau kode negara lain).
+ */
+function normalizeWaNumber(rawPhone: string): string {
+  const digits = rawPhone.replace(/[^0-9]/g, "");
+  if (digits.startsWith("0")) return `62${digits.slice(1)}`;
+  if (digits.startsWith("8")) return `62${digits}`;
+  return digits;
+}
+
+/** Isi variabel {nama} / {posisi} pada template; variabel lain dibiarkan. */
+function fillWaTemplate(template: string, app: Application): string {
+  return template
+    .split("{nama}")
+    .join(app.name)
+    .split("{posisi}")
+    .join(app.positionTitle ?? "posisi");
+}
+
+/** Badge "Duplikat" kecil (amber) untuk lamaran ganda. */
+function DuplicateBadge() {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+      title="Lamaran ganda terdeteksi (email/CV sama)"
+    >
+      Duplikat
+    </span>
+  );
+}
 
 export function ApplicationsTable({
   applications,
@@ -40,12 +88,41 @@ export function ApplicationsTable({
   onDeleteRequest: (app: Application) => void;
   onRate: (app: Application, rating: number) => void;
 }) {
+  // Cache pesan WhatsApp (body template OFFER pertama) — dimuat sekali saat pertama dipakai.
+  const waTemplateRef = useRef<string | null>(null);
+
   const allSelected =
     applications.length > 0 &&
     applications.every((a) => selectedIds.has(a.id));
 
   function tagsPreview(tags: string[]): string[] {
     return tags.slice(0, 2);
+  }
+
+  /** Muat (sekali, lalu cache) body template OFFER pertama dari pustaka template. */
+  async function loadWaTemplate(): Promise<string> {
+    if (waTemplateRef.current !== null) return waTemplateRef.current;
+    try {
+      const rows = await apiGet<TemplateRow[]>("/api/admin/templates");
+      const firstOffer = rows.find((t) => t.kind === "OFFER");
+      waTemplateRef.current = firstOffer?.body ?? "";
+    } catch {
+      waTemplateRef.current = "";
+    }
+    return waTemplateRef.current;
+  }
+
+  /** Buka WhatsApp dengan pesan dari template OFFER (variabel ringkas diisi). */
+  async function handleWhatsApp(app: Application) {
+    const normalized = normalizeWaNumber(app.phone ?? "");
+    if (!normalized) {
+      toast.error("Nomor WhatsApp pelamar tidak valid.");
+      return;
+    }
+    const template = (await loadWaTemplate()) || WA_FALLBACK_TEMPLATE;
+    const message = fillWaTemplate(template, app);
+    const url = `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -108,7 +185,10 @@ export function ApplicationsTable({
                         {initialsOf(app.name)}
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{app.name}</p>
+                        <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+                          <span className="truncate">{app.name}</span>
+                          {app.isDuplicate === true ? <DuplicateBadge /> : null}
+                        </p>
                         <p className="truncate text-xs text-muted-foreground">
                           {app.email}
                           {app.phone ? ` · ${app.phone}` : ""}
@@ -182,6 +262,18 @@ export function ApplicationsTable({
                         <Eye className="size-4" aria-hidden="true" />
                         Detail
                       </Button>
+                      {app.phone?.trim() ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-9 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                          onClick={() => void handleWhatsApp(app)}
+                          aria-label={`Kirim WhatsApp ke ${app.name}`}
+                          title="Kirim WhatsApp"
+                        >
+                          <MessageCircle className="size-4" aria-hidden="true" />
+                        </Button>
+                      ) : null}
                       {canMutate ? (
                         <Button
                           variant="ghost"
@@ -227,7 +319,10 @@ export function ApplicationsTable({
                     {initialsOf(app.name)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{app.name}</p>
+                    <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+                      <span className="truncate">{app.name}</span>
+                      {app.isDuplicate === true ? <DuplicateBadge /> : null}
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {app.email}
                     </p>
@@ -270,6 +365,17 @@ export function ApplicationsTable({
                     />
                     Bandingkan
                   </label>
+                  {app.phone?.trim() ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-11 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 sm:h-10 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                      onClick={() => void handleWhatsApp(app)}
+                    >
+                      <MessageCircle className="size-4" aria-hidden="true" />
+                      WhatsApp
+                    </Button>
+                  ) : null}
                   <Button
                     variant="outline"
                     size="sm"

@@ -29,6 +29,17 @@ export const STATUS_FLOW: ApplicationStatus[] = ["NEW", "REVIEWED", "INTERVIEW"]
 // posisi dengan stages kustom memakai label tahapnya sendiri (bebas teks).
 export type StageKey = string;
 
+// Kategori fitur admin per tahap pipeline (tab Pipeline: Ditinjau/Wawancara/Diterima/Ditolak).
+// Tahap bawaan punya kategori tetap; tahap kustom dipetakan lewat Position.stageCategories.
+export type StageCategory = "REVIEW" | "INTERVIEW" | "ACCEPTED" | "REJECTED";
+export const STAGE_CATEGORIES: StageCategory[] = ["REVIEW", "INTERVIEW", "ACCEPTED", "REJECTED"];
+export const STAGE_CATEGORY_LABELS: Record<StageCategory, string> = {
+  REVIEW: "Ditinjau",
+  INTERVIEW: "Wawancara",
+  ACCEPTED: "Diterima",
+  REJECTED: "Ditolak",
+};
+
 export type ScreeningQuestion = { id: string; label: string; required: boolean };
 
 export type ReplyTemplates = {
@@ -80,6 +91,10 @@ export type SiteContent = {
   discordWebhookUrl: string;
   telegramBotToken: string;
   telegramChatId: string;
+  // Mode tutup rekrutmen — saat true, halaman publik menampilkan banner
+  // pengumuman dan formulir lamaran tidak bisa dikirim.
+  recruitmentClosed: boolean;
+  recruitmentClosedMessage: string;
   // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin)
   sections: SectionVisibility;
 };
@@ -169,6 +184,7 @@ export type Position = {
 
   // Pipeline & otomasi
   stages: string[]; // [] = pipeline bawaan (5 status)
+  stageCategories: Record<string, StageCategory>; // kategori tahap kustom: {"Tahap": "REVIEW" | ...}
   aiCriteria: string | null;
   autoShortlistScore: number | null;
   autoShortlistStage: string | null;
@@ -195,6 +211,29 @@ export type Position = {
   onboardingDocs: string[]; // label dokumen wajib onboarding
   reapplyCooldownDays: number;
   autoCloseOnHired: boolean;
+
+  // Rentang gaji wajar (validasi offer) — null = tanpa batas
+  salaryMin: number | null;
+  salaryMax: number | null;
+
+  // Rencana ronde wawancara bawaan (opsional — tidak semua API menyertakan)
+  roundPlan?: RoundPlanTemplate[];
+
+  // Konten dua bahasa (opsional) — dipakai publik bila lang aktif "en"
+  // dan field terisi (non-kosong); selain itu fallback ke versi Indonesia.
+  titleEn: string | null;
+  descriptionEn: string | null;
+  requirementsEn: string[];
+};
+
+/** Satu entri rencana ronde wawancara pada Position.roundPlan (JSON). */
+export type RoundPlanTemplate = {
+  round: number; // ronde ke-n (1, 2, ...)
+  name: string; // mis. "HR Screen", "User Trial", "Final"
+  mode?: InterviewMode;
+  platform?: InterviewPlatform;
+  durationMin?: number;
+  interviewers?: string[]; // pewawancara default
 };
 
 export type PositionPublicStats = {
@@ -265,6 +304,9 @@ export type Application = {
   hiredAt: string | null;
   probationEnd: string | null;
   onboardingDocs: OnboardingDoc[];
+
+  // Kualitas data
+  isDuplicate?: boolean; // true = lamaran ganda terdeteksi (badge "Duplikat" di tabel)
 
   createdAt: string;
 };
@@ -370,6 +412,10 @@ export type TrackResponse = {
   rejection?: { reasonLabel: string; note: string | null } | null; // note hanya jika admin memberi feedback
   onboarding?: TrackOnboardingInfo | null;
   cooldown?: { until: string; days: number } | null; // pelamar masih dalam masa jeda lamar ulang
+  // Slot jadwal yang bisa dipilih pelamar (hanya bila tahap belum final; maks 8, urut terdekat)
+  slots?: TrackSlotInfo[];
+  // Rencana onboarding dari admin (agenda hari pertama; tampil terpisah dari checklist dokumen)
+  onboardingPlan?: OnboardingPlanItem[] | null;
 };
 
 // GET /api/admin/analytics — data tab analitik
@@ -539,7 +585,55 @@ export type Interview = {
   applicationPhone?: string;
   positionTitle?: string | null;
   trackingCode?: string;
+  // rekaman & transkrip (diisi route transcribe; opsional pada serialisasi lama)
+  transcript?: string | null;
+  transcriptSummary?: string | null;
+  slotId?: string | null; // slot self-service yang dipilih pelamar
 };
+
+/* ------------------------------ Slot wawancara self-service ------------------------------ */
+
+/** Slot jadwal yang dibuka admin — dipilih sendiri oleh pelamar dari halaman status. */
+export type InterviewSlot = {
+  id: string;
+  positionId: string | null;
+  positionTitle: string | null;
+  scheduledAt: string; // ISO
+  durationMin: number;
+  mode: InterviewMode;
+  platform: InterviewPlatform;
+  meetingLink: string | null;
+  address: string | null;
+  interviewers: string[];
+  bookedByApplicationId: string | null;
+  bookedByName: string | null; // nama pelamar yang membooking (dari API admin)
+  bookedAt: string | null;
+  createdAt: string;
+};
+
+/** Slot tersedia pada TrackResponse (versi publik, tanpa data booking). */
+export type TrackSlotInfo = {
+  id: string;
+  scheduledAt: string;
+  durationMin: number;
+  mode: InterviewMode;
+  platform: InterviewPlatform;
+  meetingLink: string | null;
+  address: string | null;
+  interviewers: string[];
+};
+
+/** Item rencana onboarding (agenda hari pertama, mentor, target). */
+export type OnboardingPlanItem = {
+  id: string;
+  label: string;
+  owner?: string;
+  dueAt?: string | null;
+  done: boolean;
+};
+
+// POST /api/public/slots/book -> sukses
+export type SlotBookResponse = { ok: true; round: number; scheduledAt: string };
 
 /* ---------------------------------- Penolakan terstruktur ---------------------------------- */
 

@@ -15,6 +15,7 @@ import {
   Loader2,
   MessageSquareText,
   Mic,
+  PauseCircle,
   PencilLine,
   ShieldCheck,
   Upload,
@@ -219,6 +220,10 @@ export function ApplyWizard({
   const [extraErrors, setExtraErrors] = useState<Record<number, string | undefined>>({});
   // Sumber pelamar ("dari mana tahu lowongan ini") — opsional.
   const [source, setSource] = useState("");
+  // Mode tutup rekrutmen (Setting "site" via /api/public/site) — saat aktif,
+  // tombol kirim di langkah akhir dinonaktifkan dan pengiriman diblokir.
+  const [recruitmentClosed, setRecruitmentClosed] = useState(false);
+  const [recruitmentClosedMessage, setRecruitmentClosedMessage] = useState("");
   // UTM dibaca SEKALI saat mount via useState initializer (aman SSR; tidak dirender).
   const [utm] = useState(() => {
     if (typeof window === "undefined") {
@@ -236,6 +241,27 @@ export function ApplyWizard({
   const selectedPosition = positions.find((p) => p.id === positionId);
   const screeningQuestions = selectedPosition?.screeningQuestions ?? [];
   const customDocs = selectedPosition?.customDocs ?? [];
+
+  // Status rekrutmen dibaca sekali saat mount; gagal dianggap terbuka.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/public/site", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: unknown) => {
+        if (!alive || !data || typeof data !== "object") return;
+        const obj = data as Record<string, unknown>;
+        setRecruitmentClosed(obj.recruitmentClosed === true);
+        setRecruitmentClosedMessage(
+          typeof obj.message === "string" ? obj.message : "",
+        );
+      })
+      .catch(() => {
+        // biarkan default (terbuka)
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Reset jawaban screening & dokumen tambahan saat posisi berubah (termasuk perubahan dari luar
   // wizard lewat dialog posisi) — pola "adjust state during render", tanpa effect.
@@ -526,6 +552,14 @@ export function ApplyWizard({
    * dan menekan konfirmasi pada dialog — tidak pernah kirim otomatis.
    */
   async function doSubmit() {
+    if (recruitmentClosed) {
+      // Pengaman ekstra: jangan kirim bila rekrutmen ditutup di tengah alur.
+      toast.error(
+        recruitmentClosedMessage.trim() ||
+          "Rekrutmen sedang ditutup. Lamaran tidak dapat dikirim saat ini.",
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       const fd = new FormData();
@@ -626,6 +660,13 @@ export function ApplyWizard({
     // Langkah 3 (Pratinjau): wajib pernyataan kebenaran data sebelum konfirmasi.
     if (!agreed) {
       toast.error(t.apply.preview.agreeRequired);
+      return;
+    }
+    if (recruitmentClosed) {
+      toast.error(
+        recruitmentClosedMessage.trim() ||
+          "Rekrutmen sedang ditutup. Lamaran tidak dapat dikirim saat ini.",
+      );
       return;
     }
     setConfirmOpen(true);
@@ -818,7 +859,7 @@ export function ApplyWizard({
   const stepLabels = t.apply.steps;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="@container flex flex-col gap-6">
       <div>
         <h3 className="text-lg font-semibold">{t.apply.formTitle}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -831,7 +872,7 @@ export function ApplyWizard({
         <Card className="flex-row items-center justify-between gap-3 rounded-xl border-amber-200 bg-amber-50/60 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
           <div className="min-w-0">
             <p className="text-sm font-semibold">{t.apply.draft.title}</p>
-            <p className="truncate text-xs text-muted-foreground">
+            <p className="line-clamp-2 text-xs text-muted-foreground">
               {t.apply.draft.body}
               {typeof draft.savedAt === "number"
                 ? ` (${t.apply.draft.savedPrefix} ${new Date(draft.savedAt).toLocaleString("id-ID")})`
@@ -849,16 +890,19 @@ export function ApplyWizard({
         </Card>
       ) : null}
 
-      {/* Stepper */}
+      {/* Stepper — label langkah hanya tampil bila lebar KARTU cukup
+          (@container, bukan viewport): di kolom kanan desktop yang sempit
+          hanya lingkaran + garis, tanpa label agar tidak meluber keluar kartu. */}
       <ol className="flex items-center gap-2" aria-label={t.apply.stepOf}>
         {stepLabels.map((label, index) => {
           const isDone = index < step;
           const isActive = index === step;
           return (
-            <li key={label} className="flex flex-1 items-center gap-2 last:flex-none">
-              <div className="flex items-center gap-2">
+            <li key={label} className="flex min-w-0 flex-1 items-center gap-2 last:flex-none">
+              <div className="flex min-w-0 items-center gap-2">
                 <span
                   aria-current={isActive ? "step" : undefined}
+                  title={label}
                   className={cn(
                     "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition-colors",
                     isDone &&
@@ -875,7 +919,7 @@ export function ApplyWizard({
                 </span>
                 <span
                   className={cn(
-                    "hidden text-xs font-medium sm:block",
+                    "hidden min-w-0 truncate text-xs font-medium @xl:block",
                     isActive ? "text-foreground" : "text-muted-foreground",
                   )}
                 >
@@ -1699,6 +1743,23 @@ export function ApplyWizard({
           </motion.div>
         </AnimatePresence>
 
+        {/* Notifikasi rekrutmen ditutup — langkah akhir (pratinjau) */}
+        {step === 3 && recruitmentClosed ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            <PauseCircle
+              className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
+              aria-hidden="true"
+            />
+            <span>
+              {recruitmentClosedMessage.trim() ||
+                "Rekrutmen sedang ditutup. Pengiriman lamaran dinonaktifkan sementara."}
+            </span>
+          </div>
+        ) : null}
+
         {/* Navigasi langkah */}
         <div className="flex items-center justify-between gap-3">
           <Button
@@ -1721,7 +1782,11 @@ export function ApplyWizard({
               {t.apply.buttons.review}
             </Button>
           ) : (
-            <Button type="submit" className="h-11 min-w-40" disabled={submitting}>
+            <Button
+              type="submit"
+              className="h-11 min-w-40"
+              disabled={submitting || recruitmentClosed}
+            >
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
