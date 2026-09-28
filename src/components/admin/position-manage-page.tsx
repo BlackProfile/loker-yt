@@ -2,44 +2,39 @@
 
 // Halaman khusus per lowongan (dibuka dari tab Posisi → tombol "Kelola").
 // Menyatukan semua yang dibutuhkan untuk mengelola SATU lowongan di satu
-// tempat: identitas & statistik ringkas, EDITOR DOKUMEN WAJIB pendaftar
-// (CV / audio intro / portofolio + dokumen tambahan bebas), pratinjau konten,
-// dan daftar pelamar posisi ini. Bisa di-deep-link: #admin/posisi/<id>.
+// tempat: identitas & statistik ringkas, ringkasan formulir lamaran,
+// pratinjau konten, dan daftar pelamar posisi ini. Bisa di-deep-link:
+// #admin/posisi/<id> (kelola), #admin/posisi/<id>/edit (edit posisi),
+// #admin/posisi/<id>/formulir (edit formulir lamaran).
+// Dua jalur EDIT terpisah — semuanya halaman penuh (bukan popup):
+//   1. "Edit Posisi"      → seluruh pengaturan info lowongan (PositionFormPage mode="posisi")
+//   2. "Formulir Lamaran" → berkas wajib, kuota, screening, dokumen pendaftar
+//                            (PositionFormPage mode="formulir")
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import {
   ArrowLeft,
   BarChart3,
   Briefcase,
+  ClipboardList,
   Copy,
   ExternalLink,
   FileText,
-  Info,
+  ListChecks,
   Loader2,
   MapPin,
   Pencil,
-  Plus,
   QrCode,
   ScrollText,
-  Trash2,
   Users,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Application, Position, PositionStatsRow } from "@/lib/types";
-import { apiGet, apiPatch } from "./api";
+import { apiGet } from "./api";
 import { copyText, formatDateTime, initialsOf } from "./format";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
@@ -47,14 +42,18 @@ import { Reveal } from "./motion-primitives";
 import { AiScoreBadge, StatusBadge } from "./status-badge";
 import { PositionFormPage } from "./position-form-page";
 
-const MAX_CUSTOM_DOCS = 8;
-const CUSTOM_DOC_MAX_LEN = 80;
+type EditMode = "posisi" | "formulir";
 
 type Props = {
   position: Position;
   stats: PositionStatsRow | null;
+  /** Mode edit aktif — null berarti tampilan kelola biasa. */
+  editMode: EditMode | null;
+  /** Minta buka salah satu halaman edit (dari tombol di halaman ini). */
+  onEdit: (mode: EditMode) => void;
+  /** Tutup halaman edit kembali ke tampilan kelola (batal maupun setelah simpan). */
+  onExitEdit: () => void;
   onBack: () => void;
-  startInEdit?: boolean;
   onStats: (position: Position) => void;
   onQr: (position: Position) => void;
   onUpdated: (position: Position) => void;
@@ -63,96 +62,15 @@ type Props = {
 export function PositionManagePage({
   position,
   stats,
+  editMode,
+  onEdit,
+  onExitEdit,
   onBack,
-  startInEdit = false,
   onStats,
   onQr,
   onUpdated,
 }: Props) {
-  const { canMutate, reportError } = useAdminSession();
-
-  // Mode "edit lengkap" di halaman (bukan popup): seluruh tampilan kelola
-  // digantikan formulir posisi inline. startInEdit dipakai saat halaman ini
-  // dibuka langsung dari tombol Edit di daftar posisi.
-  const [editOpen, setEditOpen] = useState(startInEdit);
-
-  /* ------------------------- Editor dokumen wajib ------------------------- */
-
-  const [docForm, setDocForm] = useState({
-    requireCv: position.requireCv,
-    requireIntro: position.requireIntro,
-    requirePortfolio: position.requirePortfolio,
-    customDocs: [...position.customDocs],
-  });
-  const [newDoc, setNewDoc] = useState("");
-  const [savingDocs, setSavingDocs] = useState(false);
-
-  // Saat posisi berganti (dari daftar ke posisi lain), selaraskan form dokumen.
-  // Pembaruan nilai dari luar (realtime) TIDAK menimpa suntingan yang belum disimpan.
-  const [lastPositionId, setLastPositionId] = useState(position.id);
-  if (lastPositionId !== position.id) {
-    setLastPositionId(position.id);
-    setDocForm({
-      requireCv: position.requireCv,
-      requireIntro: position.requireIntro,
-      requirePortfolio: position.requirePortfolio,
-      customDocs: [...position.customDocs],
-    });
-    setNewDoc("");
-  }
-
-  const docsDirty =
-    docForm.requireCv !== position.requireCv ||
-    docForm.requireIntro !== position.requireIntro ||
-    docForm.requirePortfolio !== position.requirePortfolio ||
-    JSON.stringify(docForm.customDocs) !== JSON.stringify(position.customDocs);
-
-  const addCustomDoc = useCallback(() => {
-    const label = newDoc.trim().slice(0, CUSTOM_DOC_MAX_LEN);
-    if (label.length < 2) {
-      toast.error("Nama dokumen minimal 2 karakter.");
-      return;
-    }
-    if (docForm.customDocs.length >= MAX_CUSTOM_DOCS) {
-      toast.error(`Maksimal ${MAX_CUSTOM_DOCS} dokumen tambahan.`);
-      return;
-    }
-    if (docForm.customDocs.some((d) => d.toLowerCase() === label.toLowerCase())) {
-      toast.error("Dokumen dengan nama itu sudah ada.");
-      return;
-    }
-    setDocForm((prev) => ({ ...prev, customDocs: [...prev.customDocs, label] }));
-    setNewDoc("");
-  }, [newDoc, docForm.customDocs]);
-
-  const removeCustomDoc = useCallback((label: string) => {
-    setDocForm((prev) => ({
-      ...prev,
-      customDocs: prev.customDocs.filter((d) => d !== label),
-    }));
-  }, []);
-
-  async function saveDocs() {
-    if (!canMutate || savingDocs || !docsDirty) return;
-    setSavingDocs(true);
-    try {
-      const updated = await apiPatch<Position>(
-        `/api/admin/positions/${position.id}`,
-        {
-          requireCv: docForm.requireCv,
-          requireIntro: docForm.requireIntro,
-          requirePortfolio: docForm.requirePortfolio,
-          customDocs: docForm.customDocs,
-        },
-      );
-      onUpdated(updated);
-      toast.success("Pengaturan dokumen pendaftar disimpan");
-    } catch (err) {
-      reportError(err);
-    } finally {
-      setSavingDocs(false);
-    }
-  }
+  const { canMutate } = useAdminSession();
 
   /* ---------------------------- Pelamar posisi ---------------------------- */
 
@@ -196,38 +114,30 @@ export function PositionManagePage({
     else toast.error("Gagal menyalin tautan");
   }
 
-  const docToggleRows: { key: "requireCv" | "requireIntro" | "requirePortfolio"; label: string; desc: string }[] = [
-    {
-      key: "requireCv",
-      label: "CV",
-      desc: "Berkas PDF ringkasan diri pelamar (maks 5 MB). Bila wajib, lamaran tanpa CV ditolak otomatis oleh form.",
-    },
-    {
-      key: "requireIntro",
-      label: "Audio/Video perkenalan",
-      desc: "Rekaman singkat pelamar (MP3/WAV/M4A/WEBM, maks 10 MB) — otomatis ditranskripsi AI.",
-    },
-    {
-      key: "requirePortfolio",
-      label: "Portofolio / link sosial media",
-      desc: "Tautan portofolio atau sosial media wajib diisi pelamar.",
-    },
-  ];
-
-  // Edit lengkap sebagai halaman (bukan popup): kembalikan formulir inline.
-  if (editOpen) {
+  // Edit lengkap sebagai halaman penuh (bukan popup): seluruh tampilan kelola
+  // digantikan halaman formulir sesuai mode (posisi / formulir lamaran).
+  if (editMode) {
     return (
       <PositionFormPage
         editing={position}
         statsRow={stats}
-        onCancel={() => setEditOpen(false)}
+        mode={editMode}
+        onCancel={onExitEdit}
         onSaved={(updated) => {
-          setEditOpen(false);
           onUpdated(updated);
+          onExitEdit();
         }}
       />
     );
   }
+
+  // Ringkasan berkas yang diminta dari pendaftar (diedit di halaman Formulir).
+  const docSummary: { label: string; required: boolean }[] = [
+    { label: "CV", required: position.requireCv },
+    { label: "Audio/Video Intro", required: position.requireIntro },
+    { label: "Portofolio", required: position.requirePortfolio },
+    ...position.customDocs.map((doc) => ({ label: doc, required: true })),
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -312,13 +222,23 @@ export function PositionManagePage({
               </a>
             </Button>
             <Button
+              variant="outline"
               size="sm"
               className="h-11 sm:h-9"
-              onClick={() => setEditOpen(true)}
+              onClick={() => onEdit("formulir")}
+              disabled={!canMutate}
+            >
+              <ListChecks className="size-4" aria-hidden="true" />
+              Formulir Lamaran
+            </Button>
+            <Button
+              size="sm"
+              className="h-11 sm:h-9"
+              onClick={() => onEdit("posisi")}
               disabled={!canMutate}
             >
               <Pencil className="size-4" aria-hidden="true" />
-              Edit Lengkap
+              Edit Posisi
             </Button>
           </div>
         </div>
@@ -357,136 +277,57 @@ export function PositionManagePage({
         ))}
       </Reveal>
 
-      {/* EDITOR: dokumen yang wajib diunggah pendaftar */}
+      {/* Ringkasan formulir lamaran — diedit di halaman "Formulir Lamaran" */}
       <Reveal delay={0.1}>
         <Card className="gap-4 rounded-2xl p-5 md:p-6">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-              Dokumen dari Pendaftar
-            </CardTitle>
-            <CardDescription className="mt-1">
-              Atur berkas yang perlu diunggah pelamar saat melamar posisi ini.
-              Perubahan langsung berlaku di formulir publik.
-            </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ClipboardList className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                Formulir Lamaran
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Berkas wajib, kuota pelamar, dan pertanyaan screening yang
+                diisi pelamar saat melamar posisi ini.
+              </CardDescription>
+            </div>
+            <Button
+              size="sm"
+              className="h-11 shrink-0 sm:h-9"
+              onClick={() => onEdit("formulir")}
+              disabled={!canMutate}
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+              Edit Formulir
+            </Button>
           </div>
-
-          <div className="flex flex-col divide-y rounded-xl border">
-            {docToggleRows.map((row) => (
-              <div key={row.key} className="flex items-start justify-between gap-4 p-4">
-                <div className="min-w-0">
-                  <Label className="text-sm font-semibold">{row.label}</Label>
-                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                    {row.desc}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <Switch
-                    checked={docForm[row.key]}
-                    onCheckedChange={(checked) =>
-                      setDocForm((prev) => ({ ...prev, [row.key]: checked }))
-                    }
-                    disabled={!canMutate || savingDocs}
-                    aria-label={`${row.label} diunggah pelamar`}
-                  />
-                  <span className="text-[11px] text-muted-foreground">
-                    {docForm[row.key] ? "Wajib" : "Opsional"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Dokumen tambahan bebas */}
-          <div className="flex flex-col gap-2">
-            <Label className="text-sm font-semibold">Dokumen wajib tambahan</Label>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              Misal: KTP, Ijazah, Sertifikat, Surat Sehat. Pelamar wajib
-              mengunggah semuanya (PDF/gambar/Word, maks 5 MB per berkas,
-              maksimal {MAX_CUSTOM_DOCS} dokumen).
-            </p>
-            {docForm.customDocs.length > 0 ? (
-              <ul className="flex flex-col gap-1.5">
-                {docForm.customDocs.map((doc) => (
-                  <li
-                    key={doc}
-                    className="flex min-h-10 items-center justify-between gap-2 rounded-lg border bg-zinc-50/60 px-3 py-1.5 dark:bg-zinc-900/40"
-                  >
-                    <span className="flex min-w-0 items-center gap-2 text-sm">
-                      <FileText className="size-3.5 shrink-0 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                      <span className="truncate">{doc}</span>
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 shrink-0 text-muted-foreground hover:text-rose-600"
-                      onClick={() => removeCustomDoc(doc)}
-                      disabled={!canMutate || savingDocs}
-                      aria-label={`Hapus dokumen ${doc}`}
-                    >
-                      <X className="size-4" aria-hidden="true" />
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
-                Belum ada dokumen tambahan.
-              </p>
-            )}
-            <div className="flex items-center gap-2">
-              <Input
-                value={newDoc}
-                onChange={(e) => setNewDoc(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addCustomDoc();
-                  }
-                }}
-                placeholder="Nama dokumen, mis. KTP"
-                className="h-11 sm:flex-1"
-                maxLength={CUSTOM_DOC_MAX_LEN}
-                disabled={!canMutate || savingDocs || docForm.customDocs.length >= MAX_CUSTOM_DOCS}
-                aria-label="Nama dokumen baru"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 shrink-0 sm:h-10"
-                onClick={addCustomDoc}
-                disabled={
-                  !canMutate ||
-                  savingDocs ||
-                  docForm.customDocs.length >= MAX_CUSTOM_DOCS
+          <div className="flex flex-wrap gap-1.5">
+            {docSummary.map((doc) => (
+              <Badge
+                key={doc.label}
+                variant="secondary"
+                className={
+                  doc.required
+                    ? "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+                    : ""
                 }
               >
-                <Plus className="size-4" aria-hidden="true" />
-                Tambah
-              </Button>
-            </div>
+                {doc.label} · {doc.required ? "wajib" : "opsional"}
+              </Badge>
+            ))}
           </div>
-
-          <div className="flex items-center justify-between gap-3 border-t pt-4">
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Info className="size-3.5 shrink-0" aria-hidden="true" />
-              {docsDirty ? "Ada perubahan belum disimpan." : "Semua perubahan tersimpan."}
-            </p>
-            <Button
-              onClick={() => void saveDocs()}
-              disabled={!canMutate || savingDocs || !docsDirty}
-              className="min-w-28"
-            >
-              {savingDocs ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  Menyimpan...
-                </>
-              ) : (
-                "Simpan"
-              )}
-            </Button>
+          <div className="flex flex-wrap gap-1.5 border-t pt-3">
+            <Badge variant="secondary">
+              Kuota: {position.maxApplicants != null ? position.maxApplicants : "tanpa batas"}
+            </Badge>
+            <Badge variant="secondary">
+              {position.screeningQuestions.length} pertanyaan screening
+            </Badge>
+            {position.screeningQuestions.length > 0 ? (
+              <Badge variant="secondary">
+                {position.screeningQuestions.filter((q) => q.required).length} wajib dijawab
+              </Badge>
+            ) : null}
           </div>
         </Card>
       </Reveal>
@@ -512,20 +353,17 @@ export function PositionManagePage({
               <div className="flex flex-wrap gap-1.5">
                 <Badge variant="secondary">{position.requirements.length} persyaratan</Badge>
                 <Badge variant="secondary">{position.benefits.length} benefit</Badge>
-                <Badge variant="secondary">{position.screeningQuestions.length} pertanyaan screening</Badge>
-                {position.customDocs.length > 0 ? (
-                  <Badge variant="secondary">{position.customDocs.length} dokumen tambahan</Badge>
-                ) : null}
+                <Badge variant="secondary">{position.customDocs.length} dokumen tambahan</Badge>
               </div>
             </div>
             <Button
               variant="outline"
               className="mx-auto min-h-11 sm:min-h-10"
-              onClick={() => setEditOpen(true)}
+              onClick={() => onEdit("posisi")}
               disabled={!canMutate}
             >
               <Pencil className="size-4" aria-hidden="true" />
-              Edit Konten Lengkap
+              Edit Posisi
             </Button>
           </Card>
         </Reveal>
