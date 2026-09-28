@@ -70,11 +70,30 @@ import { PositionStatsDialog } from "./position-stats-dialog";
 import { PositionQrDialog } from "./position-qr-dialog";
 import { PositionManagePage } from "./position-manage-page";
 
-/** Baca id posisi dari deep-link #admin/posisi/<id> (bila ada). */
-function readManageIdFromHash(): string | null {
-  if (typeof window === "undefined") return null;
-  const match = window.location.hash.match(/^#admin\/posisi\/([A-Za-z0-9_-]{1,40})$/);
-  return match ? match[1] : null;
+type ManageViewMode = "view" | "posisi" | "formulir";
+
+/**
+ * Baca id + mode dari deep-link #admin/posisi/<id>[/edit|/formulir].
+ * "view" = halaman kelola, "posisi" = edit posisi, "formulir" = edit formulir
+ * lamaran — semuanya halaman penuh, bukan popup.
+ */
+function readManageHash(): { id: string | null; mode: ManageViewMode } {
+  if (typeof window === "undefined") return { id: null, mode: "view" };
+  const match = window.location.hash.match(
+    /^#admin\/posisi\/([A-Za-z0-9_-]{1,40})(?:\/(edit|formulir))?$/
+  );
+  if (!match) return { id: null, mode: "view" };
+  return {
+    id: match[1],
+    mode:
+      match[2] === "formulir" ? "formulir" : match[2] === "edit" ? "posisi" : "view",
+  };
+}
+
+function manageHashFor(id: string, mode: ManageViewMode): string {
+  if (mode === "formulir") return `#admin/posisi/${id}/formulir`;
+  if (mode === "posisi") return `#admin/posisi/${id}/edit`;
+  return `#admin/posisi/${id}`;
 }
 
 /* ------------------------------ Status publikasi ------------------------------ */
@@ -156,23 +175,39 @@ export function PositionsTab() {
   const [statsTarget, setStatsTarget] = useState<Position | null>(null);
   const [qrTarget, setQrTarget] = useState<Position | null>(null);
 
-  // Halaman khusus per posisi — mendukung deep-link #admin/posisi/<id>.
-  const [manageId, setManageId] = useState<string | null>(() => readManageIdFromHash());
-  const [manageEdit, setManageEdit] = useState(false); // buka langsung mode edit
+  // Halaman khusus per posisi — mendukung deep-link #admin/posisi/<id>
+  // plus suffix /edit (edit posisi) dan /formulir (edit formulir lamaran).
+  const initialManage = readManageHash();
+  const [manageId, setManageId] = useState<string | null>(() => initialManage.id);
+  const [manageMode, setManageMode] = useState<ManageViewMode>(
+    () => initialManage.mode
+  );
   const managing = manageId ? positions.find((p) => p.id === manageId) ?? null : null;
 
-  function openManage(position: Position, edit = false) {
+  function openManage(position: Position, mode: ManageViewMode = "view") {
     setManageId(position.id);
-    setManageEdit(edit);
-    // pushState (bukan replace) agar tombol Back browser kembali ke daftar;
-    // listener hashchange di bawah menyinkronkan UI saat Back/Forward.
-    history.pushState(null, "", `#admin/posisi/${position.id}`);
+    setManageMode(mode);
+    // pushState (bukan replace) agar tombol Back browser kembali ke tampilan
+    // sebelumnya; listener hashchange di bawah menyinkronkan UI saat
+    // Back/Forward.
+    history.pushState(null, "", manageHashFor(position.id, mode));
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  // Keluar mode edit kembali ke tampilan kelola — replaceState agar tombol
+  // Back dari kelola tetap menuju daftar posisi (bukan mode edit lagi).
+  function exitEdit() {
+    if (!manageId) return;
+    setManageMode("view");
+    if (window.location.hash !== manageHashFor(manageId, "view")) {
+      history.replaceState(null, "", manageHashFor(manageId, "view"));
+    }
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 
   function closeManage() {
     setManageId(null);
-    setManageEdit(false);
+    setManageMode("view");
     if (window.location.hash.startsWith("#admin/posisi/")) {
       history.replaceState(null, "", "#admin");
     }
@@ -219,12 +254,13 @@ export function PositionsTab() {
   }, [load]);
 
   // Sinkronkan tombol back/forward browser & perubahan hash saat tab ini
-  // terbuka: #admin/posisi/<id> membuka halaman kelola, hash lain menutupnya.
+  // terbuka: #admin/posisi/<id> membuka halaman kelola, /edit atau /formulir
+  // membuka mode edit terkait, hash lain menutup semuanya.
   useEffect(() => {
     const onHash = () => {
-      const id = readManageIdFromHash();
-      setManageId((prev) => (prev === id ? prev : id));
-      if (!id) setManageEdit(false);
+      const h = readManageHash();
+      setManageId((prev) => (prev === h.id ? prev : h.id));
+      setManageMode((prev) => (prev === h.mode ? prev : h.mode));
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -245,9 +281,9 @@ export function PositionsTab() {
   }
 
   function openEdit(position: Position) {
-    // Edit lengkap kini berupa halaman khusus (bukan popup): buka halaman
-    // kelola posisi langsung dalam mode edit.
-    openManage(position, true);
+    // Edit posisi kini halaman khusus (bukan popup): buka halaman kelola
+    // langsung dalam mode edit posisi.
+    openManage(position, "posisi");
   }
 
   async function handleToggle(position: Position, isActive: boolean) {
@@ -384,6 +420,7 @@ export function PositionsTab() {
         <PositionFormPage
           editing={null}
           statsRow={null}
+          mode="posisi"
           onCancel={() => setCreating(false)}
           onSaved={(created) => {
             setCreating(false);
@@ -393,10 +430,12 @@ export function PositionsTab() {
         />
       ) : managing ? (
         <PositionManagePage
-          key={`${managing.id}-${manageEdit ? "edit" : "view"}`}
+          key={`${managing.id}-${manageMode}`}
           position={managing}
           stats={statsMap[managing.id] ?? null}
-          startInEdit={manageEdit}
+          editMode={manageMode === "view" ? null : manageMode}
+          onEdit={(mode) => openManage(managing, mode)}
+          onExitEdit={exitEdit}
           onBack={closeManage}
           onStats={setStatsTarget}
           onQr={setQrTarget}
