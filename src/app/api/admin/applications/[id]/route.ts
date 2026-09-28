@@ -48,6 +48,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const updateData: {
       status?: string;
+      offerStatus?: string | null;
       adminNotes?: string | null;
       rating?: number;
       tags?: string;
@@ -197,6 +198,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
+    // Tahap berubah ke Ditolak -> penawaran aktif otomatis dibatalkan agar halaman
+    // status pelamar tidak lagi menampilkan kartu offer yang sudah tak relevan.
+    if (
+      updateData.status === "REJECTED" &&
+      existing.status !== "REJECTED" &&
+      existing.offerStatus === "PENDING"
+    ) {
+      updateData.offerStatus = null;
+    }
+
     const updated = await db.application.update({
       where: { id },
       data: updateData,
@@ -210,6 +221,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         actor: session.name,
         action: "STATUS_CHANGE",
         detail: `${labelOf(existing.status)} → ${labelOf(updateData.status)}`,
+      });
+    }
+    if (updateData.offerStatus === null && existing.offerStatus === "PENDING") {
+      logs.push({
+        actor: session.name,
+        action: "OFFER_CANCELLED",
+        detail: "Penawaran aktif dibatalkan otomatis — lamaran ditolak",
       });
     }
     if (updateData.adminNotes !== undefined &&

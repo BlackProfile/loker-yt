@@ -25,6 +25,7 @@ import {
   OFFER_STATUSES,
   REJECTION_REASONS,
   SECTION_KEYS,
+  STAGE_CATEGORIES,
   type AdminUser,
   type AiRecommendation,
   type Application,
@@ -37,12 +38,14 @@ import {
   type InterviewPlatform,
   type InterviewRecommendation,
   type InterviewStatus,
+  type RoundPlanTemplate,
   type OfferStatus,
   type OnboardingDoc,
   type Position,
   type RejectionReason,
   type ReplyTemplates,
   type ScreeningQuestion,
+  type StageCategory,
   type SectionVisibility,
   type SiteContent,
   type TeamMember,
@@ -205,6 +208,48 @@ export function parseOnboardingDocs(raw: string | null | undefined): OnboardingD
   }
 }
 
+/** Parse aman Position.roundPlan (JSON RoundPlanTemplate[]) — fallback [] bila rusak. */
+export function parseRoundPlan(raw: string | null | undefined): RoundPlanTemplate[] {
+  if (!raw || !raw.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+      .map((item, index) => ({
+        round: typeof item.round === "number" && Number.isInteger(item.round) && item.round > 0 ? item.round : index + 1,
+        name: typeof item.name === "string" && item.name.trim() ? item.name.trim().slice(0, 60) : `Ronde ${index + 1}`,
+        mode: typeof item.mode === "string" ? (item.mode as RoundPlanTemplate["mode"]) : undefined,
+        platform: typeof item.platform === "string" ? (item.platform as RoundPlanTemplate["platform"]) : undefined,
+        durationMin: typeof item.durationMin === "number" && item.durationMin > 0 ? item.durationMin : undefined,
+        interviewers: Array.isArray(item.interviewers)
+          ? item.interviewers.filter((n): n is string => typeof n === "string" && n.trim().length > 0)
+          : undefined,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export function parseStageCategories(raw: string | null | undefined): Record<string, StageCategory> {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const result: Record<string, StageCategory> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const stage = typeof key === "string" ? key.trim().slice(0, 40) : "";
+      if (!stage) continue;
+      if (typeof value === "string" && (STAGE_CATEGORIES as string[]).includes(value)) {
+        result[stage] = value as StageCategory;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
 /** Sanitasi enum wawancara/offer/rejection dari input tak dikenal. */
 export function sanitizeInterviewMode(value: unknown): InterviewMode {
   return value === "ONSITE" ? "ONSITE" : "ONLINE";
@@ -267,6 +312,7 @@ export function serializePosition(record: PositionRecordModel): Position {
     publishAt: record.publishAt ? record.publishAt.toISOString() : null,
 
     stages: parseRequirements(record.stages),
+    stageCategories: parseStageCategories(record.stageCategories),
     aiCriteria: record.aiCriteria,
     autoShortlistScore: record.autoShortlistScore,
     autoShortlistStage: record.autoShortlistStage,
@@ -277,6 +323,11 @@ export function serializePosition(record: PositionRecordModel): Position {
     checklistTemplate: parseRequirements(record.checklistTemplate),
     noteTemplates: parseRequirements(record.noteTemplates),
     views: record.views,
+
+    // Konten dua bahasa (opsional)
+    titleEn: record.titleEn,
+    descriptionEn: record.descriptionEn,
+    requirementsEn: parseRequirements(record.requirementsEn),
 
     interviewMode: sanitizeInterviewMode(record.interviewMode),
     interviewPlatform: sanitizeInterviewPlatform(record.interviewPlatform),
@@ -290,6 +341,13 @@ export function serializePosition(record: PositionRecordModel): Position {
     onboardingDocs: parseRequirements(record.onboardingDocs),
     reapplyCooldownDays: record.reapplyCooldownDays,
     autoCloseOnHired: record.autoCloseOnHired,
+
+    // Rentang gaji wajar (null = tanpa batas)
+    salaryMin: record.salaryMin ?? null,
+    salaryMax: record.salaryMax ?? null,
+
+    // Rencana ronde wawancara bawaan
+    roundPlan: parseRoundPlan(record.roundPlan),
   };
 }
 
@@ -380,6 +438,8 @@ export function serializeApplication(record: ApplicationRecord): Application {
     probationEnd: record.probationEnd ? record.probationEnd.toISOString() : null,
     onboardingDocs: parseOnboardingDocs(record.onboardingDocs),
 
+    isDuplicate: record.isDuplicate,
+
     createdAt: record.createdAt.toISOString(),
   };
 }
@@ -421,6 +481,37 @@ export function serializeAdminUser(record: AdminUserRecordModel): AdminUser {
     role: (record.role as AdminUser["role"]) ?? "VIEWER",
     isActive: record.isActive,
     createdAt: record.createdAt.toISOString(),
+  };
+}
+
+/** Parse kolom AdminUser.assignedPositions (JSON string[] positionId) menjadi daftar unik. */
+export function parseAssignedPositions(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return [
+      ...new Set(
+        parsed
+          .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+          .map((v) => v.trim())
+      ),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Masking data lamaran untuk role VIEWER pada level respons list:
+ * phone disembunyikan dan akses file CV dinolkan (DB tetap utuh).
+ */
+export function maskApplicationForViewer(app: Application): Application {
+  return {
+    ...app,
+    phone: "(disembunyikan)",
+    cvFileId: null,
+    cvFileName: null,
   };
 }
 
@@ -514,6 +605,8 @@ export function sanitizeSiteContent(value: unknown, fallback: SiteContent = DEFA
     discordWebhookUrl: pickString(obj, "discordWebhookUrl", fallback.discordWebhookUrl),
     telegramBotToken: pickString(obj, "telegramBotToken", fallback.telegramBotToken),
     telegramChatId: pickString(obj, "telegramChatId", fallback.telegramChatId),
+    recruitmentClosed: pickBoolean(obj, "recruitmentClosed", fallback.recruitmentClosed),
+    recruitmentClosedMessage: pickString(obj, "recruitmentClosedMessage", fallback.recruitmentClosedMessage),
     sections: sanitizeSections(obj.sections, fallback.sections),
   };
 }

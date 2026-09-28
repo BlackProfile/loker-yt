@@ -45,6 +45,7 @@ import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { Reveal } from "./motion-primitives";
 import { AiScoreBadge, StatusBadge } from "./status-badge";
+import { PositionFormPage } from "./position-form-page";
 
 const MAX_CUSTOM_DOCS = 8;
 const CUSTOM_DOC_MAX_LEN = 80;
@@ -53,7 +54,7 @@ type Props = {
   position: Position;
   stats: PositionStatsRow | null;
   onBack: () => void;
-  onEdit: (position: Position) => void;
+  startInEdit?: boolean;
   onStats: (position: Position) => void;
   onQr: (position: Position) => void;
   onUpdated: (position: Position) => void;
@@ -63,12 +64,17 @@ export function PositionManagePage({
   position,
   stats,
   onBack,
-  onEdit,
+  startInEdit = false,
   onStats,
   onQr,
   onUpdated,
 }: Props) {
   const { canMutate, reportError } = useAdminSession();
+
+  // Mode "edit lengkap" di halaman (bukan popup): seluruh tampilan kelola
+  // digantikan formulir posisi inline. startInEdit dipakai saat halaman ini
+  // dibuka langsung dari tombol Edit di daftar posisi.
+  const [editOpen, setEditOpen] = useState(startInEdit);
 
   /* ------------------------- Editor dokumen wajib ------------------------- */
 
@@ -208,6 +214,21 @@ export function PositionManagePage({
     },
   ];
 
+  // Edit lengkap sebagai halaman (bukan popup): kembalikan formulir inline.
+  if (editOpen) {
+    return (
+      <PositionFormPage
+        editing={position}
+        statsRow={stats}
+        onCancel={() => setEditOpen(false)}
+        onSaved={(updated) => {
+          setEditOpen(false);
+          onUpdated(updated);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Header halaman */}
@@ -293,7 +314,7 @@ export function PositionManagePage({
             <Button
               size="sm"
               className="h-11 sm:h-9"
-              onClick={() => onEdit(position)}
+              onClick={() => setEditOpen(true)}
               disabled={!canMutate}
             >
               <Pencil className="size-4" aria-hidden="true" />
@@ -500,7 +521,7 @@ export function PositionManagePage({
             <Button
               variant="outline"
               className="mx-auto min-h-11 sm:min-h-10"
-              onClick={() => onEdit(position)}
+              onClick={() => setEditOpen(true)}
               disabled={!canMutate}
             >
               <Pencil className="size-4" aria-hidden="true" />

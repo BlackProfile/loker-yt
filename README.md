@@ -35,6 +35,12 @@ Mini-service realtime (opsional, untuk fitur realtime):
 cd mini-services/realtime-service && bun install && bun run dev
 ```
 
+Atau jalankan dengan **keepalive daemon** (direkomendasikan — auto-restart bila service mati):
+
+```bash
+bash scripts/start-realtime.sh   # aman dijalankan ulang (idempoten)
+```
+
 ### Akun Demo Admin
 
 Akses melalui landing page: tambahkan `#admin` pada URL.

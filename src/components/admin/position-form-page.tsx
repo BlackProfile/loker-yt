@@ -1,20 +1,15 @@
 "use client";
 
-// Dialog form posisi v3 — pusat kendali semua field per lowongan.
+// Halaman formulir posisi (bukan popup) — pusat kendali semua field per
+// lowongan, dirender inline di halaman kelola. Dipakai untuk EDIT (dari
+// PositionManagePage) maupun TAMBAH posisi baru (dari daftar Posisi).
 // Layout: section fitur FLAT selebar layar (tanpa accordion), dipisah garis
 // panjang (hairline) sebagai pembatas antar fitur agar mudah dipindai.
 // Batas karakter/item dikunci via maxLength & maxItems editor (selaras server).
 
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -29,16 +24,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
+  ArrowLeft,
   Briefcase,
   ClipboardCheck,
   Gift,
   Handshake,
   Image as ImageIcon,
+  Languages,
   ListChecks,
   Loader2,
   MessagesSquare,
   Pin,
   Flame,
+  Plus,
   Send,
   Sparkles,
   Trash2,
@@ -57,6 +55,8 @@ import {
   INTERVIEW_PLATFORM_LABELS,
   INTERVIEW_PLATFORMS,
   POSITION_TYPES,
+  STAGE_CATEGORIES,
+  STAGE_CATEGORY_LABELS,
   type AiCoverResponse,
   type AdminUploadResponse,
   type InterviewMode,
@@ -64,8 +64,14 @@ import {
   type Position,
   type PositionStatsRow,
   type ScreeningQuestion,
+  type StageCategory,
 } from "@/lib/types";
-import { stagesForPosition, stageLabel } from "@/lib/stages";
+import {
+  defaultCategoryForCustomStage,
+  isBuiltInStage,
+  stagesForPosition,
+  stageLabel,
+} from "@/lib/stages";
 import { apiFetch, apiPatch, apiPost } from "./api";
 import { isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
@@ -78,12 +84,19 @@ type FormState = {
   location: string;
   description: string;
   requirements: string[];
+  // Konten dua bahasa (opsional) — fallback versi Indonesia bila kosong.
+  titleEn: string;
+  descriptionEn: string;
+  requirementsEn: string[];
   isActive: boolean;
   publishAtLocal: string;
   closesAtLocal: string;
   order: string;
   coverFileId: string | null;
   salaryText: string;
+  // Rentang gaji wajar — dipakai peringatan saat membuat offer
+  salaryMin: string;
+  salaryMax: string;
   salaryVisible: boolean;
   benefits: string[];
   examples: string[];
@@ -95,6 +108,7 @@ type FormState = {
   maxApplicants: string;
   screeningQuestions: ScreeningQuestion[];
   stages: string[];
+  stageCategories: Record<string, StageCategory>;
   aiCriteria: string;
   autoShortlistScore: string;
   autoShortlistStage: string; // "" = nonaktif
@@ -110,6 +124,8 @@ type FormState = {
   interviewMode: InterviewMode;
   interviewPlatform: InterviewPlatform;
   interviewDuration: string;
+  // Rencana ronde wawancara (template untuk "Jadwalkan Ronde Berikutnya")
+  roundPlan: { name: string; durationMin: string; interviewers: string }[];
   interviewCriteria: string[];
   interviewInviteTemplate: string;
   offerTemplate: string;
@@ -127,12 +143,17 @@ const EMPTY_FORM: FormState = {
   location: "Remote",
   description: "",
   requirements: [],
+  titleEn: "",
+  descriptionEn: "",
+  requirementsEn: [],
   isActive: true,
   publishAtLocal: "",
   closesAtLocal: "",
   order: "",
   coverFileId: null,
   salaryText: "",
+  salaryMin: "",
+  salaryMax: "",
   salaryVisible: false,
   benefits: [],
   examples: [],
@@ -144,6 +165,7 @@ const EMPTY_FORM: FormState = {
   maxApplicants: "",
   screeningQuestions: [],
   stages: [],
+  stageCategories: {},
   aiCriteria: "",
   autoShortlistScore: "",
   autoShortlistStage: "",
@@ -159,6 +181,7 @@ const EMPTY_FORM: FormState = {
   interviewMode: "ONLINE",
   interviewPlatform: "GOOGLE_MEET",
   interviewDuration: "45",
+  roundPlan: [],
   interviewCriteria: [],
   interviewInviteTemplate: "",
   offerTemplate: "",
@@ -179,12 +202,17 @@ function buildFormState(p: Position): FormState {
     location: p.location || "Remote",
     description: p.description,
     requirements: [...p.requirements],
+    titleEn: p.titleEn ?? "",
+    descriptionEn: p.descriptionEn ?? "",
+    requirementsEn: [...(p.requirementsEn ?? [])],
     isActive: p.isActive,
     publishAtLocal: isoToLocalInput(p.publishAt),
     closesAtLocal: isoToLocalInput(p.closesAt),
     order: String(p.order ?? ""),
     coverFileId: p.coverFileId,
     salaryText: p.salaryText ?? "",
+    salaryMin: p.salaryMin != null ? String(p.salaryMin) : "",
+    salaryMax: p.salaryMax != null ? String(p.salaryMax) : "",
     salaryVisible: p.salaryVisible,
     benefits: [...p.benefits],
     examples: [...p.examples],
@@ -196,6 +224,7 @@ function buildFormState(p: Position): FormState {
     maxApplicants: p.maxApplicants == null ? "" : String(p.maxApplicants),
     screeningQuestions: p.screeningQuestions.map((q) => ({ ...q })),
     stages: [...p.stages],
+    stageCategories: { ...p.stageCategories },
     aiCriteria: p.aiCriteria ?? "",
     autoShortlistScore: p.autoShortlistScore == null ? "" : String(p.autoShortlistScore),
     autoShortlistStage: p.autoShortlistStage ?? "",
@@ -211,6 +240,11 @@ function buildFormState(p: Position): FormState {
     interviewMode: p.interviewMode,
     interviewPlatform: p.interviewPlatform,
     interviewDuration: String(p.interviewDuration ?? 45),
+    roundPlan: (p.roundPlan ?? []).map((r) => ({
+      name: r.name,
+      durationMin: r.durationMin != null ? String(r.durationMin) : "",
+      interviewers: (r.interviewers ?? []).join(", "),
+    })),
     interviewCriteria: [...p.interviewCriteria],
     interviewInviteTemplate: p.interviewInviteTemplate ?? "",
     offerTemplate: p.offerTemplate ?? "",
@@ -337,18 +371,16 @@ function isInt(value: string): boolean {
   return /^-?\d+$/.test(value.trim());
 }
 
-export function PositionFormDialog({
-  open,
-  onOpenChange,
+export function PositionFormPage({
   editing,
   statsRow,
   onSaved,
+  onCancel,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   editing: Position | null;
   statsRow: PositionStatsRow | null;
-  onSaved: () => void;
+  onSaved: (updated: Position) => void;
+  onCancel: () => void;
 }) {
   const { reportError } = useAdminSession();
   const [form, setForm] = useState<FormState>(() =>
@@ -366,6 +398,12 @@ export function PositionFormDialog({
   const cleanedStages = useMemo(
     () => form.stages.map((s) => s.trim()).filter(Boolean),
     [form.stages]
+  );
+
+  // Tahap kustom (di luar 5 bawaan) — untuk editor kategori fitur tab Pipeline.
+  const customStages = useMemo(
+    () => cleanedStages.filter((s) => !isBuiltInStage(s)),
+    [cleanedStages]
   );
 
   // Lamaran pada tahap di luar daftar pipeline tersimpan (dari stats funnel).
@@ -455,11 +493,18 @@ export function PositionFormDialog({
       location: form.location.trim() || "Remote",
       description: form.description.trim(),
       requirements: form.requirements.map((r) => r.trim()).filter(Boolean),
+      // Konten dua bahasa — kosong berarti fallback ke versi Indonesia (null).
+      titleEn: form.titleEn.trim() || null,
+      descriptionEn: form.descriptionEn.trim() || null,
+      requirementsEn: form.requirementsEn.map((r) => r.trim()).filter(Boolean),
       isActive: form.isActive,
       publishAt: localInputToIso(form.publishAtLocal),
       closesAt: localInputToIso(form.closesAtLocal),
       coverFileId: form.coverFileId,
       salaryText: form.salaryText.trim() || null,
+      // Rentang gaji wajar — kosong berarti tanpa batasan (null)
+      salaryMin: form.salaryMin.trim() === "" ? null : Number(form.salaryMin),
+      salaryMax: form.salaryMax.trim() === "" ? null : Number(form.salaryMax),
       salaryVisible: form.salaryVisible,
       benefits: form.benefits.map((b) => b.trim()).filter(Boolean),
       examples: form.examples.map((e) => e.trim()).filter(Boolean),
@@ -476,6 +521,7 @@ export function PositionFormDialog({
         required: q.required,
       })),
       stages: cleanedStages,
+      stageCategories: form.stageCategories,
       aiCriteria: form.aiCriteria.trim() || null,
       autoShortlistScore:
         form.autoShortlistScore.trim() === ""
@@ -498,6 +544,16 @@ export function PositionFormDialog({
       interviewDuration:
         form.interviewDuration.trim() === "" ? null : Number(form.interviewDuration),
       interviewCriteria: form.interviewCriteria.map((c) => c.trim()).filter(Boolean),
+      // Rencana ronde wawancara — hanya baris bernama yang disimpan
+      roundPlan: form.roundPlan
+        .filter((r) => r.name.trim())
+        .map((r, index) => ({
+          round: index + 1,
+          name: r.name.trim(),
+          durationMin:
+            r.durationMin.trim() !== "" && isInt(r.durationMin) ? Number(r.durationMin) : undefined,
+          interviewers: r.interviewers.split(",").map((n) => n.trim()).filter(Boolean),
+        })),
       interviewInviteTemplate: form.interviewInviteTemplate.trim() || null,
       // Penawaran & onboarding
       offerTemplate: form.offerTemplate.trim() || null,
@@ -512,15 +568,15 @@ export function PositionFormDialog({
     if (form.order.trim() !== "") payload.order = Number(form.order);
 
     try {
+      let updated: Position;
       if (editing) {
-        await apiPatch<Position>(`/api/admin/positions/${editing.id}`, payload);
+        updated = await apiPatch<Position>(`/api/admin/positions/${editing.id}`, payload);
         toast.success("Posisi diperbarui");
       } else {
-        await apiPost<Position>("/api/admin/positions", payload);
+        updated = await apiPost<Position>("/api/admin/positions", payload);
         toast.success("Posisi ditambahkan");
       }
-      onOpenChange(false);
-      onSaved();
+      onSaved(updated);
     } catch (err) {
       reportError(err);
     } finally {
@@ -566,7 +622,8 @@ export function PositionFormDialog({
         if (res.ok) {
           set("coverFileId", res.fileId);
           toast.success("Cover AI berhasil dibuat", { id: tid });
-          onSaved();
+          // Daftar posisi di latar sudah diperbarui otomatis lewat realtime
+          // (route AI memancarkan positions:changed).
         } else {
           toast.error(res.error, { id: tid });
         }
@@ -579,25 +636,41 @@ export function PositionFormDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[94vh] overflow-hidden rounded-2xl sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>{editing ? "Edit Posisi" : "Tambah Posisi"}</DialogTitle>
-          <DialogDescription>
-            {editing
-              ? "Perbarui semua pengaturan posisi lowongan."
-              : "Tambahkan posisi lowongan baru untuk halaman publik."}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="-mr-2 max-h-[68vh] overflow-y-auto pr-2 nice-scrollbar sm:max-h-[70vh]">
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void handleSave();
-            }}
+    <div className="flex flex-col gap-4">
+      {/* Kepala halaman: tombol kembali + judul */}
+      <div className="flex flex-col gap-3">
+        <div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-11 gap-2 sm:h-9"
+            onClick={onCancel}
+            aria-label="Kembali tanpa menyimpan"
           >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            {editing ? "Kelola Posisi" : "Daftar Posisi"}
+          </Button>
+        </div>
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-bold leading-tight">
+            {editing ? `Edit: ${editing.title}` : "Tambah Posisi"}
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {editing
+              ? "Perbarui semua pengaturan posisi lowongan, lalu klik Simpan."
+              : "Lengkapi detail posisi lowongan baru untuk halaman publik."}
+          </p>
+        </div>
+      </div>
+
+      <Card className="gap-0 rounded-2xl p-5 md:p-6">
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleSave();
+          }}
+        >
             {validationErrors.length > 0 ? (
               <div
                 className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
@@ -700,6 +773,52 @@ export function PositionFormDialog({
                       maxLength={200}
                       addLabel="Tambah persyaratan"
                       placeholder="mis. Menguasai editing video"
+                    />
+                  </div>
+                </FormSection>
+
+                <FormDivider />
+
+              {/* a2. Konten Bahasa Inggris (opsional) — dipakai publik saat lang "en" */}
+              <FormSection
+                id="bahasa-inggris"
+                icon={Languages}
+                title="Konten Bahasa Inggris (opsional)"
+                hint="Dipakai saat pengunjung memilih Bahasa Inggris; bila kosong otomatis memakai versi Indonesia."
+              >
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pos-titleEn">Nama Posisi (EN)</Label>
+                    <Input
+                      id="pos-titleEn"
+                      value={form.titleEn}
+                      onChange={(e) => set("titleEn", e.target.value)}
+                      placeholder="mis. Video Editor"
+                      className="h-10"
+                      maxLength={120}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pos-descriptionEn">Deskripsi (EN)</Label>
+                    <Textarea
+                      id="pos-descriptionEn"
+                      value={form.descriptionEn}
+                      onChange={(e) => set("descriptionEn", e.target.value)}
+                      placeholder="Describe the role, responsibilities, and overall picture..."
+                      rows={4}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Persyaratan (EN)</Label>
+                    <StringListEditor
+                      name="Persyaratan (EN)"
+                      items={form.requirementsEn}
+                      onChange={(items) => set("requirementsEn", items)}
+                      maxItems={20}
+                      maxLength={200}
+                      addLabel="Tambah persyaratan (EN)"
+                      placeholder="e.g. Proficient in video editing"
                     />
                   </div>
                 </FormSection>
@@ -917,6 +1036,33 @@ export function PositionFormDialog({
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="pos-salaryMin">Gaji wajar minimum (Rp/bulan)</Label>
+                      <Input
+                        id="pos-salaryMin"
+                        type="number"
+                        min={0}
+                        value={form.salaryMin}
+                        onChange={(e) => set("salaryMin", e.target.value)}
+                        placeholder="mis. 3500000 — kosongkan bila tanpa batas"
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="pos-salaryMax">Gaji wajar maksimum (Rp/bulan)</Label>
+                      <Input
+                        id="pos-salaryMax"
+                        type="number"
+                        min={0}
+                        value={form.salaryMax}
+                        onChange={(e) => set("salaryMax", e.target.value)}
+                        placeholder="mis. 6000000 — dipakai peringatan offer"
+                        className="h-10"
+                      />
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
                       <div>
@@ -1095,6 +1241,54 @@ export function PositionFormDialog({
                       hint="Kosong = pipeline bawaan (Baru/Ditinjau/Wawancara/Diterima/Ditolak)"
                     />
                   </div>
+
+                  {customStages.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      <Label>Kategori Fitur Tahap Kustom</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Tentukan di kategori mana tiap tahap kustom muncul di tab Pipeline:
+                        Ditinjau, Wawancara, Diterima, atau Ditolak.
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        {customStages.map((stage) => (
+                          <div key={stage} className="flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate rounded-lg border bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
+                              {stage}
+                            </span>
+                            <Select
+                              value={
+                                form.stageCategories[stage] ??
+                                defaultCategoryForCustomStage(stage)
+                              }
+                              onValueChange={(v) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  stageCategories: {
+                                    ...f.stageCategories,
+                                    [stage]: v as StageCategory,
+                                  },
+                                }))
+                              }
+                            >
+                              <SelectTrigger
+                                className="h-10 w-40 shrink-0"
+                                aria-label={`Kategori fitur untuk tahap ${stage}`}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {STAGE_CATEGORIES.map((c) => (
+                                  <SelectItem key={c} value={c}>
+                                    {STAGE_CATEGORY_LABELS[c]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5">
@@ -1392,6 +1586,103 @@ export function PositionFormDialog({
                     />
                   </div>
 
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Rencana Ronde Wawancara (opsional)</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        disabled={form.roundPlan.length >= 10}
+                        onClick={() =>
+                          set("roundPlan", [...form.roundPlan, { name: "", durationMin: "", interviewers: "" }])
+                        }
+                      >
+                        <Plus className="size-3.5" aria-hidden="true" />
+                        Tambah ronde
+                      </Button>
+                    </div>
+                    {form.roundPlan.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Contoh: HR Screen 30 menit, lalu User Trial 60 menit. Setelah sebuah ronde selesai, admin bisa
+                        menjadwalkan ronde berikutnya sekali klik dari dialog wawancara.
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {form.roundPlan.map((row, index) => (
+                          <div
+                            key={index}
+                            className="grid grid-cols-1 items-end gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_110px_1fr_auto]"
+                          >
+                            <div className="flex flex-col gap-1">
+                              <Label className="text-xs">Nama ronde {index + 1}</Label>
+                              <Input
+                                value={row.name}
+                                onChange={(e) =>
+                                  set(
+                                    "roundPlan",
+                                    form.roundPlan.map((r, i) =>
+                                      i === index ? { ...r, name: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                placeholder="mis. HR Screen"
+                                className="h-9"
+                                maxLength={60}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <Label className="text-xs">Durasi (menit)</Label>
+                              <Input
+                                type="number"
+                                min={10}
+                                max={480}
+                                value={row.durationMin}
+                                onChange={(e) =>
+                                  set(
+                                    "roundPlan",
+                                    form.roundPlan.map((r, i) =>
+                                      i === index ? { ...r, durationMin: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                placeholder="45"
+                                className="h-9"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <Label className="text-xs">Pewawancara (pisah koma)</Label>
+                              <Input
+                                value={row.interviewers}
+                                onChange={(e) =>
+                                  set(
+                                    "roundPlan",
+                                    form.roundPlan.map((r, i) =>
+                                      i === index ? { ...r, interviewers: e.target.value } : r,
+                                    ),
+                                  )
+                                }
+                                placeholder="mis. Ajo (HR), Jawa (Owner)"
+                                className="h-9"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-9 px-2 text-rose-600 hover:text-rose-700"
+                              aria-label={`Hapus ronde ${index + 1}`}
+                              onClick={() => set("roundPlan", form.roundPlan.filter((_, i) => i !== index))}
+                            >
+                              <Trash2 className="size-4" aria-hidden="true" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="pos-interviewInviteTemplate">Template Undangan Wawancara</Label>
                     <Textarea
@@ -1516,36 +1807,47 @@ export function PositionFormDialog({
 
             {/* Tombol submit tersembunyi agar Enter mensubmit form */}
             <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
-          </form>
-        </div>
+        </form>
+      </Card>
 
-        <DialogFooter className="gap-2 border-t pt-4">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-            className="h-11 sm:h-10"
-          >
-            Batal
-          </Button>
-          <Button
-            onClick={() => void handleSave()}
-            disabled={saving}
-            className="h-11 active:scale-[0.99] sm:h-10"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                Menyimpan...
-              </>
-            ) : editing ? (
-              "Simpan Perubahan"
-            ) : (
-              "Tambah Posisi"
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {/* Bilah aksi menempel di bawah layar — tetap terlihat di formulir panjang */}
+      <div className="sticky bottom-4 z-20">
+        <div className="flex items-center justify-between gap-3 rounded-2xl border bg-background/95 p-3 shadow-lg backdrop-blur">
+          <p className="hidden text-xs text-muted-foreground sm:block">
+            {editing
+              ? "Perubahan berlaku setelah tombol Simpan diklik."
+              : "Posisi tampil di halaman publik setelah disimpan."}
+          </p>
+          <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={saving}
+              className="h-11 sm:h-10"
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+              className="h-11 min-w-36 active:scale-[0.99] sm:h-10"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menyimpan...
+                </>
+              ) : editing ? (
+                "Simpan Perubahan"
+              ) : (
+                "Tambah Posisi"
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

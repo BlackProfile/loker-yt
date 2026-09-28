@@ -4,10 +4,12 @@
 // Mode CREATE: form penjadwalan (mode/platform/jadwal/durasi/link/alamat/pewawancara)
 //   + pratinjau pesan undangan dari template posisi.
 // Mode EDIT/DETAIL: info sesi, aksi cepat (gabung/ics/gcalendar), edit form,
-//   aksi status, scorecard hasil (nilai 1-5 per kriteria + rekomendasi), hapus.
+//   aksi status, scorecard hasil (nilai 1-5 per kriteria + rekomendasi + AUTOSAVE 1,2 dtk),
+//   unggah rekaman + transkrip AI, tombol "Jadwalkan Ronde Berikutnya" dari Position.roundPlan,
+//   hapus.
 // Menyimpan hasil otomatis menandai sesi COMPLETED di server (PATCH).
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -39,15 +41,26 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   CalendarPlus,
+  Check,
+  ChevronDown,
   ClipboardCheck,
   Copy,
   Download,
   ExternalLink,
+  FileAudio,
   Loader2,
   MapPin,
   MessageSquareWarning,
+  Mic,
+  Sparkles,
   Trash2,
+  Upload,
   Users,
   Video,
   X,
@@ -68,8 +81,9 @@ import {
   type InterviewRecommendation,
   type InterviewStatus,
   type Position,
+  type RoundPlanTemplate,
 } from "@/lib/types";
-import { apiDelete, apiPatch, apiPost } from "./api";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import { copyText, formatDateTime, isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
 import { cn } from "@/lib/utils";
@@ -244,6 +258,26 @@ function InterviewSessionDialogInner({
   const [recordingUrl, setRecordingUrl] = useState(interview?.recordingUrl ?? "");
   const [savingResult, setSavingResult] = useState(false);
 
+  // ---- Autosave scorecard (debounce 1,2 detik, hanya skor rubrik) ----
+  const [autosaveState, setAutosaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const autosaveTimerRef = useRef<number | null>(null);
+  const autosaveHideRef = useRef<number | null>(null);
+
+  // ---- Rekaman & transkrip AI ----
+  const [recordingFileUrl, setRecordingFileUrl] = useState<string | null>(
+    interview?.recordingUrl?.startsWith("/api/files/") ? interview.recordingUrl : null
+  );
+  const [transcript, setTranscript] = useState<string | null>(interview?.transcript ?? null);
+  const [transcriptSummary, setTranscriptSummary] = useState<string | null>(
+    interview?.transcriptSummary ?? null
+  );
+  const [uploadingRecording, setUploadingRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+
+  // ---- Rencana ronde berikutnya (Position.roundPlan) ----
+  const [roundPlan, setRoundPlan] = useState<RoundPlanTemplate[] | null>(null);
+  const [schedulingNextRound, setSchedulingNextRound] = useState<RoundPlanTemplate | null>(null);
+
   // ---- Aksi status & hapus ----
   const [statusWorking, setStatusWorking] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -261,6 +295,69 @@ function InterviewSessionDialogInner({
 
   const showLinkField = mode === "ONLINE";
   const showAddressField = mode === "ONSITE";
+
+  /* ----------------- Efek: rencana ronde & transkrip tersimpan ----------------- */
+
+  // Muat rencana ronde posisi (untuk tombol "Jadwalkan Ronde Berikutnya").
+  // Serialisasi posisi standar tidak menyertakan roundPlan, jadi diambil dari
+  // endpoint khusus GET /api/admin/interviews/round-plan.
+  useEffect(() => {
+    if (!interview || !position || !canMutate) return;
+    let cancelled = false;
+    apiGet<{ roundPlan: RoundPlanTemplate[] }>(
+      `/api/admin/interviews/round-plan?positionId=${encodeURIComponent(position.id)}`
+    )
+      .then((res) => {
+        if (!cancelled) setRoundPlan(res.roundPlan);
+      })
+      .catch(() => {
+        if (!cancelled) setRoundPlan([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [interview, position, canMutate]);
+
+  // Muat transkrip/ringkasan tersimpan bila rekamannya file lokal (serialisasi
+  // daftar tidak menyertakan kolom transcript).
+  useEffect(() => {
+    if (!interview || !interview.recordingUrl?.startsWith("/api/files/")) return;
+    let cancelled = false;
+    apiGet<{ ok: boolean; transcript: string | null; transcriptSummary: string | null }>(
+      `/api/admin/interviews/${interview.id}/transcribe`
+    )
+      .then((res) => {
+        if (cancelled) return;
+        setTranscript(res.transcript);
+        setTranscriptSummary(res.transcriptSummary);
+      })
+      .catch(() => {
+        // Pelengkap — panel tetap tampil tanpa transkrip.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [interview]);
+
+  // Bersihkan timer autosave saat dialog ditutup/unmount.
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+      if (autosaveHideRef.current) {
+        window.clearTimeout(autosaveHideRef.current);
+        autosaveHideRef.current = null;
+      }
+    };
+  }, []);
+
+  // Template ronde berikutnya: ronde = sesi saat ini + 1 (hanya mode edit).
+  const nextRoundTemplate =
+    interview && roundPlan
+      ? roundPlan.find((r) => r.round === interview.round + 1) ?? null
+      : null;
 
   /* ------------------------- Pratinjau pesan undangan ------------------------ */
 
@@ -417,6 +514,34 @@ function InterviewSessionDialogInner({
 
   async function handleSaveResult() {
     if (savingResult || !interview) return;
+    const scores = buildScoresPayload();
+    // recordingUrl dari file lokal (/api/files/...) dikelola route upload — tidak
+    // dikirim lewat PATCH agar tidak ditolak validasi http.
+    const isLocalRecording = recordingUrl.trim().startsWith("/api/files/");
+    const recordingChanged =
+      !isLocalRecording && recordingUrl.trim() !== (interview.recordingUrl ?? "");
+    setSavingResult(true);
+    await handlePatch(
+      {
+        scores,
+        recommendation: recommendation || null,
+        notes: notes.trim() || null,
+        ...(recordingChanged ? { recordingUrl: recordingUrl.trim() || null } : {}),
+      },
+      "Hasil wawancara disimpan"
+    );
+    // Simpan manual menggantikan autosave — hentikan timer yang tertunda.
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    setAutosaveState("idle");
+    setSavingResult(false);
+  }
+
+  /* ------------------- Autosave scorecard (debounce 1,2 dtk) ------------------- */
+
+  function buildScoresPayload(): Record<string, number> {
     const scores: Record<string, number> = {};
     for (const c of criteria) {
       const v = scoreValues[c];
@@ -424,17 +549,152 @@ function InterviewSessionDialogInner({
         scores[c] = v;
       }
     }
-    setSavingResult(true);
-    await handlePatch(
-      {
-        scores,
-        recommendation: recommendation || null,
-        notes: notes.trim() || null,
-        recordingUrl: recordingUrl.trim() || null,
-      },
-      "Hasil wawancara disimpan"
+    return scores;
+  }
+
+  /** Setiap perubahan skor rubrik menjadwalkan PATCH skor otomatis (debounce 1,2 detik). */
+  function handleScoreSelect(criterion: string, value: number) {
+    setScoreValues((prev) => ({ ...prev, [criterion]: value }));
+    if (!interview || !canMutate) return;
+    if (autosaveHideRef.current) {
+      window.clearTimeout(autosaveHideRef.current);
+      autosaveHideRef.current = null;
+    }
+    setAutosaveState("saving");
+    if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null;
+      void autosaveScoresNow();
+    }, 1200);
+  }
+
+  async function autosaveScoresNow() {
+    if (!interview || savingResult) return;
+    try {
+      await apiPatch<{ interview: Interview }>(
+        `/api/admin/interviews/${interview.id}`,
+        { scores: buildScoresPayload() }
+      );
+      // Tidak memanggil onSaved — hindari remount dialog (state transkrip/unggahan
+      // tetap utuh); daftar sesi di parent diperbarui via event realtime.
+      setAutosaveState("saved");
+      if (autosaveHideRef.current) window.clearTimeout(autosaveHideRef.current);
+      autosaveHideRef.current = window.setTimeout(() => {
+        autosaveHideRef.current = null;
+        setAutosaveState("idle");
+      }, 4000);
+    } catch (err) {
+      setAutosaveState("idle");
+      reportError(err);
+    }
+  }
+
+  /* ------------------- Rencana ronde berikutnya (roundPlan) ------------------- */
+
+  function startNextRound() {
+    if (!nextRoundTemplate) return;
+    setSchedulingNextRound(nextRoundTemplate);
+    setMode(nextRoundTemplate.mode ?? pos?.interviewMode ?? "ONLINE");
+    setPlatform(nextRoundTemplate.platform ?? pos?.interviewPlatform ?? "GOOGLE_MEET");
+    setDurationMin(String(nextRoundTemplate.durationMin ?? pos?.interviewDuration ?? 45));
+    setInterviewers(nextRoundTemplate.interviewers ? [...nextRoundTemplate.interviewers] : []);
+    setScheduledAtLocal("");
+    toast.info(
+      `Formulir diisi dari rencana "${nextRoundTemplate.name}" — pilih tanggal & jam lalu simpan.`
     );
-    setSavingResult(false);
+  }
+
+  function cancelNextRound() {
+    setSchedulingNextRound(null);
+    if (!interview) return;
+    // Kembalikan form ke nilai sesi saat ini.
+    setMode(interview.mode);
+    setPlatform(interview.platform);
+    setDurationMin(String(interview.durationMin));
+    setInterviewers([...interview.interviewers]);
+    setScheduledAtLocal(isoToLocalInput(interview.scheduledAt));
+  }
+
+  async function handleCreateNextRound() {
+    if (saving || !interview || !schedulingNextRound) return;
+    const payload = buildSchedulePayload();
+    if (!payload) return;
+    setSaving(true);
+    try {
+      const created = await apiPost<Interview>("/api/admin/interviews", {
+        ...payload,
+        applicationId: interview.applicationId,
+      });
+      toast.success(
+        `Ronde ${created.round} (${schedulingNextRound.name}) dijadwalkan`
+      );
+      setSchedulingNextRound(null);
+      onSaved(created);
+      onOpenChange(false);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /* --------------------- Rekaman & transkrip AI (hasil) --------------------- */
+
+  const RECORDING_MAX_BYTES = 25 * 1024 * 1024; // 25 MB
+
+  async function handleRecordingUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = ""; // reset agar file yang sama bisa dipilih ulang
+    if (!file || !interview) return;
+    if (file.size > RECORDING_MAX_BYTES) {
+      toast.error("Ukuran file maksimal 25 MB.");
+      return;
+    }
+    setUploadingRecording(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/admin/interviews/${interview.id}/recording`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: unknown; recordingUrl?: unknown; error?: unknown }
+        | null;
+      if (!res.ok || !data || data.ok !== true || typeof data.recordingUrl !== "string") {
+        const msg = typeof data?.error === "string" && data.error ? data.error : "Gagal mengunggah rekaman.";
+        toast.error(msg);
+        return;
+      }
+      const url = data.recordingUrl;
+      setRecordingFileUrl(url);
+      setRecordingUrl(url); // tampil di kolom URL rekaman (tanpa dikirim ulang saat simpan)
+      toast.success("Rekaman terunggah — siap ditranskripsi");
+    } catch {
+      toast.error("Gagal mengunggah rekaman. Coba lagi nanti.");
+    } finally {
+      setUploadingRecording(false);
+    }
+  }
+
+  async function handleTranscribe() {
+    if (transcribing || !interview || !recordingFileUrl) return;
+    setTranscribing(true);
+    toast.info("Transkripsi berjalan — proses bisa memakan waktu beberapa menit.");
+    try {
+      const res = await apiPost<{
+        ok: boolean;
+        transcript: string | null;
+        transcriptSummary: string | null;
+      }>(`/api/admin/interviews/${interview.id}/transcribe`);
+      setTranscript(res.transcript);
+      setTranscriptSummary(res.transcriptSummary);
+      toast.success("Transkrip & ringkasan AI siap");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setTranscribing(false);
+    }
   }
 
   async function handleDelete() {
@@ -575,6 +835,28 @@ function InterviewSessionDialogInner({
 
             {/* Form jadwal (create & edit) */}
             <div className="flex flex-col gap-3">
+              {schedulingNextRound ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                  <Sparkles className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    Formulir terisi dari rencana ronde{" "}
+                    <strong>
+                      {schedulingNextRound.round}: {schedulingNextRound.name}
+                    </strong>{" "}
+                    — pilih tanggal &amp; jam, lalu simpan.
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={cancelNextRound}
+                    disabled={saving}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                    Batal
+                  </Button>
+                </div>
+              ) : null}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5">
                   <Label>Mode</Label>
@@ -745,7 +1027,13 @@ function InterviewSessionDialogInner({
               {canMutate ? (
                 <Button
                   className="h-11 w-fit active:scale-[0.99] sm:h-10"
-                  onClick={() => void (isCreate ? handleCreate() : handleSaveForm())}
+                  onClick={() =>
+                    void (isCreate
+                      ? handleCreate()
+                      : schedulingNextRound
+                        ? handleCreateNextRound()
+                        : handleSaveForm())
+                  }
                   disabled={saving || statusWorking || deleting || savingResult}
                 >
                   {saving ? (
@@ -753,6 +1041,8 @@ function InterviewSessionDialogInner({
                       <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                       Menyimpan...
                     </>
+                  ) : schedulingNextRound ? (
+                    `Jadwalkan Ronde ${schedulingNextRound.round}`
                   ) : isCreate ? (
                     "Jadwalkan"
                   ) : (
@@ -789,9 +1079,32 @@ function InterviewSessionDialogInner({
               <>
                 <Separator />
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <ClipboardCheck className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
                     <p className="text-sm font-semibold">Scorecard Hasil Wawancara</p>
+                    {autosaveState !== "idle" ? (
+                      <span
+                        role="status"
+                        className={cn(
+                          "ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                          autosaveState === "saved"
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                            : "bg-muted text-muted-foreground"
+                        )}
+                      >
+                        {autosaveState === "saved" ? (
+                          <>
+                            <Check className="size-3" aria-hidden="true" />
+                            Tersimpan otomatis
+                          </>
+                        ) : (
+                          <>
+                            <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                            Menyimpan...
+                          </>
+                        )}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="flex flex-col gap-3">
                     {criteria.map((criterion) => {
@@ -811,9 +1124,7 @@ function InterviewSessionDialogInner({
                                 key={n}
                                 type="button"
                                 disabled={savingResult}
-                                onClick={() =>
-                                  setScoreValues((prev) => ({ ...prev, [criterion]: n }))
-                                }
+                                onClick={() => handleScoreSelect(criterion, n)}
                                 aria-label={`${criterion}: nilai ${n} dari 5`}
                                 aria-pressed={value === n}
                                 className={cn(
@@ -857,6 +1168,110 @@ function InterviewSessionDialogInner({
                       disabled={savingResult}
                       className="h-11 sm:h-10"
                     />
+                  </div>
+
+                  {/* Rekaman terunggah & transkrip AI */}
+                  <div className="flex flex-col gap-2 rounded-lg border p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Mic className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                      <p className="text-sm font-semibold">Rekaman &amp; Transkrip AI</p>
+                      <span className="ml-auto text-[11px] text-muted-foreground">
+                        Audio/video maks 25 MB
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        disabled={uploadingRecording || transcribing || savingResult}
+                      >
+                        <label
+                          htmlFor="iv-recording-upload"
+                          className="inline-flex cursor-pointer items-center gap-2"
+                          aria-label="Unggah file rekaman wawancara"
+                        >
+                          {uploadingRecording ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Upload className="size-4" aria-hidden="true" />
+                          )}
+                          {uploadingRecording ? "Mengunggah..." : "Unggah Rekaman"}
+                        </label>
+                        <input
+                          id="iv-recording-upload"
+                          type="file"
+                          accept="audio/*,video/*"
+                          className="sr-only"
+                          disabled={uploadingRecording || transcribing || savingResult}
+                          onChange={(e) => void handleRecordingUpload(e)}
+                        />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() => void handleTranscribe()}
+                        disabled={uploadingRecording || transcribing || !recordingFileUrl}
+                        title={recordingFileUrl ? undefined : "Unggah rekaman terlebih dahulu"}
+                      >
+                        {transcribing ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Sparkles className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                        )}
+                        {transcribing ? "Memproses transkrip..." : "Transkrip AI"}
+                      </Button>
+                    </div>
+                    {recordingFileUrl ? (
+                      <a
+                        href={recordingFileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-rose-600 underline-offset-2 hover:underline dark:text-rose-400"
+                      >
+                        <FileAudio className="size-3.5" aria-hidden="true" />
+                        Rekaman tersimpan — buka / unduh
+                      </a>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Belum ada rekaman yang diunggah. Unggah audio/video dari meeting
+                        untuk ditranskripsi otomatis.
+                      </p>
+                    )}
+
+                    {transcriptSummary ? (
+                      <Collapsible>
+                        <CollapsibleTrigger className="group flex w-fit items-center gap-1 rounded text-xs font-semibold text-foreground outline-none hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-ring/50 dark:hover:text-rose-400">
+                          <ChevronDown
+                            className="size-3.5 transition-transform group-data-[state=open]:rotate-180"
+                            aria-hidden="true"
+                          />
+                          Ringkasan AI
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <p className="mt-2 max-h-96 overflow-y-auto whitespace-pre-wrap rounded-lg bg-muted/60 p-3 text-xs leading-relaxed nice-scrollbar">
+                            {transcriptSummary}
+                          </p>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ) : null}
+                    {transcript ? (
+                      <Collapsible>
+                        <CollapsibleTrigger className="group flex w-fit items-center gap-1 rounded text-xs font-semibold text-foreground outline-none hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-ring/50 dark:hover:text-rose-400">
+                          <ChevronDown
+                            className="size-3.5 transition-transform group-data-[state=open]:rotate-180"
+                            aria-hidden="true"
+                          />
+                          Transkrip Lengkap
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <p className="mt-2 max-h-96 overflow-y-auto whitespace-pre-wrap rounded-lg bg-muted/60 p-3 text-xs leading-relaxed nice-scrollbar">
+                            {transcript}
+                          </p>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -908,6 +1323,19 @@ function InterviewSessionDialogInner({
                       "Simpan Hasil"
                     )}
                   </Button>
+
+                  {/* Rencana ronde berikutnya (Position.roundPlan) — hanya bila sesi selesai */}
+                  {!isCreate && interview.status === "COMPLETED" && nextRoundTemplate ? (
+                    <Button
+                      variant="outline"
+                      className="h-11 w-fit border-amber-300 text-amber-800 hover:bg-amber-50 hover:text-amber-900 sm:h-10 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
+                      onClick={startNextRound}
+                      disabled={saving || savingResult || statusWorking || deleting}
+                    >
+                      <CalendarPlus className="size-4" aria-hidden="true" />
+                      Jadwalkan Ronde Berikutnya ({nextRoundTemplate.round}: {nextRoundTemplate.name})
+                    </Button>
+                  ) : null}
                 </div>
 
                 <Separator />

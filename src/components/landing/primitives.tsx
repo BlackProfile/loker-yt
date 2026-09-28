@@ -43,6 +43,7 @@ export function FadeIn({
   children: ReactNode;
   className?: string;
   delay?: number;
+  /** id opsional (mis. jangkar pelacak baca per seksi). */
   id?: string;
 }) {
   return (

@@ -475,14 +475,13 @@ const id = {
     applyClosedTitle: "Pendaftaran Ditutup",
     applyClosedDesc: "Formulir online untuk lowongan ini sudah ditutup. Silakan hubungi kami untuk info lebih lanjut.",
     applyDisabledDesc: "Pendaftaran online sedang dinonaktifkan. Silakan hubungi kami melalui kontak berikut.",
-    gateTitle: "Baca Dulu, Baru Bisa Lamar",
-    gateDesc:
-      "Sebelum mengisi formulir, baca dulu setiap bagian lowongan ini sampai selesai. Bagian yang sudah terbaca dicentang otomatis saat kamu menggulir halaman.",
+    gateTitle: "Baca Dulu Sebelum Melamar",
+    gateDesc: "Supaya peluangmu lebih besar, baca dulu detail lowongan ini. Formulir pendaftaran terbuka otomatis setelah semua bagian dibaca.",
+    gateHint: "Bagian yang sudah kamu baca akan dicentang otomatis.",
     gateProgress: "{read}/{total} bagian dibaca",
     gateReady: "Semua bagian sudah dibaca",
-    gateHint: "Gulir halaman seperti biasa — checklist tercentang otomatis.",
-    gateOpen: "Buka Formulir Pendaftaran",
-    gateLocked: "Baca Semua Bagian Dulu",
+    gateOpen: "Buka Formulir Lamaran",
+    gateLocked: "Baca semua bagian dulu",
     gateUnlockedToast: "Formulir pendaftaran terbuka — selamat melamar!",
     gateReread: "Baca ulang persyaratan",
   },
@@ -886,9 +885,9 @@ type idDictShape = {
     applyDisabledDesc: string;
     gateTitle: string;
     gateDesc: string;
+    gateHint: string;
     gateProgress: string;
     gateReady: string;
-    gateHint: string;
     gateOpen: string;
     gateLocked: string;
     gateUnlockedToast: string;
@@ -1364,16 +1363,15 @@ const en: Dict = {
     applyClosedTitle: "Applications Closed",
     applyClosedDesc: "The online form for this position is closed. Please contact us for more information.",
     applyDisabledDesc: "Online applications are currently disabled. Please reach us through the contacts below.",
-    gateTitle: "Read First, Then Apply",
-    gateDesc:
-      "Before filling in the form, read every section of this opening until the end. Sections you have read are ticked automatically as you scroll.",
+    gateTitle: "Read Before Applying",
+    gateDesc: "To boost your chances, read this job details first. The application form unlocks automatically once all sections are read.",
+    gateHint: "Sections you have read are checked automatically.",
     gateProgress: "{read}/{total} sections read",
-    gateReady: "All sections have been read",
-    gateHint: "Just scroll the page as usual — the checklist ticks itself.",
-    gateOpen: "Open the Application Form",
-    gateLocked: "Read All Sections First",
+    gateReady: "All sections read",
+    gateOpen: "Open Application Form",
+    gateLocked: "Read all sections first",
     gateUnlockedToast: "Application form unlocked — good luck!",
-    gateReread: "Re-read the requirements",
+    gateReread: "Re-read requirements",
   },
 };
 

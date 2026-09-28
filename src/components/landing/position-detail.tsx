@@ -2,19 +2,13 @@
 
 // Halaman detail per lowongan (?posisi=slug) — persyaratan, ketentuan, benefit,
 // contoh karya, dan FORMULIR PENDAFTARAN khusus lowongan ini.
-// Formulir berada di bawah konten (satu kolom) dan di balik GERBANG BACA:
-// pengunjung harus membaca bagian kontennya dulu (dicentang otomatis via
-// IntersectionObserver), setelah semua terbaca formulir terbuka otomatis.
-// Progres per lowongan disimpan sessionStorage.
+// Formulir berada di balik GERBANG BACA: pengunjung harus membaca bagian
+// kontennya dulu (dicentang otomatis via IntersectionObserver), setelah semua
+// terbaca formulir terbuka otomatis. Progres per lowongan disimpan sessionStorage.
 // Data hidup: komponen menerima positions dari useLiveResource (realtime),
 // sehingga posisi yang baru ditutup/diarsip otomatis keluar dari tampilan.
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -227,7 +221,8 @@ function ApplyGate({
 }
 
 // Pil progres mengambang: selama gerbang belum terbuka, pembaca tetap melihat
-// progres baca di bawah layar. Diklik → gulir ke kartu formulir.
+// progres baca di bawah layar (pengganti info gerbang yang sebelumnya selalu
+// terlihat di kolom kanan). Diklik → gulir ke kartu formulir.
 function GateProgressPill({
   readCount,
   total,
@@ -301,7 +296,7 @@ function PositionDetailViewInner({
   refreshing?: boolean;
   onBack: () => void;
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [copied, setCopied] = useState(false);
 
   // Gerbang baca: formulir terkunci sampai semua bagian konten dibaca.
@@ -323,6 +318,27 @@ function PositionDetailViewInner({
   );
 
   const shareUrl = position ? buildPositionUrl(position) : "";
+
+  // Konten dua bahasa: saat lang "en" dan versi EN terisi (non-kosong), pakai
+  // versi EN; selain itu fallback ke versi Indonesia. Hanya SUMBER TEKS yang
+  // berganti — struktur seksi & gerbang baca (id jangkar) tetap sama.
+  const display = useMemo(() => {
+    if (!position) {
+      return { title: "", description: "", requirements: [] as string[] };
+    }
+    return {
+      title:
+        lang === "en" && position.titleEn ? position.titleEn : position.title,
+      description:
+        lang === "en" && position.descriptionEn
+          ? position.descriptionEn
+          : position.description,
+      requirements:
+        lang === "en" && position.requirementsEn.length > 0
+          ? position.requirementsEn
+          : position.requirements,
+    };
+  }, [position, lang]);
 
   // Contoh karya — dipakai render seksi & penentu seksi gerbang.
   const workEmbeds = useMemo(
@@ -348,7 +364,7 @@ function PositionDetailViewInner({
     const list: { id: string; label: string }[] = [
       { id: "sec-deskripsi", label: t.detail.sectionDesc },
     ];
-    if (position.requirements.length > 0)
+    if (display.requirements.length > 0)
       list.push({ id: "sec-persyaratan", label: t.detail.sectionReq });
     list.push({ id: "sec-ketentuan", label: t.detail.sectionTerms });
     if (position.benefits.length > 0)
@@ -356,7 +372,7 @@ function PositionDetailViewInner({
     if (workEmbeds.length > 0 || workLinks.length > 0)
       list.push({ id: "sec-karya", label: t.detail.sectionWorks });
     return list.map((s) => ({ ...s, done: readIds.includes(s.id) }));
-  }, [position, t, readIds, workEmbeds, workLinks]);
+  }, [position, t, display, workEmbeds, workLinks, readIds]);
   const sectionIdsKey = gateSections.map((s) => s.id).join("|");
 
   const unlockForm = useCallback(
@@ -483,8 +499,6 @@ function PositionDetailViewInner({
     position.requireCv ? t.detail.termsFilesCv : null,
     position.requireIntro ? t.detail.termsFilesIntro : null,
     position.requirePortfolio ? t.detail.termsFilesPortfolio : null,
-    // Dokumen wajib tambahan yang diatur admin per lowongan.
-    ...(position.customDocs ?? []),
   ].filter((x): x is string => x !== null);
 
   return (
@@ -505,7 +519,7 @@ function PositionDetailViewInner({
             <div className="mx-auto w-full max-w-5xl px-4 pt-6 sm:px-6">
               <img
                 src={`/api/files/${position.coverFileId}`}
-                alt={`Cover lowongan ${position.title}`}
+                alt={`Cover lowongan ${display.title}`}
                 className="h-44 w-full rounded-2xl border object-cover shadow-sm md:h-64"
               />
             </div>
@@ -546,7 +560,7 @@ function PositionDetailViewInner({
             </div>
 
             <h1 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
-              {position.title}
+              {display.title}
             </h1>
 
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
@@ -585,13 +599,13 @@ function PositionDetailViewInner({
                 {t.detail.shareCopy}
               </Button>
               <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
-                <a href={waShareHref(`${position.title} — ${shareUrl}`)} target="_blank" rel="noopener noreferrer">
+                <a href={waShareHref(`${display.title} — ${shareUrl}`)} target="_blank" rel="noopener noreferrer">
                   <MessageCircle className="size-4" aria-hidden="true" />
                   WhatsApp
                 </a>
               </Button>
               <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
-                <a href={twitterShareHref(position.title, shareUrl)} target="_blank" rel="noopener noreferrer">
+                <a href={twitterShareHref(display.title, shareUrl)} target="_blank" rel="noopener noreferrer">
                   <Link2 className="size-4" aria-hidden="true" />
                   X
                 </a>
@@ -612,15 +626,15 @@ function PositionDetailViewInner({
               <FadeIn id="sec-deskripsi" className="scroll-mt-24">
                 <SectionTitle icon={FileText}>{t.detail.sectionDesc}</SectionTitle>
                 <p className="mt-3 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground md:text-base">
-                  {position.description}
+                  {display.description}
                 </p>
               </FadeIn>
 
-              {position.requirements.length > 0 ? (
+              {display.requirements.length > 0 ? (
                 <FadeIn id="sec-persyaratan" className="scroll-mt-24">
                   <SectionTitle icon={ListChecks}>{t.detail.sectionReq}</SectionTitle>
                   <ul className="mt-3 space-y-2.5">
-                    {position.requirements.map((req) => (
+                    {display.requirements.map((req) => (
                       <li key={req} className="flex items-start gap-2.5 text-sm">
                         <BadgeCheck className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                         <span>{req}</span>
@@ -728,7 +742,7 @@ function PositionDetailViewInner({
                       >
                         <iframe
                           src={`https://www.youtube.com/embed/${id}`}
-                          title={`Contoh karya ${position.title}`}
+                          title={`Contoh karya ${display.title}`}
                           className="h-full w-full"
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           allowFullScreen
@@ -769,7 +783,7 @@ function PositionDetailViewInner({
                           </span>
                           <div className="min-w-0">
                             <p className="text-sm font-semibold leading-tight">
-                              {position.title}
+                              {display.title}
                             </p>
                             <p className="text-xs text-muted-foreground">
                               {t.detail.badge}

@@ -28,6 +28,9 @@ export function LoginCard({
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 2FA: muncul setelah server membalas 401 { error: "KODE_2FA" }.
+  const [needsTotp, setNeedsTotp] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -37,13 +40,29 @@ export function LoginCard({
     try {
       const data = await apiPost<{ ok: boolean; session: AdminSession }>(
         "/api/admin/login",
-        { email: email.trim(), password }
+        {
+          email: email.trim(),
+          password,
+          ...(needsTotp || totpCode ? { totpCode } : {}),
+        }
       );
       toast.success("Berhasil masuk");
       onSuccess(data.session);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        setError(err.message || "Email atau password salah.");
+      if (err instanceof ApiError) {
+        if (err.status === 429 || err.message === "LOCKOUT") {
+          // Sisa waktu blokir sengaja tidak diekspos server.
+          setError(
+            "Terlalu banyak percobaan gagal. Akun diblokir sementara — coba lagi nanti."
+          );
+        } else if (err.message === "KODE_2FA") {
+          setNeedsTotp(true);
+          setError("Kode 2FA salah atau kedaluwarsa. Coba lagi.");
+        } else if (err.status === 401) {
+          setError(err.message || "Email atau password salah.");
+        } else {
+          setError(err.message);
+        }
       } else if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -117,6 +136,26 @@ export function LoginCard({
                 </p>
               ) : null}
             </div>
+            {needsTotp ? (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="admin-totp">Kode 2FA (6 digit)</Label>
+                <Input
+                  id="admin-totp"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="123456"
+                  className="h-11 text-center font-mono tracking-[0.35em]"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Akun ini memakai verifikasi dua langkah. Masukkan kode 6 digit dari aplikasi
+                  autentikator Anda, lalu tekan Masuk lagi.
+                </p>
+              </div>
+            ) : null}
             <Button
               type="submit"
               className="h-11 w-full active:scale-[0.99]"

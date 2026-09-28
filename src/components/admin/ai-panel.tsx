@@ -9,8 +9,11 @@ import {
   ChevronDown,
   ClipboardList,
   Copy,
+  FileText,
   Loader2,
   Mail,
+  ScanText,
+  Scale,
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -24,6 +27,14 @@ import { copyText, formatDate } from "./format";
 import { aiScoreStyle } from "./status-badge";
 import { useAdminSession } from "./admin-context";
 import { cn } from "@/lib/utils";
+
+// Hasil POST /api/admin/applications/[id]/bias-check.
+type BiasCheckResult = {
+  selaras: boolean;
+  skor_admin: number;
+  skor_bukti_estimasi: number;
+  catatan: string;
+};
 
 function recommendationStyle(rec: AiRecommendation | null): string {
   switch (rec) {
@@ -86,13 +97,47 @@ export function AiPanel({
   const [showQuestions, setShowQuestions] = useState(false);
   const [showDraft, setShowDraft] = useState(false);
 
+  // OCR CV (Teks CV) + bias check
+  const [cvText, setCvText] = useState<string | null>(null);
+  const [cvPeeked, setCvPeeked] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [showCvText, setShowCvText] = useState(true);
+  const [biasLoading, setBiasLoading] = useState(false);
+  const [biasResult, setBiasResult] = useState<BiasCheckResult | null>(null);
+
   // Reset hasil alat AI saat kandidat berganti.
   useEffect(() => {
     setQuestions(null);
     setDraft(null);
     setShowQuestions(false);
     setShowDraft(false);
+    setCvText(null);
+    setCvPeeked(false);
+    setOcrLoading(false);
+    setBiasResult(null);
+    setBiasLoading(false);
   }, [app.id]);
+
+  // Baca diam-diam cvText yang sudah tersimpan (tanpa menjalankan OCR).
+  useEffect(() => {
+    if (!app.cvFileId || cvPeeked) return;
+    let cancelled = false;
+    apiPost<{ cvText: string | null; cached: boolean }>(
+      `/api/admin/applications/${app.id}/ocr-cv`,
+      { peek: true }
+    )
+      .then((res) => {
+        if (cancelled) return;
+        setCvText(res.cvText);
+        setCvPeeked(true);
+      })
+      .catch(() => {
+        if (!cancelled) setCvPeeked(true); // biarkan tombol OCR yang menangani ulang
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [app.id, app.cvFileId, cvPeeked]);
 
   async function analyze() {
     if (analyzing) return;
@@ -148,6 +193,39 @@ export function AiPanel({
       reportError(err);
     } finally {
       setReplyLoading(false);
+    }
+  }
+
+  async function runOcr() {
+    if (ocrLoading || !app.cvFileId) return;
+    setOcrLoading(true);
+    try {
+      const res = await apiPost<{ cvText: string; cached: boolean }>(
+        `/api/admin/applications/${app.id}/ocr-cv`
+      );
+      setCvText(res.cvText);
+      setCvPeeked(true);
+      setShowCvText(true);
+      toast.success(res.cached ? "Teks CV sudah tersedia" : "CV berhasil dibaca dengan OCR");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setOcrLoading(false);
+    }
+  }
+
+  async function runBiasCheck() {
+    if (biasLoading) return;
+    setBiasLoading(true);
+    try {
+      const res = await apiPost<BiasCheckResult>(
+        `/api/admin/applications/${app.id}/bias-check`
+      );
+      setBiasResult(res);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBiasLoading(false);
     }
   }
 
@@ -300,8 +378,115 @@ export function AiPanel({
               </CollapsibleContent>
             </Collapsible>
           ) : null}
+
+          {/* Cek bias penilaian admin vs bukti objektif. */}
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 w-fit"
+              onClick={() => void runBiasCheck()}
+              disabled={biasLoading}
+            >
+              {biasLoading ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Scale className="size-4" aria-hidden="true" />
+              )}
+              Cek Bias Penilaian
+            </Button>
+            {biasResult ? (
+              <div
+                className={cn(
+                  "rounded-lg border p-3",
+                  biasResult.selaras
+                    ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30"
+                    : "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30"
+                )}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={
+                      biasResult.selaras
+                        ? "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400"
+                        : "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                    }
+                  >
+                    {biasResult.selaras ? "Selaras" : "Perlu ditinjau"}
+                  </Badge>
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    Skor admin {biasResult.skor_admin}/100 · Estimasi bukti {biasResult.skor_bukti_estimasi}/100
+                  </p>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed whitespace-pre-line">{biasResult.catatan}</p>
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
+
+      {/* Teks CV — hasil OCR, dipakai juga pencarian semantik. */}
+      <div className="flex flex-col gap-2 border-t pt-3">
+        <div className="flex items-center gap-2">
+          <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+          <p className="text-sm font-semibold">Teks CV</p>
+        </div>
+        {!app.cvFileId ? (
+          <p className="text-xs text-muted-foreground">Lamaran ini tidak memiliki file CV.</p>
+        ) : cvText ? (
+          <Collapsible open={showCvText} onOpenChange={setShowCvText}>
+            <CollapsibleTrigger className="group flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
+              <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" aria-hidden="true" />
+              Teks hasil ekstraksi ({cvText.length} karakter)
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="relative mt-2">
+                <div className="max-h-40 overflow-y-auto nice-scrollbar rounded-lg border bg-background p-3">
+                  <p className="text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">{cvText}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="absolute right-2 top-2 h-7 bg-background/90 px-2 text-xs backdrop-blur"
+                  onClick={() =>
+                    void copyText(cvText).then((ok) =>
+                      ok ? toast.success("Teks CV disalin") : toast.error("Gagal menyalin ke clipboard")
+                    )
+                  }
+                >
+                  <Copy className="size-3.5" aria-hidden="true" />
+                  Salin
+                </Button>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : canMutate ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 w-fit"
+            onClick={() => void runOcr()}
+            disabled={ocrLoading || cvPeeked === false}
+          >
+            {ocrLoading ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                Membaca CV...
+              </>
+            ) : (
+              <>
+                <ScanText className="size-4" aria-hidden="true" />
+                Baca CV dengan OCR
+              </>
+            )}
+          </Button>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Teks CV belum diekstraksi untuk lamaran ini.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

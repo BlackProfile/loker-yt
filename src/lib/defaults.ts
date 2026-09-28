@@ -125,6 +125,8 @@ export const DEFAULT_SITE: SiteContent = {
   discordWebhookUrl: "",
   telegramBotToken: "",
   telegramChatId: "",
+  recruitmentClosed: false,
+  recruitmentClosedMessage: "",
   sections: { ...DEFAULT_SECTIONS },
 };
 

@@ -5,11 +5,13 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ensureUniqueSlug, parseRequirements, slugifyTitle } from "@/lib/seed";
-import { stagesForPosition } from "@/lib/stages";
+import { stagesForPosition, isBuiltInStage } from "@/lib/stages";
 import {
   INTERVIEW_MODES,
   INTERVIEW_PLATFORMS,
   POSITION_TYPES,
+  STAGE_CATEGORIES,
+  type StageCategory,
   type StageKey,
 } from "@/lib/types";
 
@@ -55,6 +57,7 @@ export type PositionFields = {
   maxApplicants?: number | null;
   publishAt?: Date | null;
   stages?: string; // JSON string[]; "[]" = pakai pipeline bawaan
+  stageCategories?: string; // JSON Record<tahap kustom, StageCategory>; "{}" = pakai heuristik bawaan
   aiCriteria?: string | null;
   autoShortlistScore?: number | null;
   autoShortlistStage?: string | null;
@@ -81,6 +84,14 @@ export type PositionFields = {
   onboardingDocs?: string[]; // label dokumen wajib
   reapplyCooldownDays?: number;
   autoCloseOnHired?: boolean;
+  // Konten dua bahasa (opsional)
+  titleEn?: string | null;
+  descriptionEn?: string | null;
+  requirementsEn?: string[];
+  // Rentang gaji wajar (null = tanpa batas) + rencana ronde (JSON string)
+  salaryMin?: number | null;
+  salaryMax?: number | null;
+  roundPlan?: string; // JSON RoundPlanTemplate[]
 };
 
 /* ------------------------------- Field sederhana ------------------------------- */
@@ -250,6 +261,31 @@ function sanitizeStages(value: unknown): Sanitized<string[] | undefined> {
   return ok(cleaned);
 }
 
+/** Kategori fitur per tahap kustom: objek {tahap: kategori}, hanya tahap kustom yang boleh. */
+function sanitizeStageCategories(
+  value: unknown,
+  effectiveStages: StageKey[],
+): Sanitized<string | undefined> {
+  if (value === undefined) return ok(undefined);
+  if (value === null) return ok("{}");
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return err("Kategori tahap harus berupa objek {tahap: kategori}.");
+  }
+  const customStages = effectiveStages.filter((s) => !isBuiltInStage(s));
+  const out: Record<string, StageCategory> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const stage = typeof key === "string" ? key.trim().slice(0, 40) : "";
+    if (!stage) continue;
+    // Khusus tahap kustom — kategori tahap bawaan bersifat tetap.
+    if (!customStages.includes(stage)) continue;
+    if (typeof raw !== "string" || !(STAGE_CATEGORIES as readonly string[]).includes(raw)) {
+      return err(`Kategori tahap "${stage}" tidak valid.`);
+    }
+    out[stage] = raw as StageCategory;
+  }
+  return ok(JSON.stringify(out));
+}
+
 /** Pertanyaan screening: maks 10, label 3..200, id stabil berdasarkan urutan (q1, q2, ...). */
 function sanitizeScreeningQuestions(value: unknown): Sanitized<string | undefined> {
   if (value === undefined) return ok(undefined);
@@ -322,7 +358,13 @@ export type SanitizePositionOptions = {
   /** id posisi yang sedang diedit (untuk pengecualian keunikan slug) */
   excludeId?: string;
   /** record posisi saat ini (untuk validasi autoShortlistStage & perubahan judul) */
-  current?: { title: string; stages: string; autoShortlistStage: string | null } | null;
+  current?: {
+    title: string;
+    stages: string;
+    autoShortlistStage: string | null;
+    salaryMin?: number | null;
+    salaryMax?: number | null;
+  } | null;
 };
 
 /**
@@ -433,6 +475,10 @@ export async function sanitizePositionInput(
       : stagesForPosition(opts.current ? parseRequirements(opts.current.stages) : null);
 
   if (stages.value !== undefined) f.stages = JSON.stringify(stages.value);
+
+  const stageCategories = sanitizeStageCategories(data.stageCategories, effectiveStages);
+  if (!stageCategories.ok) return stageCategories;
+  if (stageCategories.value !== undefined) f.stageCategories = stageCategories.value;
 
   const aiCriteria = sanitizeNullableText(data.aiCriteria, "Kriteria AI", 600);
   if (!aiCriteria.ok) return aiCriteria;
@@ -570,6 +616,66 @@ export async function sanitizePositionInput(
   if (!autoCloseOnHired.ok) return autoCloseOnHired;
   if (autoCloseOnHired.value !== undefined) f.autoCloseOnHired = autoCloseOnHired.value;
 
+  // Konten dua bahasa (opsional): kosong = null (fallback ke versi Indonesia).
+  const titleEn = sanitizeNullableText(data.titleEn, "Judul bahasa Inggris", 120);
+  if (!titleEn.ok) return titleEn;
+  if (titleEn.value !== undefined) f.titleEn = titleEn.value;
+
+  const descriptionEn = sanitizeNullableText(data.descriptionEn, "Deskripsi bahasa Inggris", 5000);
+  if (!descriptionEn.ok) return descriptionEn;
+  if (descriptionEn.value !== undefined) f.descriptionEn = descriptionEn.value;
+
+  const requirementsEn = sanitizeStringList(data.requirementsEn, {
+    name: "Persyaratan bahasa Inggris", maxItems: 20, minLen: 1, maxLen: 200,
+  });
+  if (!requirementsEn.ok) return requirementsEn;
+  if (requirementsEn.value !== undefined) f.requirementsEn = requirementsEn.value;
+
+  // Rentang gaji wajar (opsional, rupiah bulanan; kosong = null)
+  const salaryMin = sanitizeNullableInt(data.salaryMin, "Gaji wajar minimum", 0, 1_000_000_000);
+  if (!salaryMin.ok) return salaryMin;
+  if (salaryMin.value !== undefined) f.salaryMin = salaryMin.value;
+
+  const salaryMax = sanitizeNullableInt(data.salaryMax, "Gaji wajar maksimum", 0, 1_000_000_000);
+  if (!salaryMax.ok) return salaryMax;
+  if (salaryMax.value !== undefined) f.salaryMax = salaryMax.value;
+
+  const minFinal = f.salaryMin !== undefined ? f.salaryMin : opts.current?.salaryMin ?? null;
+  const maxFinal = f.salaryMax !== undefined ? f.salaryMax : opts.current?.salaryMax ?? null;
+  if (minFinal != null && maxFinal != null && minFinal > maxFinal) {
+    return err("Gaji wajar minimum tidak boleh lebih besar dari maksimum.");
+  }
+
+  // Rencana ronde wawancara (opsional) — array {round,name,mode?,platform?,durationMin?,interviewers?[]}
+  if (data.roundPlan !== undefined) {
+    if (data.roundPlan === null || data.roundPlan === "") {
+      f.roundPlan = "[]";
+    } else if (Array.isArray(data.roundPlan)) {
+      const rows = data.roundPlan.filter(
+        (item): item is Record<string, unknown> => Boolean(item) && typeof item === "object",
+      );
+      if (rows.length > 10) return err("Rencana ronde maksimal 10 ronde.");
+      const cleaned = rows.map((item, index) => {
+        const name = typeof item.name === "string" && item.name.trim() ? item.name.trim().slice(0, 60) : `Ronde ${index + 1}`;
+        const round = typeof item.round === "number" && Number.isInteger(item.round) && item.round > 0 ? item.round : index + 1;
+        const entry: Record<string, unknown> = { round, name };
+        if (typeof item.mode === "string" && ["ONLINE", "ONSITE"].includes(item.mode)) entry.mode = item.mode;
+        if (typeof item.platform === "string" && item.platform.trim()) entry.platform = item.platform.trim().slice(0, 40);
+        if (typeof item.durationMin === "number" && item.durationMin >= 10 && item.durationMin <= 480) entry.durationMin = item.durationMin;
+        if (Array.isArray(item.interviewers)) {
+          const names = item.interviewers
+            .filter((n): n is string => typeof n === "string" && n.trim().length > 0)
+            .map((n) => n.trim().slice(0, 60));
+          if (names.length > 0) entry.interviewers = names;
+        }
+        return entry;
+      });
+      f.roundPlan = JSON.stringify(cleaned);
+    } else {
+      return err("Rencana ronde tidak valid.");
+    }
+  }
+
   // Slug: eksplisit divalidasi; bila tidak dikirim tapi judul BERUBA -> regenerate dari judul.
   const slug = await sanitizeSlug(data.slug, opts.excludeId);
   if (!slug.ok) return slug;
@@ -612,6 +718,7 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.maxApplicants !== undefined) out.maxApplicants = f.maxApplicants;
   if (f.publishAt !== undefined) out.publishAt = f.publishAt;
   if (f.stages !== undefined) out.stages = f.stages;
+  if (f.stageCategories !== undefined) out.stageCategories = f.stageCategories;
   if (f.aiCriteria !== undefined) out.aiCriteria = f.aiCriteria;
   if (f.autoShortlistScore !== undefined) out.autoShortlistScore = f.autoShortlistScore;
   if (f.autoShortlistStage !== undefined) out.autoShortlistStage = f.autoShortlistStage;
@@ -637,6 +744,14 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.onboardingDocs !== undefined) out.onboardingDocs = JSON.stringify(f.onboardingDocs);
   if (f.reapplyCooldownDays !== undefined) out.reapplyCooldownDays = f.reapplyCooldownDays;
   if (f.autoCloseOnHired !== undefined) out.autoCloseOnHired = f.autoCloseOnHired;
+  // Konten dua bahasa (opsional)
+  if (f.titleEn !== undefined) out.titleEn = f.titleEn;
+  if (f.descriptionEn !== undefined) out.descriptionEn = f.descriptionEn;
+  if (f.requirementsEn !== undefined) out.requirementsEn = JSON.stringify(f.requirementsEn);
+  // Rentang gaji wajar + rencana ronde
+  if (f.salaryMin !== undefined) out.salaryMin = f.salaryMin;
+  if (f.salaryMax !== undefined) out.salaryMax = f.salaryMax;
+  if (f.roundPlan !== undefined) out.roundPlan = f.roundPlan;
   // coverFileId hanya tersedia lewat relasi pada input update.
   if (f.coverFileId === null) out.coverFile = { disconnect: true };
   else if (f.coverFileId !== undefined) out.coverFile = { connect: { id: f.coverFileId } };

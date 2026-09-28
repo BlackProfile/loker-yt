@@ -448,3 +448,286 @@ export async function generateReplyDraft(applicationId: string): Promise<string 
     return null;
   }
 }
+
+/* ------------------- Parser JSON ketat untuk ranking LLM (baru) ------------------- */
+
+/** Ambil array JSON dari balasan LLM; toleran terhadap teks pembuka/penutup. */
+function extractJsonArray(raw: string): unknown[] | null {
+  const text = stripMarkdownFence(raw);
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // fallback: ambil potongan dari "[" pertama sampai "]" terakhir
+  }
+  const start = text.indexOf("[");
+  const end = text.lastIndexOf("]");
+  if (start >= 0 && end > start) {
+    try {
+      const parsed: unknown = JSON.parse(text.slice(start, end + 1));
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function clampScore100(value: unknown): number | null {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(100, Math.max(0, Math.round(n)));
+}
+
+type RankedEntry = { id: string; name: string; score: number; reason: string };
+
+/** Validasi & normalisasi entri ranking LLM: id harus dikenal, skor 0-100, entri duplikat dibuang. */
+function normalizeRankedEntries(
+  raw: string,
+  validIds: Set<string>,
+  nameOf: (id: string) => string,
+  max: number,
+): RankedEntry[] {
+  const arr = extractJsonArray(raw);
+  if (!arr) return [];
+  const results: RankedEntry[] = [];
+  const seen = new Set<string>();
+  for (const item of arr) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const obj = item as Record<string, unknown>;
+    const id = typeof obj.id === "string" ? obj.id.trim() : "";
+    if (!id || !validIds.has(id) || seen.has(id)) continue;
+    const score = clampScore100(obj.score);
+    if (score == null) continue;
+    const reason = typeof obj.reason === "string" ? obj.reason.trim().slice(0, 300) : "";
+    seen.add(id);
+    results.push({
+      id,
+      name: nameOf(id),
+      score,
+      reason: reason || "Kandidat direkomendasikan AI.",
+    });
+    if (results.length >= max) break;
+  }
+  return results;
+}
+
+/* --------------------- Ringkasan AI kartu pipeline (baru) --------------------- */
+
+/**
+ * Buat ringkasan 2-3 kalimat (kekuatan/risiko/rekomendasi) untuk satu lamaran
+ * dari experience, motivation, aiScore, transcript, dan cvText.
+ * TIDAK menyimpan ke DB — route pemanggil yang menyimpan + mencatat ActivityLog.
+ */
+export async function generateApplicationSummaryText(applicationId: string): Promise<string | null> {
+  try {
+    const application = await db.application.findUnique({
+      where: { id: applicationId },
+      include: { position: { select: { title: true, department: true } } },
+    });
+    if (!application) return null;
+
+    const lines = [
+      `Nama kandidat: ${application.name}`,
+      `Posisi: ${application.position?.title ?? "-"} (${application.position?.department ?? "-"})`,
+      `Pengalaman: ${application.experience}`,
+      `Motivasi: ${application.motivation}`,
+      `Skor screening AI: ${application.aiScore != null ? `${application.aiScore}/100` : "belum ada"}`,
+    ];
+    if (application.aiRecommendation) {
+      lines.push(`Rekomendasi screening: ${application.aiRecommendation}`);
+    }
+    if (application.transcript?.trim()) {
+      lines.push(`Transkrip audio perkenalan: ${application.transcript.trim().slice(0, 1500)}`);
+    }
+    if (application.cvText?.trim()) {
+      lines.push(`Isi CV: ${application.cvText.trim().slice(0, 3000)}`);
+    }
+
+    const userPrompt = [
+      "Buat ringkasan kandidat berikut untuk membantu HR memutuskan dengan cepat.",
+      "",
+      ...lines,
+      "",
+      "Aturan output:",
+      "- Bahasa Indonesia, 2-3 kalimat saja, tanpa poin bernomor/bullet.",
+      "- Kalimat 1: kekuatan utama kandidat. Kalimat 2: risiko/kekurangan. Kalimat 3: rekomendasi tindakan (mis. layak wawancara, perlu tes portofolio, dsb).",
+      "- Tanpa markdown, tanpa sapaan, langsung isi ringkasannya.",
+    ].join("\n");
+
+    const completion = await withTimeout(
+      withZaiRetry((zai) =>
+        zai.chat.completions.create({
+          messages: [
+            {
+              role: "assistant",
+              content:
+                "Kamu adalah HR assistant studio konten kreator. Tulis ringkas, padat, objektif, bahasa Indonesia.",
+            },
+            { role: "user", content: userPrompt },
+          ],
+          thinking: { type: "disabled" },
+        }),
+      ),
+      "Ringkasan AI",
+    );
+    const text = (completion?.choices?.[0]?.message?.content ?? "").trim();
+    if (!text) {
+      console.error("[ai] generateApplicationSummaryText: balasan LLM kosong");
+      return null;
+    }
+    return text.slice(0, 600);
+  } catch (error) {
+    console.error("[ai] generateApplicationSummaryText gagal:", errorMessage(error));
+    return null;
+  }
+}
+
+/* ------------------------ Shortlist cerdas posisi (baru) ------------------------ */
+
+export type ShortlistEntry = RankedEntry;
+
+/**
+ * Ranking top 5 kandidat terbaik untuk satu posisi (lamaran aktif, bukan ditolak).
+ * Return array terurut skor tertinggi; null bila gagal / tidak ada kandidat.
+ */
+export async function rankPositionShortlist(positionId: string): Promise<ShortlistEntry[] | null> {
+  try {
+    const [position, apps] = await Promise.all([
+      db.position.findUnique({
+        where: { id: positionId },
+        select: { title: true, department: true, description: true, requirements: true, aiCriteria: true },
+      }),
+      db.application.findMany({
+        where: { positionId, status: { not: "REJECTED" } },
+        orderBy: { createdAt: "desc" },
+        take: 40,
+        select: { id: true, name: true, aiScore: true, experience: true, motivation: true, portfolioUrl: true },
+      }),
+    ]);
+    if (!position || apps.length === 0) return null;
+
+    const requirements = parseRequirements(position.requirements);
+    const candidateLines = apps.map(
+      (a, i) =>
+        `${i + 1}. id=${a.id} | ${a.name} | skor AI screening: ${a.aiScore ?? "-"} | portofolio: ${a.portfolioUrl?.trim() || "tidak ada"}\n   Pengalaman: ${a.experience.slice(0, 240)}\n   Motivasi: ${a.motivation.slice(0, 160)}`,
+    );
+
+    const userPrompt = [
+      `Pilih 5 kandidat TERBAIK untuk posisi berikut. Bila kandidat kurang dari 5, pilih semua yang ada.`,
+      "",
+      `Posisi: ${position.title} (${position.department})`,
+      `Deskripsi: ${position.description.slice(0, 600)}`,
+      `Persyaratan: ${requirements.length > 0 ? requirements.join("; ").slice(0, 600) : "tidak dirinci"}`,
+      position.aiCriteria?.trim() ? `Kriteria khusus: ${position.aiCriteria.trim().slice(0, 400)}` : "",
+      "",
+      "Daftar kandidat:",
+      ...candidateLines,
+      "",
+      'Balas HANYA JSON valid (tanpa markdown/teks lain) berupa array TERURUT dari peringkat 1 (terbaik), maksimal 5 entri:',
+      '[{"id":"<id kandidat>","name":"<nama>","score":<0-100 integer kecocokan posisi>,"reason":"<alasan singkat 1 kalimat bahasa Indonesia>"}]',
+      "Gunakan id persis seperti daftar. score boleh berbeda dari skor AI screening (pertimbangkan portofolio & motivasi).",
+    ]
+      .filter((line) => line !== "")
+      .join("\n");
+
+    const completion = await withTimeout(
+      withZaiRetry((zai) =>
+        zai.chat.completions.create({
+          messages: [
+            {
+              role: "assistant",
+              content:
+                "Kamu adalah HR shortlist assistant. Jawab HANYA JSON valid tanpa teks lain. Bahasa Indonesia untuk reason.",
+            },
+            { role: "user", content: userPrompt },
+          ],
+          thinking: { type: "disabled" },
+        }),
+      ),
+      "Shortlist AI",
+    );
+    const raw = completion?.choices?.[0]?.message?.content ?? "";
+    const nameOf = (id: string) => apps.find((a) => a.id === id)?.name ?? "";
+    const entries = normalizeRankedEntries(raw, new Set(apps.map((a) => a.id)), nameOf, 5);
+    if (entries.length === 0) {
+      console.error("[ai] rankPositionShortlist: hasil LLM tidak bisa diparse");
+      return null;
+    }
+    return entries.sort((a, b) => b.score - a.score);
+  } catch (error) {
+    console.error("[ai] rankPositionShortlist gagal:", errorMessage(error));
+    return null;
+  }
+}
+
+/* --------------------- Pencarian semantik kandidat (baru) --------------------- */
+
+export type SemanticSearchEntry = RankedEntry;
+
+/**
+ * Cari kandidat paling cocok dengan kueri bebas (mis. "editor yang bisa color grading
+ * dan pernah kerja di agensi"). Kandidat diambil maks 100 terbaru; LLM menskor 0-100
+ * kecocokan + alasan 1 kalimat, dikembalikan top 10. Null bila gagal.
+ */
+export async function semanticSearchCandidates(query: string): Promise<SemanticSearchEntry[] | null> {
+  try {
+    const apps = await db.application.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        name: true,
+        aiScore: true,
+        experience: true,
+        motivation: true,
+        cvText: true,
+        position: { select: { title: true, department: true } },
+      },
+    });
+    if (apps.length === 0) return null;
+
+    const candidateLines = apps.map(
+      (a, i) =>
+        `${i + 1}. id=${a.id} | ${a.name} | posisi: ${a.position?.title ?? "-"} | skor AI: ${a.aiScore ?? "-"}\n   Pengalaman: ${a.experience.slice(0, 200)}\n   Motivasi: ${a.motivation.slice(0, 120)}${a.cvText?.trim() ? `\n   CV: ${a.cvText.trim().slice(0, 300)}` : ""}`,
+    );
+
+    const userPrompt = [
+      `Kueri pencarian HR: "${query}"`,
+      "",
+      "Skor setiap kandidat 0-100 kecocokannya dengan kueri (100 = sangat cocok), lalu ambil 10 terbaik.",
+      "Bila tidak ada yang relevan sama sekali, kembalikan array kosong [].",
+      "",
+      "Daftar kandidat:",
+      ...candidateLines,
+      "",
+      'Balas HANYA JSON valid (tanpa markdown/teks lain) berupa array TERURUT dari skor tertinggi, maksimal 10 entri:',
+      '[{"id":"<id kandidat>","name":"<nama>","score":<0-100 integer>,"reason":"<alasan kecocokan 1 kalimat bahasa Indonesia>"}]',
+      "Gunakan id persis seperti daftar. Jangan mengarang nama.",
+    ].join("\n");
+
+    const completion = await withTimeout(
+      withZaiRetry((zai) =>
+        zai.chat.completions.create({
+          messages: [
+            {
+              role: "assistant",
+              content:
+                "Kamu adalah mesin pencarian semantik kandidat HR. Jawab HANYA JSON valid tanpa teks lain. Bahasa Indonesia untuk reason.",
+            },
+            { role: "user", content: userPrompt },
+          ],
+          thinking: { type: "disabled" },
+        }),
+      ),
+      "Pencarian semantik",
+    );
+    const raw = completion?.choices?.[0]?.message?.content ?? "";
+    const nameOf = (id: string) => apps.find((a) => a.id === id)?.name ?? "";
+    const entries = normalizeRankedEntries(raw, new Set(apps.map((a) => a.id)), nameOf, 10);
+    return entries.sort((a, b) => b.score - a.score);
+  } catch (error) {
+    console.error("[ai] semanticSearchCandidates gagal:", errorMessage(error));
+    return null;
+  }
+}

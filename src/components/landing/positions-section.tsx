@@ -179,7 +179,20 @@ function PositionCard({
   /** Buka halaman detail per lowongan (?posisi=slug) — tombol selalu tampil. */
   onOpenPosition: (slug: string) => void;
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+
+  // Konten dua bahasa: saat lang "en" dan versi EN terisi (non-kosong),
+  // pakai versi EN; selain itu fallback ke versi Indonesia.
+  const displayTitle =
+    lang === "en" && position.titleEn ? position.titleEn : position.title;
+  const displayDescription =
+    lang === "en" && position.descriptionEn
+      ? position.descriptionEn
+      : position.description;
+  const displayRequirements =
+    lang === "en" && position.requirementsEn.length > 0
+      ? position.requirementsEn
+      : position.requirements;
 
   const remaining = stats?.remainingQuota ?? null;
   const quotaFull = remaining === 0;
@@ -204,7 +217,7 @@ function PositionCard({
       {hasCover ? (
         <img
           src={`/api/files/${position.coverFileId}`}
-          alt={fillTemplate(t.positions.coverAlt, { title: position.title })}
+          alt={fillTemplate(t.positions.coverAlt, { title: displayTitle })}
           loading="lazy"
           className="aspect-[2/1] w-full object-cover"
         />
@@ -215,7 +228,7 @@ function PositionCard({
           <Badge className={ROSE_BADGE} variant="outline">
             {position.department}
           </Badge>
-          <h3 className="mt-3 text-lg font-semibold">{position.title}</h3>
+          <h3 className="mt-3 text-lg font-semibold">{displayTitle}</h3>
           <PositionBadges position={position} stats={stats} className="mt-2" />
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Badge variant="secondary">{position.type}</Badge>
@@ -228,7 +241,7 @@ function PositionCard({
         </div>
 
         <p className="line-clamp-3 text-sm text-muted-foreground">
-          {position.description}
+          {displayDescription}
         </p>
 
         {position.benefits.length > 0 ? (
@@ -252,9 +265,9 @@ function PositionCard({
           </div>
         ) : null}
 
-        {position.requirements.length > 0 ? (
+        {displayRequirements.length > 0 ? (
           <ul className="space-y-2">
-            {position.requirements.slice(0, 3).map((requirement, index) => (
+            {displayRequirements.slice(0, 3).map((requirement, index) => (
               <li
                 key={`${position.id}-req-${index}`}
                 className="flex items-start gap-2 text-sm text-muted-foreground"
@@ -279,8 +292,8 @@ function PositionCard({
 
         <div className="mt-auto flex items-center justify-between gap-3 border-t pt-4">
           <span className="text-xs text-muted-foreground">
-            {position.requirements.length > 0
-              ? `${position.requirements.length} ${t.positions.requirementsCount}`
+            {displayRequirements.length > 0
+              ? `${displayRequirements.length} ${t.positions.requirementsCount}`
               : ""}
           </span>
           <div className="flex items-center gap-2">
