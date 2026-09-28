@@ -1080,3 +1080,29 @@ Stage Summary:
 - Seluruh fitur yang hilang (Task 17-21) kembali + Task 22/23 tetap; riwayat GitHub & lokal menyatu.
 - Edit lengkap posisi kini HALAMAN penuh (tambah & edit), tanpa popup; dokumen wajib pendaftar tetap bisa diatur dari halaman kelola.
 - Verifikasi E2E via :81 (subagent 24-a/b/c): login asli OK, simpan posisi OK (persist), editor dokumen OK, 7 tab baru OK, deep-link & Back/Forward OK, mobile 390px tanpa overflow, 0 console error. Screenshot /tmp/v24-*, /tmp/v24b-*, /tmp/v24c-*.
+
+---
+Task ID: 25-a
+Agent: verifier subagent
+Task: Verifikasi E2E pemisahan halaman Edit Posisi & Formulir Lamaran
+
+Work Log:
+- ENV FIX (bukan bug Task 25): login 500 `[POST /api/admin/login] TypeError: Cannot read properties of undefined (reading 'count')` di db.loginAudit.count — proses next dev lama (start 13:12) memegang Prisma client basi. Diperbaiki dengan kill proses lama; dev-keepalive otomatis restart (client segar). Setelahnya login normal. dev.log ter-truncate oleh restart (tee), jejak 500 hilang dari log.
+- 1. LOGIN PASS — admin@lumina.id masuk, dashboard + sidebar tampil (setelah restart di atas).
+- 2. DAFTAR POSISI → KELOLA PASS — klik Kelola "Video Editor" (2 pelamar, terbanyak); hash #admin/posisi/cmul9p5cy0005o5uruutu92q1; header berisi TOMBOL "Formulir Lamaran" (outline) DAN "Edit Posisi" (primary); 4 kartu statistik; kartu ringkasan "Formulir Lamaran" dgn tombol "Edit Formulir" + badge (CV·opsional, Audio/Video Intro·opsional, Portofolio·wajib, Kuota, 3 pertanyaan screening/2 wajib); kartu "Konten Lowongan" dgn tombol "Edit Posisi"; daftar "Pelamar Posisi Ini"; editor lama "Dokumen dari Pendaftar" TIDAK ADA lagi.
+- 3. HALAMAN EDIT POSISI PASS — klik "Edit Posisi" → HALAMAN penuh (bukan popup, dialog=false); hash .../edit; judul "Edit Posisi: Video Editor"; 10 section lengkap: Dasar, Konten Bahasa Inggris (opsional), Publikasi & Status, Tampilan & Konten, Benefit & Karya, Pipeline & AI, Otomasi Pesan, Evaluasi, Wawancara, Penawaran & Onboarding; section "Formulir & Screening" TIDAK ada; bilah aksi sticky bottom-4 "Simpan Perubahan" + "Batal" (class `sticky bottom-4 z-20`).
+- 4. HALAMAN FORMULIR LAMARAN PASS — Back → kembali ke kelola; klik "Formulir Lamaran" → halaman penuh; hash .../formulir; judul "Formulir Lamaran: Video Editor"; HANYA section "Formulir & Screening": 3 toggle berkas wajib (CV/Intro Video/Portofolio), Kuota Pelamar, Pertanyaan Screening (3 item, urutan/wajib), editor "Dokumen Wajib Tambahan"; sticky bar "Simpan Formulir" + "Batal"; section "Dasar" TIDAK ada.
+- 5. SIMPAN FORMULIR PASS — ketik "KTP" → Tambah → chip muncul; "Simpan Formulir" → toast "Formulir lamaran disimpan" → kembali ke kelola; badge "KTP · wajib" tampil di kartu ringkasan; RELOAD → badge KTP PERSIST (tersimpan server).
+- 6. EDIT & SIMPAN POSISI PASS — Edit Posisi → Judul "Video Editor QA" → Simpan Perubahan → toast "Posisi diperbarui" → kembali ke kelola, judul header ter-update; RELOAD persist; dikembalikan ke "Video Editor" + simpan ulang + reload persist (state pulih).
+- 7. BACK/FORWARD PASS — urutan bersih daftar → Kelola (push) → Edit Posisi (push, history.length=4): Back→kelola, Back→daftar, Forward→kelola, Forward→edit posisi (semua persis). Catatan perilaku: setelah SIMPAN, kembali-ke-kelola memakai replaceState (tidak menambah entri), sehingga Back dari hasil simpan melewati 1-2 tampilan kelola duplikat sebelum ke daftar — bukan pelanggaran kontrak pushState per level.
+- 8. TAMBAH POSISI PASS — tombol "Tambah Posisi" → HALAMAN penuh (dialog=false) judul "Tambah Posisi" dgn 10 section posisi (tanpa Formulir & Screening); "Batal" → kembali ke daftar.
+- 9. NO-POPUP PASS — semua entry point (header Edit Posisi, header Formulir Lamaran, Edit Formulir di kartu, Tambah Posisi, ikon pencil di baris daftar) → halaman inline penuh, role=dialog/alertdialog selalu absent; kode: position-form-page.tsx & position-manage-page.tsx 0 impor Dialog; satu-satunya Dialog tersisa di positions-tab = talent-rediscovery (fitur lain) + AlertDialog hapus/nurture (diizinkan). Deep-link langsung #admin/posisi/<id>, /edit, /formulir (fresh load) semuanya benar.
+- 10. MOBILE PASS — 390x844: kelola, edit posisi, formulir → scrollWidth = 390 (0 overflow) di ketiganya; screenshot /tmp/v25-08/09/10-mobile-*.png.
+- 11. CONSOLE PASS — 0 error console/page error sepanjang sesi (hanya log HMR/React DevTools).
+- 12. DEV.LOG PASS — 40 baris terakhir semua 200 (admin/applications, notifications, cron/reminders, files); rg "500|TypeError|..." = 0 temuan pada log saat ini.
+- Screenshots: /tmp/v25-01-login.png, v25-02-manage.png, v25-03-edit-posisi.png (top+bottom), v25-04-formulir-ktp.png, v25-05-manage-ktp.png, v25-06-manage-qa.png, v25-07-tambah.png, v25-08/09/10-mobile-*.png.
+
+Stage Summary:
+- VERDICT: Task 25 LULUS penuh — Edit Posisi & Formulir Lamaran kini dua halaman penuh terpisah tanpa popup, deep-link + Back/Forward bekerja, simpan & persistensi OK, mobile bersih, console & server log bersih.
+- Satu perbaikan LINGKUNGAN (bukan kode): restart dev server bermasalah Prisma client basi (login 500); keepalive menangani restart. Tidak ada perubahan kode yang diperlukan.
+- Catatan minor (opsional, bukan blocker): (a) simpan memakai replaceState → Back pasca-simpan melewati tampilan kelola duplikat; (b) `agent-browser open` menggantung pada app ini (socket realtime) — gunakan eval hash + reload saat automation.
