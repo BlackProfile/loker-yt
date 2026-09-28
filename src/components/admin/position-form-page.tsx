@@ -7,7 +7,7 @@
 // panjang (hairline) sebagai pembatas antar fitur agar mudah dipindai.
 // Batas karakter/item dikunci via maxLength & maxItems editor (selaras server).
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,8 @@ import {
   Wallet,
   Wand2,
   Workflow,
+  X,
+  FileText,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -319,6 +321,10 @@ const DEMO_TEMPLATES = {
 const COVER_MAX_BYTES = 3 * 1024 * 1024;
 const COVER_MIME = ["image/png", "image/jpeg", "image/webp"];
 
+// Batas dokumen wajib tambahan (halaman Formulir Lamaran) — selaras server.
+const MAX_CUSTOM_DOCS = 8;
+const CUSTOM_DOC_MAX_LEN = 80;
+
 // Sentinel opsi "(nonaktif)" — Radix Select melarang SelectItem dengan value "".
 const SHORTLIST_NONE = "__nonaktif__";
 
@@ -374,11 +380,14 @@ function isInt(value: string): boolean {
 export function PositionFormPage({
   editing,
   statsRow,
+  mode = "posisi",
   onSaved,
   onCancel,
 }: {
   editing: Position | null;
   statsRow: PositionStatsRow | null;
+  /** "posisi" = info lowongan; "formulir" = formulir lamaran (berkas, kuota, screening). */
+  mode?: "posisi" | "formulir";
   onSaved: (updated: Position) => void;
   onCancel: () => void;
 }) {
@@ -391,6 +400,35 @@ export function PositionFormPage({
   const [uploadingCover, setUploadingCover] = useState(false);
   const [aiCoverLoading, setAiCoverLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Dokumen wajib tambahan (editor di halaman Formulir Lamaran) — baru
+  // tersimpan saat tombol Simpan diklik, bukan tiap perubahan.
+  const [customDocs, setCustomDocs] = useState<string[]>(() =>
+    editing ? [...editing.customDocs] : []
+  );
+  const [newDoc, setNewDoc] = useState("");
+
+  const addCustomDoc = useCallback(() => {
+    const label = newDoc.trim().slice(0, CUSTOM_DOC_MAX_LEN);
+    if (label.length < 2) {
+      toast.error("Nama dokumen minimal 2 karakter.");
+      return;
+    }
+    if (customDocs.length >= MAX_CUSTOM_DOCS) {
+      toast.error(`Maksimal ${MAX_CUSTOM_DOCS} dokumen tambahan.`);
+      return;
+    }
+    if (customDocs.some((d) => d.toLowerCase() === label.toLowerCase())) {
+      toast.error("Dokumen dengan nama itu sudah ada.");
+      return;
+    }
+    setCustomDocs((prev) => [...prev, label]);
+    setNewDoc("");
+  }, [newDoc, customDocs]);
+
+  const removeCustomDoc = useCallback((label: string) => {
+    setCustomDocs((prev) => prev.filter((d) => d !== label));
+  }, []);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -520,6 +558,8 @@ export function PositionFormPage({
         label: q.label.trim(),
         required: q.required,
       })),
+      // Dokumen wajib tambahan (diedit di halaman Formulir Lamaran)
+      customDocs: customDocs.map((d) => d.trim()).filter(Boolean),
       stages: cleanedStages,
       stageCategories: form.stageCategories,
       aiCriteria: form.aiCriteria.trim() || null,
@@ -571,7 +611,9 @@ export function PositionFormPage({
       let updated: Position;
       if (editing) {
         updated = await apiPatch<Position>(`/api/admin/positions/${editing.id}`, payload);
-        toast.success("Posisi diperbarui");
+        toast.success(
+          mode === "formulir" ? "Formulir lamaran disimpan" : "Posisi diperbarui"
+        );
       } else {
         updated = await apiPost<Position>("/api/admin/positions", payload);
         toast.success("Posisi ditambahkan");
@@ -653,11 +695,17 @@ export function PositionFormPage({
         </div>
         <div className="min-w-0">
           <h2 className="truncate text-lg font-bold leading-tight">
-            {editing ? `Edit: ${editing.title}` : "Tambah Posisi"}
+            {editing
+              ? mode === "formulir"
+                ? `Formulir Lamaran: ${editing.title}`
+                : `Edit Posisi: ${editing.title}`
+              : "Tambah Posisi"}
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {editing
-              ? "Perbarui semua pengaturan posisi lowongan, lalu klik Simpan."
+              ? mode === "formulir"
+                ? "Atur berkas wajib, kuota pelamar, dan pertanyaan screening yang diisi pelamar."
+                : "Perbarui pengaturan posisi lowongan, lalu klik Simpan."
               : "Lengkapi detail posisi lowongan baru untuk halaman publik."}
           </p>
         </div>
@@ -686,6 +734,9 @@ export function PositionFormPage({
             ) : null}
 
             <div className="flex flex-col gap-5">
+              {/* Halaman EDIT POSISI: seluruh section info lowongan. */}
+              {mode === "posisi" ? (
+                <>
               {/* a. Dasar */}
               <FormSection
                 id="dasar"
@@ -1136,8 +1187,13 @@ export function PositionFormPage({
                 </FormSection>
 
                 <FormDivider />
+                </>
+              ) : null}
 
-              {/* e. Formulir & Screening */}
+              {/* Halaman FORMULIR LAMARAN: berkas wajib, kuota, screening, dokumen. */}
+              {mode === "formulir" ? (
+                <>
+              {/* f. Formulir & Screening */}
               <FormSection
                 id="formulir"
                 icon={ListChecks}
@@ -1195,11 +1251,80 @@ export function PositionFormPage({
                       maxItems={10}
                     />
                   </div>
+
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="pos-customDocs">Dokumen Wajib Tambahan</Label>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Misal: KTP, Ijazah, Sertifikat, Surat Sehat. Pelamar wajib
+                      mengunggah semuanya (PDF/gambar/Word, maks 5 MB per berkas,
+                      maksimal {MAX_CUSTOM_DOCS} dokumen).
+                    </p>
+                    {customDocs.length > 0 ? (
+                      <ul className="flex flex-col gap-1.5">
+                        {customDocs.map((doc) => (
+                          <li
+                            key={doc}
+                            className="flex min-h-10 items-center justify-between gap-2 rounded-lg border bg-zinc-50/60 px-3 py-1.5 dark:bg-zinc-900/40"
+                          >
+                            <span className="flex min-w-0 items-center gap-2 text-sm">
+                              <FileText
+                                className="size-3.5 shrink-0 text-rose-600 dark:text-rose-400"
+                                aria-hidden="true"
+                              />
+                              <span className="truncate">{doc}</span>
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 shrink-0 text-muted-foreground hover:text-rose-600"
+                              onClick={() => removeCustomDoc(doc)}
+                              aria-label={`Hapus dokumen ${doc}`}
+                            >
+                              <X className="size-4" aria-hidden="true" />
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                        Belum ada dokumen tambahan.
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="pos-customDocs"
+                        value={newDoc}
+                        onChange={(e) => setNewDoc(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addCustomDoc();
+                          }
+                        }}
+                        placeholder="Nama dokumen, mis. KTP"
+                        className="h-11 sm:flex-1"
+                        maxLength={CUSTOM_DOC_MAX_LEN}
+                        disabled={customDocs.length >= MAX_CUSTOM_DOCS}
+                        aria-label="Nama dokumen baru"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-11 shrink-0 sm:h-10"
+                        onClick={addCustomDoc}
+                        disabled={customDocs.length >= MAX_CUSTOM_DOCS}
+                      >
+                        <Plus className="size-4" aria-hidden="true" />
+                        Tambah
+                      </Button>
+                    </div>
+                  </div>
                 </FormSection>
+                </>
+              ) : null}
 
-                <FormDivider />
-
-              {/* f. Pipeline & AI */}
+              {/* g. Pipeline & AI */}
               <FormSection
                 id="pipeline"
                 icon={Workflow}
@@ -1803,6 +1928,8 @@ export function PositionFormPage({
                     />
                   </div>
                 </FormSection>
+                </>
+              ) : null}
             </div>
 
             {/* Tombol submit tersembunyi agar Enter mensubmit form */}
@@ -1815,7 +1942,9 @@ export function PositionFormPage({
         <div className="flex items-center justify-between gap-3 rounded-2xl border bg-background/95 p-3 shadow-lg backdrop-blur">
           <p className="hidden text-xs text-muted-foreground sm:block">
             {editing
-              ? "Perubahan berlaku setelah tombol Simpan diklik."
+              ? mode === "formulir"
+                ? "Formulir berlaku untuk lamaran yang masuk setelah disimpan."
+                : "Perubahan berlaku setelah tombol Simpan diklik."
               : "Posisi tampil di halaman publik setelah disimpan."}
           </p>
           <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
@@ -1840,7 +1969,11 @@ export function PositionFormPage({
                   Menyimpan...
                 </>
               ) : editing ? (
-                "Simpan Perubahan"
+                mode === "formulir" ? (
+                  "Simpan Formulir"
+                ) : (
+                  "Simpan Perubahan"
+                )
               ) : (
                 "Tambah Posisi"
               )}
