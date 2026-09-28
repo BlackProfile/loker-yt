@@ -1106,3 +1106,20 @@ Stage Summary:
 - VERDICT: Task 25 LULUS penuh — Edit Posisi & Formulir Lamaran kini dua halaman penuh terpisah tanpa popup, deep-link + Back/Forward bekerja, simpan & persistensi OK, mobile bersih, console & server log bersih.
 - Satu perbaikan LINGKUNGAN (bukan kode): restart dev server bermasalah Prisma client basi (login 500); keepalive menangani restart. Tidak ada perubahan kode yang diperlukan.
 - Catatan minor (opsional, bukan blocker): (a) simpan memakai replaceState → Back pasca-simpan melewati tampilan kelola duplikat; (b) `agent-browser open` menggantung pada app ini (socket realtime) — gunakan eval hash + reload saat automation.
+
+---
+Task ID: 25
+Agent: z.ai main session
+Task: Pisahkan halaman "Edit Posisi" dan "Formulir Lamaran" menjadi dua halaman terpisah (bukan popup) di admin
+
+Work Log:
+- RESTORASI (temuan): sandbox reset lagi ke snapshot pra-Task-24 (position-form-dialog.tsx ada, position-form-page.tsx hilang, worklog berhenti di Task 23, daemon mati). Origin/main (tip 20d9de4) memuat seluruh Task 17-24 → commit snapshot lokal, merge origin/main, semua konflik diselesaikan dengan versi origin (terverifikasi superset: apply-wizard union, positions-tab form-page). db:push, dep Task 20 diinstal ulang (nodemailer@10, otpauth@9.5.2, @types/nodemailer), tiga daemon dinyalakan (dev-keepalive 1956, auto-push 1959, realtime 1963).
+- position-form-page.tsx: prop baru mode "posisi" | "formulir" (default "posisi"). Mode posisi = 10 section info lowongan (Dasar, Konten EN, Publikasi, Tampilan & Konten, Benefit & Karya, Pipeline & AI, Otomasi Pesan, Evaluasi, Wawancara, Penawaran & Onboarding). Mode formulir = section "Formulir & Screening" saja (berkas wajib CV/Intro/Portofolio, kuota, pertanyaan screening) + editor "Dokumen Wajib Tambahan" (dipindah dari halaman kelola; state customDocs + add/remove, tersimpan saat Simpan). Header/toast/tombol adaptif: "Edit Posisi: X" vs "Formulir Lamaran: X", "Simpan Perubahan" vs "Simpan Formulir", toast "Formulir lamaran disimpan". Payload PATCH/POST kini memuat customDocs.
+- position-manage-page.tsx: ditulis ulang — dua tombol terpisah di header ("Formulir Lamaran" outline + "Edit Posisi" primary), kartu editor dokumen DIGANTI kartu ringkasan "Formulir Lamaran" (badge CV/Intro/Portofolio/customDocs wajib-opsional, kuota, jumlah pertanyaan screening + tombol Edit Formulir), tombol "Edit Konten Lengkap" menjadi "Edit Posisi". Props baru editMode/onEdit/onExitEdit menggantikan startInEdit; saat editMode terisi seluruh tampilan diganti PositionFormPage sesuai mode (halaman penuh, bukan popup).
+- positions-tab.tsx: deep-link diperluas — #admin/posisi/<id> (kelola), /edit (edit posisi), /formulir (edit formulir) via readManageHash/manageHashFor; state manageEdit (boolean) diganti manageMode (view|posisi|formulir); openManage(position, mode) pushState per level; exitEdit() replaceState kembali ke kelola; hashchange menyinkronkan id+mode; pencil di daftar = Edit Posisi; "Tambah Posisi" = halaman penuh mode posisi.
+- Verifikasi E2E subagent 25-a (via :81, Owner): 12/12 PASS — login; kelola menampilkan dua tombol + kartu ringkasan; Edit Posisi = halaman 10 section tanpa Formulir & Screening; Formulir Lamaran = halaman formulir tanpa Dasar; simpan KTP → badge persist setelah reload; edit judul posisi → persist + dipulihkan; Back/Forward pushState benar (list→kelola→edit); Tambah Posisi halaman penuh + Batal; nol popup di semua jalur edit; mobile 390px scrollWidth 390 tanpa overflow; 0 console error; dev.log bersih.
+- Fix lingkungan oleh verifier: login 500 sesaat (Prisma client usang di proses dev lama) → dev-keepalive memuat ulang server dengan klien baru; tidak ada bug kode Task 25.
+
+Stage Summary:
+- Edit lengkap posisi kini terbagi dua halaman mandiri tanpa popup: "Edit Posisi" (semua info lowongan) dan "Formulir Lamaran" (berkas wajib, kuota, screening, dokumen tambahan pendaftar); halaman kelola menampilkan ringkasan formulir dan deep-link #admin/posisi/<id>[/edit|/formulir] dengan Back/Forward browser benar.
+- Restorasi Task 17-24 dari origin/main selesai lagi (pola sama dengan reset sebelumnya), tiga daemon berjalan, auto-sync GitHub aktif.
