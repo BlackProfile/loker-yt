@@ -1324,6 +1324,9 @@ export function PositionFormPage({
                 </>
               ) : null}
 
+              {/* Lanjutan EDIT POSISI: pipeline, pesan, evaluasi, wawancara, penawaran. */}
+              {mode === "posisi" ? (
+                <>
               {/* g. Pipeline & AI */}
               <FormSection
                 id="pipeline"
