@@ -31,7 +31,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Status tidak valid." }, { status: 400 });
     }
 
-    let where = baseWhere;
+    let where: Parameters<typeof db.application.findFirst>[0] extends never ? never : Record<string, unknown> = {
+      ...baseWhere,
+      deletedAt: null, // lamaran di tong sampah tidak tampil di daftar admin
+    };
 
     // Scope granular HR: bila daftar posisi yang ditugaskan tidak kosong,
     // batasi hasil hanya ke posisi tersebut (kosong = semua posisi).

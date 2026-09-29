@@ -1,6 +1,7 @@
 // PATCH  /api/admin/positions/[id] — update sebagian field posisi (OWNER/HR), mendukung
 //        seluruh field v3 (slug, gaji, benefit, screening, pipeline, template, rubrik, dll).
-// DELETE /api/admin/positions/[id] — hapus posisi (OWNER/HR; Application.positionId jadi null via onDelete SetNull).
+// DELETE /api/admin/positions/[id] — SOFT delete posisi (OWNER/HR): deletedAt diisi,
+//          lamaran tetap utuh; pemulihan/hapus permanen lewat /api/admin/trash.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
@@ -32,7 +33,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const data = body as Record<string, unknown>;
 
     const existing = await db.position.findUnique({ where: { id } });
-    if (!existing) {
+    if (!existing || existing.deletedAt) {
+      // Posisi di tong sampah tidak bisa diedit.
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
@@ -73,15 +75,25 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params;
 
     const existing = await db.position.findUnique({ where: { id } });
-    if (!existing) {
+    if (!existing || existing.deletedAt) {
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
-    await db.position.delete({ where: { id } });
+    // SOFT delete: simpan deletedAt agar bisa dipulihkan dari Tong Sampah.
+    const deletedAt = new Date();
+    await db.position.update({ where: { id }, data: { deletedAt } });
+    await db.activityLog.create({
+      data: {
+        applicationId: null,
+        actor: session.name,
+        action: "POSITION_DELETE",
+        detail: `Posisi "${existing.title}" dipindahkan ke tong sampah`,
+      },
+    });
 
     // Realtime: posisi dihapus — segarkan daftar publik & admin.
     void emitRealtime(REALTIME_EVENTS.positions);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, deletedAt: deletedAt.toISOString() });
   } catch (error) {
     console.error("[DELETE /api/admin/positions/[id]]", error);
     return NextResponse.json({ error: "Gagal menghapus posisi. Coba lagi nanti." }, { status: 500 });

@@ -1,4 +1,4 @@
-// GET  /api/admin/positions — daftar SEMUA posisi (termasuk nonaktif), semua role.
+// GET  /api/admin/positions — daftar SEMUA posisi aktif (posisi terhapus lewat filter deletedAt), semua role.
 // POST /api/admin/positions — buat posisi baru (OWNER/HR), mendukung seluruh field v3.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -21,6 +21,7 @@ export async function GET() {
     await closeExpiredPositions();
 
     const rows = await db.position.findMany({
+      where: { deletedAt: null },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     });
 
