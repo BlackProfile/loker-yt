@@ -1144,3 +1144,19 @@ Work Log:
 Stage Summary:
 - VERDICT: Task 26 LULUS 8/8 — seluruh fitur publik default OFF kecuali Daftar Posisi, Formulir Lamaran (via gerbang baca di detail posisi), dan Cek Status; chatbot mati; saklar admin konsisten dengan DB dan round-trip ON/OFF hero bekerja persis; mobile bersih, console & server log bersih, state DB akhir = default Task 26 tanpa perubahan sisa.
 - Tidak ada perubahan kode yang diperlukan; satu-satunya hambatan adalah 2FA TOTP aktif pada akun demo Owner (sisa fitur Task 20) yang diselesaikan verifikator dengan kode TOTP sah dari secret DB (tanpa mengubah state).
+
+---
+Task ID: 26
+Agent: z.ai main session
+Task: Default semua fitur publik OFF kecuali Daftar Posisi, Formulir Lamaran, Cek Status
+
+Work Log:
+- Pemetaan: visibilitas section halaman publik dikendalikan Setting "site".sections (sanitizeSections mempertahankan boolean tersimpan; default dipakai hanya bila field hilang/row belum ada) — jadi perubahan harus di dua tempat: konstanta default (persist lintas reset karena db/custom.db di-gitignore & seed menulis dari default) dan row DB yang berjalan.
+- src/lib/defaults.ts: DEFAULT_SECTIONS kini hanya positions/applyForm/statusCheck = true; hero, about, benefits, steps, testimonials, faq, subscribe, finalCta, chatbot = false. DEFAULT_SITE.chatbotEnabled = false.
+- src/lib/notify.ts: fallback DEFAULT_AUTOMATION.chatbotEnabled dan fallback inline parse getAutomationSettings() ikut false (chatbot default mati di semua jalur).
+- DB berjalan: row Setting "site" diperbarui (sections + chatbotEnabled saja; konten lain seperti nama situs/hero/FAQ dipertahankan agar bisa dinyalakan lagi tanpa kehilangan isi).
+- Cleanup: 2FA TOTP akun demo admin@lumina.id (nyala sisa verifikasi Task 20) dinonaktifkan agar login dokumen (admin123) berfungsi lagi; tiga daemon (dev-keepalive/auto-push/realtime) ditemukan mati dan dinyalakan ulang.
+- Verifikasi E2E subagent 26-a (via :81): 8/8 PASS — landing publik hanya menampilkan Daftar Posisi + Cek Status (form lamaran ada di detail posisi di balik gerbang baca, sesuai desain); detail posisi & alur lamar tetap jalan; cek status kode tak valid → pesan sopan tanpa crash; toggle admin Pengaturan "Tampilan Halaman Publik" round-trip Hero ON→tampil→OFF→hilang; chatbot tidak ada; mobile 390px tanpa overflow; 0 console error; dev.log bersih.
+
+Stage Summary:
+- Situs publik kini minimal secara default: Daftar Posisi, Formulir Lamaran, Cek Status — section lain mati dan dapat dinyalakan kapan saja lewat Pengaturan; default juga berlaku untuk instalasi baru/reset (seed menulis dari konstanta baru).
