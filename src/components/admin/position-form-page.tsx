@@ -663,6 +663,24 @@ export function PositionFormPage({
   const [aiCoverLoading, setAiCoverLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ---- Draf autosave (hanya mode Tambah Posisi; tidak jalan di mode edit) ----
+  const draftEnabled = editing === null && mode === "posisi";
+  const [draftOffer, setDraftOffer] = useState<DraftEnvelope | null>(() =>
+    draftEnabled ? readDraftStorage() : null
+  );
+
+  // ---- Template posisi ----
+  const [templates, setTemplates] = useState<PositionTemplateMeta[] | null>(null);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [tplName, setTplName] = useState("");
+  const [tplNote, setTplNote] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+
+  // ---- Generator pertanyaan screening AI (halaman Formulir Lamaran) ----
+  const [aiQuestionsLoading, setAiQuestionsLoading] = useState(false);
+
   // Dokumen wajib tambahan (editor di halaman Formulir Lamaran) — baru
   // tersimpan saat tombol Simpan diklik, bukan tiap perubahan.
   const [customDocs, setCustomDocs] = useState<string[]>(() =>
@@ -691,6 +709,146 @@ export function PositionFormPage({
   const removeCustomDoc = useCallback((label: string) => {
     setCustomDocs((prev) => prev.filter((d) => d !== label));
   }, []);
+
+  // Autosave draf: tulis ke localStorage 1500ms setelah perubahan form terakhir.
+  // Tidak menulis bila form masih kosong agar draf lama tidak tertimpa isian kosong.
+  useEffect(() => {
+    if (!draftEnabled) return;
+    if (JSON.stringify(form) === JSON.stringify(EMPTY_FORM)) return;
+    const timer = setTimeout(() => writeDraftToStorage(form), 1500);
+    return () => clearTimeout(timer);
+  }, [form, draftEnabled]);
+
+  // Kartu draf hanya tampil saat form masih kosong (belum ada isian baru).
+  const formDirty = useMemo(
+    () => JSON.stringify(form) !== JSON.stringify(EMPTY_FORM),
+    [form]
+  );
+  const draftFilledCount = useMemo(
+    () => (draftOffer ? countFilledFields(draftOffer.form) : 0),
+    [draftOffer]
+  );
+  const showDraftCard =
+    draftEnabled && draftOffer !== null && !formDirty && draftFilledCount > 3;
+
+  function handleRestoreDraft() {
+    if (!draftOffer) return;
+    setForm(draftOffer.form);
+    setDraftOffer(null);
+    toast.success("Draf dipulihkan — periksa isian sebelum menyimpan.");
+  }
+
+  function handleDiscardDraft() {
+    removeDraftStorage();
+    setDraftOffer(null);
+    toast.info("Draf dibuang.");
+  }
+
+  // ---- Template posisi ----
+
+  // Muat daftar template saat dropdown "Isi dari Template" pertama kali dibuka.
+  function handleTemplatesOpenChange(open: boolean) {
+    if (!open || templates !== null || templatesLoading) return;
+    setTemplatesLoading(true);
+    apiGet<PositionTemplateMeta[]>("/api/admin/position-templates")
+      .then((rows) => setTemplates(Array.isArray(rows) ? rows : []))
+      .catch((err) => {
+        reportError(err);
+        setTemplates([]);
+      })
+      .finally(() => setTemplatesLoading(false));
+  }
+
+  async function handleApplyTemplate(id: string) {
+    if (applyingTemplate) return;
+    setApplyingTemplate(true);
+    try {
+      const res = await apiGet<{ template: PositionTemplateDetail }>(
+        `/api/admin/position-templates/${id}`
+      );
+      const parsed = formDataFromUnknown(res.template.data);
+      if (!parsed) {
+        toast.error("Data template tidak valid.");
+        return;
+      }
+      setForm(parsed.form);
+      setCustomDocs(parsed.customDocs);
+      toast.success("Template diterapkan");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setApplyingTemplate(false);
+    }
+  }
+
+  function handleSaveTemplate() {
+    if (savingTemplate) return;
+    const name = tplName.trim();
+    if (name.length < 1 || name.length > 60) {
+      toast.error("Nama template wajib diisi (maksimal 60 karakter).");
+      return;
+    }
+    setSavingTemplate(true);
+    const payload = buildPositionPayload();
+    apiPost<{ template: PositionTemplateMeta }>("/api/admin/position-templates", {
+      name,
+      note: tplNote.trim() || null,
+      data: payload,
+    })
+      .then(() => {
+        toast.success("Template posisi disimpan");
+        setTemplateDialogOpen(false);
+        setTplName("");
+        setTplNote("");
+        setTemplates(null); // paksa muat ulang daftar saat dropdown dibuka lagi
+      })
+      .catch((err) => reportError(err))
+      .finally(() => setSavingTemplate(false));
+  }
+
+  // ---- Generator pertanyaan screening AI ----
+
+  // Pola id sama dengan ScreeningQuestionsEditor agar konsisten.
+  function newScreeningQuestionId(): string {
+    return `q${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-3)}`;
+  }
+
+  function handleGenerateQuestions() {
+    if (!editing || aiQuestionsLoading) return;
+    setAiQuestionsLoading(true);
+    apiPost<{ questions: { label: string }[] }>("/api/admin/ai/screening-questions", {
+      positionId: editing.id,
+    })
+      .then((res) => {
+        const incoming = (Array.isArray(res.questions) ? res.questions : [])
+          .map((q) => (q && typeof q.label === "string" ? q.label.trim().slice(0, 200) : ""))
+          .filter((label) => label.length >= 3)
+          .filter((label, index, all) => all.indexOf(label) === index)
+          .filter(
+            (label) =>
+              !form.screeningQuestions.some(
+                (q) => q.label.trim().toLowerCase() === label.toLowerCase()
+              )
+          );
+        const room = Math.max(0, 10 - form.screeningQuestions.length);
+        const toAdd = incoming.slice(0, room);
+        if (toAdd.length === 0) {
+          toast.info(
+            "Tidak ada pertanyaan baru yang bisa ditambahkan — daftar penuh atau hasil AI sudah ada."
+          );
+          return;
+        }
+        const added = toAdd.map((label) => ({
+          id: newScreeningQuestionId(),
+          label,
+          required: false,
+        }));
+        set("screeningQuestions", [...form.screeningQuestions, ...added]);
+        toast.success(`${toAdd.length} pertanyaan ditambahkan dari AI`);
+      })
+      .catch((err) => reportError(err))
+      .finally(() => setAiQuestionsLoading(false));
+  }
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -777,15 +935,9 @@ export function PositionFormPage({
     return errors;
   }
 
-  async function handleSave() {
-    if (saving) return;
-    const errors = validate();
-    setValidationErrors(errors);
-    if (errors.length > 0) {
-      toast.error(errors[0]);
-      return;
-    }
-    setSaving(true);
+  // Builder payload tombol Simpan — dipakai ulang oleh "Simpan sebagai Template"
+  // agar data template identik dengan data yang dikirim saat menyimpan posisi.
+  function buildPositionPayload(): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       title: form.title.trim(),
       department: form.department.trim(),
@@ -868,6 +1020,19 @@ export function PositionFormPage({
       autoCloseOnHired: form.autoCloseOnHired,
     };
     if (form.order.trim() !== "") payload.order = Number(form.order);
+    return payload;
+  }
+
+  async function handleSave() {
+    if (saving) return;
+    const errors = validate();
+    setValidationErrors(errors);
+    if (errors.length > 0) {
+      toast.error(errors[0]);
+      return;
+    }
+    setSaving(true);
+    const payload = buildPositionPayload();
 
     try {
       let updated: Position;
@@ -879,6 +1044,9 @@ export function PositionFormPage({
       } else {
         updated = await apiPost<Position>("/api/admin/positions", payload);
         toast.success("Posisi ditambahkan");
+        // Draf mode Tambah selesai — hapus agar tidak muncul lagi nanti.
+        removeDraftStorage();
+        setDraftOffer(null);
       }
       onSaved(updated);
     } catch (err) {
