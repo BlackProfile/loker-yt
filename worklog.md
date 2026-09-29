@@ -1173,3 +1173,21 @@ Work Log:
 
 Stage Summary:
 - Detail pelamar kini punya catatan video bertimestamp (PATCH videoNotes tersanitasi persis parseVideoNotes), PDF profil A4 lengkap & surat penawaran kerja via print-window, PATCH status memicu stageUpdatedAt + webhook application.stage_changed, DELETE jadi soft delete ke tong sampah
+---
+Task ID: 27-c
+Agent: subagen analitik
+Task: SLA alert, drop-off, efektivitas kanal, papan pengumuman
+
+Work Log:
+- API /api/admin/sla (GET ?days=N default 7, clamp 1-90, wajib login): lamaran aktif deletedAt/archivedAt null, status NOT IN (REJECTED,ACCEPTED,HIRED), stageUpdatedAt (fallback createdAt) < cutoff; urut daysInStage desc take 20 (orderBy coalesce tak didukung SQLite -> sort di JS); respons {days, rows:[{id,name,trackingCode,positionTitle,status,label(stageLabel),tanggalPaten,daysInStage}]}
+- API /api/admin/dropoff (GET ?days=30 clamp 1-90): agregasi FormStepStat sejak N hari, groupBy step di JS (enter/advance/submit); langkah terakhir pakai submitted utk dropPercent = 100 - completed/entered*100 (guard entered=0); respons {days, steps:[{step,entered,advanced,submitted,dropPercent}]}
+- API /api/admin/channels (GET ?days=30): groupBy Application sejak N hari (exclude deletedAt) per kanal = utmSource || source || "(tidak diketahui)" (trim+lowercase+maks 24 char); share = count/total; hired = hiredAt != null; rejected = status REJECTED; sort count desc take 8
+- API /api/admin/announcements: GET list (semua role; pinned desc lalu createdAt desc, take 20), POST OWNER/HR (judul 3-80, isi 1-600, pinned?, authorName dari session.name) + emitRealtime "announcements:changed", DELETE ?id= OWNER saja (404 bila tidak ada); 401/403 mengikuti pola templates route
+- dashboard-tab.tsx: kartu "Perlu Perhatian (SLA Tahap)" (badge jumlah, baris nama+kode+X hari di tahap <label>+tanggal, badge amber "Melewati 2× SLA" bila daysInStage >= days*2, empty state emerald ramah, skeleton); kartu "Papan Pengumuman" (form Input judul + Textarea + Switch pin + tombol Posting utk OWNER/HR, VIEWER read-only dgn teks kecil, daftar max-h-72 nice-scrollbar dgn Badge "Disematkan", penulis + formatRelative, tombol Trash2 OWNER dgn AlertDialog konfirmasi); refresh ikut pola tab (loadSla/loadAnnouncements silent, useLiveRefresh applications:changed + announcements:changed, tombol Segarkan)
+- analytics-tab.tsx: kartu "Drop-off Formulir Lamaran" (bar horizontal CSS murni per langkah, rose bila >= 50% else zinc, angka masuk/lanjut/kirim + %, empty state); kartu "Efektivitas Kanal Rekrutmen" (bar proporsi amber + share%, badge kecil emerald "X diterima" / rose "Y ditolak", empty state); tanpa library chart baru
+- Uji curl: login OK; 401 tanpa sesi utk 4 endpoint; sla?days=1 mengembalikan 3 baris seeded urut paling lama (5/3/1 hari, label Wawancara/Ditinjau); days=500 di-clamp 90; dropoff akurat (seed 5 baris uji sementara -> 50%/100%, lalu dibersihkan); channels mengembalikan instagram 2 (40%), youtube/tiktok/teman-rekan 1 (20%) dgn badge 1 ditolak; announcements POST OWNER (pinned, author "Pemilik Studio") + HR (author "Tim HR"), POST VIEWER 403, validasi 400, DELETE HR 403, DELETE OWNER 200, urutan pinned desc benar; 1 Announcement uji dibuat lalu dihapus (DB bersih)
+- Verifikasi agent-browser: login Owner -> kartu SLA + Papan Pengumuman tampil; posting via UI (toast + baris + penulis), hapus via Trash2 + AlertDialog (toast + kembali kosong); tab Analitik: kedua kartu tampil, kanal & drop-off mengambil data live (termasuk 3 baris FormStepStat yang dihasilkan instrumentasi wizard dari agen Task 27 lain — guard entered=0 aman); console errors kosong
+- bun run lint bersih; bunx tsc --noEmit: 0 error pada 6 berkas milik (sisa error baseline examples/scripts/skills + src/app/api/admin/sessions/route.ts milik agen lain, tidak disentuh)
+
+Stage Summary:
+- 4 fitur hadir: alert SLA per tahap, drop-off formulir, efektivitas kanal, papan pengumuman internal (OWNER/HR posting, OWNER hapus, realtime announcements:changed); bar CSS tanpa library; lint & tsc bersih

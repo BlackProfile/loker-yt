@@ -1139,7 +1139,103 @@ export function PositionFormPage({
               : "Lengkapi detail posisi lowongan baru untuk halaman publik."}
           </p>
         </div>
+
+        {/* Baris aksi template: isi dari template (create) + simpan sebagai template */}
+        <div className="flex flex-wrap items-center gap-2">
+          {!editing ? (
+            <DropdownMenu onOpenChange={handleTemplatesOpenChange}>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="h-9">
+                  {applyingTemplate ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <LayoutTemplate className="size-4" aria-hidden="true" />
+                  )}
+                  Isi dari Template
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-72">
+                {templatesLoading ? (
+                  <DropdownMenuItem disabled className="gap-2 text-xs">
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    Memuat template...
+                  </DropdownMenuItem>
+                ) : templates !== null && templates.length > 0 ? (
+                  templates.map((tpl) => (
+                    <DropdownMenuItem
+                      key={tpl.id}
+                      className="flex-col items-start gap-0.5 py-2.5"
+                      onClick={() => void handleApplyTemplate(tpl.id)}
+                    >
+                      <span className="w-full truncate text-sm font-medium">{tpl.name}</span>
+                      {tpl.note ? (
+                        <span className="w-full truncate text-xs text-muted-foreground">
+                          {tpl.note}
+                        </span>
+                      ) : null}
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <DropdownMenuItem disabled>Belum ada template</DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9"
+            onClick={() => {
+              setTplName("");
+              setTplNote("");
+              setTemplateDialogOpen(true);
+            }}
+          >
+            <BookmarkPlus className="size-4" aria-hidden="true" />
+            Simpan sebagai Template
+          </Button>
+        </div>
       </div>
+
+      {/* Kartu draf belum tersimpan — hanya mode Tambah Posisi dengan draf layak */}
+      {showDraftCard && draftOffer ? (
+        <Card className="flex flex-col gap-3 rounded-2xl border-amber-200 bg-amber-50/70 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900 dark:bg-amber-950/30">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900 dark:text-amber-400">
+              <History className="size-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
+                Draf belum tersimpan dari {formatDateTime(draftOffer.updatedAt)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {draftFilledCount} isian tersimpan di perangkat ini. Lanjutkan pengisian,
+                atau buang draf untuk memulai dari awal.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={handleDiscardDraft}
+            >
+              Buang Draf
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-9 active:scale-[0.99]"
+              onClick={handleRestoreDraft}
+            >
+              Lanjutkan Draf
+            </Button>
+          </div>
+        </Card>
+      ) : null}
 
       <Card className="gap-0 rounded-2xl p-5 md:p-6">
         <form
@@ -1673,14 +1769,49 @@ export function PositionFormPage({
                     </p>
                   </div>
 
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between gap-2">
                     <Label>Pertanyaan Screening</Label>
+                    {editing ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1 px-2 text-xs active:scale-[0.99]"
+                        onClick={handleGenerateQuestions}
+                        disabled={aiQuestionsLoading}
+                      >
+                        {aiQuestionsLoading ? (
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Sparkles className="size-3.5" aria-hidden="true" />
+                        )}
+                        Generate dengan AI
+                      </Button>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-block">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1 px-2 text-xs"
+                              disabled
+                            >
+                              <Sparkles className="size-3.5" aria-hidden="true" />
+                              Generate dengan AI
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>Simpan posisi dulu</TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
                     <ScreeningQuestionsEditor
                       items={form.screeningQuestions}
                       onChange={(items) => set("screeningQuestions", items)}
                       maxItems={10}
                     />
-                  </div>
 
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="pos-customDocs">Dokumen Wajib Tambahan</Label>
@@ -2414,6 +2545,62 @@ export function PositionFormPage({
           </div>
         </div>
       </div>
+      {/* Dialog simpan posisi saat ini sebagai template */}
+      <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Simpan sebagai Template</DialogTitle>
+            <DialogDescription>
+              Simpan isi formulir posisi saat ini sebagai template agar bisa dipakai
+              ulang lewat "Isi dari Template".
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tpl-name">Nama Template *</Label>
+              <Input
+                id="tpl-name"
+                value={tplName}
+                onChange={(e) => setTplName(e.target.value)}
+                placeholder="mis. Video Editor Standar"
+                maxLength={60}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tpl-note">Catatan (opsional)</Label>
+              <Input
+                id="tpl-note"
+                value={tplNote}
+                onChange={(e) => setTplNote(e.target.value)}
+                placeholder="mis. Konfigurasi dasar posisi produksi video"
+                maxLength={300}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTemplateDialogOpen(false)}
+              disabled={savingTemplate}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSaveTemplate()}
+              disabled={savingTemplate || tplName.trim().length === 0}
+            >
+              {savingTemplate ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <BookmarkPlus className="size-4" aria-hidden="true" />
+              )}
+              Simpan Template
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
