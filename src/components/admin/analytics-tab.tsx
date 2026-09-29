@@ -20,12 +20,15 @@ import {
   Handshake,
   Inbox,
   RefreshCw,
+  Share2,
   Timer,
+  TrendingDown,
   TrendingUp,
   Users,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -49,6 +52,28 @@ import { cn } from "@/lib/utils";
 const ROSE = "#f43f5e";
 const AMBER = "#f59e0b";
 const EMERALD = "#10b981";
+
+// Drop-off formulir (GET /api/admin/dropoff) — agregasi event per langkah wizard.
+type DropoffStep = {
+  step: number;
+  entered: number;
+  advanced: number;
+  submitted: number;
+  dropPercent: number;
+};
+
+type DropoffResponse = { days: number; steps: DropoffStep[] };
+
+// Efektivitas kanal rekrutmen (GET /api/admin/channels).
+type ChannelRow = {
+  channel: string;
+  count: number;
+  share: number;
+  hired: number;
+  rejected: number;
+};
+
+type ChannelsResponse = { days: number; channels: ChannelRow[] };
 
 type MetricCard = {
   key: string;
@@ -98,6 +123,12 @@ export function AnalyticsTab() {
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Drop-off formulir (GET /api/admin/dropoff).
+  const [dropoff, setDropoff] = useState<DropoffResponse | null>(null);
+
+  // Efektivitas kanal (GET /api/admin/channels).
+  const [channels, setChannels] = useState<ChannelsResponse | null>(null);
+
   // silent: refresh senyap — data lama tetap tampil, skeleton hanya load pertama.
   const load = useCallback(
     async (silent = false) => {
@@ -114,12 +145,40 @@ export function AnalyticsTab() {
     [reportError]
   );
 
+  const loadDropoff = useCallback(async () => {
+    try {
+      const res = await apiGet<DropoffResponse>("/api/admin/dropoff");
+      setDropoff(res);
+    } catch {
+      // Kartu pelengkap; senyap saat gagal (data lama dipertahankan).
+    }
+  }, []);
+
+  const loadChannels = useCallback(async () => {
+    try {
+      const res = await apiGet<ChannelsResponse>("/api/admin/channels");
+      setChannels(res);
+    } catch {
+      // Kartu pelengkap; senyap saat gagal (data lama dipertahankan).
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    void loadDropoff();
+  }, [loadDropoff]);
+
+  useEffect(() => {
+    void loadChannels();
+  }, [loadChannels]);
+
   useLiveRefresh("applications:changed", () => {
     void load(true);
+    void loadDropoff();
+    void loadChannels();
   });
   useLiveRefresh("interviews:changed", () => {
     void load(true);
@@ -220,7 +279,11 @@ export function AnalyticsTab() {
           variant="outline"
           size="sm"
           className="h-11 active:scale-[0.99] sm:h-9"
-          onClick={() => void load()}
+          onClick={() => {
+            void load();
+            void loadDropoff();
+            void loadChannels();
+          }}
           disabled={loading}
           aria-label="Segarkan data analitik"
         >
@@ -504,6 +567,151 @@ export function AnalyticsTab() {
               )}
             </CardContent>
           </Card>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* Drop-off formulir lamaran (bar CSS sederhana, tanpa library chart) */}
+            <Card className="gap-0 rounded-2xl py-6">
+              <CardHeader className="px-6">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <TrendingDown className="size-4 text-rose-500" aria-hidden="true" />
+                  Drop-off Formulir Lamaran
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  Persentase pendaftar yang berhenti di tiap langkah wizard dalam{" "}
+                  {dropoff?.days ?? 30} hari terakhir.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-6">
+                {dropoff === null ? (
+                  <div className="flex flex-col gap-3">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                    ))}
+                  </div>
+                ) : dropoff.steps.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-8 text-center">
+                    <Inbox className="size-8 text-muted-foreground/50" aria-hidden="true" />
+                    <p className="text-sm text-muted-foreground">
+                      Belum ada data langkah formulir. Statistik terisi otomatis begitu ada
+                      pendaftar membuka wizard.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex max-h-72 flex-col gap-3 overflow-y-auto nice-scrollbar">
+                    {dropoff.steps.map((step) => {
+                      const high = step.dropPercent >= 50;
+                      return (
+                        <div key={step.step} className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <span className="min-w-0 truncate font-medium">
+                              Langkah {step.step}
+                            </span>
+                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                              masuk {step.entered} · lanjut {step.advanced} · kirim{" "}
+                              {step.submitted}
+                            </span>
+                            <span
+                              className={cn(
+                                "shrink-0 text-xs font-semibold tabular-nums",
+                                high ? "text-rose-600 dark:text-rose-400" : "text-foreground"
+                              )}
+                            >
+                              {step.dropPercent}%
+                            </span>
+                          </div>
+                          <div
+                            className="h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+                            role="img"
+                            aria-label={`Drop-off langkah ${step.step}: ${step.dropPercent}%`}
+                          >
+                            <div
+                              className={cn(
+                                "h-full rounded-full",
+                                high ? "bg-rose-500" : "bg-zinc-400 dark:bg-zinc-500"
+                              )}
+                              style={{ width: `${Math.min(100, Math.max(step.dropPercent, 2))}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Efektivitas kanal rekrutmen */}
+            <Card className="gap-0 rounded-2xl py-6">
+              <CardHeader className="px-6">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Share2 className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  Efektivitas Kanal Rekrutmen
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  Sumber lamaran (UTM/jawaban pendaftar) dalam {channels?.days ?? 30} hari
+                  terakhir.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-6">
+                {channels === null ? (
+                  <div className="flex flex-col gap-3">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                    ))}
+                  </div>
+                ) : channels.channels.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-8 text-center">
+                    <Inbox className="size-8 text-muted-foreground/50" aria-hidden="true" />
+                    <p className="text-sm text-muted-foreground">
+                      Belum ada lamaran pada periode ini, jadi kanal belum bisa dihitung.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex max-h-72 flex-col gap-3 overflow-y-auto nice-scrollbar">
+                    {channels.channels.map((row) => (
+                      <div key={row.channel} className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0 truncate font-medium">{row.channel}</span>
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {row.count} lamaran ({row.share}%)
+                          </span>
+                        </div>
+                        <div
+                          className="h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+                          role="img"
+                          aria-label={`Kanal ${row.channel}: ${row.count} lamaran (${row.share}%)`}
+                        >
+                          <div
+                            className="h-full rounded-full bg-amber-400"
+                            style={{ width: `${Math.min(100, Math.max(row.share, 2))}%` }}
+                          />
+                        </div>
+                        {row.hired > 0 || row.rejected > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {row.hired > 0 ? (
+                              <Badge
+                                variant="outline"
+                                className="border-emerald-200 bg-emerald-50 px-1.5 py-0 text-[10px] text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400"
+                              >
+                                {row.hired} diterima
+                              </Badge>
+                            ) : null}
+                            {row.rejected > 0 ? (
+                              <Badge
+                                variant="outline"
+                                className="border-rose-200 bg-rose-50 px-1.5 py-0 text-[10px] text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
+                              >
+                                {row.rejected} ditolak
+                              </Badge>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </>
       )}
     </div>

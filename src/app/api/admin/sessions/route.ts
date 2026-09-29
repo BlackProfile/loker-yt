@@ -7,7 +7,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { ADMIN_COOKIE_NAME, getSession, hashToken } from "@/lib/server-auth";
-import { ROLES, type Role } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -99,6 +98,3 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Gagal mengeluarkan sesi. Coba lagi nanti." }, { status: 500 });
   }
 }
-
-// ROLES diimpor agar tipe Role terpakai konsisten pada respons userRole.
-void ROLES satisfies readonly Role[];
