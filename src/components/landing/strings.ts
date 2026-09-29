@@ -191,6 +191,17 @@ const id = {
       experience: "Ceritakan pengalamanmu minimal 10 karakter.",
       motivation: "Tulis alasanmu minimal 10 karakter.",
       screeningRequired: "Jawaban \"{label}\" wajib diisi.",
+      formRequired: "Jawaban untuk \"{label}\" wajib diisi.",
+      formUrl: "\"{label}\" harus diawali http:// atau https://.",
+      formNumber: "Jawaban \"{label}\" harus berupa angka.",
+      formNumberMin: "Jawaban \"{label}\" minimal {min}.",
+      formNumberMax: "Jawaban \"{label}\" maksimal {max}.",
+      formDate: "Jawaban \"{label}\" harus tanggal yang valid.",
+      formRating: "Skor \"{label}\" harus 1-{max}.",
+      formOption: "Jawaban \"{label}\" harus salah satu opsi yang tersedia.",
+      formFileType:
+        "Format berkas untuk \"{label}\" tidak didukung. Gunakan PDF, gambar, Word, audio, atau video.",
+      formFileSize: "Ukuran berkas \"{label}\" maksimal 20 MB.",
       portfolioRequired: "Portofolio atau link sosial media wajib untuk posisi ini.",
       cvRequired: "CV wajib diunggah untuk posisi ini.",
       introRequired: "Audio/video perkenalan wajib diunggah untuk posisi ini.",
@@ -267,6 +278,19 @@ const id = {
       sectionTitle: "Pertanyaan untuk Posisi Ini",
       requiredMark: "(wajib)",
       answerPh: "Tulis jawabanmu di sini...",
+    },
+    formSection: {
+      chooseOption: "Pilih salah satu",
+      chooseMulti: "Pilih yang sesuai (boleh lebih dari satu)",
+      otherLabel: "Lainnya",
+      otherPlaceholder: "Tulis jawabanmu…",
+      ratingAria: "Beri {n} bintang",
+      fileChoose: "Pilih berkas",
+      fileChange: "Ulangi",
+      fileRemove: "Hapus",
+      fileHint: "PDF, gambar, Word, audio, video — maks 20 MB",
+      previewTitle: "Jawaban Tambahan",
+      fileAnswer: "Berkas diunggah",
     },
     buttons: {
       back: "Kembali",
@@ -651,6 +675,16 @@ type idDictShape = {
       experience: string;
       motivation: string;
       screeningRequired: string;
+      formRequired: string;
+      formUrl: string;
+      formNumber: string;
+      formNumberMin: string;
+      formNumberMax: string;
+      formDate: string;
+      formRating: string;
+      formOption: string;
+      formFileType: string;
+      formFileSize: string;
       portfolioRequired: string;
       cvRequired: string;
       introRequired: string;
@@ -717,6 +751,19 @@ type idDictShape = {
       sectionTitle: string;
       requiredMark: string;
       answerPh: string;
+    };
+    formSection: {
+      chooseOption: string;
+      chooseMulti: string;
+      otherLabel: string;
+      otherPlaceholder: string;
+      ratingAria: string;
+      fileChoose: string;
+      fileChange: string;
+      fileRemove: string;
+      fileHint: string;
+      previewTitle: string;
+      fileAnswer: string;
     };
     buttons: {
       back: string;
@@ -1106,6 +1153,17 @@ const en: Dict = {
       experience: "Describe your experience with at least 10 characters.",
       motivation: "Write your reason with at least 10 characters.",
       screeningRequired: "The answer to \"{label}\" is required.",
+      formRequired: "The answer to \"{label}\" is required.",
+      formUrl: "\"{label}\" must start with http:// or https://.",
+      formNumber: "The answer to \"{label}\" must be a number.",
+      formNumberMin: "The answer to \"{label}\" must be at least {min}.",
+      formNumberMax: "The answer to \"{label}\" must be at most {max}.",
+      formDate: "The answer to \"{label}\" must be a valid date.",
+      formRating: "The rating for \"{label}\" must be between 1 and {max}.",
+      formOption: "The answer to \"{label}\" must be one of the available options.",
+      formFileType:
+        "The file format for \"{label}\" is not supported. Use PDF, image, Word, audio, or video.",
+      formFileSize: "The file \"{label}\" must be at most 20 MB.",
       portfolioRequired: "A portfolio or social media link is required for this position.",
       cvRequired: "A CV is required for this position.",
       introRequired: "An intro audio/video is required for this position.",
@@ -1182,6 +1240,19 @@ const en: Dict = {
       sectionTitle: "Questions for This Position",
       requiredMark: "(required)",
       answerPh: "Write your answer here...",
+    },
+    formSection: {
+      chooseOption: "Choose one",
+      chooseMulti: "Select all that apply",
+      otherLabel: "Other",
+      otherPlaceholder: "Write your answer…",
+      ratingAria: "Rate {n} stars",
+      fileChoose: "Choose file",
+      fileChange: "Replace",
+      fileRemove: "Remove",
+      fileHint: "PDF, image, Word, audio, video — max 20 MB",
+      previewTitle: "Additional Answers",
+      fileAnswer: "File uploaded",
     },
     buttons: {
       back: "Back",
