@@ -248,6 +248,29 @@ export type ExtraDoc = {
   fileId: string; // URL publik admin: /api/files/{fileId}
 };
 
+/** Catatan bertimestamp pada video intro pelamar (detik ke berapa + isi catatan). */
+export type VideoNote = {
+  t: number; // detik ke-n dalam video
+  note: string;
+};
+
+/** Event webhook keluar yang bisa dilangganan endpoint eksternal. */
+export const WEBHOOK_EVENTS = [
+  "application.created",
+  "application.stage_changed",
+  "application.archived",
+  "offer.responded",
+] as const;
+export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
+
+export const WEBHOOK_EVENT_LABELS: Record<string, string> = {
+  "*": "Semua event",
+  "application.created": "Lamaran baru masuk",
+  "application.stage_changed": "Tahap pelamar berubah",
+  "application.archived": "Lamaran diarsipkan",
+  "offer.responded": "Pelamar menjawab penawaran",
+};
+
 export type Application = {
   id: string;
   name: string;
@@ -307,6 +330,13 @@ export type Application = {
 
   // Kualitas data
   isDuplicate?: boolean; // true = lamaran ganda terdeteksi (badge "Duplikat" di tabel)
+
+  // Task 27 — SLA, arsip, sampah, catatan video, persetujuan
+  stageUpdatedAt?: string | null; // terakhir kali tahap berubah (SLA)
+  archivedAt?: string | null; // arsip otomatis/manual
+  deletedAt?: string | null; // tong sampah (soft delete)
+  videoNotes?: VideoNote[]; // catatan bertimestamp video intro
+  consentAt?: string | null; // persetujuan privasi pelamar
 
   createdAt: string;
 };

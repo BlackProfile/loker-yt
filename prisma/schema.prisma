@@ -116,6 +116,9 @@ model Position {
   // Rencana ronde wawancara bawaan: JSON {round,name,mode?,platform?,durationMin?,interviewers?[]}[]
   roundPlan String @default("[]")
 
+  // Tong sampah (soft delete) — null = aktif
+  deletedAt DateTime?
+
   interviewSlots InterviewSlot[]
 }
 
@@ -198,6 +201,13 @@ model Application {
   isDuplicate   Boolean @default(false) // terdeteksi lamaran ganda (email/CV sama)
   duplicateOfId String? // id lamaran pertama yang diduplikasi
   referrer      String? // URL halaman saat mengirim lamaran (sumber)
+
+  // Task 27 — SLA, arsip, sampah, catatan video, persetujuan privasi
+  stageUpdatedAt DateTime? // terakhir kali tahap pipeline berubah (untuk SLA per tahap)
+  archivedAt     DateTime? // arsip otomatis/manual (lamaran stagnan) — null = tidak diarsip
+  deletedAt      DateTime? // tong sampah (soft delete) — null = tidak terhapus
+  videoNotes     String?   // JSON {t:detik,note:string}[] catatan bertimestamp saat review video intro
+  consentAt      DateTime? // saat pelamar menyetujui pernyataan privasi di formulir
 
   comments    Comment[]
   checkIns    CheckIn[]
@@ -357,6 +367,65 @@ model EmailOutbox {
   sentAt        DateTime?
 
   @@index([status])
+}
+
+// Statistik drop-off per langkah wizard formulir lamaran (Task 27)
+model FormStepStat {
+  id         String   @id @default(cuid())
+  positionId String?
+  step       Int // nomor langkah wizard (1-based)
+  event      String   @default("enter") // enter | advance | submit | abandon
+  createdAt  DateTime @default(now())
+
+  @@index([positionId])
+  @@index([createdAt])
+}
+
+// Template formulir posisi — simpan konfigurasi lowongan untuk dipakai ulang (Task 27)
+model PositionTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  note      String?
+  data      String // JSON payload sebagian field Position (hasil sanitize position-input)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Papan pengumuman internal tim admin (Task 27)
+model Announcement {
+  id         String   @id @default(cuid())
+  title      String
+  body       String
+  pinned     Boolean  @default(false)
+  authorName String   @default("Admin")
+  createdAt  DateTime @default(now())
+}
+
+// Endpoint webhook keluar generik — kirim event ke URL eksternal dengan tanda tangan HMAC (Task 27)
+model WebhookEndpoint {
+  id          String   @id @default(cuid())
+  url         String
+  secret      String
+  events      String   @default("[\"*\"]") // JSON string[] nama event; ["*"] = semua event
+  active      Boolean  @default(true)
+  lastStatus  Int?
+  lastFiredAt DateTime?
+  failCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+// Sesi login admin aktif — mendukung daftar perangkat + logout paksa (Task 27)
+model SessionToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique // SHA-256 dari nilai cookie sesi
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime? // null = aktif
+
+  @@index([userId])
 }
 
 // Cek-in masa percobaan 30/60/90 hari untuk karyawan baru

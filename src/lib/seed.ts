@@ -377,6 +377,26 @@ export function parseExtraDocs(raw: string | null | undefined): ExtraDoc[] {
 
 const AI_RECOMMENDATION_VALUES = Object.keys(AI_RECOMMENDATION_LABELS);
 
+/** Parse JSON catatan video intro menjadi daftar VideoNote yang aman. */
+export function parseVideoNotes(raw: string | null | undefined): VideoNote[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const notes: VideoNote[] = [];
+    for (const item of parsed) {
+      const obj = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+      const t = typeof obj.t === "number" && Number.isFinite(obj.t) ? Math.max(0, Math.round(obj.t)) : null;
+      const note = typeof obj.note === "string" ? obj.note.trim().slice(0, 300) : "";
+      if (t === null || !note) continue;
+      notes.push({ t, note });
+    }
+    return notes.slice(0, 100);
+  } catch {
+    return [];
+  }
+}
+
 /** Ubah record Prisma Application (include relasi) menjadi tipe `Application` v3. */
 export function serializeApplication(record: ApplicationRecord): Application {
   const status = record.status && record.status.trim().length > 0 ? record.status.trim() : "NEW";
@@ -439,6 +459,12 @@ export function serializeApplication(record: ApplicationRecord): Application {
     onboardingDocs: parseOnboardingDocs(record.onboardingDocs),
 
     isDuplicate: record.isDuplicate,
+
+    stageUpdatedAt: record.stageUpdatedAt ? record.stageUpdatedAt.toISOString() : null,
+    archivedAt: record.archivedAt ? record.archivedAt.toISOString() : null,
+    deletedAt: record.deletedAt ? record.deletedAt.toISOString() : null,
+    videoNotes: parseVideoNotes(record.videoNotes),
+    consentAt: record.consentAt ? record.consentAt.toISOString() : null,
 
     createdAt: record.createdAt.toISOString(),
   };
