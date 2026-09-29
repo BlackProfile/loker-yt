@@ -897,12 +897,14 @@ export function FormBuilderPage({
 
   const [responses, setResponses] = useState<FormResponsesData | null>(null);
   const [responsesState, setResponsesState] = useState<
-    "idle" | "loading" | "ready" | "not-builder" | "error"
+    "idle" | "ready" | "not-builder" | "error"
   >("idle");
+  // Fetch terpisah dari "state" agar segarkan tidak mengganti konten jadi skeleton.
+  const [responsesFetching, setResponsesFetching] = useState(false);
   const [responsesLoaded, setResponsesLoaded] = useState(false);
 
   async function loadResponses() {
-    setResponsesState("loading");
+    setResponsesFetching(true);
     try {
       const data = await apiGet<FormResponsesData>(
         `/api/admin/positions/${position.id}/form-responses`,
@@ -915,6 +917,8 @@ export function FormBuilderPage({
       } else {
         setResponsesState("error");
       }
+    } finally {
+      setResponsesFetching(false);
     }
   }
 
@@ -1297,7 +1301,7 @@ export function FormBuilderPage({
 
         {/* ================================= JAWABAN ================================= */}
         <TabsContent value="jawaban" className="flex flex-col gap-4">
-          {responsesState === "idle" || responsesState === "loading" ? (
+          {responsesState === "idle" || (responsesFetching && responses === null) ? (
             <div className="flex flex-col gap-3">
               <div className="h-12 animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-800" />
               {Array.from({ length: 2 }).map((_, i) => (
@@ -1340,13 +1344,13 @@ export function FormBuilderPage({
                         size="icon"
                         className="size-9 sm:size-8"
                         onClick={() => void loadResponses()}
-                        disabled={responsesState === "loading"}
+                        disabled={responsesFetching}
                         aria-label="Segarkan data jawaban"
                       >
                         <Loader2
                           className={cn(
                             "size-4",
-                            responsesState === "loading" && "animate-spin",
+                            responsesFetching && "animate-spin",
                           )}
                           aria-hidden="true"
                         />
