@@ -820,6 +820,11 @@ export function ApplyWizard({
   // Reset jawaban screening & dokumen tambahan saat posisi berubah (termasuk perubahan dari luar
   // wizard lewat dialog posisi) — pola "adjust state during render", tanpa effect.
   const [lastPositionId, setLastPositionId] = useState(positionId);
+  // Antrean pemulihan jawaban form draf — diterapkan setelah reset ganti posisi.
+  const draftRestoreAnswersRef = useRef<Record<
+    string,
+    string | string[] | number
+  > | null>(null);
   if (lastPositionId !== positionId) {
     setLastPositionId(positionId);
     setScreeningAnswers({});
@@ -849,11 +854,6 @@ export function ApplyWizard({
   const [draft, setDraft] = useState<StoredDraft | null>(null);
   const submittedRef = useRef(false);
   const draftDismissedRef = useRef(false);
-  // Antrean pemulihan jawaban form draf — diterapkan setelah reset ganti posisi.
-  const draftRestoreAnswersRef = useRef<Record<
-    string,
-    string | string[] | number
-  > | null>(null);
   // Anti-spam (Task 27): waktu formulir dibuka (time-trap) + ref honeypot.
   const formStartedAtRef = useRef<number>(Date.now());
   const websiteRef = useRef<HTMLInputElement | null>(null);
