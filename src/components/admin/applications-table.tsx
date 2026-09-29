@@ -53,6 +53,18 @@ function fillWaTemplate(template: string, app: Application): string {
     .join(app.positionTitle ?? "posisi");
 }
 
+/** Badge "Diarsip" kecil (zinc outline) untuk lamaran yang diarsipkan. */
+function ArchivedBadge() {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center rounded-full border border-zinc-300 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+      title="Lamaran diarsipkan (tidak aktif diproses)"
+    >
+      Diarsip
+    </span>
+  );
+}
+
 /** Badge "Duplikat" kecil (amber) untuk lamaran ganda. */
 function DuplicateBadge() {
   return (
@@ -188,11 +200,7 @@ export function ApplicationsTable({
                         <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
                           <span className="truncate">{app.name}</span>
                           {app.isDuplicate === true ? <DuplicateBadge /> : null}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {app.email}
-                          {app.phone ? ` · ${app.phone}` : ""}
-                        </p>
+                          {app.archivedAt ? <ArchivedBadge /> : null}
                       </div>
                     </div>
                   </TableCell>
