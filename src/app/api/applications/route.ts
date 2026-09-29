@@ -9,6 +9,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { generateTrackingCode, generateUniqueTrackingCode } from "@/lib/tracking";
 import { parseScreeningQuestions, parseStringRecord, parseRequirements } from "@/lib/seed";
+import {
+  FORM_LIMITS,
+  isAllowedFormFile,
+  isFormSchemaActive,
+  parseFormSchema,
+  validateFormAnswers,
+  type FormAnswerValue,
+} from "@/lib/form-schema";
 import { CV_MAX_BYTES, INTRO_MAX_BYTES, type ApplySuccessResponse } from "@/lib/types";
 import { startBackgroundProcessing } from "@/lib/processing";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
@@ -146,6 +154,8 @@ export async function POST(req: NextRequest) {
     let cvFile: File | null = null;
     let introFile: File | null = null;
     const extraDocFiles: File[] = [];
+    // Task 30 — berkas field Form Builder: formFile_<fieldId>
+    const formFieldFiles = new Map<string, File>();
 
     if (contentType.includes("multipart/form-data")) {
       let form: FormData;
@@ -164,6 +174,7 @@ export async function POST(req: NextRequest) {
         if (key === "cvFile") cvFile = value;
         else if (key === "introFile") introFile = value;
         else if (/^extraDoc_\d+$/.test(key)) extraDocFiles.push(value);
+        else if (key.startsWith("formFile_")) formFieldFiles.set(key.slice("formFile_".length), value);
       }
     } else {
       const body: unknown = await req.json().catch(() => null);
@@ -350,8 +361,61 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Validasi jawaban pertanyaan screening posisi (jika ada).
-    const questions = parseScreeningQuestions(position.screeningQuestions);
+    // Validasi jawaban Form Builder (Task 30) — aktif hanya bila posisi punya skema.
+    // Saat skema aktif, pertanyaan screening klasik & customDocs DILEWATI: skema
+    // adalah sumber kebenaran formulir pertanyaan kustom.
+    const formSchema = parseFormSchema(position.formSchema);
+    let formAnswersJson: string | null = null;
+    if (isFormSchemaActive({ formSchema })) {
+      const validated = validateFormAnswers(formSchema, fields.formAnswers ?? null);
+      if (!validated.ok) {
+        return NextResponse.json({ error: validated.error }, { status: 400 });
+      }
+      const cleaned = validated.cleaned as Record<string, FormAnswerValue>;
+
+      // Berkas field formulir: ukuran, format, lalu simpan sebagai FileAsset.
+      const schemaObj = formSchema;
+      for (const field of schemaObj.fields) {
+        if (field.type !== "file") continue;
+        const file = formFieldFiles.get(field.id) ?? null;
+        if (!file) {
+          if (field.required) {
+            return NextResponse.json(
+              { error: `Berkas "${field.label}" wajib diunggah.` },
+              { status: 400 },
+            );
+          }
+          continue;
+        }
+        if (file.size > FORM_LIMITS.fileMaxBytes) {
+          return NextResponse.json(
+            { error: `Ukuran berkas "${field.label}" maksimal 20 MB.` },
+            { status: 400 },
+          );
+        }
+        if (!isAllowedFormFile({ type: file.type, name: file.name })) {
+          return NextResponse.json(
+            { error: `Format berkas "${field.label}" tidak didukung (PDF, gambar, Word, audio, atau video).` },
+            { status: 400 },
+          );
+        }
+        const asset = await saveUpload(file, "application/octet-stream");
+        cleaned[field.id] = { fileId: asset.id, filename: file.name.slice(0, 200) };
+      }
+      // Berkas tak dikenal (field sudah dihapus admin) diabaikan senyap.
+
+      formAnswersJson = JSON.stringify(cleaned);
+      if (Buffer.byteLength(formAnswersJson, "utf8") > FORM_LIMITS.answersMaxBytes) {
+        return NextResponse.json(
+          { error: "Total jawaban formulir terlalu besar." },
+          { status: 400 },
+        );
+      }
+    }
+
+    // Validasi jawaban pertanyaan screening posisi (jika ada) — mode klasik saja
+    // (saat Form Builder aktif, pertanyaan kustom tinggal field di dalam skema).
+    const questions = formAnswersJson ? [] : parseScreeningQuestions(position.screeningQuestions);
     let screeningAnswersJson: string | null = null;
     if (questions.length > 0) {
       const rawAnswers = asOptionalString(fields.screeningAnswers);
@@ -381,9 +445,11 @@ export async function POST(req: NextRequest) {
       screeningAnswersJson = JSON.stringify(record);
     }
 
-    // Validasi dokumen wajib tambahan milik posisi (customDocs).
+    // Validasi dokumen wajib tambahan milik posisi (customDocs) — mode klasik saja.
     // Berkas dipasangkan dengan label berdasarkan urutan pengiriman (extraDoc_0, extraDoc_1, ...).
-    const customDocs = parseRequirements(position.customDocs).slice(0, EXTRA_DOC_MAX_COUNT);
+    const customDocs = formAnswersJson
+      ? []
+      : parseRequirements(position.customDocs).slice(0, EXTRA_DOC_MAX_COUNT);
     if (customDocs.length > 0) {
       if (extraDocFiles.length < customDocs.length) {
         const missing = customDocs[extraDocFiles.length] ?? customDocs[0];
@@ -449,6 +515,7 @@ export async function POST(req: NextRequest) {
         utmCampaign,
         referrer,
         screeningAnswers: screeningAnswersJson,
+        formAnswers: formAnswersJson,
         // Task 27: pencatatan persetujuan privasi + penanda perubahan tahap awal.
         consentAt: consent ? now : null,
         stageUpdatedAt: now,
