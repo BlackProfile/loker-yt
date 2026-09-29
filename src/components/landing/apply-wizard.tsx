@@ -326,7 +326,7 @@ function FormFieldRenderer({
       control = (
         <div className="flex flex-col gap-2">
           <RadioGroup
-            value={(otherSelected ? FORM_OTHER_VALUE : textValue) || undefined}
+            value={(otherSelected ? FORM_OTHER_VALUE : textValue) || ""}
             onValueChange={(next) =>
               onAnswer(field.id, next === FORM_OTHER_VALUE ? FORM_OTHER_VALUE : next)
             }
