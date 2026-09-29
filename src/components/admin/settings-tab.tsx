@@ -1,6 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -46,16 +56,21 @@ import {
   Heart,
   Inbox,
   Loader2,
+  LogOut,
   MailCheck,
   MailWarning,
   Mailbox,
   Mic,
+  Monitor,
+  MonitorSmartphone,
   PenTool,
   Plus,
   Quote,
   RefreshCw,
   Rocket,
   Send,
+  ShieldCheck,
+  Smartphone,
   Sparkles,
   Trash2,
   TrendingUp,
@@ -67,14 +82,17 @@ import {
 import { toast } from "sonner";
 import {
   BENEFIT_ICONS,
+  ROLE_LABELS,
   type FaqItem,
+  type Role,
   type SectionKey,
   type SiteContent,
   type Subscriber,
   type TeamMember,
 } from "@/lib/types";
-import { apiGet, apiPatch, apiPost, apiPut } from "./api";
-import { copyText, formatDateTime, formatShortDateTime } from "./format";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api";
+import { copyText, formatDateTime, formatRelative, formatShortDateTime } from "./format";
+import { useAdminSession } from "./admin-context";
 import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
 import { Reveal } from "./motion-primitives";
 

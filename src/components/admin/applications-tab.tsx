@@ -288,6 +288,22 @@ export function ApplicationsTab() {
     void loadPositions();
   });
 
+  // Command palette: buka dialog detail pelamar dari event global
+  // "lumina-open-application". Detail diambil dari daftar yang sudah dimuat;
+  // id yang tidak ada di daftar diabaikan.
+  useEffect(() => {
+    const onOpenApplication = (event: Event) => {
+      const payload = (event as CustomEvent<{ id?: unknown }>).detail;
+      const id = typeof payload?.id === "string" ? payload.id : "";
+      if (!id) return;
+      const app = applications.find((a) => a.id === id);
+      if (app) setDetail(app);
+    };
+    window.addEventListener("lumina-open-application", onOpenApplication);
+    return () =>
+      window.removeEventListener("lumina-open-application", onOpenApplication);
+  }, [applications]);
+
   function applySearch() {
     setQ(searchInput.trim());
   }
@@ -333,11 +349,28 @@ export function ApplicationsTab() {
     });
   }
 
-  // Lamaran tampil: dengan filter "Lainnya", sisakan yang tahapnya di luar 5 bawaan.
+  // Lamaran tampil: tanpa yang di tong sampah (soft delete — pemulihan di tab
+  // Data), mengikuti filter arsip (archivedAt), dan dengan filter "Lainnya"
+  // menyisakan yang tahapnya di luar 5 bawaan. Baris yang diarsip tetap bisa
+  // dipilih/dilepas dari seleksi massal seperti baris biasa.
   const displayedApplications = useMemo(() => {
-    if (!isOtherStageFilter) return applications;
-    return applications.filter((a) => !isBuiltInStage(a.status));
-  }, [applications, isOtherStageFilter]);
+    let list = applications.filter((a) => !a.deletedAt);
+    if (archiveFilter === "ACTIVE") {
+      list = list.filter((a) => !a.archivedAt);
+    } else if (archiveFilter === "ARCHIVED") {
+      list = list.filter((a) => a.archivedAt);
+    }
+    if (isOtherStageFilter) {
+      list = list.filter((a) => !isBuiltInStage(a.status));
+    }
+    return list;
+  }, [applications, archiveFilter, isOtherStageFilter]);
+
+  // Jumlah lamaran terarsip (untuk keterangan kecil pada baris filter).
+  const archivedCount = useMemo(
+    () => applications.filter((a) => a.archivedAt).length,
+    [applications]
+  );
 
   function toggleSelectAll(checked: boolean) {
     setSelectedIds((prev) => {
@@ -438,6 +471,38 @@ export function ApplicationsTab() {
     setBulkRejectOpen(false);
     setBulkRejectReason("");
     setBulkRejectNote("");
+  }
+
+  // Tambah tag dari input (pisahkan koma untuk beberapa sekaligus).
+  function addTagsFromInput() {
+    const parts = tagInput
+      .split(",")
+      .map((part) => part.trim().slice(0, 24))
+      .filter((part) => part.length > 0);
+    if (parts.length === 0) return;
+    setTagChips((prev) => {
+      const next = [...prev];
+      for (const part of parts) {
+        if (!next.includes(part)) next.push(part);
+      }
+      return next.slice(0, 12);
+    });
+    setTagInput("");
+  }
+
+  // Simpan tag massal (POST /api/admin/applications/bulk action "tag").
+  async function handleBulkTag() {
+    if (tagChips.length === 0) {
+      toast.error("Tulis minimal satu tag.");
+      return;
+    }
+    await runBulk(
+      { ids: Array.from(selectedIds), action: "tag", tags: tagChips },
+      "Tag {n} lamaran diperbarui"
+    );
+    setBulkTagOpen(false);
+    setTagChips([]);
+    setTagInput("");
   }
 
   async function handleDelete() {
@@ -588,7 +653,7 @@ export function ApplicationsTab() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter tahap">
               <SelectValue placeholder="Semua Tahap" />
@@ -677,6 +742,17 @@ export function ApplicationsTab() {
               ))}
             </SelectContent>
           </Select>
+
+          <Select value={archiveFilter} onValueChange={setArchiveFilter}>
+            <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter status arsip">
+              <SelectValue placeholder="Aktif" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ACTIVE">Aktif</SelectItem>
+              <SelectItem value="ARCHIVED">Diarsip</SelectItem>
+              <SelectItem value="ALL">Semua</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
@@ -710,7 +786,11 @@ export function ApplicationsTab() {
           <p className="ml-auto text-xs text-muted-foreground">
             {loading
               ? "Memuat..."
-              : `${displayedApplications.length} lamaran ditampilkan`}
+              : `${displayedApplications.length} lamaran ditampilkan${
+                  archiveFilter === "ALL" && archivedCount > 0
+                    ? ` · ${archivedCount} diarsip`
+                    : ""
+                }`}
           </p>
         </div>
       </div>
@@ -816,6 +896,50 @@ export function ApplicationsTab() {
             }
           >
             Talent Pool
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 bg-background"
+            disabled={bulkWorking}
+            onClick={() => {
+              setTagChips([]);
+              setTagInput("");
+              setBulkTagOpen(true);
+            }}
+          >
+            <Tag className="size-4" aria-hidden="true" />
+            Atur Tag
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 bg-background"
+            disabled={bulkWorking}
+            onClick={() =>
+              void runBulk(
+                { ids: Array.from(selectedIds), action: "archive" },
+                "{n} lamaran diarsipkan"
+              )
+            }
+          >
+            <Archive className="size-4" aria-hidden="true" />
+            Arsipkan
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 bg-background"
+            disabled={bulkWorking}
+            onClick={() =>
+              void runBulk(
+                { ids: Array.from(selectedIds), action: "unarchive" },
+                "{n} lamaran dikeluarkan dari arsip"
+              )
+            }
+          >
+            <ArchiveRestore className="size-4" aria-hidden="true" />
+            Batalkan Arsip
           </Button>
           <Button
             variant="outline"
@@ -978,14 +1102,15 @@ export function ApplicationsTab() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Konfirmasi hapus massal */}
+      {/* Konfirmasi hapus massal — soft delete: masuk tong sampah, bisa dipulihkan */}
       <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus {selectedIds.size} lamaran?</AlertDialogTitle>
             <AlertDialogDescription>
-              Semua lamaran terpilih akan dihapus permanen. Tindakan tidak bisa
-              dibatalkan.
+              Lamaran terpilih akan dipindahkan ke Tong Sampah dan keluar dari
+              daftar kerja. Kamu masih bisa memulihkannya kapan saja dari tab
+              Data.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -995,7 +1120,7 @@ export function ApplicationsTab() {
                 e.preventDefault();
                 void runBulk(
                   { ids: Array.from(selectedIds), action: "delete" },
-                  "{n} lamaran dihapus"
+                  "{n} lamaran masuk Tong Sampah"
                 );
               }}
               className="bg-rose-600 text-white hover:bg-rose-700"
@@ -1078,6 +1203,100 @@ export function ApplicationsTab() {
                 </>
               ) : (
                 `Tolak ${selectedIds.size} Lamaran`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog atur tag massal */}
+      <Dialog open={bulkTagOpen} onOpenChange={setBulkTagOpen}>
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="size-4 text-rose-600" aria-hidden="true" />
+              Atur Tag — {selectedIds.size} lamaran
+            </DialogTitle>
+            <DialogDescription>
+              Tag akan digabungkan (tanpa duplikat) ke setiap lamaran
+              terpilih. Maksimal 12 tag, masing-masing maksimal 24 karakter.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-2">
+              <Input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addTagsFromInput();
+                  }
+                }}
+                placeholder="Tulis tag, tekan Enter — pisahkan koma untuk beberapa"
+                aria-label="Tag baru untuk lamaran terpilih"
+                maxLength={24}
+                disabled={bulkWorking}
+              />
+              <Button
+                variant="outline"
+                className="h-11 shrink-0 sm:h-10"
+                onClick={addTagsFromInput}
+                disabled={bulkWorking || tagInput.trim().length === 0}
+              >
+                Tambah
+              </Button>
+            </div>
+            {tagChips.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 rounded-xl border p-3">
+                {tagChips.map((chip) => (
+                  <span
+                    key={chip}
+                    className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
+                  >
+                    {chip}
+                    <button
+                      type="button"
+                      className="rounded-full p-0.5 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                      onClick={() =>
+                        setTagChips((prev) => prev.filter((t) => t !== chip))
+                      }
+                      aria-label={`Hapus tag ${chip}`}
+                      disabled={bulkWorking}
+                    >
+                      <XCircle className="size-3.5" aria-hidden="true" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Belum ada tag. Pratinjau tag akan tampil di sini sebelum
+                disimpan.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setBulkTagOpen(false)}
+              disabled={bulkWorking}
+              className="h-11 sm:h-9"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={() => void handleBulkTag()}
+              disabled={bulkWorking || tagChips.length === 0}
+              className="h-11 active:scale-[0.99] sm:h-9"
+            >
+              {bulkWorking ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menyimpan...
+                </>
+              ) : (
+                `Simpan Tag ke ${selectedIds.size} Lamaran`
               )}
             </Button>
           </DialogFooter>
