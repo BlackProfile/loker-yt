@@ -445,7 +445,7 @@ function FieldEditorCard({
             <Input
               id={`ph-${field.id}`}
               value={field.placeholder ?? ""}
-              onChange={(e) => onChange({ placeholder: e.target.value })}
+              onChange={(e) => onChange({ placeholder: e.target.value || undefined })}
               maxLength={FORM_LIMITS.placeholderMax}
               placeholder="Teks samaran di kolom jawaban"
               className="h-9"
@@ -459,7 +459,7 @@ function FieldEditorCard({
             <Input
               id={`help-${field.id}`}
               value={field.helpText ?? ""}
-              onChange={(e) => onChange({ helpText: e.target.value })}
+              onChange={(e) => onChange({ helpText: e.target.value || undefined })}
               maxLength={FORM_LIMITS.helpMax}
               placeholder="Petunjuk kecil di bawah pertanyaan"
               className="h-9"
@@ -817,6 +817,11 @@ export function FormBuilderPage({
         setSavedSchema(res.schema);
       }
       if (res.position) onUpdated(res.position);
+      // Jawaban bergantung pada skema tersimpan — paksa tab Jawaban memuat ulang
+      // saat dibuka berikutnya (sebelumnya bisa 400/klise lama).
+      setResponsesLoaded(false);
+      setResponses(null);
+      setResponsesState("idle");
       toast.success("Formulir diterapkan");
     } catch (err) {
       reportError(err);
@@ -1184,7 +1189,9 @@ export function FormBuilderPage({
                             id={`section-desc-${section.id}`}
                             value={section.description ?? ""}
                             onChange={(e) =>
-                              updateSection(section.id, { description: e.target.value })
+                              updateSection(section.id, {
+                                description: e.target.value || undefined,
+                              })
                             }
                             maxLength={FORM_LIMITS.sectionDescMax}
                             placeholder="Deskripsi opsional untuk bagian ini"

@@ -707,6 +707,7 @@ export function ApplyWizard({
   lockPosition = false,
 }: ApplyWizardProps) {
   const { t, lang } = useLang();
+  const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<FormErrors>({});
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);

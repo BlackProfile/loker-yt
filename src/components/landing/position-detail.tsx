@@ -69,6 +69,7 @@ import {
 } from "@/components/landing/landing-utils";
 import { DeadlineCountdown } from "@/components/landing/deadline-countdown";
 import { ApplyWizard } from "@/components/landing/apply-wizard";
+import { isFormSchemaActive } from "@/lib/form-schema";
 import { stageLabel, stagesForPosition } from "@/lib/stages";
 
 const SOON_DAYS = 3;
@@ -504,6 +505,16 @@ function PositionDetailViewInner({
     position.requirePortfolio ? t.detail.termsFilesPortfolio : null,
   ].filter((x): x is string => x !== null);
 
+  // Form Builder per posisi: saat skema aktif, berkas tambahan yang diminta
+  // adalah field tipe "file" milik skema (customDocs klasik diabaikan wizard).
+  const schemaActive = isFormSchemaActive(position);
+  const schemaFileLabels = schemaActive
+    ? (position.formSchema?.fields ?? [])
+        .filter((field) => field.type === "file")
+        .map((field) => (lang === "en" && field.labelEn ? field.labelEn : field.label))
+    : [];
+  const requiredFilesWithSchema = [...requiredFiles, ...schemaFileLabels];
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <DetailHeader
@@ -652,8 +663,8 @@ function PositionDetailViewInner({
                 <SectionTitle icon={ClipboardList}>{t.detail.sectionTerms}</SectionTitle>
                 <Card className="mt-3 divide-y rounded-2xl p-2 md:p-3">
                   <TermRow icon={FileText} label={t.detail.termsFiles}>
-                    {requiredFiles.length > 0 ? (
-                      <span>{requiredFiles.join(" · ")}</span>
+                    {requiredFilesWithSchema.length > 0 ? (
+                      <span>{requiredFilesWithSchema.join(" · ")}</span>
                     ) : (
                       <span className="text-muted-foreground">{t.detail.termsFilesNone}</span>
                     )}
@@ -686,15 +697,19 @@ function PositionDetailViewInner({
                       <span className="text-muted-foreground">{t.detail.termsQuotaUnlimited}</span>
                     )}
                   </TermRow>
-                  <TermRow icon={ListChecks} label={t.detail.termsScreening}>
-                    <span>
-                      {position.screeningQuestions.length > 0
-                        ? fillTemplate(t.detail.termsScreeningCount, {
-                            n: position.screeningQuestions.length,
-                          })
-                        : t.detail.termsScreeningNone}
-                    </span>
-                  </TermRow>
+                  {/* Screening klasik tidak ditanyakan saat skema Form Builder aktif
+                      — wizard memakai pertanyaan kustom per bagian skema. */}
+                  {!schemaActive ? (
+                    <TermRow icon={ListChecks} label={t.detail.termsScreening}>
+                      <span>
+                        {position.screeningQuestions.length > 0
+                          ? fillTemplate(t.detail.termsScreeningCount, {
+                              n: position.screeningQuestions.length,
+                            })
+                          : t.detail.termsScreeningNone}
+                      </span>
+                    </TermRow>
+                  ) : null}
                   {position.assignment.title ? (
                     <TermRow icon={ClipboardList} label={t.detail.termsTest}>
                       <span>{position.assignment.title}</span>
