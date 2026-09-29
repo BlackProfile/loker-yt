@@ -728,6 +728,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
         )}
         activeTab={effectiveTab}
       />
+      {/* FAB "Tanya Data" — WAJIB di luar <header>: backdrop-blur pada header
+          menciptakan containing block sehingga position:fixed tombol salah
+          anchor (menempel di header, menutupi tombol Keluar). Di samping root
+          layout, fixed bottom-right kembali akurat terhadap viewport. */}
+      <AdminAskWidget />
       <div className="flex min-h-screen bg-zinc-50 dark:bg-background">
         {/* Overlay drawer seluler */}
         {mobileOpen ? (
@@ -812,7 +817,6 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 <RealtimeIndicator />
                 <ThemeToggle />
                 <NotificationBell onOpenTasks={() => setActiveTab("tasks")} />
-                <AdminAskWidget />
                 <Button
                   variant="outline"
                   className="h-11 active:scale-[0.99] sm:h-10"
