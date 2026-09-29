@@ -414,6 +414,389 @@ function EmailOutboxCard() {
   );
 }
 
+// ------------------------------ Sesi Aktif (Task 27) ------------------------------
+
+type ActiveSessionRow = {
+  id: string;
+  userName: string;
+  userEmail: string;
+  userRole: string;
+  userAgent: string | null;
+  ip: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  current: boolean;
+};
+
+function isMobileUserAgent(userAgent: string | null): boolean {
+  return /mobile|android|iphone|ipad|ipod/i.test(userAgent ?? "");
+}
+
+function ActiveSessionsCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+  const [rows, setRows] = useState<ActiveSessionRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [kickTarget, setKickTarget] = useState<ActiveSessionRow | null>(null);
+  const [kickAllOpen, setKickAllOpen] = useState(false);
+  const [kickingAll, setKickingAll] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiGet<ActiveSessionRow[]>("/api/admin/sessions");
+      setRows(data ?? []);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleKick() {
+    if (!kickTarget || busyId) return;
+    setBusyId(kickTarget.id);
+    try {
+      await apiDelete(`/api/admin/sessions?id=${encodeURIComponent(kickTarget.id)}`);
+      toast.success(
+        kickTarget.current
+          ? "Perangkat ini dikeluarkan — sesi berakhir."
+          : `Sesi ${kickTarget.userEmail} dikeluarkan.`,
+      );
+      setKickTarget(null);
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleKickAllOthers() {
+    if (kickingAll) return;
+    setKickingAll(true);
+    try {
+      const res = await apiDelete<{ ok: boolean; revoked: number }>(
+        "/api/admin/sessions?scope=others",
+      );
+      toast.success(`${res.revoked} perangkat lain dikeluarkan.`);
+      setKickAllOpen(false);
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setKickingAll(false);
+    }
+  }
+
+  return (
+    <Card className="gap-4 rounded-2xl p-6">
+      <CardHeader className="flex-row items-start justify-between gap-3 px-0">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MonitorSmartphone className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+            Sesi Aktif
+          </CardTitle>
+          <CardDescription className="mt-1">
+            Perangkat yang sedang login ke panel admin. Keluarkan perangkat yang tidak dikenal.
+          </CardDescription>
+        </div>
+        {isOwner && rows.filter((r) => !r.current).length > 0 ? (
+          <Button
+            variant="outline"
+            className="h-10 shrink-0"
+            disabled={kickingAll}
+            onClick={() => setKickAllOpen(true)}
+          >
+            {kickingAll ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <LogOut className="size-4" aria-hidden="true" />
+            )}
+            Keluarkan Semua Perangkat Lain
+          </Button>
+        ) : null}
+      </CardHeader>
+      <CardContent className="px-0">
+        {loading ? (
+          <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            Memuat sesi aktif...
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Tidak ada sesi aktif tercatat. Sesi baru tercatat mulai login berikutnya.
+          </p>
+        ) : (
+          <div className="flex max-h-96 flex-col gap-2 overflow-y-auto nice-scrollbar">
+            {rows.map((row) => {
+              const mobile = isMobileUserAgent(row.userAgent);
+              return (
+                <div
+                  key={row.id}
+                  className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                      {mobile ? (
+                        <Smartphone className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Monitor className="size-4" aria-hidden="true" />
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+                        {mobile ? "Perangkat seluler" : "Perangkat desktop"}
+                        {row.current ? (
+                          <Badge
+                            variant="outline"
+                            className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400"
+                          >
+                            Perangkat ini
+                          </Badge>
+                        ) : null}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground" title={row.userAgent ?? undefined}>
+                        {row.userEmail} · {ROLE_LABELS[row.userRole as Role] ?? row.userRole}
+                        {row.ip ? ` · IP ${row.ip}` : ""}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Aktif {formatRelative(row.lastSeenAt)} · mulai {formatShortDateTime(row.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                    disabled={busyId !== null}
+                    onClick={() => setKickTarget(row)}
+                  >
+                    {busyId === row.id ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <LogOut className="size-4" aria-hidden="true" />
+                    )}
+                    Keluarkan
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+
+      {/* Konfirmasi keluarkan satu sesi */}
+      <AlertDialog
+        open={kickTarget !== null}
+        onOpenChange={(open) => {
+          if (!busyId && !open) setKickTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Keluarkan perangkat ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Sesi {kickTarget?.userEmail} pada{" "}
+              {kickTarget && isMobileUserAgent(kickTarget.userAgent) ? "perangkat seluler" : "perangkat desktop"}{" "}
+              akan dicabut. Orang tersebut harus login ulang untuk masuk kembali.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busyId !== null}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busyId !== null}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleKick();
+              }}
+            >
+              {busyId !== null ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Mengeluarkan...
+                </>
+              ) : (
+                "Ya, Keluarkan"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Konfirmasi keluarkan semua perangkat lain (OWNER) */}
+      <AlertDialog
+        open={kickAllOpen}
+        onOpenChange={(open) => {
+          if (!kickingAll && !open) setKickAllOpen(open);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Keluarkan semua perangkat lain?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Semua sesi aktif selain perangkat ini akan dicabut. Semua pengguna lain (termasuk
+              perangkatmu di browser lain) harus login ulang. Perangkat ini tetap masuk.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={kickingAll}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={kickingAll}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleKickAllOthers();
+              }}
+            >
+              {kickingAll ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Mengeluarkan...
+                </>
+              ) : (
+                "Ya, Keluarkan Semua"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
+  );
+}
+
+// ----------------------------- Retensi Data (Task 27) -----------------------------
+
+function RetentionCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+  const [enabled, setEnabled] = useState(false);
+  const [days, setDays] = useState("365");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    if (role !== "OWNER") {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await apiGet<{
+        retention: { enabled: boolean; days: number };
+      }>("/api/admin/retention");
+      setEnabled(data.retention.enabled);
+      setDays(String(data.retention.days));
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [role, reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await apiPut<{
+        ok: true;
+        retention: { enabled: boolean; days: number };
+      }>("/api/admin/retention", { enabled, days: Number(days) });
+      setEnabled(res.retention.enabled);
+      setDays(String(res.retention.days));
+      toast.success("Pengaturan retensi data disimpan.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="gap-4 rounded-2xl p-6">
+      <CardHeader className="px-0">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldCheck className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+          Retensi Data (Privasi)
+        </CardTitle>
+        <CardDescription className="mt-1">
+          Hapus otomatis lamaran lama agar data pelamar tidak disimpan selamanya.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 px-0">
+        {loading ? (
+          <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            Memuat pengaturan retensi...
+          </div>
+        ) : !isOwner ? (
+          <p className="text-sm text-muted-foreground">
+            Retensi data hanya dapat diatur oleh pemilik studio (OWNER).
+          </p>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Aktifkan Retensi Otomatis</p>
+                <p className="text-xs text-muted-foreground">
+                  Lamaran ditolak/diarsip lebih tua dari {days || "365"} hari dihapus permanen
+                  otomatis saat perawatan data dijalankan.
+                </p>
+              </div>
+              <Switch
+                checked={enabled}
+                disabled={saving}
+                onCheckedChange={setEnabled}
+                aria-label="Aktifkan retensi data otomatis"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="retention-days">Umur maksimum lamaran (hari)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="retention-days"
+                  type="number"
+                  min={30}
+                  max={3650}
+                  value={days}
+                  onChange={(e) => setDays(e.target.value)}
+                  className="h-10 w-32"
+                  disabled={saving}
+                />
+                <Button
+                  variant="outline"
+                  className="h-10 shrink-0"
+                  disabled={saving}
+                  onClick={() => void handleSave()}
+                >
+                  {saving ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Save className="size-4" aria-hidden="true" />
+                  )}
+                  Simpan
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Angka 30 sampai 3650 hari. Berlaku untuk lamaran berstatus ditolak atau yang sudah
+                diarsipkan.
+              </p>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SettingsTab() {
   const [site, setSite] = useState<SiteContent | null>(null);
   const [loading, setLoading] = useState(true);

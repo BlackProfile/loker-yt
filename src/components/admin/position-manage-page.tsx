@@ -209,17 +209,20 @@ export function PositionManagePage({
               variant="outline"
               size="sm"
               className="h-11 sm:h-9"
-              asChild
+              onClick={() =>
+                window.open(
+                  position.slug
+                    ? `/?posisi=${encodeURIComponent(position.slug)}`
+                    : "/",
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+              aria-label="Lihat halaman publik posisi"
             >
-              <a
-                href={`/?posisi=${encodeURIComponent(position.slug ?? position.id)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Lihat halaman publik posisi"
-              >
-                <ExternalLink className="size-4" aria-hidden="true" />
-                <span className="sm:hidden">Publik</span>
-              </a>
+              <ExternalLink className="size-4" aria-hidden="true" />
+              <span className="hidden md:inline">Lihat Halaman Publik</span>
+              <span className="md:hidden">Publik</span>
             </Button>
             <Button
               variant="outline"

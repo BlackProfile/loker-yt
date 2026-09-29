@@ -39,6 +39,7 @@ import {
   Briefcase,
   ClipboardList,
   Copy,
+  ExternalLink,
   Eye,
   FileText,
   Flame,
@@ -667,6 +668,24 @@ export function PositionsTab() {
                       title="QR Code"
                     >
                       <QrCode className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 sm:size-9"
+                      onClick={() =>
+                        window.open(
+                          position.slug
+                            ? `/?posisi=${encodeURIComponent(position.slug)}`
+                            : "/",
+                          "_blank",
+                          "noopener,noreferrer",
+                        )
+                      }
+                      aria-label={`Lihat halaman publik posisi ${position.title}`}
+                      title="Lihat Halaman Publik"
+                    >
+                      <ExternalLink className="size-4" aria-hidden="true" />
                     </Button>
                     {position.isActive ? (
                       <>
