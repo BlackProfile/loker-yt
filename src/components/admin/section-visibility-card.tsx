@@ -50,7 +50,8 @@ const SECTION_ICONS: Record<SectionKey, LucideIcon> = {
 const SECTION_HINTS: Partial<Record<SectionKey, string>> = {
   positions:
     "Posisi tetap terbuka di dashboard & RSS/embed, hanya disembunyikan di halaman publik.",
-  applyForm: "Pelamar tidak dapat mengirim lamaran dari halaman publik.",
+  applyForm:
+    "Pelamar tidak dapat mengirim lamaran dari halaman publik. Buka/tutup per posisi ada di tab Posisi.",
   chatbot: "Widget disembunyikan; saklar utama chatbot tetap di atas.",
 };
 

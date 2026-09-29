@@ -125,6 +125,7 @@ type FormState = {
   requireIntro: boolean;
   requirePortfolio: boolean;
   maxApplicants: string;
+  applyOpen: boolean;
   screeningQuestions: ScreeningQuestion[];
   stages: string[];
   stageCategories: Record<string, StageCategory>;
@@ -182,6 +183,7 @@ const EMPTY_FORM: FormState = {
   requireIntro: false,
   requirePortfolio: false,
   maxApplicants: "",
+  applyOpen: true,
   screeningQuestions: [],
   stages: [],
   stageCategories: {},
@@ -241,6 +243,7 @@ function buildFormState(p: Position): FormState {
     requireIntro: p.requireIntro,
     requirePortfolio: p.requirePortfolio,
     maxApplicants: p.maxApplicants == null ? "" : String(p.maxApplicants),
+    applyOpen: p.applyOpen !== false,
     screeningQuestions: p.screeningQuestions.map((q) => ({ ...q })),
     stages: [...p.stages],
     stageCategories: { ...p.stageCategories },
@@ -493,6 +496,7 @@ function formDataFromUnknown(raw: unknown): {
       requireIntro: draftBoolean(d.requireIntro, false),
       requirePortfolio: draftBoolean(d.requirePortfolio, false),
       maxApplicants: draftNumberString(d.maxApplicants, ""),
+      applyOpen: draftBoolean(d.applyOpen, true),
       screeningQuestions: draftScreeningQuestions(d.screeningQuestions),
       stages: draftStringArray(d.stages, 12, 40, []),
       stageCategories: draftStageCategories(d.stageCategories),
@@ -967,6 +971,7 @@ export function PositionFormPage({
       requirePortfolio: form.requirePortfolio,
       maxApplicants:
         form.maxApplicants.trim() === "" ? null : Number(form.maxApplicants),
+      applyOpen: form.applyOpen,
       screeningQuestions: form.screeningQuestions.map((q) => ({
         id: q.id,
         label: q.label.trim(),
@@ -1420,6 +1425,21 @@ export function PositionFormPage({
                       checked={form.isActive}
                       onCheckedChange={(checked) => set("isActive", checked)}
                       aria-label="Aktifkan posisi (tampil di halaman publik)"
+                    />
+                  </div>
+
+                  {/* Formulir lamaran per posisi — buka/tutup terpisah dari status tayang */}
+                  <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Buka formulir lamaran</p>
+                      <p className="text-xs text-muted-foreground">
+                        Saat ditutup, posisi tetap tayang tetapi tidak menerima lamaran baru
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.applyOpen}
+                      onCheckedChange={(checked) => set("applyOpen", checked)}
+                      aria-label="Buka atau tutup formulir lamaran posisi ini"
                     />
                   </div>
 

@@ -382,6 +382,9 @@ export function ApplyWizard({
     // error "pilih posisi" tidak perlu ditampilkan.
     if (!lockPosition && positions.length > 0 && !positionId)
       next.positionId = t.apply.errors.position;
+    // Formulir per posisi: posisi yang formulirnya ditutup admin tidak bisa dilamar.
+    if (positionId && selectedPosition?.applyOpen === false)
+      next.positionId = t.apply.errors.positionClosed;
     return next;
   }
 
