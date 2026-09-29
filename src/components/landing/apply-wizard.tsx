@@ -1001,15 +1001,134 @@ export function ApplyWizard({
     return null;
   }
 
+  /** Gulir ke field form skema bermasalah (id jangkar "apply-form-{fieldId}"). */
+  function scrollToFormField(fieldId: string) {
+    document
+      .getElementById(`apply-form-${fieldId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  /** Error jawaban form pertama dari peta {"form:"+fieldId: pesan}. */
+  function firstFormErrorOf(map: Record<string, string>): { id: string; message: string } | null {
+    for (const [key, message] of Object.entries(map)) {
+      if (key.startsWith(FORM_KEY_PREFIX) && message) {
+        return { id: key.slice(FORM_KEY_PREFIX.length), message };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Validasi satu jawaban form di sisi klien — cermin validateFormAnswers server.
+   * Mengembalikan pesan error terlokalisasi, atau null bila sah.
+   */
+  function validateFormField(field: FormField, value: FormAnswerInput | undefined): string | null {
+    const label = formFieldLabel(field, lang);
+    const requiredMsg = fillTemplate(t.apply.errors.formRequired, { label });
+    // Field berkas tidak ikut formAnswers — wajib berarti File sudah dipilih.
+    if (field.type === "file") {
+      return field.required && !(value instanceof File) ? requiredMsg : null;
+    }
+    const empty =
+      value === undefined ||
+      (typeof value === "string" && (value.trim() === "" || value === FORM_OTHER_VALUE)) ||
+      (Array.isArray(value) &&
+        !value.some(
+          (item) => typeof item === "string" && item.trim() !== "" && item !== FORM_OTHER_VALUE,
+        ));
+    if (empty) return field.required ? requiredMsg : null;
+
+    switch (field.type) {
+      case "text":
+      case "textarea":
+        return typeof value === "string" ? null : requiredMsg;
+      case "url":
+        return typeof value === "string" && FORM_URL_RE.test(value.trim())
+          ? null
+          : fillTemplate(t.apply.errors.formUrl, { label });
+      case "number": {
+        const num =
+          typeof value === "number"
+            ? value
+            : typeof value === "string"
+              ? Number(value.trim())
+              : NaN;
+        if (!Number.isFinite(num)) return fillTemplate(t.apply.errors.formNumber, { label });
+        if (field.min != null && num < field.min) {
+          return fillTemplate(t.apply.errors.formNumberMin, { label, min: field.min });
+        }
+        if (field.max != null && num > field.max) {
+          return fillTemplate(t.apply.errors.formNumberMax, { label, max: field.max });
+        }
+        return null;
+      }
+      case "rating": {
+        const num = typeof value === "number" ? value : NaN;
+        const ratingMax = field.max ?? FORM_LIMITS.ratingMaxDefault;
+        if (!Number.isInteger(num) || num < 1 || num > ratingMax) {
+          return fillTemplate(t.apply.errors.formRating, { label, max: ratingMax });
+        }
+        return null;
+      }
+      case "date":
+        return typeof value === "string" && FORM_DATE_RE.test(value.trim())
+          ? null
+          : fillTemplate(t.apply.errors.formDate, { label });
+      case "radio":
+      case "dropdown": {
+        if (typeof value !== "string") return fillTemplate(t.apply.errors.formOption, { label });
+        // Sentinel "Lainnya" tanpa teks = dianggap belum dijawab.
+        if (value === FORM_OTHER_VALUE) return field.required ? requiredMsg : null;
+        if (!field.allowOther && !field.options.includes(value)) {
+          return fillTemplate(t.apply.errors.formOption, { label });
+        }
+        return null;
+      }
+      case "checkbox": {
+        if (!Array.isArray(value)) return fillTemplate(t.apply.errors.formOption, { label });
+        if (
+          !field.allowOther &&
+          value.some((item) => typeof item === "string" && !field.options.includes(item))
+        ) {
+          return fillTemplate(t.apply.errors.formOption, { label });
+        }
+        return null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  /** Validasi seluruh field milik satu section skema → peta {"form:"+fieldId: pesan}. */
+  function validateSectionFields(fields: FormField[]): Record<string, string> {
+    const next: Record<string, string> = {};
+    for (const field of fields) {
+      const message = validateFormField(field, formAnswers[field.id]);
+      if (message) next[`${FORM_KEY_PREFIX}${field.id}`] = message;
+    }
+    return next;
+  }
+
   function goToStep(next: number) {
     setDirection(next > step ? 1 : -1);
     setStep(next);
   }
 
   function goNext() {
-    const next = step === 0 ? validateStep1() : validateStep2();
+    let next: FormErrors = {};
+    let formNext: Record<string, string> = {};
+    if (step === 0) {
+      next = validateStep1();
+    } else if (step === 1) {
+      next = validateStep2();
+    } else {
+      // Langkah section Form Builder: validasi field milik section ini saja.
+      const current = sectionSteps.find((entry) => entry.stepIndex === step);
+      if (current) formNext = validateSectionFields(current.fields);
+    }
     setErrors((prev) => ({ ...prev, ...next }));
-    if (Object.values(next).some(Boolean)) {
+    setFormErrors((prev) => ({ ...prev, ...formNext }));
+    if (Object.values(next).some(Boolean) || Object.values(formNext).some(Boolean)) {
       if (step === 1) {
         // Screening wajib kosong: sorot + scroll + toast (pola error wizard).
         const screeningError = firstScreeningErrorOf(next);
@@ -1018,9 +1137,15 @@ export function ApplyWizard({
           toast.error(screeningError.message);
         }
       }
+      // Jawaban form bermasalah: sorot + scroll + toast ke field pertama.
+      const formError = firstFormErrorOf(formNext);
+      if (formError) {
+        scrollToFormField(formError.id);
+        toast.error(formError.message);
+      }
       return;
     }
-    goToStep(Math.min(2, step + 1));
+    goToStep(step + 1);
     trackStep("advance", step + 1);
   }
 
@@ -1032,7 +1157,15 @@ export function ApplyWizard({
   function validateAllAndJump(): boolean {
     const e1 = validateStep1();
     const e2 = validateStep2();
+    // Langkah section Form Builder ikut divalidasi (mode skema aktif).
+    const formByStep = sectionSteps.map((entry) => ({
+      stepIndex: entry.stepIndex,
+      errors: validateSectionFields(entry.fields),
+    }));
+    const allFormErrors: Record<string, string> = {};
+    for (const entry of formByStep) Object.assign(allFormErrors, entry.errors);
     setErrors((prev) => ({ ...prev, ...e1, ...e2 }));
+    setFormErrors((prev) => ({ ...prev, ...allFormErrors }));
     if (e1.name || e1.email || e1.phone || e1.positionId) {
       goToStep(0);
       return false;
@@ -1045,6 +1178,16 @@ export function ApplyWizard({
       if (screeningError) {
         window.setTimeout(() => scrollToScreening(screeningError.id), 400);
         toast.error(screeningError.message);
+      }
+      return false;
+    }
+    const badSection = formByStep.find((entry) => Object.values(entry.errors).some(Boolean));
+    if (badSection) {
+      goToStep(badSection.stepIndex);
+      const formError = firstFormErrorOf(badSection.errors);
+      if (formError) {
+        window.setTimeout(() => scrollToFormField(formError.id), 400);
+        toast.error(formError.message);
       }
       return false;
     }
@@ -1063,14 +1206,17 @@ export function ApplyWizard({
       toast.error(t.apply.errors.introRequired);
       return false;
     }
-    for (let i = 0; i < customDocs.length; i++) {
-      if (!extraFiles[i]) {
-        const msg = fillTemplate(t.apply.uploads.extraDocRequired, {
-          label: customDocs[i],
-        });
-        setExtraErrors((prev) => ({ ...prev, [i]: msg }));
-        toast.error(msg);
-        return false;
+    // customDocs hanya mode klasik — skema aktif memakai field file milik skema.
+    if (!schema) {
+      for (let i = 0; i < customDocs.length; i++) {
+        if (!extraFiles[i]) {
+          const msg = fillTemplate(t.apply.uploads.extraDocRequired, {
+            label: customDocs[i],
+          });
+          setExtraErrors((prev) => ({ ...prev, [i]: msg }));
+          toast.error(msg);
+          return false;
+        }
       }
     }
     return true;
@@ -1189,7 +1335,8 @@ export function ApplyWizard({
       // Persetujuan pemrosesan data pribadi (Task 27).
       fd.append("consent", consented ? "1" : "0");
       // Jawaban screening posisi (JSON {questionId: jawaban}) — hanya yang terisi.
-      if (screeningQuestions.length > 0) {
+      // Mode skema aktif: screening klasik DIABAIKAN (diganti formAnswers).
+      if (!schema && screeningQuestions.length > 0) {
         const record: Record<string, string> = {};
         for (const question of screeningQuestions) {
           const answer = (screeningAnswers[question.id] ?? "").trim();
@@ -1204,11 +1351,46 @@ export function ApplyWizard({
       if (utm.campaign) fd.append("utmCampaign", utm.campaign);
       if (cvFile) fd.append("cvFile", cvFile);
       if (introFile) fd.append("introFile", introFile);
-      // Dokumen wajib tambahan — urutan pengiriman dipasangkan dengan urutan
-      // customDocs posisi di server (extraDoc_0, extraDoc_1, ...).
-      for (let i = 0; i < customDocs.length; i++) {
-        const file = extraFiles[i];
-        if (file) fd.append(`extraDoc_${i}`, file);
+      if (schema) {
+        // Form Builder: jawaban non-berkas sebagai JSON {fieldId: nilai}; nilai
+        // "Lainnya" dikirim sebagai teks bebas (server menerima bila allowOther).
+        const record: Record<string, string | string[] | number> = {};
+        for (const field of schema.fields) {
+          if (field.type === "file") continue;
+          const value = formAnswers[field.id];
+          if (value === undefined || value instanceof File) continue;
+          if (typeof value === "string") {
+            const text = value.trim();
+            if (!text || text === FORM_OTHER_VALUE) continue;
+            record[field.id] = text;
+            continue;
+          }
+          if (Array.isArray(value)) {
+            const items = value
+              .filter((item): item is string => typeof item === "string")
+              .map((item) => item.trim())
+              .filter((item) => item !== "" && item !== FORM_OTHER_VALUE);
+            if (items.length > 0) record[field.id] = items;
+            continue;
+          }
+          if (typeof value === "number" && Number.isFinite(value)) {
+            record[field.id] = value;
+          }
+        }
+        fd.append("formAnswers", JSON.stringify(record));
+        // Tiap berkas field dikirim sebagai part formFile_<fieldId>.
+        for (const field of schema.fields) {
+          if (field.type !== "file") continue;
+          const file = formAnswers[field.id];
+          if (file instanceof File) fd.append(`formFile_${field.id}`, file);
+        }
+      } else {
+        // Dokumen wajib tambahan (mode klasik) — urutan pengiriman dipasangkan
+        // dengan urutan customDocs posisi di server (extraDoc_0, extraDoc_1, ...).
+        for (let i = 0; i < customDocs.length; i++) {
+          const file = extraFiles[i];
+          if (file) fd.append(`extraDoc_${i}`, file);
+        }
       }
 
       const res = await fetch("/api/applications", { method: "POST", body: fd });
@@ -1236,7 +1418,7 @@ export function ApplyWizard({
 
       submittedRef.current = true;
       // Pelacakan (Task 27): lamaran terkirim — event "submit" pada langkah terakhir.
-      trackStep("submit", t.apply.steps.length);
+      trackStep("submit", previewStep + 1);
       try {
         window.localStorage.removeItem(DRAFT_KEY);
       } catch {
@@ -1260,22 +1442,22 @@ export function ApplyWizard({
     event.preventDefault();
     if (submitting) return;
 
-    // Langkah 0-1: validasi per langkah lalu maju.
-    if (step === 0 || step === 1) {
+    // Langkah sebelum Berkas (0-1 + langkah section skema): validasi lalu maju.
+    if (step < filesStep) {
       goNext();
       return;
     }
 
-    // Langkah 3 (Berkas): validasi semuanya (termasuk berkas wajib), lalu pratinjau.
-    if (step === 2) {
+    // Langkah Berkas: validasi semuanya (termasuk berkas wajib), lalu pratinjau.
+    if (step === filesStep) {
       if (!validateAllAndJump()) return;
       if (!validateRequiredFiles()) return;
-      goToStep(3);
-      trackStep("advance", 3);
+      goToStep(previewStep);
+      trackStep("advance", previewStep);
       return;
     }
 
-    // Langkah 3 (Pratinjau): wajib pernyataan kebenaran data sebelum konfirmasi.
+    // Langkah Pratinjau: wajib pernyataan kebenaran data sebelum konfirmasi.
     if (!agreed) {
       toast.error(t.apply.preview.agreeRequired);
       return;
@@ -1311,6 +1493,8 @@ export function ApplyWizard({
     setDirection(1);
     setSource("");
     setScreeningAnswers({});
+    setFormAnswers({});
+    setFormErrors({});
     // Saat lockPosition, posisi milik halaman detail — jangan direset.
     if (!lockPosition) onPositionIdChange("");
     try {
@@ -1329,6 +1513,26 @@ export function ApplyWizard({
     }
     setValues(restored);
     draftDismissedRef.current = false;
+    // Jawaban form (Form Builder) hanya dipulihkan bila draf milik posisi yang
+    // sama — posisi berbeda berarti skema formulir berbeda.
+    if (
+      draft.formAnswers &&
+      typeof draft.positionId === "string" &&
+      draft.positionId === positionId
+    ) {
+      const restoredAnswers: Record<string, string | string[] | number> = {};
+      for (const [key, value] of Object.entries(draft.formAnswers)) {
+        if (typeof value === "string" || typeof value === "number") {
+          restoredAnswers[key] = value;
+          continue;
+        }
+        if (Array.isArray(value)) {
+          const items = value.filter((item): item is string => typeof item === "string");
+          if (items.length > 0) restoredAnswers[key] = items;
+        }
+      }
+      setFormAnswers(restoredAnswers);
+    }
     // Saat lockPosition, posisi tetap milik halaman detail (draft bisa dari
     // posisi lain — jangan menimpa posisi terkunci).
     if (
@@ -1479,7 +1683,17 @@ export function ApplyWizard({
     );
   }
 
-  const stepLabels = t.apply.steps;
+  // Stepper dinamis: judul section skema disisipkan antara Pengalaman & Berkas
+  // (mode klasik tetap 4 langkah).
+  const stepLabels: string[] = schema
+    ? [
+        t.apply.steps[0],
+        t.apply.steps[1],
+        ...sectionSteps.map((entry) => formSectionTitle(entry.section, lang)),
+        t.apply.steps[2],
+        t.apply.steps[3],
+      ]
+    : t.apply.steps;
 
   return (
     <div className="@container flex flex-col gap-6">
@@ -1793,8 +2007,9 @@ export function ApplyWizard({
               ) : null}
             </div>
 
-            {/* Pertanyaan screening khusus posisi terpilih (v3) */}
-            {screeningQuestions.length > 0 ? (
+            {/* Pertanyaan screening khusus posisi terpilih (v3) — hanya mode
+                klasik; skema aktif menggantikannya dengan langkah dinamis */}
+            {!schema && screeningQuestions.length > 0 ? (
               <div className="flex flex-col gap-4 rounded-xl border bg-muted/40 p-4">
                 <p className="flex items-center gap-2 text-sm font-semibold">
                   <ClipboardList
@@ -1899,8 +2114,38 @@ export function ApplyWizard({
           </div>
         )}
 
-        {/* LANGKAH 3: Berkas (CV & audio perkenalan) */}
-        {step === 2 && (
+        {/* LANGKAH DINAMIS: satu langkah per bagian Form Builder (mode skema
+            aktif) — section tanpa field dilewati dan tidak menjadi langkah. */}
+        {sectionSteps.map((entry) =>
+          step === entry.stepIndex ? (
+            <div key={entry.section.id} className="flex flex-col gap-5">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-semibold">
+                  {formSectionTitle(entry.section, lang)}
+                </p>
+                {entry.section.description ? (
+                  <p className="text-xs text-muted-foreground">
+                    {entry.section.description}
+                  </p>
+                ) : null}
+              </div>
+              {entry.fields.map((field) => (
+                <FormFieldRenderer
+                  key={field.id}
+                  field={field}
+                  value={formAnswers[field.id]}
+                  error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
+                  onAnswer={handleFormAnswer}
+                  onAnswerError={handleFormAnswerError}
+                />
+              ))}
+            </div>
+          ) : null,
+        )}
+
+        {/* LANGKAH BERKAS: CV & audio perkenalan (mode klasik: langkah ke-3;
+            mode skema: setelah semua langkah section) */}
+        {step === filesStep && (
           <div className="flex flex-col gap-5">
 
             {/* Dropzone CV */}
@@ -2059,8 +2304,9 @@ export function ApplyWizard({
               ) : null}
             </div>
 
-            {/* Dokumen wajib tambahan milik posisi (customDocs) */}
-            {customDocs.length > 0 ? (
+            {/* Dokumen wajib tambahan milik posisi (customDocs) — hanya mode
+                klasik; skema aktif memakai field file milik skema */}
+            {!schema && customDocs.length > 0 ? (
               <div className="flex flex-col gap-3 rounded-2xl border bg-zinc-50/60 p-4 dark:bg-zinc-900/40">
                 <div>
                   <p className="text-sm font-semibold">
@@ -2164,8 +2410,8 @@ export function ApplyWizard({
           </div>
         )}
 
-        {/* LANGKAH 4: Pratinjau & Konfirmasi — lamaran tidak terkirim otomatis */}
-        {step === 3 && (
+        {/* LANGKAH PRATINJAU: Pratinjau & Konfirmasi — lamaran tidak terkirim otomatis */}
+        {step === previewStep && (
           <div className="flex flex-col gap-4">
             <div className="rounded-xl border border-primary/30 bg-rose-50/70 p-4 dark:border-primary/40 dark:bg-primary/10">
               <p className="flex items-center gap-2 text-sm font-semibold">
@@ -2242,8 +2488,52 @@ export function ApplyWizard({
               />
             </PreviewSection>
 
-            {/* Jawaban screening posisi — hanya bila posisi punya pertanyaan */}
-            {screeningQuestions.length > 0 ? (
+            {/* Jawaban Form Builder — satu kartu per bagian skema, tombol Ubah
+                menuju langkah section terkait (mode skema aktif) */}
+            {schema
+              ? sectionSteps.map((entry) => (
+                  <PreviewSection
+                    key={entry.section.id}
+                    title={formSectionTitle(entry.section, lang)}
+                    editLabel={t.apply.preview.edit}
+                    onEdit={() => goToStep(entry.stepIndex)}
+                  >
+                    {entry.fields.map((field) => {
+                      const value = formAnswers[field.id];
+                      let display = "";
+                      if (field.type === "file") {
+                        display =
+                          value instanceof File
+                            ? `${value.name} (${formatMb(value.size)})`
+                            : "";
+                      } else if (Array.isArray(value)) {
+                        display = formatAnswerValue(
+                          value.filter((item) => item !== FORM_OTHER_VALUE),
+                        );
+                      } else if (typeof value === "string") {
+                        display = value === FORM_OTHER_VALUE ? "" : value;
+                      } else if (typeof value === "number") {
+                        display = formatAnswerValue(value);
+                      }
+                      return (
+                        <PreviewRow
+                          key={field.id}
+                          label={formFieldLabel(field, lang)}
+                          value={display}
+                          fallback={
+                            field.type === "file"
+                              ? t.apply.preview.noFile
+                              : t.apply.preview.notAnswered
+                          }
+                        />
+                      );
+                    })}
+                  </PreviewSection>
+                ))
+              : null}
+
+            {/* Jawaban screening posisi — hanya bila posisi punya pertanyaan (mode klasik) */}
+            {!schema && screeningQuestions.length > 0 ? (
               <PreviewSection
                 title={t.apply.preview.sectionScreening}
                 editLabel={t.apply.preview.edit}
@@ -2317,8 +2607,10 @@ export function ApplyWizard({
                   ({selectedPosition?.requireIntro ? t.apply.uploads.required : t.apply.uploads.optional})
                 </span>
               </div>
-              {/* Dokumen wajib tambahan — pratinjau berkas terunggah per label */}
-              {customDocs.map((label, index) => {
+              {/* Dokumen wajib tambahan — pratinjau berkas terunggah per label
+                  (hanya mode klasik; skema aktif diringkas di kartu section) */}
+              {!schema
+                ? customDocs.map((label, index) => {
                 const file = extraFiles[index];
                 return (
                   <div key={`${label}-${index}`} className="flex items-center gap-2.5 text-sm">
@@ -2348,7 +2640,8 @@ export function ApplyWizard({
                     </span>
                   </div>
                 );
-              })}
+                })
+              : null}
             </PreviewSection>
 
             {/* Pernyataan kebenaran data — wajib dicentang sebelum konfirmasi */}
@@ -2415,7 +2708,7 @@ export function ApplyWizard({
         </AnimatePresence>
 
         {/* Notifikasi rekrutmen ditutup — langkah akhir (pratinjau) */}
-        {step === 3 && recruitmentClosed ? (
+        {step === previewStep && recruitmentClosed ? (
           <div
             role="alert"
             className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
@@ -2443,11 +2736,11 @@ export function ApplyWizard({
             {t.apply.buttons.back}
           </Button>
 
-          {step < 2 ? (
+          {step < filesStep ? (
             <Button type="submit" className="h-11 min-w-32">
               {t.apply.buttons.next}
             </Button>
-          ) : step === 2 ? (
+          ) : step === filesStep ? (
             <Button type="submit" className="h-11 min-w-40">
               <Eye className="h-4 w-4" aria-hidden="true" />
               {t.apply.buttons.review}
