@@ -12,7 +12,6 @@ import { parseScreeningQuestions, parseStringRecord, parseRequirements } from "@
 import {
   FORM_LIMITS,
   isAllowedFormFile,
-  isFormSchemaActive,
   parseFormSchema,
   validateFormAnswers,
   type FormAnswerValue,
@@ -366,7 +365,7 @@ export async function POST(req: NextRequest) {
     // adalah sumber kebenaran formulir pertanyaan kustom.
     const formSchema = parseFormSchema(position.formSchema);
     let formAnswersJson: string | null = null;
-    if (isFormSchemaActive({ formSchema })) {
+    if (formSchema && formSchema.fields.length > 0) {
       const validated = validateFormAnswers(formSchema, fields.formAnswers ?? null);
       if (!validated.ok) {
         return NextResponse.json({ error: validated.error }, { status: 400 });
@@ -374,8 +373,7 @@ export async function POST(req: NextRequest) {
       const cleaned = validated.cleaned as Record<string, FormAnswerValue>;
 
       // Berkas field formulir: ukuran, format, lalu simpan sebagai FileAsset.
-      const schemaObj = formSchema;
-      for (const field of schemaObj.fields) {
+      for (const field of formSchema.fields) {
         if (field.type !== "file") continue;
         const file = formFieldFiles.get(field.id) ?? null;
         if (!file) {

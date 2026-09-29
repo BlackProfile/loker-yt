@@ -14,7 +14,6 @@ import {
   type FormField,
   type FormSchema,
 } from "@/lib/form-schema";
-
 export const dynamic = "force-dynamic";
 
 const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
@@ -138,7 +137,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           const value = row.answers[field.id];
           if (value == null || (Array.isArray(value) && value.length === 0)) continue;
           filled += 1;
-          const items = Array.isArray(value) ? value : [value];
+          const items = (Array.isArray(value) ? value : [value]).filter(
+            (item): item is string => typeof item === "string",
+          );
           for (const item of items) {
             if (field.options.includes(item)) counts[item] = (counts[item] ?? 0) + 1;
             else otherCount += 1;

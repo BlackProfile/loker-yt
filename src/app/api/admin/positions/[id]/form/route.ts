@@ -9,7 +9,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { serializePosition } from "@/lib/seed";
-import { buildDefaultSchema, parseScreeningQuestionsSafe, sanitizeFormSchemaInput } from "@/lib/form-schema";
+import {
+  buildDefaultSchema,
+  sanitizeFormSchemaInput,
+  type FormSchema,
+} from "@/lib/form-schema";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +35,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Skema tersimpan (null = mode klasik) + skema bawaan hasil migrasi otomatis.
-    let derived = null;
+    let derived: FormSchema | null = null;
     if (!position.formSchema) {
       derived = buildDefaultSchema({
         screeningQuestions: parseScreeningQuestionsSafe(position.screeningQuestions),
