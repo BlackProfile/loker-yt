@@ -34,6 +34,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import {
   BarChart3,
   Briefcase,
@@ -303,6 +304,32 @@ export function PositionsTab() {
       setPositions((prev) =>
         prev.map((p) =>
           p.id === position.id ? { ...p, isActive: position.isActive } : p
+        )
+      );
+      reportError(err);
+    }
+  }
+
+  async function handleToggleApply(position: Position, applyOpen: boolean) {
+    // Buka/tutup formulir lamaran per posisi — optimistik seperti handleToggle.
+    setPositions((prev) =>
+      prev.map((p) => (p.id === position.id ? { ...p, applyOpen } : p))
+    );
+    try {
+      const updated = await apiPatch<Position>(
+        `/api/admin/positions/${position.id}`,
+        { applyOpen }
+      );
+      setPositions((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      toast.success(
+        applyOpen
+          ? `Formulir lamaran "${position.title}" dibuka`
+          : `Formulir lamaran "${position.title}" ditutup`
+      );
+    } catch (err) {
+      setPositions((prev) =>
+        prev.map((p) =>
+          p.id === position.id ? { ...p, applyOpen: position.applyOpen !== false } : p
         )
       );
       reportError(err);
@@ -596,6 +623,15 @@ export function PositionsTab() {
                           </Badge>
                         )
                       ) : null}
+                      {position.applyOpen === false ? (
+                        <Badge
+                          variant="outline"
+                          className={PUBLICATION_BADGE.tutup}
+                          title="Formulir lamaran posisi ini ditutup — posisi tetap tayang"
+                        >
+                          Form Ditutup
+                        </Badge>
+                      ) : null}
                       {hasQuota ? (
                         <Badge variant="secondary" className="gap-1">
                           <Users className="size-3" aria-hidden="true" />
@@ -637,6 +673,31 @@ export function PositionsTab() {
                       />
                       <span className="hidden text-xs text-muted-foreground lg:block">
                         {position.isActive ? "Aktif" : "Nonaktif"}
+                      </span>
+                    </div>
+                    {/* Toggle buka/tutup formulir lamaran per posisi */}
+                    <div
+                      className="mr-1 flex items-center gap-2"
+                      title="Buka/tutup formulir lamaran posisi ini"
+                    >
+                      <Switch
+                        checked={position.applyOpen !== false}
+                        onCheckedChange={(checked) => {
+                          if (!canMutate) return;
+                          void handleToggleApply(position, checked);
+                        }}
+                        disabled={!canMutate}
+                        aria-label={`Buka/tutup formulir lamaran posisi ${position.title}`}
+                      />
+                      <span
+                        className={cn(
+                          "hidden text-xs lg:block",
+                          position.applyOpen !== false
+                            ? "text-muted-foreground"
+                            : "font-medium text-rose-600 dark:text-rose-400"
+                        )}
+                      >
+                        {position.applyOpen !== false ? "Form Buka" : "Form Tutup"}
                       </span>
                     </div>
                     <Button
