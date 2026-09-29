@@ -281,7 +281,7 @@ const id = {
     },
     formSection: {
       chooseOption: "Pilih salah satu",
-      chooseMulti: "Pilih yang sesuai (boleh lebih dari satu)",
+      chooseMulti: "Pilih satu atau lebih",
       otherLabel: "Lainnya",
       otherPlaceholder: "Tulis jawabanmu…",
       ratingAria: "Beri {n} bintang",
@@ -1243,7 +1243,7 @@ const en: Dict = {
     },
     formSection: {
       chooseOption: "Choose one",
-      chooseMulti: "Select all that apply",
+      chooseMulti: "Select one or more",
       otherLabel: "Other",
       otherPlaceholder: "Write your answer…",
       ratingAria: "Rate {n} stars",
