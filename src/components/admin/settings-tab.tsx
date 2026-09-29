@@ -1526,6 +1526,12 @@ export function SettingsTab() {
       {/* Kotak Keluar Email (arsip + kirim ulang, ketergantungan SMTP) */}
       <EmailOutboxCard />
 
+      {/* Sesi Aktif (perangkat login + logout paksa) */}
+      <ActiveSessionsCard />
+
+      {/* Retensi Data (privasi — hapus otomatis lamaran lama) */}
+      <RetentionCard />
+
       {/* Tampilan Halaman Publik (visibilitas tiap bagian) */}
       <SectionVisibilityCard sections={site.sections} onChange={updateSection} />
 

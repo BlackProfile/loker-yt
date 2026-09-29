@@ -29,6 +29,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Download,
   Inbox,
   MapPin,
   Users,
@@ -188,6 +189,13 @@ export function CalendarTab() {
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {/* Unduh seluruh jadwal wawancara sebagai berkas kalender (.ics). */}
+              <Button variant="outline" asChild>
+                <a href="/api/admin/interviews/ics" download aria-label="Unduh jadwal wawancara (.ics)">
+                  <Download className="size-4" aria-hidden="true" />
+                  Unduh .ics
+                </a>
+              </Button>
               <Select
                 value={interviewerFilter}
                 onValueChange={setInterviewerFilter}
