@@ -1267,3 +1267,26 @@ Work Log:
 
 Stage Summary:
 - Tambah Posisi punya autosave draf perangkat (restore/buang), posisi bisa disimpan & diisi ulang dari template (OWNER/HR, delete OWNER), dan pertanyaan screening bisa digenerate AI di halaman Formulir Lamaran; lint & tsc bersih, semua endpoint terverifikasi curl + browser.
+---
+Task ID: 27
+Agent: z.ai main session (orchestrator)
+Task: Implementasi 14 fitur admin baru ("tambahkan semuanya") — Task 27
+
+Work Log:
+- PEMETAAN ULANG SCOPE: dari 28 ide yang diusulkan, 14 ternyata sudah ada (bulk dasar, WhatsApp, booking slot, ICS publik, digest mingguan, publishAt/closesAt, offer respond, scorecard wawancara, beban pewawancara, dsb). Scope Task 27 = 14 fitur yang benar-benar baru.
+- FONDASI (main): schema.prisma — Application +stageUpdatedAt/archivedAt/deletedAt/videoNotes/consentAt, Position +deletedAt, model baru FormStepStat/PositionTemplate/Announcement/WebhookEndpoint/SessionToken; db:push OK. types.ts (+VideoNote, WEBHOOK_EVENTS/LABELS, field opsional Application). seed.ts (+parseVideoNotes, serializer mengisi field baru). lib/webhooks.ts (emitWebhook HMAC X-Lumina-* fire-and-forget).
+- 6 SUBAGEN PARALEL (semuanya lapor selesai + lint/tsc bersih):
+  - 27-a: Command palette Ctrl+K (CommandDialog + /api/admin/search), tombol "Lihat sebagai Pelamar" (/?preview=1), bulk API +tag/+archive/+unarchive, delete → SOFT delete, filter arsip (Aktif/Diarsip/Semua), tombol "Lihat Halaman Publik" per posisi.
+  - 27-b: Draft autosave (localStorage, kartu Lanjutkan/Buang draf, create mode), Template Posisi (PositionTemplate CRUD + "Isi dari Template" + "Simpan sebagai Template"), AI generator pertanyaan screening (POST /api/admin/ai/screening-questions, fallback salvage regex).
+  - 27-c: SLA alert (/api/admin/sla + kartu dashboard), Drop-off (/api/admin/dropoff + bar CSS), Efektivitas Kanal (/api/admin/channels), Papan Pengumuman (Announcement CRUD + kartu dashboard, realtime announcements:changed).
+  - 27-d: Anti-spam (honeypot website + time-trap 3s + rate limit 5/jam/IP + sukses palsu), consent privasi wajib (consentAt), track-step wizard (FormStepStat via /api/public/track-step), social proof chip "N sudah melamar", deletedAt filter di /api/public/content, PreviewBanner, emitWebhook offer.responded.
+  - 27-e: Catatan video bertimestamp (PATCH videoNotes + panel MM:SS di detail dialog), PATCH status → stageUpdatedAt + emitWebhook stage_changed, DELETE tunggal → soft delete, PDF profil & surat penawaran via print-window (print-docs.ts, tanpa dependensi).
+  - 27-f: Tong sampah (GET/POST /api/admin/trash restore/purge + UI Data), Webhook Keluar (CRUD + test-fire + secret sekali + UI), Sesi Aktif (SessionToken di server-auth/login/logout + /api/admin/sessions + UI Pengaturan), Retensi (Setting "retention" + /api/admin/retention), Auto-arsip (Setting "maintenance" + /api/cron/maintenance guard 1x/jam + UI), ICS admin (/api/admin/interviews/ics + tombol Kalender).
+- INTEGRASI main: tsc src 0 error, eslint bersih; badge "Diarsip" ditambahkan sendiri ke applications-table.tsx (milik bersama; MultiEdit parsial diperbaiki).
+- VERIFIKASI (27-g max-turns + lanjutan main): 14/14 PASS — dashboard SLA+pengumuman; posting/hapus pengumuman; palette Ctrl+K cari "video" → kelola posisi; pratinjau /?preview=1 + banner; social proof chip; lamar publik + consent wajib + submit sukses; drop-off live; bulk tag/arsip + badge Diarsip + filter; siklus trash (soft delete → sampah → pulihkan → purge) UI+API; webhook create→test-fire (status 405 tercatat)→delete; draft autosave + template apply/save; catatan video + tombol PDF; sesi aktif + ICS (text/calendar) + retensi UI; mobile 390px tanpa overflow; 0 console error; dev.log bersih; login demo OK pasca-perubahan server-auth.
+- CLEANUP DB: duplikat posisi uji (video-editor-2) di-purge dari sampah, 5 baris FormStepStat uji dihapus, artefak uji lain (tag/pengumuman/webhook/template/lamaran QA) sudah dibersihkan verifier; akhir: 5 posisi + 5 lamaran aktif, sampah kosong.
+
+Stage Summary:
+- 14 fitur baru terpasang & terverifikasi penuh: Command Palette, Pratinjau Pelamar, Bulk Tag/Arsip, Draft Autosave, Template Posisi, AI Screening Generator, SLA Alert, Auto-Arsip, Drop-off Analytics, Laporan Kanal, Papan Pengumuman, Anti-Spam+Consent, Tong Sampah, Sesi Aktif, Retensi, Webhook Keluar, Catatan Video, PDF Profil/Offer, Social Proof, ICS Admin.
+- Kontrak lintas-agen: soft delete (deletedAt) di semua jalur hapus; emitWebhook di application.created/stage_changed/archived/offer.responded; stageUpdatedAt diisi saat perubahan tahap (basis SLA); SessionToken backward-compatible (sesi tanpa row tetap diizinkan).
+- tsc 0 error (src), eslint bersih, dev.log bersih, tiga daemon tetap berjalan; auto-push akan menyinkronkan ke GitHub.
