@@ -1327,12 +1327,35 @@ export function FormBuilderPage({
                   </span>{" "}
                   jawaban terkumpul
                 </p>
-                <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
-                  <a href={csvUrl} download>
-                    <FileDown className="size-4" aria-hidden="true" />
-                    Unduh CSV
-                  </a>
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-9 sm:size-8"
+                        onClick={() => void loadResponses()}
+                        disabled={responsesState === "loading"}
+                        aria-label="Segarkan data jawaban"
+                      >
+                        <Loader2
+                          className={cn(
+                            "size-4",
+                            responsesState === "loading" && "animate-spin",
+                          )}
+                          aria-hidden="true"
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Segarkan</TooltipContent>
+                  </Tooltip>
+                  <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
+                    <a href={csvUrl} download>
+                      <FileDown className="size-4" aria-hidden="true" />
+                      Unduh CSV
+                    </a>
+                  </Button>
+                </div>
               </div>
 
               {/* Statistik per pertanyaan */}

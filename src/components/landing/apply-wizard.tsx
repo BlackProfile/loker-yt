@@ -133,6 +133,25 @@ function checkboxOtherOf(
   };
 }
 
+/** Amankan jawaban form dari draf localStorage — hanya nilai serialisabel. */
+function parseDraftFormAnswers(
+  raw: Record<string, unknown> | undefined,
+): Record<string, string | string[] | number> {
+  const parsed: Record<string, string | string[] | number> = {};
+  if (!raw) return parsed;
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string" || typeof value === "number") {
+      parsed[key] = value;
+      continue;
+    }
+    if (Array.isArray(value)) {
+      const items = value.filter((item): item is string => typeof item === "string");
+      if (items.length > 0) parsed[key] = items;
+    }
+  }
+  return parsed;
+}
+
 type FormFieldRendererProps = {
   field: FormField;
   value: FormAnswerInput | undefined;
@@ -806,8 +825,14 @@ export function ApplyWizard({
     setScreeningAnswers({});
     setExtraFiles({});
     setExtraErrors({});
-    // Posisi berbeda = skema formulir berbeda — jawaban & error form direset.
-    setFormAnswers({});
+    // Posisi berbeda = skema formulir berbeda — jawaban & error form direset,
+    // KECUALI sedang memulihkan draf posisi yang sama (antrean pemulihan).
+    if (draftRestoreAnswersRef.current) {
+      setFormAnswers(draftRestoreAnswersRef.current);
+      draftRestoreAnswersRef.current = null;
+    } else {
+      setFormAnswers({});
+    }
     setFormErrors({});
   }
 
@@ -824,6 +849,11 @@ export function ApplyWizard({
   const [draft, setDraft] = useState<StoredDraft | null>(null);
   const submittedRef = useRef(false);
   const draftDismissedRef = useRef(false);
+  // Antrean pemulihan jawaban form draf — diterapkan setelah reset ganti posisi.
+  const draftRestoreAnswersRef = useRef<Record<
+    string,
+    string | string[] | number
+  > | null>(null);
   // Anti-spam (Task 27): waktu formulir dibuka (time-trap) + ref honeypot.
   const formStartedAtRef = useRef<number>(Date.now());
   const websiteRef = useRef<HTMLInputElement | null>(null);
@@ -1514,34 +1544,32 @@ export function ApplyWizard({
     }
     setValues(restored);
     draftDismissedRef.current = false;
-    // Jawaban form (Form Builder) hanya dipulihkan bila draf milik posisi yang
-    // sama — posisi berbeda berarti skema formulir berbeda.
-    if (
-      draft.formAnswers &&
-      typeof draft.positionId === "string" &&
-      draft.positionId === positionId
-    ) {
-      const restoredAnswers: Record<string, string | string[] | number> = {};
-      for (const [key, value] of Object.entries(draft.formAnswers)) {
-        if (typeof value === "string" || typeof value === "number") {
-          restoredAnswers[key] = value;
-          continue;
-        }
-        if (Array.isArray(value)) {
-          const items = value.filter((item): item is string => typeof item === "string");
-          if (items.length > 0) restoredAnswers[key] = items;
-        }
-      }
-      setFormAnswers(restoredAnswers);
-    }
-    // Saat lockPosition, posisi tetap milik halaman detail (draft bisa dari
-    // posisi lain — jangan menimpa posisi terkunci).
-    if (
-      !lockPosition &&
+    // Posisi tujuan pemulihan: posisi draf bila masih valid & tidak terkunci.
+    const draftPositionId =
       typeof draft.positionId === "string" &&
       positions.some((p) => p.id === draft.positionId)
+        ? draft.positionId
+        : null;
+    const willSwitch =
+      !lockPosition && draftPositionId !== null && draftPositionId !== positionId;
+    if (willSwitch && draftPositionId !== null) {
+      onPositionIdChange(draftPositionId);
+    }
+    // Jawaban form (Form Builder) dipulihkan bila posisi tujuan sama dengan
+    // posisi draf — posisi berbeda berarti skema formulir berbeda.
+    if (
+      draft.formAnswers &&
+      draftPositionId !== null &&
+      (draftPositionId === positionId || willSwitch)
     ) {
-      onPositionIdChange(draft.positionId);
+      const parsed = parseDraftFormAnswers(draft.formAnswers);
+      if (willSwitch) {
+        // Posisi akan berganti — blok reset render membersihkan jawaban form;
+        // antrekan pemulihan agar diterapkan setelah reset.
+        draftRestoreAnswersRef.current = parsed;
+      } else {
+        setFormAnswers(parsed);
+      }
     }
     setDraft(null);
     toast.success(t.apply.draft.title);
