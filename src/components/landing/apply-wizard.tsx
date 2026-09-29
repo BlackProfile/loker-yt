@@ -155,8 +155,7 @@ function FormFieldRenderer({
   onAnswer,
   onAnswerError,
 }: FormFieldRendererProps) {
-  const { t, lang } = useLang();
-  const anchorId = `apply-form-${field.id}`;
+  const { t, lang } = useLang();  const anchorId = `apply-form-${field.id}`;
   const errorId = `${anchorId}-error`;
   const label = formFieldLabel(field, lang);
   const [fileDragging, setFileDragging] = useState(false);
@@ -705,8 +704,7 @@ export function ApplyWizard({
   onPositionIdChange,
   lockPosition = false,
 }: ApplyWizardProps) {
-  const { t } = useLang();
-  const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
+  const { t, lang } = useLang();
   const [errors, setErrors] = useState<FormErrors>({});
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
