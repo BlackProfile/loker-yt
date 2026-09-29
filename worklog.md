@@ -1191,3 +1191,25 @@ Work Log:
 
 Stage Summary:
 - 4 fitur hadir: alert SLA per tahap, drop-off formulir, efektivitas kanal, papan pengumuman internal (OWNER/HR posting, OWNER hapus, realtime announcements:changed); bar CSS tanpa library; lint & tsc bersih
+---
+Task ID: 27-a
+Agent: subagen efisiensi admin
+Task: Command palette Ctrl+K, tombol Lihat sebagai Pelamar, bulk tag/arsip + soft delete
+
+Work Log:
+- BARU src/app/api/admin/search/route.ts: GET wajib login (getSession), q min 2 char (maks 60), Position title contains take 5 (id/title/isActive), Application name ATAU trackingCode contains take 5 (id/name/trackingCode/positionTitle via relasi/status), deletedAt IS NULL; respons {positions, applications}
+- BARU src/components/admin/command-palette.tsx: CommandDialog (ui/command) + cmdk filter default; grup Navigasi (navItems dari admin-app, difilter peran), Posisi & Pelamar dari /api/admin/search dengan debounce 250ms + guard respons basi (seq); pilih Posisi = onNavigate("positions") + set hash #admin/posisi/<id> (hashchange listener existing membuka halaman kelola); pilih Pelamar = onNavigate("applications") + CustomEvent "lumina-open-application" {id}; mekanisme pending id (set/takePendingApplicationId) untuk lintas-tab (event terkirim sebelum listener tab terpasang -> id diambil saat daftar selesai dimuat; id tak ada di list = diabaikan)
+- admin-app.tsx (hanya mount + tombol): state paletteOpen, listener global Ctrl+K/Cmd+K (hanya phase ready), tombol ikon Search di header (aria "Buka pencarian (Ctrl+K)"), tombol outline Eye "Lihat sebagai Pelamar" -> window.open("/?preview=1","_blank") di sebelah tombol Publik; mount <CommandPalette> dengan navItems difilter peran + activeTab; sidebar collapsed tidak disentuh
+- applications-tab.tsx: listener "lumina-open-application" (setDetail dari list dimuat); openPendingApplication dipanggil di loadApplications; filter arsip client-side Select Aktif (default)/Diarsip/Semua memakai archivedAt + sembunyikan deletedAt != null (tong sampah) di displayedApplications; keterangan "· N diarsip" saat filter Semua; hasActiveFilter & resetFilters mengikutkan arsip; bulk bar baru: Atur Tag (Dialog chip input+pratinjau, Enter/koma, maks 12 x 24 char), Arsipkan, Batalkan Arsip; dialog hapus massal kini menjelaskan soft delete ke Tong Sampah + pemulihan di tab Data (label tombol tetap "Hapus"), toast "N lamaran masuk Tong Sampah"; grid filter jadi lg:grid-cols-7
+- bulk route: action baru "tag" (merge unik, maks 12 tag x 24 char, transaksi per lamaran, parseTags existing dipertahankan), "archive" (archivedAt=now + ActivityLog per lamaran action ARCHIVE + emitWebhook("application.archived",{ids})), "unarchive" (archivedAt=null); "delete" diubah SOFT DELETE (deletedAt=now, tanpa application.delete); action status/talentPool/reject dipertahankan persis; emitRealtime applications tetap
+- positions-tab.tsx: tombol ikon ExternalLink "Lihat Halaman Publik" di aksi baris (window.open /?posisi=<slug> bila slug ada, else "/"); position-manage-page.tsx: tombol anchor "Publik" lama diganti tombol "Lihat Halaman Publik" (variant outline, window.open slug-or-root)
+- Uji API (curl demo login): search 401 tanpa sesi / 400 q<2 / 200 "video"->posisi Video Editor / "LM-"->5 pelamar by kode / "an"->nama; bulk tag merge no-op OK + validasi 400; archive -> archivedAt terisi -> unarchive -> null; delete -> deletedAt terisi (list GET kini mengecualikan soft-deleted server-side) lalu data demo dipulihkan via sqlite langsung (deletedAt=null) — state DB akhir rapi
+- lint (eslint .) bersih; tsc --noEmit: 0 error di berkas milik 27-a (4 error tersisa di src/app/api/admin/sessions/route.ts milik agen lain yang sedang dikerjakan paralel)
+- CATATAN BATAS KEPEMILIKAN: badge "Diarsip" per baris TIDAK dipasang karena hanya bisa dirender di applications-table.tsx/kanban-board.tsx yang HARAM bagi 27-a (tidak ada slot prop untuk badge per baris); yang tersedia: filter arsip default Aktif + hitungan "N diarsip" + baris arsip tetap bisa dipilih/dilepas dari bulk. Patch 6 baris untuk pemilik tabel: {app.archivedAt ? <Badge variant="outline" className="border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">Diarsip</Badge> : null} di sel nama, samping DuplicateBadge
+- Browser QA tidak dijalankan: worklog mencatat agent-browser menggantung pada app ini (socket realtime); verifikasi via API + lint/tsc
+
+Stage Summary:
+- Command palette Ctrl+K (navigasi semua tab + cari Posisi/Pelamar via /api/admin/search) hidup; deep-link posisi & buka-detail-pelamar lintas tab andal lewat pending-id + CustomEvent
+- Bulk lamaran kini punya Atur Tag / Arsipkan / Batalkan Arsip; hapus massal = soft delete ke Tong Sampah (webhook application.archived untuk arsip); filter arsip default Aktif di tab Pelamar
+- Tombol "Lihat sebagai Pelamar" (/?preview=1) di header admin + "Lihat Halaman Publik" di baris posisi & halaman kelola
+- Berkas: BARU command-palette.tsx + api/admin/search/route.ts; UBAH admin-app.tsx, applications-tab.tsx, bulk/route.ts, positions-tab.tsx, position-manage-page.tsx; lint & tsc bersih untuk berkas milik 27-a
