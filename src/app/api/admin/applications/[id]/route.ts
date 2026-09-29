@@ -1,6 +1,6 @@
-// PATCH  /api/admin/applications/[id] — update status/catatan/rating/tags/wawancara/talent pool/rubrik/checklist (OWNER/HR).
-// DELETE /api/admin/applications/[id] — hapus lamaran (OWNER/HR).
-// Setiap perubahan dicatat ke ActivityLog.
+// PATCH  /api/admin/applications/[id] — update status/catatan/rating/tags/wawancara/talent pool/rubrik/checklist/catatan video (OWNER/HR).
+// DELETE /api/admin/applications/[id] — pindahkan lamaran ke tong sampah (soft delete, OWNER/HR).
+// Setiap perubahan dicatat ke ActivityLog. Perubahan tahap memicu webhook application.stage_changed.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
@@ -9,11 +9,13 @@ import {
   parseRequirements,
   parseScoreRecord,
   parseTags,
+  parseVideoNotes,
   serializeApplication,
 } from "@/lib/seed";
 import { isBuiltInStage } from "@/lib/stages";
 import { STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { emitWebhook } from "@/lib/webhooks";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +58,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       talentPool?: boolean;
       rubricScores?: string | null;
       checklistState?: string;
+      videoNotes?: string | null;
+      stageUpdatedAt?: Date;
     } = {};
 
     if (data.status !== undefined) {
@@ -189,6 +193,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       updateData.checklistState = JSON.stringify(Array.from(seen));
     }
 
+    // Catatan video intro: terima array {t,note} (atau JSON string) lalu disanitasi
+    // persis seperti parseVideoNotes di seed — maks 100 item, t int >= 0, note maks 300 char.
+    if (data.videoNotes !== undefined) {
+      let raw: unknown = data.videoNotes;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          // Biarkan string apa adanya — parseVideoNotes menoleransi JSON string tak terbaca.
+        }
+      }
+      if (!Array.isArray(raw) && typeof raw !== "string") {
+        return NextResponse.json(
+          { error: "Catatan video harus berupa array {t, note}." },
+          { status: 400 }
+        );
+      }
+      const source = typeof raw === "string" ? raw : JSON.stringify(raw);
+      const notes = parseVideoNotes(source);
+      updateData.videoNotes = notes.length > 0 ? JSON.stringify(notes) : null;
+    }
+
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: "Tidak ada perubahan yang dikirim." }, { status: 400 });
     }
@@ -196,6 +222,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const existing = await db.application.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json(NOT_FOUND, { status: 404 });
+    }
+
+    const stageChanged =
+      updateData.status !== undefined && updateData.status !== existing.status;
+    if (stageChanged) {
+      // SLA per tahap: reset penanda waktu setiap kali tahap pipeline berubah.
+      updateData.stageUpdatedAt = new Date();
     }
 
     // Tahap berubah ke Ditolak -> penawaran aktif otomatis dibatalkan agar halaman
@@ -278,9 +311,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         detail: `Checklist evaluasi: ${newItems.length} item tercentang`,
       });
     }
+    if (updateData.videoNotes !== undefined && updateData.videoNotes !== existing.videoNotes) {
+      const newNotes = parseVideoNotes(updateData.videoNotes);
+      logs.push({
+        actor: session.name,
+        action: "NOTE",
+        detail: `Catatan video diperbarui (${newNotes.length} catatan)`,
+      });
+    }
     if (logs.length > 0) {
       await db.activityLog.createMany({
         data: logs.map((log) => ({ ...log, applicationId: id })),
+      });
+    }
+
+    // Webhook keluar: tahap pelamar berubah — fire-and-forget ke endpoint berlangganan.
+    if (stageChanged) {
+      await emitWebhook("application.stage_changed", {
+        id,
+        name: existing.name,
+        from: existing.status,
+        to: updateData.status,
       });
     }
 
@@ -310,11 +361,15 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
-    await db.application.delete({ where: { id } });
+    // Soft delete: lamaran masuk tong sampah (deletedAt terisi), data tidak hilang.
+    await db.application.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
 
     // Realtime: lamaran dihapus — segarkan daftar admin & statistik.
     void emitRealtime(REALTIME_EVENTS.applications);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, trashed: true });
   } catch (error) {
     console.error("[DELETE /api/admin/applications/[id]]", error);
     return NextResponse.json({ error: "Gagal menghapus lamaran. Coba lagi nanti." }, { status: 500 });

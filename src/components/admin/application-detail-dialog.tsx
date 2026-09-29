@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -44,6 +45,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Copy,
+  FileDown,
   FileText,
   Globe,
   Handshake,
@@ -55,6 +57,7 @@ import {
   MessageSquareText,
   Send,
   Share2,
+  StickyNote,
   Tag,
   Trash2,
   Users,
@@ -75,6 +78,7 @@ import {
   type Role,
   type StageKey,
   type LogEntry,
+  type VideoNote,
 } from "@/lib/types";
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
@@ -100,6 +104,11 @@ import {
   InterviewStatusChip,
 } from "./interview-session-dialog";
 import { cn } from "@/lib/utils";
+import {
+  buildOfferHtml,
+  buildProfileHtml,
+  formatTimestamp,
+} from "./print-docs";
 
 function InfoItem({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -429,6 +438,11 @@ export function ApplicationDetailDialog({
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [docInput, setDocInput] = useState("");
 
+  // Panel Catatan Video (Task 27-e): catatan bertimestamp pada video/audio intro.
+  const [videoNoteSec, setVideoNoteSec] = useState("");
+  const [videoNoteText, setVideoNoteText] = useState("");
+  const [videoNotesSaving, setVideoNotesSaving] = useState(false);
+
   // Reset form hanya saat berganti pelamar (bukan tiap update objek) agar
   // pesan penolakan/penawaran yang baru dibuat tidak ikut terhapus.
   const lastAppIdRef = useRef<string | null>(null);
@@ -459,6 +473,9 @@ export function ApplicationDetailDialog({
     setOfferMessage(null);
     setOnboardingSaving(false);
     setDocInput("");
+    setVideoNoteSec("");
+    setVideoNoteText("");
+    setVideoNotesSaving(false);
   }, [application]);
 
   const applicationId = application?.id ?? null;
@@ -863,6 +880,68 @@ export function ApplicationDetailDialog({
     } finally {
       setOnboardingSaving(false);
     }
+  }
+
+  /* --------------------------- Catatan video intro (Task 27-e) --------------------------- */
+
+  async function handleAddVideoNote(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (videoNotesSaving) return;
+    const text = videoNoteText.trim().slice(0, 300);
+    if (!text) {
+      toast.error("Isi catatan terlebih dahulu.");
+      return;
+    }
+    if ((app.videoNotes ?? []).length >= 100) {
+      toast.error("Maksimal 100 catatan video.");
+      return;
+    }
+    // Detik boleh kosong (dianggap 0); nilai negatif/non-angka dijepit ke 0.
+    const t = Math.max(0, Math.floor(Number(videoNoteSec) || 0));
+    setVideoNotesSaving(true);
+    const updated = await patch(
+      { videoNotes: [...(app.videoNotes ?? []), { t, note: text }] },
+      "Catatan video ditambahkan"
+    );
+    if (updated) {
+      setVideoNoteSec("");
+      setVideoNoteText("");
+    }
+    setVideoNotesSaving(false);
+  }
+
+  async function handleRemoveVideoNote(note: VideoNote) {
+    if (videoNotesSaving) return;
+    setVideoNotesSaving(true);
+    // Hapus berdasarkan identitas objek agar aman saat ada catatan dengan detik sama.
+    await patch(
+      { videoNotes: (app.videoNotes ?? []).filter((n) => n !== note) },
+      "Catatan video dihapus"
+    );
+    setVideoNotesSaving(false);
+  }
+
+  /* ----------------------------- Cetak dokumen (Task 27-e) ----------------------------- */
+
+  // Buka jendela cetak berisi dokumen HTML siap A4, lalu picu dialog print browser.
+  function openPrintWindow(html: string) {
+    const w = window.open("", "_blank");
+    if (!w) {
+      toast.error("Popup diblokir browser. Izinkan popup untuk mencetak dokumen.");
+      return;
+    }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 400);
+  }
+
+  function handlePrintProfile() {
+    openPrintWindow(buildProfileHtml(app, "Lumina Studio", screeningQuestions));
+  }
+
+  function handlePrintOffer() {
+    openPrintWindow(buildOfferHtml(app, "Lumina Studio"));
   }
 
   async function handleSaveRubric() {

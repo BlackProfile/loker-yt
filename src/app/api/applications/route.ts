@@ -7,7 +7,7 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { generateUniqueTrackingCode } from "@/lib/tracking";
+import { generateTrackingCode, generateUniqueTrackingCode } from "@/lib/tracking";
 import { parseScreeningQuestions, parseStringRecord, parseRequirements } from "@/lib/seed";
 import { CV_MAX_BYTES, INTRO_MAX_BYTES, type ApplySuccessResponse } from "@/lib/types";
 import { startBackgroundProcessing } from "@/lib/processing";
@@ -37,6 +37,36 @@ const AUDIO_EXT_MIME: Record<string, string> = {
 };
 
 const SCREENING_ANSWER_MAX = 500; // batas karakter tiap jawaban screening
+
+// Anti-spam (Task 27): rate limit submit per IP — maks 5 lamaran per jam.
+// In-memory (pola rateMap di /api/public/slots): cukup untuk menahan spam
+// sederhana tanpa infrastruktur tambahan.
+const RATE_LIMIT_MAX = 5;
+const RATE_WINDOW_MS = 60 * 60 * 1000;
+const rateMap = new Map<string, number[]>();
+
+// Time-trap (Task 27): submit lebih cepat dari ini dianggap bot.
+const MIN_FILL_MS = 3000;
+
+/** IP klien dari header proxy standar (fallback "unknown"). */
+function clientIp(req: NextRequest): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  const ip = forwarded
+    ? (forwarded.split(",")[0] ?? "").trim()
+    : (req.headers.get("x-real-ip") ?? "").trim();
+  return ip || "unknown";
+}
+
+/** Respons sukses PALSU untuk bot (honeypot/time-trap) — tidak menyimpan apa pun. */
+function fakeSuccessResponse(): ApplySuccessResponse {
+  return {
+    ok: true,
+    id: cuidLike(),
+    trackingCode: generateTrackingCode(),
+    autoReply: null,
+    assignment: null,
+  };
+}
 
 // Batas & tipe berkas dokumen wajib tambahan (customDocs posisi).
 const EXTRA_DOC_MAX_BYTES = 5 * 1024 * 1024; // 5 MB per dokumen
@@ -160,6 +190,47 @@ export async function POST(req: NextRequest) {
     const utmCampaign = asOptionalString(fields.utmCampaign)?.slice(0, 60) ?? null;
     // Referrer: URL halaman saat pelamar mengirim (dikirim client bila ada; null bila tidak).
     const referrer = asOptionalString(fields.referrer)?.slice(0, 300) ?? null;
+
+    // Rate limit per IP (Task 27): maks 5 submit per jam — dipersona sebagai error biasa.
+    const nowMs = Date.now();
+    const ipKey = `apply:${clientIp(req)}`;
+    const hits = (rateMap.get(ipKey) ?? []).filter((ts) => nowMs - ts < RATE_WINDOW_MS);
+    if (hits.length >= RATE_LIMIT_MAX) {
+      return NextResponse.json(
+        { error: "Terlalu banyak percobaan. Coba lagi nanti." },
+        { status: 429 },
+      );
+    }
+    hits.push(nowMs);
+    rateMap.set(ipKey, hits);
+    if (rateMap.size > 500) {
+      for (const [key, timestamps] of rateMap) {
+        if (timestamps.every((ts) => nowMs - ts >= RATE_WINDOW_MS)) rateMap.delete(key);
+      }
+    }
+
+    // Honeypot (Task 27): field "website" tersembunyi terisi = bot pengisi otomatis.
+    // Balas sukses palsu (200) TANPA menyimpan apa pun, agar bot tidak mencoba lagi.
+    if (asOptionalString(fields.website)) {
+      return NextResponse.json(fakeSuccessResponse(), { status: 200 });
+    }
+
+    // Time-trap (Task 27): formulir terisi kurang dari 3 detik sejak dibuka = bot.
+    // Dif berarti jam klien maju — jangan eksekusi salah (biarkan lewat sebagai manusia).
+    const startedAt = Number(fields.formStartedAt);
+    const elapsed = nowMs - startedAt;
+    if (Number.isFinite(startedAt) && startedAt > 0 && elapsed >= 0 && elapsed < MIN_FILL_MS) {
+      return NextResponse.json(fakeSuccessResponse(), { status: 200 });
+    }
+
+    // Persetujuan privasi (Task 27): wajib ada sebelum lamaran disimpan.
+    const consent = fields.consent === "1" || fields.consent === "true";
+    if (!consent) {
+      return NextResponse.json(
+        { error: "Mohon centang persetujuan pemrosesan data pribadi terlebih dahulu." },
+        { status: 400 },
+      );
+    }
 
     if (name.length < 3) {
       return NextResponse.json({ error: "Nama minimal 3 karakter." }, { status: 400 });
@@ -370,6 +441,9 @@ export async function POST(req: NextRequest) {
         utmCampaign,
         referrer,
         screeningAnswers: screeningAnswersJson,
+        // Task 27: pencatatan persetujuan privasi + penanda perubahan tahap awal.
+        consentAt: consent ? now : null,
+        stageUpdatedAt: now,
       },
     });
 

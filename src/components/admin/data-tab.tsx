@@ -1,8 +1,9 @@
 "use client";
 
 // Tab Data — backup/restore database (OWNER), impor lamaran massal dari CSV,
-// dan mode tutup rekrutmen (Setting "site" -> banner + blokir submit wizard).
-import { useEffect, useMemo, useRef, useState } from "react";
+// mode tutup rekrutmen (Setting "site" -> banner + blokir submit wizard),
+// tong sampah (soft delete), webhook keluar, dan arsip otomatis.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,6 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Archive,
   CheckCircle2,
   DatabaseBackup,
   Download,
@@ -34,14 +38,20 @@ import {
   Info,
   Loader2,
   PauseCircle,
+  Play,
+  RotateCcw,
   Save,
+  Send,
   ShieldAlert,
+  Trash2,
   TriangleAlert,
   Upload,
+  Webhook,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { SiteContent } from "@/lib/types";
-import { apiGet, apiPut } from "./api";
+import { WEBHOOK_EVENTS, WEBHOOK_EVENT_LABELS, type SiteContent } from "@/lib/types";
+import { apiDelete, apiGet, apiPost, apiPut } from "./api";
+import { formatRelative } from "./format";
 import { useAdminSession } from "./admin-context";
 
 /* ------------------------------- Util CSV ------------------------------- */

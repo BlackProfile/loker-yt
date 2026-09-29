@@ -13,9 +13,11 @@ export async function GET() {
 
     const now = new Date();
     const positions = await db.position.findMany({
-      // Tayang = aktif, belum lewat closesAt, dan publishAt sudah tercapai.
+      // Tayang = aktif, belum lewat closesAt, publishAt sudah tercapai,
+      // dan TIDAK ter-soft-delete (Task 27: posisi di tong sampah tidak tayang).
       where: {
         isActive: true,
+        deletedAt: null,
         AND: [
           { OR: [{ closesAt: null }, { closesAt: { gt: now } }] },
           { OR: [{ publishAt: null }, { publishAt: { lte: now } }] },

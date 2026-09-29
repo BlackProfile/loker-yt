@@ -237,6 +237,13 @@ function PositionCard({
               {position.location}
             </Badge>
             <SalaryBadge position={position} />
+            {/* Social proof (Task 27): jumlah pelamar — hanya bila > 0. */}
+            {stats && stats.applications > 0 ? (
+              <Badge variant="outline" className={cn("gap-1", CHIP_ZINC)}>
+                <Users className="h-3 w-3" aria-hidden="true" />
+                {fillTemplate(t.positions.applicants, { n: stats.applications })}
+              </Badge>
+            ) : null}
           </div>
         </div>
 
