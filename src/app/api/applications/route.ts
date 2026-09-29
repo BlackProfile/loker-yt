@@ -255,6 +255,14 @@ export async function POST(req: NextRequest) {
     ) {
       return NextResponse.json({ error: "Posisi tidak ditemukan atau sudah ditutup" }, { status: 400 });
     }
+    // Formulir per posisi: admin dapat menutup formulir lamaran satu posisi
+    // tanpa menonaktifkan posisinya (posisi tetap tayang di halaman publik).
+    if (!position.applyOpen) {
+      return NextResponse.json(
+        { error: "Formulir lamaran untuk posisi ini sedang ditutup." },
+        { status: 403 },
+      );
+    }
     if (experience.length < 10) {
       return NextResponse.json({ error: "Ceritakan pengalamanmu minimal 10 karakter." }, { status: 400 });
     }

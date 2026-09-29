@@ -55,6 +55,7 @@ export type PositionFields = {
   requirePortfolio?: boolean;
   customDocs?: string[]; // label dokumen wajib tambahan
   maxApplicants?: number | null;
+  applyOpen?: boolean; // formulir lamaran posisi ini buka/tutup
   publishAt?: Date | null;
   stages?: string; // JSON string[]; "[]" = pakai pipeline bawaan
   stageCategories?: string; // JSON Record<tahap kustom, StageCategory>; "{}" = pakai heuristik bawaan
@@ -412,6 +413,7 @@ export async function sanitizePositionInput(
     ["requireCv", "requireCv"],
     ["requireIntro", "requireIntro"],
     ["requirePortfolio", "requirePortfolio"],
+    ["applyOpen", "applyOpen"],
   ];
   for (const [key, name] of booleans) {
     const parsed = sanitizeBoolean(data[key as string], name);
@@ -716,6 +718,7 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.requirePortfolio !== undefined) out.requirePortfolio = f.requirePortfolio;
   if (f.customDocs !== undefined) out.customDocs = JSON.stringify(f.customDocs);
   if (f.maxApplicants !== undefined) out.maxApplicants = f.maxApplicants;
+  if (f.applyOpen !== undefined) out.applyOpen = f.applyOpen;
   if (f.publishAt !== undefined) out.publishAt = f.publishAt;
   if (f.stages !== undefined) out.stages = f.stages;
   if (f.stageCategories !== undefined) out.stageCategories = f.stageCategories;

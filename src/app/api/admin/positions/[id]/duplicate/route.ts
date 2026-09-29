@@ -59,6 +59,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         requirePortfolio: existing.requirePortfolio,
         customDocs: existing.customDocs,
         maxApplicants: existing.maxApplicants,
+        applyOpen: existing.applyOpen,
 
         publishAt: existing.publishAt,
 

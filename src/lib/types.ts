@@ -178,6 +178,7 @@ export type Position = {
   requirePortfolio: boolean;
   customDocs: string[]; // label dokumen wajib tambahan (bebas, mis. "KTP", "Ijazah")
   maxApplicants: number | null;
+  applyOpen: boolean; // formulir lamaran posisi ini buka/tutup (setting per posisi)
 
   // Publikasi
   publishAt: string | null;

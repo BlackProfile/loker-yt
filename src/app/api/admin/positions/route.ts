@@ -90,6 +90,7 @@ export async function POST(req: NextRequest) {
         requirePortfolio: f.requirePortfolio ?? false,
         customDocs: JSON.stringify(f.customDocs ?? []),
         maxApplicants: f.maxApplicants ?? null,
+        applyOpen: f.applyOpen ?? true,
 
         publishAt: f.publishAt ?? null,
 

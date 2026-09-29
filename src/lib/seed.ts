@@ -309,6 +309,7 @@ export function serializePosition(record: PositionRecordModel): Position {
     requirePortfolio: record.requirePortfolio,
     customDocs: parseRequirements(record.customDocs),
     maxApplicants: record.maxApplicants,
+    applyOpen: record.applyOpen !== false,
 
     publishAt: record.publishAt ? record.publishAt.toISOString() : null,
 
