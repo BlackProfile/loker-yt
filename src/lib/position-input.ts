@@ -6,6 +6,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ensureUniqueSlug, parseRequirements, slugifyTitle } from "@/lib/seed";
 import { stagesForPosition, isBuiltInStage } from "@/lib/stages";
+import { sanitizeFormSchemaInput } from "@/lib/form-schema";
 import {
   INTERVIEW_MODES,
   INTERVIEW_PLATFORMS,
@@ -56,6 +57,7 @@ export type PositionFields = {
   customDocs?: string[]; // label dokumen wajib tambahan
   maxApplicants?: number | null;
   applyOpen?: boolean; // formulir lamaran posisi ini buka/tutup
+  formSchema?: string | null; // JSON FormSchema (Form Builder); null = kembali mode klasik
   publishAt?: Date | null;
   stages?: string; // JSON string[]; "[]" = pakai pipeline bawaan
   stageCategories?: string; // JSON Record<tahap kustom, StageCategory>; "{}" = pakai heuristik bawaan
@@ -365,6 +367,7 @@ export type SanitizePositionOptions = {
     autoShortlistStage: string | null;
     salaryMin?: number | null;
     salaryMax?: number | null;
+    formSchema?: string | null; // skema lama untuk penggabungan retired fields
   } | null;
 };
 
@@ -464,6 +467,14 @@ export async function sanitizePositionInput(
   const maxApplicants = sanitizeNullableInt(data.maxApplicants, "Kuota pelamar", 1, 10000);
   if (!maxApplicants.ok) return maxApplicants;
   if (maxApplicants.value !== undefined) f.maxApplicants = maxApplicants.value;
+
+  // Form Builder per posisi (Task 30): skema formulir bebas; field lama yang
+  // dihapus otomatis dipindah ke retiredFields (skema sebelumnya dari record saat ini).
+  const formSchema = sanitizeFormSchemaInput(data.formSchema, {
+    previousSchemaRaw: opts.current?.formSchema ?? null,
+  });
+  if (!formSchema.ok) return formSchema;
+  if (formSchema.value !== undefined) f.formSchema = formSchema.value;
 
   // Pipeline & otomasi
   const stages = sanitizeStages(data.stages);
@@ -719,6 +730,7 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.customDocs !== undefined) out.customDocs = JSON.stringify(f.customDocs);
   if (f.maxApplicants !== undefined) out.maxApplicants = f.maxApplicants;
   if (f.applyOpen !== undefined) out.applyOpen = f.applyOpen;
+  if (f.formSchema !== undefined) out.formSchema = f.formSchema;
   if (f.publishAt !== undefined) out.publishAt = f.publishAt;
   if (f.stages !== undefined) out.stages = f.stages;
   if (f.stageCategories !== undefined) out.stageCategories = f.stageCategories;
