@@ -39,6 +39,7 @@ import {
   Loader2,
   PauseCircle,
   Play,
+  Plus,
   RotateCcw,
   Save,
   Send,
@@ -216,6 +217,789 @@ function DataCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">{children}</CardContent>
     </Card>
+  );
+}
+
+/* ------------------------------ Tong Sampah ------------------------------ */
+
+type TrashPosition = {
+  id: string;
+  title: string;
+  deletedAt: string | null;
+  applicationsCount: number;
+};
+
+type TrashApplication = {
+  id: string;
+  name: string;
+  positionTitle: string | null;
+  deletedAt: string | null;
+};
+
+type TrashResponse = {
+  positions: TrashPosition[];
+  applications: TrashApplication[];
+};
+
+type TrashPurgeTarget = {
+  type: "position" | "application";
+  id: string;
+  label: string;
+};
+
+function TrashCard() {
+  const { reportError } = useAdminSession();
+  const [positions, setPositions] = useState<TrashPosition[]>([]);
+  const [applications, setApplications] = useState<TrashApplication[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [purgeTarget, setPurgeTarget] = useState<TrashPurgeTarget | null>(null);
+  const purging = busyId !== null;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiGet<TrashResponse>("/api/admin/trash");
+      setPositions(data.positions ?? []);
+      setApplications(data.applications ?? []);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleAction(
+    type: "position" | "application",
+    id: string,
+    action: "restore" | "purge",
+  ) {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      await apiPost("/api/admin/trash", { type, id, action });
+      toast.success(
+        action === "restore" ? "Item berhasil dipulihkan." : "Item dihapus permanen.",
+      );
+      setPurgeTarget(null);
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <DataCard
+      icon={Trash2}
+      title="Tong Sampah"
+      description="Posisi dan lamaran yang dihapus masih bisa dipulihkan. Hapus permanen tidak bisa dibatalkan."
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Memuat tong sampah...
+        </div>
+      ) : positions.length === 0 && applications.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Tong sampah kosong — tidak ada posisi atau lamaran terhapus.
+        </p>
+      ) : (
+        <div className="flex max-h-96 flex-col gap-4 overflow-y-auto nice-scrollbar">
+          {positions.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Posisi ({positions.length})
+              </p>
+              {positions.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex flex-col gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{p.title || "(tanpa judul)"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {p.applicationsCount} lamaran terkait · dihapus {formatRelative(p.deletedAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9"
+                      disabled={busyId !== null}
+                      onClick={() => void handleAction("position", p.id, "restore")}
+                    >
+                      {busyId === p.id ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <RotateCcw className="size-4" aria-hidden="true" />
+                      )}
+                      Pulihkan
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                      disabled={busyId !== null}
+                      onClick={() =>
+                        setPurgeTarget({ type: "position", id: p.id, label: p.title || "(tanpa judul)" })
+                      }
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                      Hapus Permanen
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {applications.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Lamaran ({applications.length})
+              </p>
+              {applications.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex flex-col gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{a.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {a.positionTitle ?? "Posisi tidak diketahui"} · dihapus {formatRelative(a.deletedAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9"
+                      disabled={busyId !== null}
+                      onClick={() => void handleAction("application", a.id, "restore")}
+                    >
+                      {busyId === a.id ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <RotateCcw className="size-4" aria-hidden="true" />
+                      )}
+                      Pulihkan
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                      disabled={busyId !== null}
+                      onClick={() =>
+                        setPurgeTarget({
+                          type: "application",
+                          id: a.id,
+                          label: `${a.name}${a.positionTitle ? ` — ${a.positionTitle}` : ""}`,
+                        })
+                      }
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                      Hapus Permanen
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Konfirmasi hapus permanen */}
+      <AlertDialog
+        open={purgeTarget !== null}
+        onOpenChange={(open) => {
+          if (!purging && !open) setPurgeTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <TriangleAlert className="size-5 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+              Hapus permanen dari tong sampah?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="flex flex-col gap-2">
+                <p>
+                  <strong>{purgeTarget?.label ?? "Item ini"}</strong> akan dihapus selamanya
+                  beserta seluruh data terkait. Tindakan ini tidak bisa dibatalkan.
+                </p>
+                <p>Gunakan tombol Pulihkan bila item masih diperlukan.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={purging}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={purging}
+              onClick={(event) => {
+                event.preventDefault();
+                if (purgeTarget) {
+                  void handleAction(purgeTarget.type, purgeTarget.id, "purge");
+                }
+              }}
+            >
+              {purging ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menghapus...
+                </>
+              ) : (
+                "Ya, Hapus Permanen"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </DataCard>
+  );
+}
+
+/* ---------------------------- Webhook Keluar ---------------------------- */
+
+type WebhookEndpointRow = {
+  id: string;
+  url: string;
+  events: string[];
+  active: boolean;
+  lastStatus: number | null;
+  lastFiredAt: string | null;
+  failCount: number;
+  createdAt: string;
+  secretPreview: string;
+};
+
+function webhookStatusBadgeClass(status: number | null): string {
+  if (status === null) {
+    return "bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700";
+  }
+  if (status >= 200 && status < 300) {
+    return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-900";
+  }
+  return "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-400 dark:border-rose-900";
+}
+
+function WebhooksCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+
+  const [rows, setRows] = useState<WebhookEndpointRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [url, setUrl] = useState("");
+  const [selectedEvents, setSelectedEvents] = useState<string[]>(["*"]);
+  const [creating, setCreating] = useState(false);
+  const [newSecret, setNewSecret] = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WebhookEndpointRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const load = useCallback(async () => {
+    if (role !== "OWNER") {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await apiGet<WebhookEndpointRow[]>("/api/admin/webhooks");
+      setRows(data ?? []);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [role, reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const eventOptions = useMemo(
+    () => ["*", ...WEBHOOK_EVENTS] as const,
+    [],
+  );
+
+  function toggleEvent(event: string, checked: boolean) {
+    setSelectedEvents((prev) => {
+      if (checked) {
+        if (event === "*") return ["*"];
+        const next = prev.filter((v) => v !== "*");
+        return next.includes(event) ? next : [...next, event];
+      }
+      return prev.filter((v) => v !== event);
+    });
+  }
+
+  async function handleCreate() {
+    if (creating) return;
+    if (!url.trim()) {
+      toast.error("URL webhook wajib diisi.");
+      return;
+    }
+    if (selectedEvents.length === 0) {
+      toast.error("Pilih minimal satu event yang dikirim.");
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await apiPost<{ endpoint: WebhookEndpointRow; secret: string }>(
+        "/api/admin/webhooks",
+        { url: url.trim(), events: selectedEvents },
+      );
+      setRows((prev) => [res.endpoint, ...prev]);
+      setNewSecret(res.secret); // secret penuh hanya tampil SEKALI
+      setUrl("");
+      setSelectedEvents(["*"]);
+      toast.success("Endpoint webhook ditambahkan.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleTest(id: string) {
+    if (testingId) return;
+    setTestingId(id);
+    try {
+      const res = await apiPost<{ ok: boolean; status: number | null }>(
+        "/api/admin/webhooks/test",
+        { id },
+      );
+      if (res.ok) {
+        toast.success(`Tes terkirim — respons ${res.status}.`);
+      } else {
+        toast.error(
+          res.status === null
+            ? "Endpoint tidak merespons (timeout / gagal jaringan)."
+            : `Endpoint menjawab ${res.status}.`,
+        );
+      }
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setTestingId(null);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await apiDelete(`/api/admin/webhooks?id=${encodeURIComponent(deleteTarget.id)}`);
+      setRows((prev) => prev.filter((r) => r.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      toast.success("Endpoint webhook dihapus.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <DataCard
+      icon={Webhook}
+      title="Webhook Keluar"
+      description="Kirim event otomatis (lamaran baru, perubahan tahap, arsip, jawaban offer) ke sistem eksternal dengan tanda tangan HMAC pada header X-Lumina-*."
+    >
+      {!isOwner ? (
+        <div
+          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+          role="note"
+        >
+          <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span>Kelola webhook keluar hanya dapat dilakukan oleh pemilik studio (OWNER).</span>
+        </div>
+      ) : (
+        <>
+          {/* Form tambah endpoint */}
+          <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-4 dark:bg-zinc-900/40">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="webhook-url">URL Endpoint</Label>
+              <Input
+                id="webhook-url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://contoh.com/webhooks/lumina"
+                className="h-10"
+                type="url"
+                inputMode="url"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Event yang dikirim</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {eventOptions.map((event) => (
+                  <label
+                    key={event}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm"
+                  >
+                    <Checkbox
+                      checked={selectedEvents.includes(event)}
+                      onCheckedChange={(checked) => toggleEvent(event, checked === true)}
+                      aria-label={WEBHOOK_EVENT_LABELS[event] ?? event}
+                    />
+                    <span className="min-w-0 truncate">
+                      {WEBHOOK_EVENT_LABELS[event] ?? event}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                onClick={() => void handleCreate()}
+                disabled={creating}
+                className="h-11 active:scale-[0.99] sm:h-9"
+              >
+                {creating ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Plus className="size-4" aria-hidden="true" />
+                )}
+                Tambah Endpoint
+              </Button>
+            </div>
+            {newSecret ? (
+              <div
+                className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40"
+                role="alert"
+              >
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-700 dark:text-amber-400">
+                  <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
+                  Simpan secret ini sekarang
+                </p>
+                <p className="text-xs text-amber-700/90 dark:text-amber-400/90">
+                  Secret penuh hanya ditampilkan sekali dan tidak bisa dilihat lagi. Gunakan
+                  untuk memverifikasi header X-Lumina-Signature di sistem penerima.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded bg-amber-100 px-2 py-1.5 font-mono text-xs text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">
+                    {newSecret}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 shrink-0"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(newSecret).then(() => {
+                        toast.success("Secret disalin ke clipboard.");
+                      });
+                    }}
+                  >
+                    Salin
+                  </Button>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-fit text-amber-700 dark:text-amber-400"
+                  onClick={() => setNewSecret(null)}
+                >
+                  Saya sudah menyimpan
+                </Button>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Daftar endpoint */}
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Memuat endpoint...
+            </div>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Belum ada endpoint webhook terdaftar.
+            </p>
+          ) : (
+            <div className="flex max-h-96 flex-col gap-2 overflow-y-auto nice-scrollbar">
+              {rows.map((row) => (
+                <div
+                  key={row.id}
+                  className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium" title={row.url}>
+                      {row.url}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <Badge variant="outline" className={webhookStatusBadgeClass(row.lastStatus)}>
+                        {row.lastStatus === null
+                          ? "Belum terkirim"
+                          : `Status ${row.lastStatus}`}
+                      </Badge>
+                      {row.failCount > 0 ? (
+                        <Badge
+                          variant="outline"
+                          className="border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+                        >
+                          {row.failCount} gagal
+                        </Badge>
+                      ) : null}
+                      {row.events.map((ev) => (
+                        <Badge
+                          key={ev}
+                          variant="outline"
+                          className="border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                        >
+                          {WEBHOOK_EVENT_LABELS[ev] ?? ev}
+                        </Badge>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Secret {row.secretPreview} · terakhir kirim {formatRelative(row.lastFiredAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9"
+                      disabled={testingId !== null}
+                      onClick={() => void handleTest(row.id)}
+                    >
+                      {testingId === row.id ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Send className="size-4" aria-hidden="true" />
+                      )}
+                      Tes
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="size-9 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                      aria-label={`Hapus endpoint ${row.url}`}
+                      onClick={() => setDeleteTarget(row)}
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Konfirmasi hapus endpoint */}
+          <AlertDialog
+            open={deleteTarget !== null}
+            onOpenChange={(open) => {
+              if (!deleting && !open) setDeleteTarget(null);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Hapus endpoint webhook?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Event tidak akan dikirim lagi ke{" "}
+                  <span className="font-medium break-all">{deleteTarget?.url}</span>. Sistem
+                  penerima yang masih menyimpan secret lama tidak akan menerima pesan baru.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deleting}>Batal</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={deleting}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void handleDelete();
+                  }}
+                >
+                  {deleting ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      Menghapus...
+                    </>
+                  ) : (
+                    "Ya, Hapus Endpoint"
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
+    </DataCard>
+  );
+}
+
+/* ---------------------------- Arsip Otomatis ---------------------------- */
+
+function AutoArchiveCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+
+  const [enabled, setEnabled] = useState(false);
+  const [days, setDays] = useState("90");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+
+  const load = useCallback(async () => {
+    if (role !== "OWNER") {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await apiGet<{
+        maintenance: { autoArchiveEnabled: boolean; autoArchiveDays: number };
+      }>("/api/admin/retention");
+      setEnabled(data.maintenance.autoArchiveEnabled);
+      setDays(String(data.maintenance.autoArchiveDays));
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [role, reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await apiPut<{
+        ok: true;
+        maintenance: { autoArchiveEnabled: boolean; autoArchiveDays: number };
+      }>("/api/admin/retention", {
+        autoArchiveEnabled: enabled,
+        autoArchiveDays: Number(days),
+      });
+      setEnabled(res.maintenance.autoArchiveEnabled);
+      setDays(String(res.maintenance.autoArchiveDays));
+      toast.success("Pengaturan arsip otomatis disimpan.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRunNow() {
+    if (running) return;
+    setRunning(true);
+    try {
+      const res = await apiPost<{
+        ok: boolean;
+        skipped?: boolean;
+        archived: number;
+        deleted: number;
+        message?: string;
+      }>("/api/cron/maintenance");
+      if (res.skipped) {
+        toast.info(res.message ?? "Perawatan baru saja dijalankan. Coba lagi nanti.");
+      } else {
+        toast.success(
+          `Perawatan selesai: ${res.archived} lamaran diarsipkan, ${res.deleted} dihapus retensi.`,
+        );
+      }
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <DataCard
+      icon={Archive}
+      title="Arsip Otomatis"
+      description="Lamaran yang tidak berada di tahap final dan tidak aktif lebih dari batas hari akan diarsipkan otomatis oleh sistem."
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Memuat pengaturan...
+        </div>
+      ) : !isOwner ? (
+        <p className="text-sm text-muted-foreground">
+          Arsip otomatis hanya dapat diatur oleh pemilik studio (OWNER).
+        </p>
+      ) : (
+        <>
+          <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Aktifkan Arsip Otomatis</p>
+              <p className="text-xs text-muted-foreground">
+                Berjalan saat perawatan data dijalankan (maksimal 1x per jam).
+              </p>
+            </div>
+            <Switch
+              checked={enabled}
+              disabled={saving}
+              onCheckedChange={setEnabled}
+              aria-label="Aktifkan arsip otomatis"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="auto-archive-days">Batas stagnasi (hari)</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="auto-archive-days"
+                type="number"
+                min={7}
+                max={365}
+                value={days}
+                onChange={(e) => setDays(e.target.value)}
+                className="h-10 w-32"
+                disabled={saving}
+              />
+              <Button
+                variant="outline"
+                className="h-10 shrink-0"
+                disabled={saving}
+                onClick={() => void handleSave()}
+              >
+                {saving ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Save className="size-4" aria-hidden="true" />
+                )}
+                Simpan
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Angka 7 sampai 365 hari. Lamaran di tahap final (ditolak, diterima, hired) tidak
+              pernah diarsipkan otomatis.
+            </p>
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed p-4">
+            <p className="text-xs text-muted-foreground">
+              Jalankan perawatan sekarang (arsip otomatis + retensi data).
+            </p>
+            <Button
+              variant="outline"
+              className="h-10 shrink-0"
+              disabled={running}
+              onClick={() => void handleRunNow()}
+            >
+              {running ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Play className="size-4" aria-hidden="true" />
+              )}
+              Jalankan Sekarang
+            </Button>
+          </div>
+        </>
+      )}
+    </DataCard>
   );
 }
 
@@ -684,6 +1468,15 @@ export function DataTab() {
           </p>
         )}
       </DataCard>
+
+      {/* ----------------------------- Tong Sampah ----------------------------- */}
+      <TrashCard />
+
+      {/* ---------------------------- Webhook Keluar ---------------------------- */}
+      <WebhooksCard />
+
+      {/* ---------------------------- Arsip Otomatis ---------------------------- */}
+      <AutoArchiveCard />
 
       {/* ------------- Konfirmasi restore (peringatan kuat) ------------- */}
       <AlertDialog

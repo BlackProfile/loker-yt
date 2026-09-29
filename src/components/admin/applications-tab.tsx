@@ -34,6 +34,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Archive,
+  ArchiveRestore,
   Download,
   Eye,
   Inbox,
@@ -43,6 +45,7 @@ import {
   Search,
   Sparkles,
   Table2,
+  Tag,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -72,6 +75,7 @@ import { KanbanBoard } from "./kanban-board";
 import { ComparisonDialog } from "./comparison-dialog";
 import { AiScoreBadge } from "./status-badge";
 import { Reveal } from "./motion-primitives";
+import { takePendingApplicationId } from "./command-palette";
 import { cn } from "@/lib/utils";
 
 const ALL = "ALL";
@@ -106,6 +110,8 @@ export function ApplicationsTab() {
   const [tag, setTag] = useState<string>(ALL);
   const [talentPool, setTalentPool] = useState(false);
   const [hasInterview, setHasInterview] = useState(false);
+  // Filter arsip (client-side memakai field archivedAt): Semua / Aktif / Diarsip.
+  const [archiveFilter, setArchiveFilter] = useState<string>("ACTIVE");
 
   const [allTags, setAllTags] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>("table");
@@ -118,6 +124,10 @@ export function ApplicationsTab() {
   const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
   const [bulkRejectReason, setBulkRejectReason] = useState<RejectionReason | "">("");
   const [bulkRejectNote, setBulkRejectNote] = useState("");
+  // Dialog "Atur Tag" massal: chip siap kirim + input tag aktif.
+  const [bulkTagOpen, setBulkTagOpen] = useState(false);
+  const [tagChips, setTagChips] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
 
   const [detail, setDetail] = useState<Application | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Application | null>(null);
@@ -198,7 +208,8 @@ export function ApplicationsTab() {
     ratingMin !== "" ||
     tag !== ALL ||
     talentPool ||
-    hasInterview;
+    hasInterview ||
+    archiveFilter !== "ACTIVE";
 
   const loadPositions = useCallback(async () => {
     try {
@@ -218,6 +229,17 @@ export function ApplicationsTab() {
     }
   }, []);
 
+  // Command palette dapat menahan id lamaran saat navigasi lintas tab (event
+  // "lumina-open-application" dikirim sebelum listener tab ini terpasang).
+  // Ambil id yang ditahan lalu buka detailnya bila ada di daftar yang dimuat;
+  // bila tidak ada di daftar, abaikan.
+  const openPendingApplication = useCallback((list: Application[]) => {
+    const pendingId = takePendingApplicationId();
+    if (!pendingId) return;
+    const app = list.find((a) => a.id === pendingId);
+    if (app) setDetail(app);
+  }, []);
+
   // silent: refresh senyap (dipakai event realtime) — daftar lama tetap tampil
   // sampai data baru siap, tanpa skeleton ulang dan tanpa flash kosong.
   const loadApplications = useCallback(
@@ -228,6 +250,7 @@ export function ApplicationsTab() {
           `/api/admin/applications${activeQuery}`
         );
         setApplications(data);
+        openPendingApplication(data);
         // Kumpulkan tag unik untuk pilihan filter.
         setAllTags((prev) => {
           const set = new Set(prev);
@@ -240,7 +263,7 @@ export function ApplicationsTab() {
         if (!silent) setLoading(false);
       }
     },
-    [activeQuery, reportError]
+    [activeQuery, reportError, openPendingApplication]
   );
 
   useEffect(() => {
@@ -298,6 +321,7 @@ export function ApplicationsTab() {
     setTag(ALL);
     setTalentPool(false);
     setHasInterview(false);
+    setArchiveFilter("ACTIVE");
   }
 
   function toggleSelect(id: string, checked: boolean) {
