@@ -33,6 +33,7 @@ import {
   type AssignmentInfo,
   type BenefitItem,
   type FaqItem,
+  type VideoNote,
   type Interview,
   type InterviewMode,
   type InterviewPlatform,
