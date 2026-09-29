@@ -80,6 +80,7 @@ import {
   type LogEntry,
   type VideoNote,
 } from "@/lib/types";
+import type { FormAnswerValue } from "@/lib/form-schema";
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
@@ -116,6 +117,47 @@ function InfoItem({ label, children }: { label: string; children: ReactNode }) {
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <div className="mt-0.5 text-sm break-words">{children}</div>
     </div>
+  );
+}
+
+/* --------------------- Jawaban Formulir (Form Builder, Task 30) --------------------- */
+
+/** Jawaban dianggap kosong bila null, string kosong, atau daftar kosong. */
+function isEmptyFormAnswer(value: FormAnswerValue | undefined): boolean {
+  if (value == null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+/** Satu nilai jawaban formulir terformat: teks, daftar, angka, atau berkas. */
+function FormAnswerValueView({ value }: { value: FormAnswerValue | undefined }) {
+  if (isEmptyFormAnswer(value)) {
+    return (
+      <p className="mt-0.5 text-sm italic text-zinc-500 dark:text-zinc-400">Tidak dijawab</p>
+    );
+  }
+  if (typeof value === "string") {
+    return <p className="mt-0.5 text-sm whitespace-pre-wrap">{value}</p>;
+  }
+  if (typeof value === "number") {
+    return <p className="mt-0.5 text-sm tabular-nums">{String(value)}</p>;
+  }
+  if (Array.isArray(value)) {
+    return <p className="mt-0.5 text-sm whitespace-pre-wrap">{value.join("; ")}</p>;
+  }
+  return (
+    <p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm">
+      <span className="break-all">{value.filename || "berkas"}</span>
+      <a
+        href={`/api/files/${value.fileId}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex h-7 items-center rounded-md border px-2 text-xs font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+      >
+        Unduh
+      </a>
+    </p>
   );
 }
 
@@ -559,6 +601,11 @@ export function ApplicationDetailDialog({
   const screeningQuestions = pos?.screeningQuestions ?? [];
   const screeningAnswers = app.screeningAnswers ?? {};
   const showScreening = screeningQuestions.length > 0 && app.screeningAnswers != null;
+
+  // Jawaban Formulir (Form Builder): tampil bila posisi memakai skema aktif
+  // dan lamaran menyimpan jawaban formulir (Application.formAnswers).
+  const formSchema = pos?.formSchema ?? null;
+  const formAnswers = app.formAnswers ?? null;
 
   const rubricCriteria = pos?.rubricCriteria ?? [];
   const checklistTemplate = pos?.checklistTemplate ?? [];
@@ -1509,6 +1556,52 @@ export function ApplicationDetailDialog({
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Jawaban Formulir (Form Builder) — di bawah blok Jawaban Screening */}
+            {formSchema != null && formAnswers != null ? (
+              <div className="flex flex-col gap-2 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <ClipboardList className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Jawaban Formulir</p>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {formSchema.sections.map((section) => {
+                    const fields = formSchema.fields.filter((f) => f.sectionId === section.id);
+                    if (fields.length === 0) return null;
+                    return (
+                      <div key={section.id} className="flex flex-col gap-2">
+                        <p className="text-xs font-semibold text-muted-foreground">
+                          {section.title}
+                        </p>
+                        {fields.map((field) => (
+                          <div key={field.id} className="rounded-lg bg-muted/50 p-2.5">
+                            <p className="text-xs font-medium text-muted-foreground">
+                              {field.label}
+                              {field.required ? (
+                                <span className="ml-1 text-rose-500" aria-hidden="true">
+                                  *
+                                </span>
+                              ) : null}
+                            </p>
+                            <FormAnswerValueView value={formAnswers[field.id]} />
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  {formSchema.retiredFields
+                    .filter((r) => !isEmptyFormAnswer(formAnswers[r.id]))
+                    .map((r) => (
+                      <div key={r.id} className="rounded-lg bg-muted/50 p-2.5">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {r.label} (pertanyaan sudah dihapus)
+                        </p>
+                        <FormAnswerValueView value={formAnswers[r.id]} />
+                      </div>
+                    ))}
                 </div>
               </div>
             ) : null}

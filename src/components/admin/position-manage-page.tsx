@@ -41,6 +41,7 @@ import { useLiveRefresh } from "./use-live-refresh";
 import { Reveal } from "./motion-primitives";
 import { AiScoreBadge, StatusBadge } from "./status-badge";
 import { PositionFormPage } from "./position-form-page";
+import { FormBuilderPage } from "./form-builder-page";
 
 type EditMode = "posisi" | "formulir";
 
@@ -115,7 +116,18 @@ export function PositionManagePage({
   }
 
   // Edit lengkap sebagai halaman penuh (bukan popup): seluruh tampilan kelola
-  // digantikan halaman formulir sesuai mode (posisi / formulir lamaran).
+  // digantikan halaman sesuai mode. "Formulir Lamaran" kini memakai Form Builder
+  // (3 tab: Pertanyaan/Jawaban/Setelan); "Edit Posisi" tetap PositionFormPage.
+  if (editMode === "formulir") {
+    return (
+      <FormBuilderPage
+        position={position}
+        onBack={onExitEdit}
+        onUpdated={onUpdated}
+      />
+    );
+  }
+
   if (editMode) {
     return (
       <PositionFormPage
