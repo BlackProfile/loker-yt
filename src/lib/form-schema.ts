@@ -63,7 +63,8 @@ export const FORM_LIMITS = {
   numberMax: 1_000_000_000,
 } as const;
 
-/** Berkas yang boleh diunggah pada field tipe file (lebih longgar dari dokumen bawaan). */
+// Berkas yang boleh diunggah pada field tipe file (lebih longgar dari dokumen bawaan):
+// PDF, gambar, Word, audio, dan video pendek (mis. showreel).
 export const FORM_FILE_ALLOWED_EXTS = [
   ".pdf",
   ".jpg",
@@ -79,15 +80,6 @@ export const FORM_FILE_ALLOWED_EXTS = [
   ".mp4",
   ".mov",
 ] as const;
-
-export function isAllowedFormFile(file: { type: string; name: string }): boolean {
-  if (FORM_FILE_ALLOWED_MIMES.includes(file.type)) return true;
-  if (!file.type) {
-    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-    return (FORM_FILE_ALLOWED_EXTS as readonly string[]).includes(ext);
-  }
-  return false;
-}
 
 const FORM_FILE_ALLOWED_MIMES = [
   "application/pdf",
@@ -107,6 +99,15 @@ const FORM_FILE_ALLOWED_MIMES = [
   "video/webm",
   "video/quicktime",
 ];
+
+export function isAllowedFormFile(file: { type: string; name: string }): boolean {
+  if (FORM_FILE_ALLOWED_MIMES.includes(file.type)) return true;
+  if (!file.type) {
+    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    return (FORM_FILE_ALLOWED_EXTS as readonly string[]).includes(ext);
+  }
+  return false;
+}
 
 /* ----------------------------------- Tipe ----------------------------------- */
 
@@ -372,7 +373,7 @@ export function buildDefaultSchema(input: {
 /* --------------------------------- Sanitasi --------------------------------- */
 
 export type FormSchemaSanitizeResult =
-  | { ok: true; value: string | null }
+  | { ok: true; value?: string | null } // undefined = tidak dikirim (konvensi PATCH)
   | { ok: false; error: string };
 
 /**
@@ -386,7 +387,7 @@ export function sanitizeFormSchemaInput(
   value: unknown,
   opts: { previousSchemaRaw?: string | null } = {},
 ): FormSchemaSanitizeResult {
-  if (value === undefined) return { ok: true, value: undefined as unknown as string | null };
+  if (value === undefined) return { ok: true };
   if (value === null || value === "") {
     return { ok: true, value: null };
   }

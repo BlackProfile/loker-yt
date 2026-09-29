@@ -67,6 +67,7 @@ model Position {
   customDocs   String        @default("[]") // JSON string[] label dokumen wajib tambahan dari pelamar
   maxApplicants Int? // kuota pelamar; null = tanpa kuota
   applyOpen    Boolean       @default(true) // formulir lamaran posisi ini buka/tutup (dikendalikan per posisi)
+  formSchema   String? // JSON FormSchema (Form Builder) — null = mode klasik (screeningQuestions/customDocs)
 
   // Publikasi & jadwal
   publishAt    DateTime? // tayang otomatis setelah tanggal ini (terjadwal)
@@ -209,6 +210,9 @@ model Application {
   deletedAt      DateTime? // tong sampah (soft delete) — null = tidak terhapus
   videoNotes     String?   // JSON {t:detik,note:string}[] catatan bertimestamp saat review video intro
   consentAt      DateTime? // saat pelamar menyetujui pernyataan privasi di formulir
+
+  // Task 30 — jawaban Form Builder per posisi (kunci fieldId stabil); null = lamaran mode klasik
+  formAnswers    String?
 
   comments    Comment[]
   checkIns    CheckIn[]
