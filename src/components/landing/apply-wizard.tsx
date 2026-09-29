@@ -155,7 +155,8 @@ function FormFieldRenderer({
   onAnswer,
   onAnswerError,
 }: FormFieldRendererProps) {
-  const { t, lang } = useLang();  const anchorId = `apply-form-${field.id}`;
+  const { t, lang } = useLang();
+  const anchorId = `apply-form-${field.id}`;
   const errorId = `${anchorId}-error`;
   const label = formFieldLabel(field, lang);
   const [fileDragging, setFileDragging] = useState(false);
@@ -684,6 +685,7 @@ const VALUE_KEYS: (keyof FormValues)[] = [
 type StoredDraft = {
   values?: Partial<Record<keyof FormValues, unknown>>;
   positionId?: unknown;
+  formAnswers?: Record<string, unknown>;
   savedAt?: unknown;
 };
 
@@ -726,6 +728,11 @@ export function ApplyWizard({
   // Dokumen wajib tambahan per posisi: {index urutan customDocs: file}
   const [extraFiles, setExtraFiles] = useState<Record<number, File>>({});
   const [extraErrors, setExtraErrors] = useState<Record<number, string | undefined>>({});
+  // Jawaban Form Builder per posisi (skema aktif): {fieldId: nilai} — berkas
+  // disimpan sebagai File hingga dikirim sebagai part formFile_<fieldId>.
+  const [formAnswers, setFormAnswers] = useState<FormAnswers>({});
+  // Error jawaban Form Builder: {"form:"+fieldId: pesan}
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   // Sumber pelamar ("dari mana tahu lowongan ini") — opsional.
   const [source, setSource] = useState("");
   // Mode tutup rekrutmen (Setting "site" via /api/public/site) — saat aktif,
@@ -749,6 +756,25 @@ export function ApplyWizard({
   const selectedPosition = positions.find((p) => p.id === positionId);
   const screeningQuestions = selectedPosition?.screeningQuestions ?? [];
   const customDocs = selectedPosition?.customDocs ?? [];
+
+  // Form Builder per posisi: skema aktif = formSchema terisi dengan minimal satu
+  // field. null/kosong = mode klasik — seluruh jalur lama tetap berjalan.
+  const rawSchema = selectedPosition?.formSchema ?? null;
+  const schema = rawSchema && rawSchema.fields.length > 0 ? rawSchema : null;
+  // Satu langkah wizard per bagian skema (section tanpa field dilewati),
+  // ditempatkan antara langkah Pengalaman (1) dan Berkas.
+  const sectionSteps: { section: FormSection; fields: FormField[]; stepIndex: number }[] = [];
+  if (schema) {
+    let nextStepIndex = 2;
+    for (const section of schema.sections) {
+      const fields = schema.fields.filter((field) => field.sectionId === section.id);
+      if (fields.length === 0) continue;
+      sectionSteps.push({ section, fields, stepIndex: nextStepIndex });
+      nextStepIndex += 1;
+    }
+  }
+  const filesStep = schema ? 2 + sectionSteps.length : 2;
+  const previewStep = filesStep + 1;
 
   // Status rekrutmen dibaca sekali saat mount; gagal dianggap terbuka.
   useEffect(() => {
@@ -779,6 +805,9 @@ export function ApplyWizard({
     setScreeningAnswers({});
     setExtraFiles({});
     setExtraErrors({});
+    // Posisi berbeda = skema formulir berbeda — jawaban & error form direset.
+    setFormAnswers({});
+    setFormErrors({});
   }
 
   // File unggahan (tidak masuk draft).
@@ -817,18 +846,29 @@ export function ApplyWizard({
     const hasContent =
       VALUE_KEYS.some((key) => values[key].trim().length > 0) || positionId;
     if (!hasContent) return;
+    // Jawaban form ikut disimpan — kecuali berkas (File tidak bisa diserialisasi).
+    const serializableAnswers: Record<string, string | string[] | number> = {};
+    for (const [key, value] of Object.entries(formAnswers)) {
+      if (value === undefined || value instanceof File) continue;
+      serializableAnswers[key] = value;
+    }
     const timer = window.setTimeout(() => {
       try {
         window.localStorage.setItem(
           DRAFT_KEY,
-          JSON.stringify({ values, positionId, savedAt: Date.now() }),
+          JSON.stringify({
+            values,
+            positionId,
+            formAnswers: serializableAnswers,
+            savedAt: Date.now(),
+          }),
         );
       } catch {
         // penyimpanan penuh / tidak tersedia
       }
     }, AUTOSAVE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [values, positionId]);
+  }, [values, positionId, formAnswers]);
 
   // Pelacakan drop-off langkah wizard (Task 27): fire-and-forget ke
   // /api/public/track-step — seluruh kegagalan diabaikan agar tidak mengganggu UI.
@@ -870,6 +910,28 @@ export function ApplyWizard({
     setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
   };
 
+  /** Set/hapus jawaban field form skema + bersihkan error field itu saat diubah. */
+  const handleFormAnswer = (fieldId: string, value: FormAnswerInput | undefined) => {
+    setFormAnswers((prev) => {
+      const next = { ...prev };
+      if (value === undefined) delete next[fieldId];
+      else next[fieldId] = value;
+      return next;
+    });
+    const errorKey = `${FORM_KEY_PREFIX}${fieldId}`;
+    setFormErrors((prev) => {
+      if (!prev[errorKey]) return prev;
+      const next = { ...prev };
+      delete next[errorKey];
+      return next;
+    });
+  };
+
+  /** Catat pesan error jawaban form (mis. berkas ditolak saat dipilih). */
+  const handleFormAnswerError = (fieldId: string, message: string) => {
+    setFormErrors((prev) => ({ ...prev, [`${FORM_KEY_PREFIX}${fieldId}`]: message }));
+  };
+
   const clearPositionError = () => {
     setErrors((prev) =>
       prev.positionId ? { ...prev, positionId: undefined } : prev,
@@ -900,13 +962,16 @@ export function ApplyWizard({
       next.experience = t.apply.errors.experience;
     if (values.motivation.trim().length < MIN_TEXT_LENGTH)
       next.motivation = t.apply.errors.motivation;
-    // Pertanyaan screening wajib milik posisi terpilih.
-    for (const question of screeningQuestions) {
-      if (question.required && !(screeningAnswers[question.id] ?? "").trim()) {
-        next[`${SCREENING_KEY_PREFIX}${question.id}`] = fillTemplate(
-          t.apply.errors.screeningRequired,
-          { label: question.label },
-        );
+    // Pertanyaan screening wajib milik posisi terpilih — mode klasik saja
+    // (skema aktif menggantikan screening dengan langkah dinamis).
+    if (!schema) {
+      for (const question of screeningQuestions) {
+        if (question.required && !(screeningAnswers[question.id] ?? "").trim()) {
+          next[`${SCREENING_KEY_PREFIX}${question.id}`] = fillTemplate(
+            t.apply.errors.screeningRequired,
+            { label: question.label },
+          );
+        }
       }
     }
     // Posisi tertentu mewajibkan portofolio ATAU link sosial media.
