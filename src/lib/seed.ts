@@ -16,6 +16,7 @@ import {
 } from "@/lib/defaults";
 import { hashPassword } from "@/lib/server-auth";
 import { generateUniqueTrackingCode } from "@/lib/tracking";
+import { parseFormAnswers, parseFormSchema } from "@/lib/form-schema";
 import {
   AI_RECOMMENDATION_LABELS,
   INTERVIEW_MODES,
@@ -310,6 +311,7 @@ export function serializePosition(record: PositionRecordModel): Position {
     customDocs: parseRequirements(record.customDocs),
     maxApplicants: record.maxApplicants,
     applyOpen: record.applyOpen !== false,
+    formSchema: parseFormSchema(record.formSchema),
 
     publishAt: record.publishAt ? record.publishAt.toISOString() : null,
 
@@ -434,6 +436,7 @@ export function serializeApplication(record: ApplicationRecord): Application {
     utmMedium: record.utmMedium,
     utmCampaign: record.utmCampaign,
     screeningAnswers: parseStringRecord(record.screeningAnswers),
+    formAnswers: parseFormAnswers(record.formAnswers),
     rubricScores: parseScoreRecord(record.rubricScores),
     checklistState: parseRequirements(record.checklistState),
     cvFileId: record.cvFileId,

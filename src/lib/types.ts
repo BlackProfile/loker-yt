@@ -1,6 +1,8 @@
 // Kontrak tipe data bersama untuk aplikasi rekrutmen konten kreator (v2).
 // Dipakai oleh API (backend) dan komponen (frontend). Jangan duplikasi tipe di tempat lain.
 
+import type { FormAnswerValue, FormSchema } from "@/lib/form-schema";
+
 export type ApplicationStatus = "NEW" | "REVIEWED" | "INTERVIEW" | "ACCEPTED" | "REJECTED";
 
 export const APPLICATION_STATUSES: ApplicationStatus[] = [
@@ -179,6 +181,7 @@ export type Position = {
   customDocs: string[]; // label dokumen wajib tambahan (bebas, mis. "KTP", "Ijazah")
   maxApplicants: number | null;
   applyOpen: boolean; // formulir lamaran posisi ini buka/tutup (setting per posisi)
+  formSchema: FormSchema | null; // Form Builder per posisi — null = mode klasik
 
   // Publikasi
   publishAt: string | null;
@@ -300,6 +303,7 @@ export type Application = {
   utmMedium: string | null;
   utmCampaign: string | null;
   screeningAnswers: Record<string, string> | null; // {questionId: jawaban}
+  formAnswers?: Record<string, FormAnswerValue> | null; // Task 30 — jawaban Form Builder {fieldId: nilai}
   rubricScores: Record<string, number> | null; // {kriteria: 1-5}
   checklistState: string[]; // item checklist yang dicentang
   cvFileId: string | null;
