@@ -154,7 +154,8 @@ export async function POST(req: NextRequest) {
     });
 
     const response = NextResponse.json({ ok: true, session: toSession(user) });
-    await setSessionCookie(response, user.id);
+    // Task 27: catat sesi per perangkat (SessionToken) — gagal pencatatan tidak menggagalkan login.
+    await setSessionCookie(response, user.id, { ip, userAgent });
     return response;
   } catch (error) {
     console.error("[POST /api/admin/login]", error);

@@ -1,6 +1,8 @@
 // Autentikasi admin multi-user berbasis cookie HMAC (SERVER-ONLY — jangan diimpor dari komponen klien).
 // Format cookie "admin_session": `${userId}.${expMs}.${hmacSHA256(`${userId}.${expMs}`, secret)}` (hex).
 // Kedaluwarsa 7 hari. Sesi hanya valid jika AdminUser masih ada dan isActive.
+// Task 27: tiap login juga mencatat row SessionToken (per perangkat) — mendukung daftar
+// sesi aktif + logout paksa per perangkat. Row lama (pra-Task 27) tetap diizinkan.
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import type { NextResponse } from "next/server";
@@ -46,11 +48,19 @@ export function verifySessionToken(token: string | undefined): string | null {
   return userId;
 }
 
-/** Set cookie sesi admin pada response. */
-export async function setSessionCookie(res: NextResponse, userId: string): Promise<void> {
+/** Set cookie sesi admin pada response + catat row SessionToken (per perangkat). */
+export async function setSessionCookie(
+  res: NextResponse,
+  userId: string,
+  meta?: { ip?: string | null; userAgent?: string | null },
+): Promise<void> {
+  const token = createSessionToken(userId);
+  if (meta) {
+    await registerSessionToken(userId, token, meta);
+  }
   res.cookies.set({
     name: ADMIN_COOKIE_NAME,
-    value: createSessionToken(userId),
+    value: token,
     httpOnly: true,
     sameSite: "lax",
     path: "/",
@@ -74,11 +84,15 @@ function roleOf(value: string): Role | null {
   return (ROLES as string[]).includes(value) ? (value as Role) : null;
 }
 
-/** Ambil sesi admin aktif dari cookie. Null jika tidak login, token invalid, atau user tidak aktif. */
+/** Ambil sesi admin aktif dari cookie. Null jika tidak login, token invalid,
+ *  sesi dicabut per perangkat, atau user tidak aktif. */
 export async function getSession(): Promise<AdminSession | null> {
   const cookieStore = await cookies();
-  const userId = verifySessionToken(cookieStore.get(ADMIN_COOKIE_NAME)?.value);
+  const token = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
+  const userId = verifySessionToken(token);
   if (!userId) return null;
+  // Task 27: bila verifikasi krypto lolos, cek apakah sesi perangkat ini dicabut.
+  if (token && (await checkSessionToken(token))) return null;
   const user = await db.adminUser.findUnique({ where: { id: userId } });
   if (!user || !user.isActive) return null;
   const role = roleOf(user.role);
@@ -104,6 +118,67 @@ export async function requireAdmin(): Promise<boolean> {
 /** Hash password dengan SHA-256 (hex). */
 export function hashPassword(plain: string): string {
   return createHash("sha256").update(plain).digest("hex");
+}
+
+/** SHA-256 hex dari nilai cookie sesi — dipakai sebagai tokenHash pada SessionToken. */
+export function hashToken(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+/* ----------------------- SessionToken (per perangkat) ----------------------- */
+
+// Throttle tulis lastSeenAt: maksimal sekali per 5 menit per token (in-memory).
+const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
+const lastSeenWrites = new Map<string, number>();
+
+/**
+ * Cek pembatalan sesi per perangkat + perbarui lastSeenAt (throttled).
+ * Return true bila sesi telah dicabut (revokedAt != null).
+ * Row SessionToken yang tidak ada dianggap sesi lama yang sah (kompatibilitas).
+ */
+async function checkSessionToken(token: string): Promise<boolean> {
+  const tokenHash = hashToken(token);
+  try {
+    const row = await db.sessionToken.findUnique({ where: { tokenHash } });
+    if (!row) return false; // sesi lama tanpa row — izinkan
+    if (row.revokedAt) return true;
+
+    const now = Date.now();
+    const last = lastSeenWrites.get(tokenHash) ?? row.lastSeenAt.getTime();
+    if (now - last >= LAST_SEEN_THROTTLE_MS) {
+      lastSeenWrites.set(tokenHash, now);
+      // Tulis tanpa menunggu — kegagalan tidak mempengaruhi validitas sesi.
+      void db.sessionToken
+        .update({ where: { tokenHash }, data: { lastSeenAt: new Date() } })
+        .catch(() => {
+          lastSeenWrites.delete(tokenHash);
+        });
+    }
+    return false;
+  } catch {
+    // Gagal membaca SessionToken tidak boleh menggagalkan login yang valid.
+    return false;
+  }
+}
+
+/** Pencatatan sesi per perangkat setelah login sukses. Gagal write tidak menggagalkan login. */
+async function registerSessionToken(
+  userId: string,
+  token: string,
+  meta: { ip?: string | null; userAgent?: string | null },
+): Promise<void> {
+  try {
+    await db.sessionToken.create({
+      data: {
+        userId,
+        tokenHash: hashToken(token),
+        ip: meta.ip?.slice(0, 50) ?? null,
+        userAgent: meta.userAgent?.slice(0, 200) ?? null,
+      },
+    });
+  } catch (err) {
+    console.error("[server-auth] gagal mencatat SessionToken", err);
+  }
 }
 
 /** Bandingkan password polos dengan hash SHA-256 (hex). */

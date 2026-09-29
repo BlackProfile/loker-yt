@@ -15,6 +15,16 @@ import {
 } from "recharts";
 import { format, parseISO } from "date-fns";
 import { id as localeId } from "date-fns/locale";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,8 +34,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
+  AlarmClock,
   AlertTriangle,
   BarChart3,
   CalendarClock,
@@ -36,8 +50,11 @@ import {
   Handshake,
   Inbox,
   MailCheck,
+  Megaphone,
+  Pin,
   RefreshCw,
   Sparkles,
+  Trash2,
   Users,
   XCircle,
   type LucideIcon,
@@ -53,7 +70,7 @@ import {
   type ApplicationStatus,
   type PositionStatsRow,
 } from "@/lib/types";
-import { apiGet } from "./api";
+import { apiDelete, apiGet, apiPost } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { formatDate, formatDateTime, formatRelative, initialsOf } from "./format";
@@ -72,6 +89,30 @@ type StatCardConfig = {
   icon: LucideIcon;
   iconWrap: string;
   strip: string;
+};
+
+// SLA per tahap (GET /api/admin/sla) — lamaran aktif yang lama diam di satu tahap.
+type SlaRow = {
+  id: string;
+  name: string;
+  trackingCode: string | null;
+  positionTitle: string | null;
+  status: string;
+  label: string;
+  tanggalPaten: string;
+  daysInStage: number;
+};
+
+type SlaResponse = { days: number; rows: SlaRow[] };
+
+// Papan pengumuman internal (GET/POST/DELETE /api/admin/announcements).
+type AnnouncementItem = {
+  id: string;
+  title: string;
+  body: string;
+  pinned: boolean;
+  authorName: string;
+  createdAt: string;
 };
 
 const STAT_CARDS: StatCardConfig[] = [
@@ -149,8 +190,10 @@ function shortTitle(title: string): string {
 }
 
 export function DashboardTab() {
-  const { reportError } = useAdminSession();
+  const { session, reportError } = useAdminSession();
   const reducedMotion = useReducedMotion();
+  const canPostAnnouncement = session.role === "OWNER" || session.role === "HR";
+  const isOwner = session.role === "OWNER";
   const [overview, setOverview] = useState<AdminOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Application | null>(null);
@@ -162,12 +205,46 @@ export function DashboardTab() {
   // Kartu "Perlu Tindakan" (GET /api/admin/action-items).
   const [actionItems, setActionItems] = useState<ActionItemsResponse | null>(null);
 
+  // Kartu "Perlu Perhatian (SLA Tahap)" (GET /api/admin/sla).
+  const [sla, setSla] = useState<SlaResponse | null>(null);
+
+  // Papan pengumuman (GET/POST/DELETE /api/admin/announcements).
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
+  const [annLoading, setAnnLoading] = useState(true);
+  const [annTitle, setAnnTitle] = useState("");
+  const [annBody, setAnnBody] = useState("");
+  const [annPinned, setAnnPinned] = useState(false);
+  const [annPosting, setAnnPosting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AnnouncementItem | null>(null);
+
   const loadActionItems = useCallback(async () => {
     try {
       const data = await apiGet<ActionItemsResponse>("/api/admin/action-items");
       setActionItems(data);
     } catch {
       // Kartu pelengkap; senyap saat gagal (data lama dipertahankan).
+    }
+  }, []);
+
+  const loadSla = useCallback(async () => {
+    try {
+      const data = await apiGet<SlaResponse>("/api/admin/sla");
+      setSla(data);
+    } catch {
+      // Kartu pelengkap; senyap saat gagal (data lama dipertahankan).
+    }
+  }, []);
+
+  const loadAnnouncements = useCallback(async (silent = false) => {
+    if (!silent) setAnnLoading(true);
+    try {
+      const data = await apiGet<AnnouncementItem[]>("/api/admin/announcements");
+      setAnnouncements(data);
+    } catch {
+      // Daftar pelengkap; tampilkan kosong tanpa toast agar tidak berisik.
+      if (!silent) setAnnouncements([]);
+    } finally {
+      if (!silent) setAnnLoading(false);
     }
   }, []);
 
@@ -211,11 +288,24 @@ export function DashboardTab() {
     void loadActionItems();
   }, [loadActionItems]);
 
-  // Realtime: lamaran baru/perubahan status memengaruhi overview + statistik.
+  useEffect(() => {
+    void loadSla();
+  }, [loadSla]);
+
+  useEffect(() => {
+    void loadAnnouncements();
+  }, [loadAnnouncements]);
+
+  // Realtime: lamaran baru/perubahan status memengaruhi overview + statistik + SLA.
   useLiveRefresh("applications:changed", () => {
     void load(true);
     void loadPosStats(true);
     void loadActionItems();
+    void loadSla();
+  });
+  // Pengumuman baru dari admin lain (papan pengumuman internal).
+  useLiveRefresh("announcements:changed", () => {
+    void loadAnnouncements(true);
   });
   // Perubahan posisi memengaruhi grafik perbandingan (views/konversi/kuota).
   useLiveRefresh("positions:changed", () => {
@@ -254,6 +344,46 @@ export function DashboardTab() {
     views: row.views,
     conversion: row.conversion,
   }));
+
+  // Posting pengumuman baru (OWNER/HR) dari papan pengumuman.
+  async function handlePostAnnouncement() {
+    const title = annTitle.trim();
+    const body = annBody.trim();
+    if (title.length < 3 || title.length > 80) {
+      toast.error("Judul pengumuman wajib 3-80 karakter.");
+      return;
+    }
+    if (body.length < 1 || body.length > 600) {
+      toast.error("Isi pengumuman wajib 1-600 karakter.");
+      return;
+    }
+    setAnnPosting(true);
+    try {
+      await apiPost("/api/admin/announcements", { title, body, pinned: annPinned });
+      toast.success("Pengumuman diposting.");
+      setAnnTitle("");
+      setAnnBody("");
+      setAnnPinned(false);
+      await loadAnnouncements(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal memposting pengumuman.");
+    } finally {
+      setAnnPosting(false);
+    }
+  }
+
+  // Hapus pengumuman (OWNER) — target dipilih lewat AlertDialog.
+  async function handleDeleteAnnouncement() {
+    if (!deleteTarget) return;
+    try {
+      await apiDelete(`/api/admin/announcements?id=${encodeURIComponent(deleteTarget.id)}`);
+      toast.success("Pengumuman dihapus.");
+      setDeleteTarget(null);
+      await loadAnnouncements(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menghapus pengumuman.");
+    }
+  }
 
   // Buka dialog detail pelamar dari kartu tindakan (butuh objek Application penuh).
   async function openAppById(id: string) {
@@ -375,6 +505,79 @@ export function DashboardTab() {
           </CardContent>
         </Card>
       ) : null}
+
+      {/* Kartu Perlu Perhatian (SLA Tahap) — alert lamaran lama diam di satu tahap */}
+      <Card className="gap-0 rounded-2xl py-6">
+        <CardHeader className="flex-row items-start justify-between gap-3 px-6">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlarmClock className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+              Perlu Perhatian (SLA Tahap)
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Lamaran aktif yang diam di satu tahap lebih dari {sla?.days ?? 7} hari.
+            </CardDescription>
+          </div>
+          {sla !== null && sla.rows.length > 0 ? (
+            <Badge className="shrink-0 border-amber-200 bg-amber-100 text-amber-700 tabular-nums dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
+              {sla.rows.length}
+            </Badge>
+          ) : null}
+        </CardHeader>
+        <CardContent className="px-6">
+          {sla === null ? (
+            <div className="flex flex-col gap-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : sla.rows.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <CheckCircle2 className="size-8 text-emerald-500/70" aria-hidden="true" />
+              <p className="text-sm text-muted-foreground">
+                Tidak ada lamaran yang terlalu lama diam di satu tahap. Kerja bagus!
+              </p>
+            </div>
+          ) : (
+            <div className="max-h-72 overflow-y-auto nice-scrollbar">
+              {sla.rows.map((row) => {
+                const overdue = row.daysInStage >= sla.days * 2;
+                return (
+                  <div
+                    key={row.id}
+                    className="flex items-center gap-3 border-b py-3 last:border-b-0"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+                      {initialsOf(row.name)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="flex items-center gap-2 truncate text-sm font-semibold">
+                        {row.name}
+                        {row.trackingCode ? (
+                          <span className="shrink-0 font-normal text-muted-foreground">
+                            · {row.trackingCode}
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {row.positionTitle ?? "Tanpa posisi"} · {row.daysInStage} hari di tahap{" "}
+                        {row.label} · sejak {formatDate(row.tanggalPaten)}
+                      </p>
+                    </div>
+                    {overdue ? (
+                      <Badge className="shrink-0 border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
+                        Melewati 2&times; SLA
+                      </Badge>
+                    ) : (
+                      <StatusBadge status={row.status} className="hidden shrink-0 sm:inline-flex" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Kartu statistik: 6 status + rata-rata skor AI + pelanggan */}
       <motion.div
@@ -813,6 +1016,149 @@ export function DashboardTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* Papan Pengumuman — info internal tim (OWNER/HR memposting, OWNER menghapus) */}
+      <Card className="gap-0 rounded-2xl py-6">
+        <CardHeader className="px-6">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Megaphone className="size-4 text-rose-500" aria-hidden="true" />
+            Papan Pengumuman
+          </CardTitle>
+          <CardDescription className="mt-1">
+            Informasi penting untuk seluruh tim rekrutmen.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-6">
+          {canPostAnnouncement ? (
+            <form
+              className="flex flex-col gap-2 rounded-xl border bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/60"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handlePostAnnouncement();
+              }}
+            >
+              <Input
+                value={annTitle}
+                onChange={(e) => setAnnTitle(e.target.value)}
+                placeholder="Judul pengumuman (3-80 karakter)"
+                maxLength={80}
+                aria-label="Judul pengumuman"
+              />
+              <Textarea
+                value={annBody}
+                onChange={(e) => setAnnBody(e.target.value)}
+                placeholder="Tulis isi pengumuman untuk tim (maks 600 karakter)..."
+                rows={3}
+                maxLength={600}
+                aria-label="Isi pengumuman"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <Switch
+                    checked={annPinned}
+                    onCheckedChange={setAnnPinned}
+                    aria-label="Sematkan pengumuman di atas"
+                  />
+                  <Pin className="size-3.5" aria-hidden="true" />
+                  Sematkan di atas
+                </span>
+                <Button type="submit" size="sm" className="h-11 sm:h-9" disabled={annPosting}>
+                  {annPosting ? "Memposting..." : "Posting"}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Papan pengumuman bersifat baca-saja untuk VIEWER. Hubungi OWNER/HR untuk
+              memposting pengumuman.
+            </p>
+          )}
+
+          <div className="mt-4">
+            {annLoading ? (
+              <div className="flex flex-col gap-3">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : announcements.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-8 text-center">
+                <Megaphone className="size-8 text-muted-foreground/50" aria-hidden="true" />
+                <p className="text-sm text-muted-foreground">
+                  Belum ada pengumuman.{canPostAnnouncement ? " Posting yang pertama di atas." : ""}
+                </p>
+              </div>
+            ) : (
+              <div className="max-h-72 overflow-y-auto nice-scrollbar">
+                {announcements.map((item) => (
+                  <div key={item.id} className="border-b py-3 last:border-b-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="min-w-0 truncate text-sm font-semibold">{item.title}</p>
+                          {item.pinned ? (
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                            >
+                              <Pin className="size-3" aria-hidden="true" />
+                              Disematkan
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-xs whitespace-pre-line text-muted-foreground">
+                          {item.body}
+                        </p>
+                        <p className="mt-1.5 text-[11px] text-muted-foreground">
+                          {item.authorName} · {formatRelative(item.createdAt)}
+                        </p>
+                      </div>
+                      {isOwner ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 shrink-0 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400"
+                          onClick={() => setDeleteTarget(item)}
+                          aria-label={`Hapus pengumuman: ${item.title}`}
+                        >
+                          <Trash2 className="size-4" aria-hidden="true" />
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus pengumuman ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? `"${deleteTarget.title}" akan dihapus permanen dari papan pengumuman.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              onClick={() => void handleDeleteAnnouncement()}
+            >
+              Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <ApplicationDetailDialog
         application={detail}
