@@ -2554,7 +2554,7 @@ export function ApplyWizard({
             <PreviewSection
               title={t.apply.preview.sectionFiles}
               editLabel={t.apply.preview.edit}
-              onEdit={() => goToStep(2)}
+              onEdit={() => goToStep(filesStep)}
             >
               <div className="flex items-center gap-2.5 text-sm">
                 <FileText
