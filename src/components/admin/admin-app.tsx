@@ -827,7 +827,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 >
                   <Eye className="size-4" aria-hidden="true" />
                   <span className="hidden lg:inline">Lihat sebagai Pelamar</span>
-                  <span className="lg:hidden">Pelamar</span>
+                  <span className="hidden sm:inline lg:hidden">Pelamar</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -837,7 +837,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 >
                   <ExternalLink className="size-4" aria-hidden="true" />
                   <span className="hidden md:inline">Lihat Halaman Publik</span>
-                  <span className="md:hidden">Publik</span>
+                  <span className="hidden sm:inline md:hidden">Publik</span>
                 </Button>
                 <Button
                   variant="ghost"

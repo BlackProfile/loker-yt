@@ -2,7 +2,9 @@
 
 // Widget floating "Tanya Data" (Task 20-c) — tombol bulat kanan-bawah + dialog chat.
 // Menjawab pertanyaan statistik rekrutmen admin dari data DB via POST /api/admin/ask-data.
-// Hanya dirender di panel admin (diimpor & dimount oleh admin-app.tsx setelah NotificationBell).
+// Hanya dirender di panel admin. PENTING: dimount di level atas admin-app (di luar
+// <header>) — backdrop-blur header menciptakan containing block yang membuat
+// position:fixed tombol salah anchor bila diletakkan di dalamnya.
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
