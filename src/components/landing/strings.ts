@@ -97,6 +97,7 @@ const id = {
     waCaption: "Lowongan {title} di {siteName}",
     waDaftar: "Daftar:",
     lamarDitutup: "Ditutup",
+    formClosed: "Form Ditutup",
     tutup: "Tutup",
     coverAlt: "Sampul lowongan {title}",
   },
@@ -186,6 +187,7 @@ const id = {
       phoneRequired: "No. WhatsApp wajib diisi.",
       phoneMin: "No. WhatsApp minimal 8 digit.",
       position: "Pilih posisi yang dilamar.",
+      positionClosed: "Formulir lamaran untuk posisi ini sedang ditutup.",
       experience: "Ceritakan pengalamanmu minimal 10 karakter.",
       motivation: "Tulis alasanmu minimal 10 karakter.",
       screeningRequired: "Jawaban \"{label}\" wajib diisi.",
@@ -482,6 +484,8 @@ const id = {
     applyClosedTitle: "Pendaftaran Ditutup",
     applyClosedDesc: "Formulir online untuk lowongan ini sudah ditutup. Silakan hubungi kami untuk info lebih lanjut.",
     applyDisabledDesc: "Pendaftaran online sedang dinonaktifkan. Silakan hubungi kami melalui kontak berikut.",
+    formClosedTitle: "Formulir Posisi Ini Ditutup",
+    formClosedDesc: "Formulir pendaftaran untuk posisi ini sedang ditutup oleh admin. Posisi tetap tayang — silakan hubungi kami untuk info lebih lanjut.",
     gateTitle: "Baca Dulu Sebelum Melamar",
     gateDesc: "Supaya peluangmu lebih besar, baca dulu detail lowongan ini. Formulir pendaftaran terbuka otomatis setelah semua bagian dibaca.",
     gateHint: "Bagian yang sudah kamu baca akan dicentang otomatis.",
@@ -586,6 +590,7 @@ type idDictShape = {
     waCaption: string;
     waDaftar: string;
     lamarDitutup: string;
+    formClosed: string;
     tutup: string;
     coverAlt: string;
   };
@@ -642,6 +647,7 @@ type idDictShape = {
       phoneRequired: string;
       phoneMin: string;
       position: string;
+      positionClosed: string;
       experience: string;
       motivation: string;
       screeningRequired: string;
@@ -898,6 +904,8 @@ type idDictShape = {
     applyClosedTitle: string;
     applyClosedDesc: string;
     applyDisabledDesc: string;
+    formClosedTitle: string;
+    formClosedDesc: string;
     gateTitle: string;
     gateDesc: string;
     gateHint: string;
@@ -1004,6 +1012,7 @@ const en: Dict = {
     waCaption: "Opening: {title} at {siteName}",
     waDaftar: "Apply:",
     lamarDitutup: "Closed",
+    formClosed: "Form Closed",
     tutup: "Close",
     coverAlt: "Cover for {title}",
   },
@@ -1093,6 +1102,7 @@ const en: Dict = {
       phoneRequired: "WhatsApp number is required.",
       phoneMin: "WhatsApp number must be at least 8 digits.",
       position: "Choose the position you are applying for.",
+      positionClosed: "The application form for this position is currently closed.",
       experience: "Describe your experience with at least 10 characters.",
       motivation: "Write your reason with at least 10 characters.",
       screeningRequired: "The answer to \"{label}\" is required.",
@@ -1389,6 +1399,8 @@ const en: Dict = {
     applyClosedTitle: "Applications Closed",
     applyClosedDesc: "The online form for this position is closed. Please contact us for more information.",
     applyDisabledDesc: "Online applications are currently disabled. Please reach us through the contacts below.",
+    formClosedTitle: "Form for This Position Is Closed",
+    formClosedDesc: "The application form for this position is currently closed by the admin. The position is still listed — please contact us for more information.",
     gateTitle: "Read Before Applying",
     gateDesc: "To boost your chances, read this job details first. The application form unlocks automatically once all sections are read.",
     gateHint: "Sections you have read are checked automatically.",

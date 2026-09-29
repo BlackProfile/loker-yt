@@ -197,12 +197,15 @@ function PositionCard({
   const remaining = stats?.remainingQuota ?? null;
   const quotaFull = remaining === 0;
   const closed = position.closesAt ? isPastIso(position.closesAt) : false;
-  const applyDisabled = quotaFull || closed;
+  const formClosed = position.applyOpen === false;
+  const applyDisabled = quotaFull || closed || formClosed;
   const applyLabel = quotaFull
     ? t.positions.kuotaPenuh
     : closed
       ? t.positions.lamarDitutup
-      : t.positions.apply;
+      : formClosed
+        ? t.positions.formClosed
+        : t.positions.apply;
   const hasCover = Boolean(position.coverFileId);
 
   return (

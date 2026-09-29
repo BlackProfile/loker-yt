@@ -492,7 +492,10 @@ function PositionDetailViewInner({
   const isNew = isWithinDaysBack(position.createdAt, NEW_DAYS);
   const isSoon = !!position.closesAt && isWithinDaysAhead(position.closesAt, SOON_DAYS);
   const quotaFull = stats?.remainingQuota != null && stats.remainingQuota <= 0;
-  const canApplyOnline = content.sections.applyForm && !quotaFull;
+  // Formulir per posisi: terbuka bila formulir global aktif, kuota belum penuh,
+  // DAN formulir posisi ini tidak ditutup oleh admin (applyOpen).
+  const positionFormClosed = position.applyOpen === false;
+  const canApplyOnline = content.sections.applyForm && !quotaFull && !positionFormClosed;
   const stages = stagesForPosition(position.stages);
 
   const requiredFiles = [
@@ -820,13 +823,19 @@ function PositionDetailViewInner({
                           <CalendarClock className="size-4" aria-hidden="true" />
                         </span>
                         <p className="text-sm font-semibold">
-                          {quotaFull ? t.detail.termsQuotaFull : t.detail.applyClosedTitle}
+                          {quotaFull
+                            ? t.detail.termsQuotaFull
+                            : positionFormClosed
+                              ? t.detail.formClosedTitle
+                              : t.detail.applyClosedTitle}
                         </p>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {content.sections.applyForm
-                          ? t.detail.applyClosedDesc
-                          : t.detail.applyDisabledDesc}
+                        {!content.sections.applyForm
+                          ? t.detail.applyDisabledDesc
+                          : positionFormClosed
+                            ? t.detail.formClosedDesc
+                            : t.detail.applyClosedDesc}
                       </p>
                     </div>
                   )}
