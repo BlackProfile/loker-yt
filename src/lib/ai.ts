@@ -3,6 +3,7 @@
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { parseRequirements, parseScreeningQuestions, parseStringRecord } from "@/lib/seed";
+import { formatAnswerValue, parseFormAnswers, parseFormSchema } from "@/lib/form-schema";
 import { stagesForPosition } from "@/lib/stages";
 import { AI_RECOMMENDATION_LABELS, type AiRecommendation } from "@/lib/types";
 
@@ -163,6 +164,7 @@ type ApplicationForPrompt = {
   portfolioUrl: string | null;
   socialLinks: string | null;
   screeningAnswers: string | null; // JSON {questionId: jawaban}
+  formAnswers?: string | null; // Task 30 — JSON {fieldId: jawaban} Form Builder
   position: {
     title: string;
     department: string;
@@ -172,6 +174,7 @@ type ApplicationForPrompt = {
     requirements: string;
     aiCriteria: string | null; // kriteria AI khusus posisi
     screeningQuestions: string; // JSON {id,label,required}[]
+    formSchema?: string | null; // JSON FormSchema (Task 30)
   } | null;
 };
 
@@ -219,6 +222,30 @@ function buildScreeningSection(app: ApplicationForPrompt): string | null {
   return lines.length > 0 ? ["Jawaban screening kandidat:", ...lines].join("\n") : null;
 }
 
+/**
+ * Bagian jawaban Form Builder (Task 30) — memetakan fieldId ke label via skema.
+ * Berkas hanya disebut namanya; isi jawaban teks/angka/tanggal dikutip utuh.
+ */
+function buildFormAnswersSection(app: ApplicationForPrompt): string | null {
+  if (!app.formAnswers || !app.position?.formSchema) return null;
+  const schema = parseFormSchema(app.position.formSchema);
+  const answers = parseFormAnswers(app.formAnswers);
+  if (!schema || !answers) return null;
+  const lines: string[] = [];
+  for (const field of schema.fields) {
+    const value = answers[field.id];
+    if (value == null) continue;
+    if (typeof value === "object" && !Array.isArray(value) && "fileId" in value) {
+      lines.push(`- ${field.label}: (berkas diunggah: ${value.filename || "berkas"})`);
+      continue;
+    }
+    const text = formatAnswerValue(value);
+    if (!text) continue;
+    lines.push(`- ${field.label}: ${text}`);
+  }
+  return lines.length > 0 ? ["Jawaban formulir kustom kandidat:", ...lines].join("\n") : null;
+}
+
 /* --------------------------------- Fungsi utama AI --------------------------------- */
 
 export type ScreeningResult = {
@@ -242,6 +269,7 @@ export async function analyzeApplication(applicationId: string): Promise<Screeni
     const systemPrompt =
       "Kamu adalah HR screening assistant untuk studio konten kreator. Jawab HANYA JSON valid tanpa teks lain.";
     const screeningSection = buildScreeningSection(application);
+    const formAnswersSection = buildFormAnswersSection(application);
     const userPrompt = [
       "Evaluasi kecocokan kandidat berikut untuk posisi yang dilamar.",
       "",
@@ -250,6 +278,7 @@ export async function analyzeApplication(applicationId: string): Promise<Screeni
       "Data kandidat:",
       buildCandidateSection(application),
       ...(screeningSection ? ["", screeningSection] : []),
+      ...(formAnswersSection ? ["", formAnswersSection] : []),
       "",
       'Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan format:',
       '{"score": <0-100 integer>, "summary": "<maksimal 2 kalimat bahasa Indonesia>", "recommendation": "LAYAK_WAWANCARA" | "PERTIMBANGKAN" | "TIDAK_COCCOK"}',
