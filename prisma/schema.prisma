@@ -66,6 +66,7 @@ model Position {
   requirePortfolio Boolean   @default(false)
   customDocs   String        @default("[]") // JSON string[] label dokumen wajib tambahan dari pelamar
   maxApplicants Int? // kuota pelamar; null = tanpa kuota
+  applyOpen    Boolean       @default(true) // formulir lamaran posisi ini buka/tutup (dikendalikan per posisi)
 
   // Publikasi & jadwal
   publishAt    DateTime? // tayang otomatis setelah tanggal ini (terjadwal)
