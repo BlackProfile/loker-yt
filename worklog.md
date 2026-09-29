@@ -1306,3 +1306,17 @@ Work Log:
 
 Stage Summary:
 - Buka/tutup formulir kini granular per posisi: admin bisa menutup form satu lowongan tanpa menyembunyikan posisinya — lewat toggle cepat di tab Posisi (kolom "Form Buka/Tutup"), switch "Buka formulir lamaran" di halaman edit posisi, dan terpersist lewat draf/template. Global sections.applyForm tetap sebagai master switch; efektif terbuka = global ON && posisi ON. Guard server 403 + guard klien wizard + UI publik (badge, tombol disabled, kartu "Formulir Posisi Ini Ditutup") konsisten dua bahasa. Auto-push watcher menyinkronkan ke GitHub.
+---
+Task ID: 29
+Agent: z.ai main session
+Task: Perbaiki tampilan header admin — FAB "Tanya Data" menimpa tombol Keluar ("perbaiki ini buat jadi enak dilihat")
+
+Work Log:
+- AKAR MASALAH: <AdminAskWidget /> (FAB `fixed bottom-5 right-5`) dirender DI DALAM <header> yang memakai `bg-background/80 backdrop-blur`. `backdrop-filter` menciptakan containing block untuk descendant `position:fixed`, sehingga FAB salah anchor — menempel di pojok kanan-BAWAH HEADER (bukan viewport), menimpa tombol "Keluar" dan terpotong tepi atas layar (persis seperti screenshot pengguna).
+- FIX UTAMA: admin-app.tsx — pindah <AdminAskWidget /> dari baris aksi header ke level atas AdminApp (saudara <CommandPalette>, di luar root layout ber-blur); fixed bottom-right kembali akurat terhadap viewport. Komentar penjelasan ditambah di admin-app.tsx & admin-ask-widget.tsx agar tidak dipindah balik ke header.
+- POLISH HEADER: label penuh tombol pratinjau dinaikkan ke breakpoint xl (sebelumnya lg/md), label pendek "Pelamar"/"Publik" tampil sm-xl, ikon saja <sm — judul tab tidak terpotong lagi di lebar 1024-1280 (sebelumnya "Das..." di 1100px), header lebih lapang.
+- VERIFIKASI (agent-browser via :81, Owner): geometri FAB presisi (bottom gap 20px, right gap 20px); fabCoversLogout=false di 1366/1100/820/390; tidak ada horizontal overflow di semua lebar; judul "Dashboard" tampil penuh di 1100px; label penuh muncul di xl; dialog "Tanya Data" terbuka normal dari FAB; mobile 390px seluruh kontrol ikon terlihat; tsc src 0 error; eslint bersih; dev.log bersih.
+- CATATAN: selector `button[aria-label="Keluar dari panel admin"]` match dua elemen (sidebar + header) — pengukuran ulang dengan scope `header button[...]` untuk hasil akurat.
+
+Stage Summary:
+- FAB "Tanya Data" kembali melayang di pojok kanan-bawah viewport sesuai desain dan tidak lagi menutupi tombol Keluar; header admin proporsional di semua lebar (1366/1100/820/390) tanpa overflow. Penyebab root (backdrop-blur = containing block untuk fixed) didokumentasikan di kode.
