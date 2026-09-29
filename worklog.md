@@ -1320,3 +1320,22 @@ Work Log:
 
 Stage Summary:
 - FAB "Tanya Data" kembali melayang di pojok kanan-bawah viewport sesuai desain dan tidak lagi menutupi tombol Keluar; header admin proporsional di semua lebar (1366/1100/820/390) tanpa overflow. Penyebab root (backdrop-blur = containing block untuk fixed) didokumentasikan di kode.
+---
+Task ID: 30 (fondasi main — backend Form Builder)
+Agent: z.ai main session (orchestrator)
+Task: Form Builder per Posisi ala Google Forms (Opsi C hybrid) — fondasi data + API. Lanjutan dari proposal "buat jadi yang paling terbaik".
+
+Work Log:
+- SCHEMA: prisma/schema.prisma — Position +`formSchema String?` (JSON FormSchema; null = mode klasik), Application +`formAnswers String?` (JSON {fieldId: nilai}); `bun run db:push` OK (16ms).
+- LIB BARU src/lib/form-schema.ts (CLIENT-SAFE): tipe FormSchema/FormSection/FormField/FormAnswerValue; FORM_FIELD_TYPES (text,textarea,radio,checkbox,dropdown,date,number,rating,file,url); FORM_LIMITS (maks 5 bagian, 25 pertanyaan, 12 opsi, skema 64KB, jawaban 32KB, file field 20MB); parser toleran (parseFormSchema, parseFormAnswers); generator skema bawaan buildDefaultSchema (migrasi otomatis dari screeningQuestions+customDocs); sanitizer ketat sanitizeFormSchemaInput (DENGAN penggabungan retiredFields otomatis dari skema sebelumnya — field dihapus tidak menghilangkan jawaban lama); validateFormAnswers server-side per tipe; util isChoiceType/isFormSchemaActive/formatAnswerValue/newFormId/FORM_FIELD_TYPE_LABELS/isAllowedFormFile.
+- types.ts: Position.formSchema: FormSchema | null; Application.formAnswers?: Record<string, FormAnswerValue> | null; import dari form-schema (arah import satu arah, bebas siklus).
+- seed.ts: serializePosition +formSchema (parseFormSchema), serializeApplication +formAnswers (parseFormAnswers).
+- position-input.ts: PositionFields.formSchema?: string|null; sanitizePositionInput memanggil sanitizeFormSchemaInput dengan previousSchemaRaw dari opts.current.formSchema (retired merge jalan di PATCH generik); positionFieldsToDb meneruskan. Konsekuensi: Template Posisi & duplicate otomatis ikut memuat skema.
+- API BARU: /api/admin/positions/[id]/form (GET: {schema, derived} — derived = skema hasil migrasi bila masih klasik; PUT OWNER/HR: validasi + simpan + ActivityLog FORM_SCHEMA_SAVED + realtime positions) dan /api/admin/positions/[id]/form-responses (GET JSON: total, stats per pertanyaan choices/rating/files/text, retired, recent 50; ?format=csv → CSV BOM UTF-8, kolom = pertanyaan aktif + pensiun).
+- /api/applications (POST): multipart menerima formFile_<fieldId>; bila skema aktif → validateFormAnswers + upload berkas field (20MB, PDF/gambar/Word/audio/video) → cleaned[fieldId]={fileId,filename}; simpan formAnswers; validasi screening klasik & customDocs DILEWATI saat skema aktif (questions=[] & customDocs=[] via formAnswersJson guard).
+- ai.ts: ApplicationForPrompt +formAnswers/formSchema; buildFormAnswersSection memetakan jawaban ke label skema untuk prompt AI screening (berkas disebut namanya saja).
+- INSIDEN: restart dev server mematikan dev-keepalive (pidfile berisi pid keepalive, bukan next) — dipulihkan via scripts/start-dev-keepalive.sh; :3000=200 kembali.
+- VERIFIKASI FONDASI: tsc src 0 error.
+
+Stage Summary:
+- Fondasi Form Builder siap: kontrak GET/PUT form + form-responses (JSON/CSV) + submit schema-mode aktif. Konvensi kunci: nilai "Lainnya" = teks bebas (allowOther), file = {fileId,filename} di-inject server, jawaban dikunci fieldId stabil + retiredFields. Subagen 29-a (admin builder 3 tab) & 29-b (wizard publik dinamis) mengerjakan UI di atas kontrak ini.
