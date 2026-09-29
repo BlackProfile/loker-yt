@@ -1123,3 +1123,24 @@ Work Log:
 Stage Summary:
 - Edit lengkap posisi kini terbagi dua halaman mandiri tanpa popup: "Edit Posisi" (semua info lowongan) dan "Formulir Lamaran" (berkas wajib, kuota, screening, dokumen tambahan pendaftar); halaman kelola menampilkan ringkasan formulir dan deep-link #admin/posisi/<id>[/edit|/formulir] dengan Back/Forward browser benar.
 - Restorasi Task 17-24 dari origin/main selesai lagi (pola sama dengan reset sebelumnya), tiga daemon berjalan, auto-sync GitHub aktif.
+---
+Task ID: 26-a
+Agent: verifier subagent
+Task: Verifikasi E2E default fitur publik off (kecuali posisi, form daftar, cek status)
+
+Work Log:
+- PRA-CHECK PASS — API /api/public/content menunjukkan DB Setting "site": sections {hero,about,benefits,steps,testimonials,faq,subscribe,finalCta,chatbot}=false, {positions,applyForm,statusCheck}=true, chatbotEnabled=false; kode sumber cocok (defaults.ts DEFAULT_SECTIONS/DEFAULT_SITE, notify.ts fallback chatbotEnabled=false); konten situs lain (nama, kontak, footer) utuh.
+- 1. LANDING PUBLIK PASS — via :81 hanya render: seksi lowongan ("Posisi yang Dibutuhkan" berisi 5 posisi: Video Editor, Thumbnail Designer, Penulis Naskah, Social Media Officer, Content Strategist), "Cek Status Lamaran", header/nav + footer (memang tidak ter-gate). ABSENT terverifikasi (semua false): hero "Bergabung dengan Tim"/badge, Tentang Studio, Benefit (100% Remote), Cara Melamar, Testimoni, FAQ, Langganan, CTA penutup. Tombol mengapung ChatWidget: 0 (tidak ada elemen fixed). Catatan: "Formulir Lamaran" TIDAK sebagai seksi terpisah di landing — form berada di halaman detail posisi di balik gerbang baca (lihat #2); gate UI teaser-nya tampil sesuai desain.
+- 2. DETAIL POSISI PASS — klik "Video Editor" → tampilan detail (Deskripsi Posisi, Persyaratan, Ketentuan Lamaran, Benefit, Contoh Karya); kartu gerbang "#form-card" tampil: "Baca Dulu Sebelum Melamar | 3/5 bagian dibaca — Formulir pendaftaran terbuka otomatis setelah semua bagian dibaca" (gerbang terkunci = wajar); tombol "Kembali ke Daftar Lowongan" bekerja → kembali ke daftar.
+- 3. CEK STATUS PASS — input kode invalid "LM-XXXXXX" + Lacak → pesan anggun "Kode tidak ditemukan. Periksa kembali kode kamu." tanpa crash (tombol Lacak benar disabled saat kosong).
+- 4. TOGGLE ADMIN PASS — login Owner (admin@lumina.id) → Pengaturan → kartu "Tampilan Halaman Publik": Daftar Posisi/Formulir Lamaran/Cek Status = ON, Hero & Pengantar/Tentang/Benefit/Cara Melamar/Testimoni/FAQ/Langganan/CTA/Widget Chatbot = OFF. Toggle Hero ON → Simpan ("Pengaturan disimpan") → tab baru :81 → H1 "Bergabung dengan Tim Kreatif Kami" muncul; toggle OFF → Simpan → reload publik → hero hilang (kembali hanya Posisi+Cek Status). DB final: hero=false, seluruh default terjaga.
+- 5. CHATBOT PASS — admin: saklar utama "Aktifkan chatbot Lumina Bot" = OFF + seksi "Widget Chatbot" = OFF; landing publik: 0 tombol floating, teks "Lumina Bot" absent.
+- 6. MOBILE PASS — 390x844: scrollWidth=390, clientWidth=390, bodyScrollW=390 → 0 horizontal overflow; layout bersih.
+- 7. CONSOLE PASS — 0 console error & 0 page error di tab publik (desktop+mobile) dan tab admin (login+Pengaturan); hanya log HMR/React DevTools.
+- 8. DEV.LOG PASS — 40 baris terakhir semua 200 (GET /api/public/content, GET /, GET /api/public/site, GET /api/admin/notifications, POST /api/cron/reminders); scan seluruh log: 0 temuan " 500 ", TypeError, Internal Server Error, ⨯.
+- CATATAN (bukan bug Task 26): akun Owner masih totpEnabled=true (sisa uji Task 20) — verifikator me-generate kode TOTP dari secret tersimpan via otpauth untuk masuk; disarankan admin mematikan 2FA demo bila tidak dipakai.
+- Screenshots: /tmp/v26a/01-landing-full.png, 01-landing-top.png, 02-detail-gate.png, 03-status-invalid.png, 04-admin-switches-off.png, 05-hero-on-landing.png, 06-mobile-390.png
+
+Stage Summary:
+- VERDICT: Task 26 LULUS 8/8 — seluruh fitur publik default OFF kecuali Daftar Posisi, Formulir Lamaran (via gerbang baca di detail posisi), dan Cek Status; chatbot mati; saklar admin konsisten dengan DB dan round-trip ON/OFF hero bekerja persis; mobile bersih, console & server log bersih, state DB akhir = default Task 26 tanpa perubahan sisa.
+- Tidak ada perubahan kode yang diperlukan; satu-satunya hambatan adalah 2FA TOTP aktif pada akun demo Owner (sisa fitur Task 20) yang diselesaikan verifikator dengan kode TOTP sah dari secret DB (tanpa mengubah state).

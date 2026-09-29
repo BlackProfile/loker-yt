@@ -24,7 +24,7 @@ export type AutomationSettings = {
 };
 
 const DEFAULT_AUTOMATION: AutomationSettings = {
-  chatbotEnabled: true,
+  chatbotEnabled: false,
   discordWebhookUrl: "",
   telegramBotToken: "",
   telegramChatId: "",
@@ -41,7 +41,7 @@ export async function getAutomationSettings(): Promise<AutomationSettings> {
     }
     const obj = parsed as Record<string, unknown>;
     return {
-      chatbotEnabled: typeof obj.chatbotEnabled === "boolean" ? obj.chatbotEnabled : true,
+      chatbotEnabled: typeof obj.chatbotEnabled === "boolean" ? obj.chatbotEnabled : false,
       discordWebhookUrl: typeof obj.discordWebhookUrl === "string" ? obj.discordWebhookUrl.trim() : "",
       telegramBotToken: typeof obj.telegramBotToken === "string" ? obj.telegramBotToken.trim() : "",
       telegramChatId: typeof obj.telegramChatId === "string" ? obj.telegramChatId.trim() : "",

@@ -9,20 +9,22 @@ import type {
 
 export const DEFAULT_ADMIN_PASSWORD = "admin123";
 
-// Semua bagian halaman publik tampil secara default.
+// Fitur inti aktif secara default: daftar posisi, formulir pendaftaran, dan
+// cek status. Section lain mati secara default — admin bisa menyalakannya
+// kapan saja dari menu Pengaturan (Kartu Tampilan Section).
 export const DEFAULT_SECTIONS: SectionVisibility = {
-  hero: true,
+  hero: false,
   positions: true,
-  about: true,
-  benefits: true,
-  steps: true,
+  about: false,
+  benefits: false,
+  steps: false,
   applyForm: true,
   statusCheck: true,
-  testimonials: true,
-  faq: true,
-  subscribe: true,
-  finalCta: true,
-  chatbot: true,
+  testimonials: false,
+  faq: false,
+  subscribe: false,
+  finalCta: false,
+  chatbot: false,
 };
 
 export const DEFAULT_SITE: SiteContent = {
@@ -121,7 +123,7 @@ export const DEFAULT_SITE: SiteContent = {
         "Karya kami dilihat jutaan orang setiap minggu. Sensasinya tidak tergantikan.",
     },
   ],
-  chatbotEnabled: true,
+  chatbotEnabled: false,
   discordWebhookUrl: "",
   telegramBotToken: "",
   telegramChatId: "",
