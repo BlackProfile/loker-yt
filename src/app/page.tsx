@@ -8,7 +8,7 @@ import { PreviewBanner } from "@/components/landing/preview-banner";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = { posisi?: string | string[] };
+type SearchParams = { posisi?: string | string[]; preview?: string | string[] };
 
 function firstSlug(value: string | string[] | undefined): string | null {
   if (typeof value !== "string") return null;
@@ -60,7 +60,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Sea
   const initialPosisiSlug = firstSlug(params.posisi);
   return (
     <>
-      <PreviewBanner />
+      <PreviewBanner enabled={params.preview === "1"} />
       <HomeView initialPosisiSlug={initialPosisiSlug} />
     </>
   );

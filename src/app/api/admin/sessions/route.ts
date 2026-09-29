@@ -33,21 +33,31 @@ export async function GET() {
       where: { revokedAt: null, ...(isOwner ? {} : { userId: session.id }) },
       orderBy: { lastSeenAt: "desc" },
       take: 100,
-      include: { user: { select: { name: true, email: true, role: true } } },
     });
 
+    // Model SessionToken tidak punya relasi Prisma ke AdminUser — join manual.
+    const userIds = Array.from(new Set(rows.map((r) => r.userId)));
+    const users = await db.adminUser.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, name: true, email: true, role: true },
+    });
+    const userById = new Map(users.map((u) => [u.id, u]));
+
     return NextResponse.json(
-      rows.map((row) => ({
-        id: row.id,
-        userName: row.user?.name ?? "-",
-        userEmail: row.user?.email ?? "-",
-        userRole: row.user?.role ?? "-",
-        userAgent: row.userAgent,
-        ip: row.ip,
-        createdAt: row.createdAt.toISOString(),
-        lastSeenAt: row.lastSeenAt.toISOString(),
-        current: mine !== null && row.tokenHash === mine,
-      })),
+      rows.map((row) => {
+        const user = userById.get(row.userId);
+        return {
+          id: row.id,
+          userName: user?.name ?? "-",
+          userEmail: user?.email ?? "-",
+          userRole: user?.role ?? "-",
+          userAgent: row.userAgent,
+          ip: row.ip,
+          createdAt: row.createdAt.toISOString(),
+          lastSeenAt: row.lastSeenAt.toISOString(),
+          current: mine !== null && row.tokenHash === mine,
+        };
+      }),
     );
   } catch (error) {
     console.error("[GET /api/admin/sessions]", error);

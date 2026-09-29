@@ -26,13 +26,14 @@ function readStoredLang(): string | null {
   }
 }
 
-export function PreviewBanner() {
+export function PreviewBanner({ enabled = false }: { enabled?: boolean }) {
+  // enabled dikirim dari page.tsx (server): URL memuat ?preview=1.
   const [dismissed, setDismissed] = useState(false);
   const stored = useSyncExternalStore(subscribeLang, readStoredLang, () => null);
   const lang: Lang = stored === "en" ? "en" : "id";
   const t = dictionaries[lang].previewBanner;
 
-  if (dismissed) return null;
+  if (!enabled || dismissed) return null;
 
   // Tutup pratinjau: tutup tab bila memungkinkan (tab dibuka via script),
   // kalau tidak, kembali ke halaman utama tanpa query param.
