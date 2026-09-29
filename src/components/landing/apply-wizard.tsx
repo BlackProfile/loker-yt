@@ -1736,7 +1736,10 @@ export function ApplyWizard({
           const isDone = index < step;
           const isActive = index === step;
           return (
-            <li key={label} className="flex min-w-0 flex-1 items-center gap-2 last:flex-none">
+            <li
+              key={`${label}-${index}`}
+              className="flex min-w-0 flex-1 items-center gap-2 last:flex-none"
+            >
               <div className="flex min-w-0 items-center gap-2">
                 <span
                   aria-current={isActive ? "step" : undefined}
