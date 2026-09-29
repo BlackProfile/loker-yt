@@ -1235,3 +1235,22 @@ Work Log:
 
 Stage Summary:
 - 6 fitur (Tong Sampah, Webhook Keluar, Sesi Aktif & Logout Perangkat, Retensi Data, Auto-Arsip + cron maintenance, Ekspor ICS admin) terpasang penuh di 7 API baru + 2 API lama (soft delete) + 3 tab UI; login demo & alur 2FA/lockout tetap bekerja (diverifikasi curl); lint & tsc bersih pada semua file task.
+---
+Task ID: 27-d
+Agent: subagen publik
+Task: Anti-spam, consent privasi, track-step, social proof, pratinjau banner
+
+Work Log:
+- strings.ts (hanya tambah key baru, key lama utuh): positions.applicants ("{n} sudah melamar"/"{n} applicants"), apply.preview.consentLabel/consentRequired/consentNote (ID+EN), seksi baru previewBanner.title/close (ID+EN, dipakai di luar LangProvider)
+- apply-wizard.tsx: honeypot input name="website" (hidden, tabIndex -1, autoComplete off, ref) + hidden formStartedAt (useRef mount); doSubmit mengirim website/formStartedAt/consent; consent checkbox wajib di langkah pratinjau (blok submit via toast + gate sebelum dialog konfirmasi, reset di resetForm); trackStep fire-and-forget keepalive ke /api/public/track-step: enter=1 saat mount, advance (step 1-based saat ini) tiap navigasi maju sukses (Lanjut ×2 + Pratinjau), submit step terakhir saat sukses
+- api/applications: rate limit per IP in-memory (pola rateMap slots) maks 5/jam → 429 "Terlalu banyak percobaan. Coba lagi nanti."; honeypot terisi → 200 sukses PALSU (fake ApplySuccessResponse, tidak menyimpan, kode LM- acak tidak masuk DB); time-trap <3000ms (dif negatif dibiarkan lewat — aman clock skew) → sukses palsu; consent ("1"/"true") wajib → tanpa consent 400 sopan; create kini menyimpan consentAt + stageUpdatedAt
+- api/public/track-step (BARU): POST tanpa auth, validasi step 1..12 & event enter/advance/submit, rate limit ringan 300ms/IP, insert FormStepStat, SELALU balas 204 (semua error ditelan)
+- api/public/content: where positions ditambah deletedAt: null (soft-delete tak tayang); count lamaran per posisi sudah terexpose via positionStats.applications (PositionPublicStats) — dipakai untuk chip
+- positions-section.tsx: chip zinc outline ikon Users "N sudah melamar" pada baris meta kartu posisi, hanya bila stats.applications > 0 (tak terkena cap 3 chip status)
+- preview-banner.tsx (BARU) + page.tsx (3 baris: import, type SearchParams.preview, <PreviewBanner enabled={params.preview === "1"} />); banner fixed top amber lembut bilingual, tombol "Tutup Pratinjau" → window.close() else location.replace("/"); z-[60] (bukan z-50 persis) karena header landing sticky top-0 z-50 menimpa banner — tombol tak bisa diklik pada z-50 (terverifikasi di browser)
+- api/public/offer/respond: await emitWebhook("offer.responded", {id, name, offerStatus}) setelah terima (ACCEPTED) & tolak (DECLINED)
+- Verifikasi: lint bersih; tsc 0 error pada semua berkas milik (error sisa di admin/sessions, data-tab, position-form-page adalah kerja agen lain yang berjalan paralel, bukan milik saya); curl: track-step 204 semua kasus (valid, <300ms diabaikan, payload invalid, non-JSON) dengan 3 baris DB benar; honeypot → 200 palsu + DB 5→5 + kode tak ada di DB; tanpa consent → 400; time-trap → 200 palsu tanpa simpan; valid+consent → 201 dengan consentAt & stageUpdatedAt terisi; rate limit ke-6 dari IP sama → 429; GET content menutup posisi ter-soft-delete (uji soft-delete sementara lalu dipulihkan) & tetap mengirim positionStats; browser E2E: banner tampil di ?preview=1, tutup → kembali ke / tanpa param, chip "1 sudah melamar" di 4 kartu (posisi tanpa pelamar benar tanpa chip), wizard: honeypot hidden di DOM, gate consent memblokir kirim (dialog tak terbuka, toast muncul), centang consent+agree → dialog konfirmasi terbuka, FormStepStat merekam enter+advance 1/2/3 dengan positionId benar; data QA (6 lamaran uji + 7 baris track) dibersihkan setelah uji
+
+Stage Summary:
+- 4 fitur publik hadir: anti-spam berlapis (honeypot sukses-palsu + time-trap 3 detik + rate limit 5/jam/IP), persetujuan privasi wajib tercatat consentAt (+stageUpdatedAt), telemetri drop-off FormStepStat via /api/public/track-step (204 senyap), social proof "N sudah melamar" di kartu posisi + filter soft-delete + banner mode pratinjau (?preview=1) + webhook offer.responded
+- Catatan deviasi kecil: banner pratinjau memakai z-[60] alih-alih z-50 mentok agar selalu di atas header sticky z-50; formStartedAt negatif (jam klien maju) dibiarkan lolos agar pengguna jujur tak pernah terkena sukses palsu
