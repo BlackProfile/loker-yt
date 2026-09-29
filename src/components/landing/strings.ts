@@ -78,6 +78,7 @@ const id = {
     kuotaPenuh: "Kuota Penuh",
     sisaKuota: "Sisa {n} Kuota",
     chipMore: "+{n}",
+    applicants: "{n} sudah melamar",
     gaji: "Gaji",
     benefitLainnya: "+{n} lainnya",
     dialogBenefitTitle: "Benefit",
@@ -235,6 +236,12 @@ const id = {
       confirmCancel: "Periksa Lagi",
       privacyNote:
         "Lamaran baru benar-benar dikirim setelah kamu konfirmasi — tidak ada data yang terkirim otomatis.",
+      consentLabel:
+        "Saya setuju data pribadi saya diproses untuk keperluan rekrutmen.",
+      consentRequired:
+        "Centang persetujuan pemrosesan data pribadi terlebih dahulu.",
+      consentNote:
+        "Data kamu hanya dipakai untuk proses rekrutmen di studio ini.",
     },
     uploads: {
       cvLabel: "CV (PDF, maks 5 MB)",
@@ -485,6 +492,10 @@ const id = {
     gateUnlockedToast: "Formulir pendaftaran terbuka — selamat melamar!",
     gateReread: "Baca ulang persyaratan",
   },
+  previewBanner: {
+    title: "Mode Pratinjau — Anda melihat halaman seperti yang dilihat pelamar",
+    close: "Tutup Pratinjau",
+  },
 };
 
 export type Dict = idDictShape;
@@ -556,6 +567,7 @@ type idDictShape = {
     kuotaPenuh: string;
     sisaKuota: string;
     chipMore: string;
+    applicants: string;
     gaji: string;
     benefitLainnya: string;
     dialogBenefitTitle: string;
@@ -676,6 +688,9 @@ type idDictShape = {
       confirmYes: string;
       confirmCancel: string;
       privacyNote: string;
+      consentLabel: string;
+      consentRequired: string;
+      consentNote: string;
     };
     uploads: {
       cvLabel: string;
@@ -893,6 +908,10 @@ type idDictShape = {
     gateUnlockedToast: string;
     gateReread: string;
   };
+  previewBanner: {
+    title: string;
+    close: string;
+  };
 };
 
 const en: Dict = {
@@ -966,6 +985,7 @@ const en: Dict = {
     kuotaPenuh: "Quota Full",
     sisaKuota: "{n} Spots Left",
     chipMore: "+{n}",
+    applicants: "{n} applicants",
     gaji: "Salary",
     benefitLainnya: "+{n} more",
     dialogBenefitTitle: "Benefits",
@@ -1123,6 +1143,12 @@ const en: Dict = {
       confirmCancel: "Check Again",
       privacyNote:
         "Your application is only sent after you confirm — nothing is submitted automatically.",
+      consentLabel:
+        "I agree that my personal data will be processed for recruitment purposes.",
+      consentRequired:
+        "Please tick the personal data processing consent box first.",
+      consentNote:
+        "Your data will only be used for the recruitment process at this studio.",
     },
     uploads: {
       cvLabel: "CV (PDF, max 5 MB)",
@@ -1372,6 +1398,10 @@ const en: Dict = {
     gateLocked: "Read all sections first",
     gateUnlockedToast: "Application form unlocked — good luck!",
     gateReread: "Re-read requirements",
+  },
+  previewBanner: {
+    title: "Preview Mode — You are viewing the page as applicants see it",
+    close: "Close Preview",
   },
 };
 

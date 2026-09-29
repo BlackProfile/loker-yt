@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
@@ -205,6 +205,8 @@ export function ApplyWizard({
   // Pratinjau & konfirmasi sebelum pengiriman (tidak ada kirim otomatis).
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  // Persetujuan pemrosesan data pribadi (Task 27) — wajib dicentang sebelum kirim.
+  const [consented, setConsented] = useState(false);
   const [direction, setDirection] = useState(1);
   const [success, setSuccess] = useState<{
     name: string;
@@ -286,6 +288,12 @@ export function ApplyWizard({
   const [draft, setDraft] = useState<StoredDraft | null>(null);
   const submittedRef = useRef(false);
   const draftDismissedRef = useRef(false);
+  // Anti-spam (Task 27): waktu formulir dibuka (time-trap) + ref honeypot.
+  const formStartedAtRef = useRef<number>(Date.now());
+  const websiteRef = useRef<HTMLInputElement | null>(null);
+  // Ref posisi terkini untuk pelacakan langkah (dipakai effect mount).
+  const positionIdRef = useRef(positionId);
+  positionIdRef.current = positionId;
 
   useEffect(() => {
     try {
@@ -315,6 +323,33 @@ export function ApplyWizard({
     }, AUTOSAVE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [values, positionId]);
+
+  // Pelacakan drop-off langkah wizard (Task 27): fire-and-forget ke
+  // /api/public/track-step — seluruh kegagalan diabaikan agar tidak mengganggu UI.
+  const trackStep = useCallback(
+    (event: "enter" | "advance" | "submit", step: number) => {
+      try {
+        const payload: Record<string, unknown> = { step, event };
+        if (positionIdRef.current) payload.positionId = positionIdRef.current;
+        void fetch("/api/public/track-step", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          keepalive: true,
+        }).catch(() => {
+          // diabaikan — pelacakan tidak boleh melempar error
+        });
+      } catch {
+        // diabaikan
+      }
+    },
+    [],
+  );
+
+  // Event "enter" langkah 1 dikirim sekali saat wizard dibuka.
+  useEffect(() => {
+    trackStep("enter", 1);
+  }, [trackStep]);
 
   const setField = (key: keyof FormValues, value: string) => {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -412,6 +447,7 @@ export function ApplyWizard({
       return;
     }
     goToStep(Math.min(2, step + 1));
+    trackStep("advance", step + 1);
   }
 
   function goBack() {
@@ -573,6 +609,11 @@ export function ApplyWizard({
         fd.append("socialLinks", values.socialLinks.trim());
       fd.append("experience", values.experience.trim());
       fd.append("motivation", values.motivation.trim());
+      // Anti-spam (Task 27): honeypot + waktu buka formulir — diverifikasi server.
+      fd.append("website", websiteRef.current?.value ?? "");
+      fd.append("formStartedAt", String(formStartedAtRef.current));
+      // Persetujuan pemrosesan data pribadi (Task 27).
+      fd.append("consent", consented ? "1" : "0");
       // Jawaban screening posisi (JSON {questionId: jawaban}) — hanya yang terisi.
       if (screeningQuestions.length > 0) {
         const record: Record<string, string> = {};
@@ -620,6 +661,8 @@ export function ApplyWizard({
       const trackingCode = successData?.trackingCode ?? "";
 
       submittedRef.current = true;
+      // Pelacakan (Task 27): lamaran terkirim — event "submit" pada langkah terakhir.
+      trackStep("submit", t.apply.steps.length);
       try {
         window.localStorage.removeItem(DRAFT_KEY);
       } catch {
@@ -654,12 +697,17 @@ export function ApplyWizard({
       if (!validateAllAndJump()) return;
       if (!validateRequiredFiles()) return;
       goToStep(3);
+      trackStep("advance", 3);
       return;
     }
 
     // Langkah 3 (Pratinjau): wajib pernyataan kebenaran data sebelum konfirmasi.
     if (!agreed) {
       toast.error(t.apply.preview.agreeRequired);
+      return;
+    }
+    if (!consented) {
+      toast.error(t.apply.preview.consentRequired);
       return;
     }
     if (recruitmentClosed) {
@@ -684,6 +732,7 @@ export function ApplyWizard({
     setCvError(null);
     setIntroError(null);
     setAgreed(false);
+    setConsented(false);
     setConfirmOpen(false);
     setDirection(1);
     setSource("");
@@ -941,6 +990,26 @@ export function ApplyWizard({
       </ol>
 
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
+        {/* Anti-spam honeypot (Task 27): tersembunyi dari manusia — bot pengisi
+            otomatis mendapat respons sukses palsu dari server. */}
+        <div className="hidden" aria-hidden="true">
+          <Label htmlFor="apply-website">Website</Label>
+          <Input
+            ref={websiteRef}
+            id="apply-website"
+            name="website"
+            type="text"
+            tabIndex={-1}
+            autoComplete="off"
+            className="hidden"
+          />
+        </div>
+        {/* Time-trap (Task 27): waktu formulir dibuka — diverifikasi server. */}
+        <input
+          type="hidden"
+          name="formStartedAt"
+          value={String(formStartedAtRef.current)}
+        />
         <AnimatePresence mode="wait" initial={false} custom={direction}>
           <motion.div
             key={step}
@@ -1729,6 +1798,34 @@ export function ApplyWizard({
               >
                 {t.apply.preview.agreeLabel}
               </Label>
+            </div>
+
+            {/* Persetujuan pemrosesan data pribadi (Task 27) — wajib sebelum kirim */}
+            <div
+              className={cn(
+                "flex flex-col gap-1 rounded-xl border p-4 transition-colors",
+                consented
+                  ? "border-emerald-300 bg-emerald-50/60 dark:border-emerald-500/40 dark:bg-emerald-500/10"
+                  : "border-border",
+              )}
+            >
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="apply-consent"
+                  checked={consented}
+                  onCheckedChange={(checked) => setConsented(checked === true)}
+                  className="mt-0.5"
+                />
+                <Label
+                  htmlFor="apply-consent"
+                  className="cursor-pointer text-sm font-normal leading-relaxed"
+                >
+                  {t.apply.preview.consentLabel}
+                </Label>
+              </div>
+              <p className="pl-7 text-xs text-muted-foreground">
+                {t.apply.preview.consentNote}
+              </p>
             </div>
 
             <p className="flex items-start gap-2 text-xs text-muted-foreground">

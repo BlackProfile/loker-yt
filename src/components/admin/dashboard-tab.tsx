@@ -957,6 +957,8 @@ export function DashboardTab() {
             onClick={() => {
               void load();
               void loadPosStats();
+              void loadSla();
+              void loadAnnouncements(true);
             }}
             disabled={loading}
             aria-label="Segarkan data dashboard"
