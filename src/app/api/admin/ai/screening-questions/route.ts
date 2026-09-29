@@ -20,6 +20,39 @@ const NOT_FOUND = { error: "Posisi tidak ditemukan" };
 const MAX_QUESTIONS = 6;
 const LABEL_MAX = 120;
 
+// Normalisasi kandidat pertanyaan (objek {label} atau string) → label bersih,
+// unik, maks 6, maks 120 karakter.
+function normalizeLabels(candidates: unknown[]): string[] {
+  return candidates
+    .map((item) => {
+      if (typeof item === "string") return asTrimmedString(item, LABEL_MAX);
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        return asTrimmedString((item as { label?: unknown }).label, LABEL_MAX);
+      }
+      return "";
+    })
+    .filter((label) => label.length >= 3)
+    .filter((label, index, all) => all.indexOf(label) === index)
+    .slice(0, MAX_QUESTIONS);
+}
+
+// Fallback toleran: LLM kadang memotong output di tengah JSON (batas token)
+// sehingga objek penuh tak bisa di-parse — tebus nilai "label" satu per satu.
+function salvageLabelValues(text: string): string[] {
+  const out: string[] = [];
+  const re = /"label"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    try {
+      const decoded: unknown = JSON.parse(`"${match[1]}"`);
+      if (typeof decoded === "string") out.push(decoded);
+    } catch {
+      // escape tidak valid — lewati
+    }
+  }
+  return out;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
@@ -67,7 +100,7 @@ export async function POST(req: NextRequest) {
       "- Relevan dengan keterampilan/pengalaman yang dibutuhkan posisi ini.",
       "- Hindari pertanyaan diskriminatif (usia, agama, suku, status pernikahan, dan sejenisnya).",
       `- Maksimal ${LABEL_MAX} karakter per pertanyaan.`,
-      'Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain): {"questions": [{"label": "<pertanyaan>"}, ...]}',
+      'Balas HANYA dengan JSON valid dalam SATU BARIS (tanpa markdown, tanpa teks lain): {"questions": [{"label": "<pertanyaan>"}, ...]}',
     ]
       .filter(Boolean)
       .join("\n");
@@ -89,17 +122,10 @@ export async function POST(req: NextRequest) {
     const parsed = extractJsonObject(raw);
     const rawList =
       parsed && Array.isArray(parsed.questions) ? parsed.questions : [];
-    const labels = rawList
-      .map((item) => {
-        if (typeof item === "string") return asTrimmedString(item, LABEL_MAX);
-        if (item && typeof item === "object" && !Array.isArray(item)) {
-          return asTrimmedString((item as { label?: unknown }).label, LABEL_MAX);
-        }
-        return "";
-      })
-      .filter((label) => label.length >= 3)
-      .filter((label, index, all) => all.indexOf(label) === index)
-      .slice(0, MAX_QUESTIONS);
+    let labels = normalizeLabels(rawList);
+    if (labels.length === 0) {
+      labels = normalizeLabels(salvageLabelValues(raw));
+    }
 
     if (labels.length === 0) {
       console.error(
