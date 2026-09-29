@@ -166,12 +166,12 @@ async function runMaintenance() {
 
 async function handle(req: NextRequest) {
   try {
-    // Auth: pola cron (x-realtime-secret) ATAU sesi admin login (tombol manual).
+    // Auth: pola cron (x-realtime-secret) ATAU sesi admin OWNER (tombol manual).
     const secret = req.headers.get("x-realtime-secret");
     const viaCron = Boolean(REALTIME_SECRET) && secret === REALTIME_SECRET;
     if (!viaCron) {
       const session = await getSession();
-      if (!session) {
+      if (!session || session.role !== "OWNER") {
         return NextResponse.json({ error: "forbidden" }, { status: 403 });
       }
     }
