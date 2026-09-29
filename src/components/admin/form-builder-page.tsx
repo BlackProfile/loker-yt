@@ -69,6 +69,7 @@ import {
   FORM_FIELD_TYPE_LABELS,
   FORM_LIMITS,
   isChoiceType,
+  isFormSchemaActive,
   newFormId,
   type FormAnswerValue,
   type FormField,
@@ -132,7 +133,7 @@ type FormResponsesData = {
 };
 
 type FormPutResponse = { schema: FormSchema | null; position: Position };
-type AiQuestionsResponse = { questions: { id?: string; label: string; required?: boolean }[] };
+type AiQuestionsResponse = { questions: { label: string }[] };
 
 /* -------------------------------- Utilitas -------------------------------- */
 
@@ -852,12 +853,14 @@ export function FormBuilderPage({
         const key = label.toLowerCase();
         if (existingLabels.has(key)) continue;
         existingLabels.add(key);
+        // Hasil AI selalu opsional (konsisten dgn generator di halaman edit posisi);
+        // admin bisa menandai wajib manual lewat saklar "Wajib diisi".
         newFields.push({
           id: newFormId("fld"),
           sectionId: "__target__",
           type: "text",
           label,
-          required: question.required === true,
+          required: false,
           options: [],
           allowOther: false,
           maxLen: FORM_LIMITS.textDefaultMax,
@@ -1017,8 +1020,10 @@ export function FormBuilderPage({
 
   const csvUrl = `/api/admin/positions/${position.id}/form-responses?format=csv`;
   const totalFields = draft.fields.length;
+  // Info migrasi: screening/customDocs lama masih berisi DAN skema tersimpan aktif.
   const hasLegacySchema =
     savedSchema != null &&
+    isFormSchemaActive({ formSchema: savedSchema }) &&
     (position.screeningQuestions.length > 0 || position.customDocs.length > 0);
 
   /* ---------------------------------- Render ---------------------------------- */
@@ -1042,7 +1047,10 @@ export function FormBuilderPage({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold leading-tight">Formulir Lamaran</h2>
+              <h2 className="text-lg font-bold leading-tight">
+                Formulir Lamaran
+                <span className="text-muted-foreground"> — {position.title}</span>
+              </h2>
               {loading ? null : savedSchema ? (
                 <BadgeSaved />
               ) : derivedAvailable ? (
@@ -1055,9 +1063,6 @@ export function FormBuilderPage({
                 </Badge>
               )}
             </div>
-            <p className="mt-0.5 truncate text-sm text-muted-foreground">
-              {position.title}
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <Button

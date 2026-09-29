@@ -1339,3 +1339,28 @@ Work Log:
 
 Stage Summary:
 - Fondasi Form Builder siap: kontrak GET/PUT form + form-responses (JSON/CSV) + submit schema-mode aktif. Konvensi kunci: nilai "Lainnya" = teks bebas (allowOther), file = {fileId,filename} di-inject server, jawaban dikunci fieldId stabil + retiredFields. Subagen 29-a (admin builder 3 tab) & 29-b (wizard publik dinamis) mengerjakan UI di atas kontrak ini.
+
+---
+Task ID: 29-b
+Agent: subagent 29-b (public wizard dynamic)
+Task: Sisi publik Form Builder — wizard lamaran dinamis per skema posisi (apply-wizard.tsx + strings.ts + position-detail.tsx).
+
+Work Log:
+- Membaca worklog Task 30 (fondasi), src/lib/form-schema.ts (tipe, FORM_LIMITS, isAllowedFormFile, formatAnswerValue, validateFormAnswers sebagai cermin validasi klien), dan menyeluruh apply-wizard.tsx (state, validateStep1/2, goNext/validateAllAndJump/validateRequiredFiles, doSubmit FormData, draft autosave, stepper, render langkah 0-3).
+- apply-wizard.tsx: guard skema di atas komponen (schema aktif bila fields.length>0; null = mode klasik). sectionSteps = satu langkah per section berfield (urut schema.sections, section kosong dilewati), filesStep = 2+sectionSteps.length, previewStep = filesStep+1.
+- State baru formAnswers: Record<fieldId, string|string[]|number|File> + formErrors: Record<"form:"+fieldId, string>; reset saat positionId berubah (pola adjust-state-during-render, termasuk antrean pemulihan draf draftRestoreAnswersRef agar restore draf posisi sama tidak terhapus reset).
+- Komponen FormFieldRenderer dalam file: text/textarea (maxLength min(maxLen||300/2000, 4000)), url (hint http(s)), date, number (min/max), rating (bintang Lucide Star fill amber, aria-label dari formSection.ratingAria via fillTemplate, klik bintang sama = batal), radio (RadioGroup + allowOther "Lainnya" sentinel FORM_OTHER_VALUE → Input teks bebas), dropdown (Select + allowOther), checkbox (array + allowOther masuk array), file (dropzone ala CV: nama+ukuran+Ulangi/Hapus, validasi isAllowedFormFile + ≤ FORM_LIMITS.fileMaxBytes → toast+error spesifik, anchor id "apply-form-{fieldId}").
+- Bilingual: labelEn/label + titleEn/title dipilih via useLang (formFieldLabel/formSectionTitle); helpText muted; tanda * rose untuk required; semua copy baru dari strings.
+- Validasi: validateFormField (cermin validateFormAnswers server: required kosong→formRequired{label}, url ^https?://, number finite+min/max, date YYYY-MM-DD, rating 1..max, radio/dropdown harus di options kecuali allowOther, checkbox minimal 1 bila required) per section via validateSectionFields; goNext & validateAllAndJump lompat ke langkah section pertama yang salah, scroll+toast (scrollToFormField, firstFormErrorOf).
+- Langkah Berkas: requireCv/requireIntro/requirePortfolio tetap divalidasi; customDocs/extraDoc_* hanya dirender & dikirim di mode klasik (skema aktif: blok customDocs & part extraDoc_* tidak muncul; screeningAnswers juga tidak dikirim).
+- doSubmit: kirim formAnswers = JSON {fieldId: nilai non-File, sentinel "Lainnya" dibuang, teks bebas allowOther dikirim} + tiap File sebagai part formFile_<fieldId>; field lama lengkap (honeypot, time-trap, consent, UTM, source).
+- Draft autosave lumina-draft ikut menyertakan formAnswers non-File; restoreDraft memulihkan bila posisi tujuan = posisi draf (langsung atau via willSwitch+antrean ref).
+- Stepper dinamis [Data Diri, Pengalaman, ...judul section, Berkas, Pratinjau & Kirim]; trackStep tetap dipanggil (goNext advance step+1, files→preview advance previewStep, submit previewStep+1 — dinamis, 1-based, ≤12 sesuai route).
+- Pratinjau: kartu PreviewSection per bagian skema dengan PreviewRow per field (formatAnswerValue untuk string/number/array; file → nama+ukuran; fallback notAnswered/noFile) + tombol Ubah menuju langkah section terkait.
+- strings.ts: menambah t.apply.formSection (chooseOption, chooseMulti, otherLabel, otherPlaceholder, ratingAria, fileChoose, fileChange, fileRemove, fileHint, previewTitle, fileAnswer) + errors.form* (formRequired/formUrl/formNumber/formNumberMin/formNumberMax/formDate/formRating/formOption/formFileType/formFileSize) di bahasa ID & EN + tipe Dict; chooseMulti diselaraskan ke copy spek ("Pilih satu atau lebih"/"Select one or more").
+- position-detail.tsx: saat isFormSchemaActive, daftar berkas di kartu Ketentuan menambahkan label field type "file" milik skema (schemaFileLabels, labelEn-aware) via requiredFilesWithSchema; canApplyOnline/kuota/formClosed tidak diubah; customDocs klasik tak lagi jadi acuan ketika skema aktif.
+- TIDAK menyentuh src/lib/form-schema.ts, src/lib/types.ts, API, dan file admin 29-a.
+- Verifikasi: bunx tsc --noEmit → 0 error pada apply-wizard.tsx/strings.ts/position-detail.tsx (satu-satunya error proyek ada di src/components/admin/form-builder-page.tsx milik 29-a yang sedang dikerjakan paralel — tidak disentuh); bun run lint lulus tanpa temuan; tanpa `any` baru.
+
+Stage Summary:
+- Wizard publik kini mendukung Form Builder per posisi: posisi berskema mendapat langkah dinamis (satu per section) dengan semua tipe field + allowOther + unggahan 20MB, validasi klien selaras server, pratinjau per bagian, draft autosave, dan pelacakan langkah dinamis; posisi klasik (formSchema null/kosong) berperilaku 100% sama seperti sebelumnya (screening + customDocs + 4 langkah). Halaman detail menampilkan berkas field skema dalam daftar persiapan pelamar.
