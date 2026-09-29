@@ -201,6 +201,11 @@ export function ApplicationsTable({
                           <span className="truncate">{app.name}</span>
                           {app.isDuplicate === true ? <DuplicateBadge /> : null}
                           {app.archivedAt ? <ArchivedBadge /> : null}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {app.email}
+                          {app.phone ? ` · ${app.phone}` : ""}
+                        </p>
                       </div>
                     </div>
                   </TableCell>
@@ -330,6 +335,7 @@ export function ApplicationsTable({
                     <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
                       <span className="truncate">{app.name}</span>
                       {app.isDuplicate === true ? <DuplicateBadge /> : null}
+                      {app.archivedAt ? <ArchivedBadge /> : null}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {app.email}
