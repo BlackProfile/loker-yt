@@ -132,7 +132,11 @@ function isEmptyFormAnswer(value: FormAnswerValue | undefined): boolean {
 
 /** Satu nilai jawaban formulir terformat: teks, daftar, angka, atau berkas. */
 function FormAnswerValueView({ value }: { value: FormAnswerValue | undefined }) {
-  if (isEmptyFormAnswer(value)) {
+  if (
+    value == null ||
+    (typeof value === "string" && value.trim() === "") ||
+    (Array.isArray(value) && value.length === 0)
+  ) {
     return (
       <p className="mt-0.5 text-sm italic text-zinc-500 dark:text-zinc-400">Tidak dijawab</p>
     );

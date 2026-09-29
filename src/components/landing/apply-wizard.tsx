@@ -18,6 +18,7 @@ import {
   PauseCircle,
   PencilLine,
   ShieldCheck,
+  Star,
   Upload,
   X,
 } from "lucide-react";
@@ -28,6 +29,14 @@ import {
   type ApplySuccessResponse,
   type Position,
 } from "@/lib/types";
+import {
+  FORM_LIMITS,
+  formatAnswerValue,
+  isAllowedFormFile,
+  type FormField,
+  type FormSection,
+} from "@/lib/form-schema";
+import type { Lang } from "@/components/landing/strings";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -51,6 +60,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 import { useLang } from "@/components/landing/lang-context";
 import { fillTemplate, formatMb, safeExternalUrl } from "@/components/landing/landing-utils";
@@ -61,6 +71,14 @@ const AUTOSAVE_DELAY_MS = 500;
 const MIN_TEXT_LENGTH = 10;
 const SCREENING_MAX = 500; // batas karakter tiap jawaban screening (sinkron dengan server)
 const SCREENING_KEY_PREFIX = "screening:";
+
+// Form Builder per posisi (mode skema aktif).
+const FORM_KEY_PREFIX = "form:"; // kunci error jawaban: "form:"+fieldId
+// Sentinel pilihan "Lainnya" (radio/dropdown/checkbox allowOther) — memakai
+// karakter kontrol sehingga tidak mungkin bentrok dengan opsi buatan admin.
+const FORM_OTHER_VALUE = "\u0000__other__";
+const FORM_URL_RE = /^https?:\/\//i;
+const FORM_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Dokumen wajib tambahan (customDocs posisi) — sinkron dengan server.
 const EXTRA_DOC_MAX_BYTES = 5 * 1024 * 1024; // 5 MB per dokumen
@@ -79,6 +97,496 @@ function isAllowedExtraDoc(file: File): boolean {
   if (ALLOWED_EXTRA_DOC_MIMES.includes(file.type)) return true;
   const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
   return ALLOWED_EXTRA_DOC_EXTS.includes(ext);
+}
+
+/* ------------------- Form Builder per posisi (skema aktif) ------------------- */
+
+/** Nilai jawaban satu field form di sisi klien (berkas = File sebelum diunggah). */
+type FormAnswerInput = string | string[] | number | File;
+type FormAnswers = Record<string, FormAnswerInput>;
+
+/** Label field terlokalisasi: EN bila labelEn terisi, selain itu fallback label ID. */
+function formFieldLabel(field: FormField, lang: Lang): string {
+  return lang === "en" && field.labelEn ? field.labelEn : field.label;
+}
+
+/** Judul bagian skema terlokalisasi (titleEn bila ada, fallback judul ID). */
+function formSectionTitle(section: FormSection, lang: Lang): string {
+  return lang === "en" && section.titleEn ? section.titleEn : section.title;
+}
+
+/** Status pilihan "Lainnya" pada nilai checkbox (sentinel atau teks bebas). */
+function checkboxOtherOf(
+  value: FormAnswerInput | undefined,
+  options: string[],
+): { checked: boolean; text: string } {
+  const items = Array.isArray(value) ? value : [];
+  const freeText = items.find(
+    (item): item is string =>
+      typeof item === "string" && item !== FORM_OTHER_VALUE && !options.includes(item),
+  );
+  return {
+    checked: items.some(
+      (item) => item === FORM_OTHER_VALUE || (typeof item === "string" && !options.includes(item)),
+    ),
+    text: freeText ?? "",
+  };
+}
+
+type FormFieldRendererProps = {
+  field: FormField;
+  value: FormAnswerInput | undefined;
+  error: string | undefined;
+  /** Set/hapus jawaban field (undefined = hapus); error field ikut dibersihkan. */
+  onAnswer: (fieldId: string, value: FormAnswerInput | undefined) => void;
+  /** Catat pesan error field (mis. berkas ditolak saat dipilih). */
+  onAnswerError: (fieldId: string, message: string) => void;
+};
+
+/**
+ * Renderer satu pertanyaan Form Builder pada langkah dinamis wizard.
+ * Mendukung semua tipe field: text, textarea, radio, checkbox, dropdown, date,
+ * number, rating, file, dan url — plus opsi "Lainnya" (allowOther).
+ */
+function FormFieldRenderer({
+  field,
+  value,
+  error,
+  onAnswer,
+  onAnswerError,
+}: FormFieldRendererProps) {
+  const { t, lang } = useLang();
+  const anchorId = `apply-form-${field.id}`;
+  const errorId = `${anchorId}-error`;
+  const label = formFieldLabel(field, lang);
+  const [fileDragging, setFileDragging] = useState(false);
+
+  const textValue = typeof value === "string" ? value : "";
+  const inputAria = {
+    "aria-invalid": error ? true : undefined,
+    "aria-describedby": error ? errorId : undefined,
+  } as const;
+
+  const requiredMark = field.required ? (
+    <span className="text-rose-600">*</span>
+  ) : (
+    <span className="text-xs font-normal text-muted-foreground">
+      ({t.apply.uploads.optional})
+    </span>
+  );
+
+  /** Terima berkas field form: validasi tipe + ukuran sebelum disimpan. */
+  function acceptFormFile(candidate: File | null) {
+    if (!candidate) return;
+    if (!isAllowedFormFile({ type: candidate.type, name: candidate.name })) {
+      const msg = fillTemplate(t.apply.errors.formFileType, { label });
+      onAnswerError(field.id, msg);
+      toast.error(msg);
+      return;
+    }
+    if (candidate.size > FORM_LIMITS.fileMaxBytes) {
+      const msg = fillTemplate(t.apply.errors.formFileSize, { label });
+      onAnswerError(field.id, msg);
+      toast.error(msg);
+      return;
+    }
+    onAnswer(field.id, candidate);
+  }
+
+  let control: ReactNode = null;
+
+  switch (field.type) {
+    case "text":
+      control = (
+        <Input
+          id={`${anchorId}-input`}
+          value={textValue}
+          onChange={(event) => onAnswer(field.id, event.target.value)}
+          maxLength={Math.min(field.maxLen ?? FORM_LIMITS.textDefaultMax, FORM_LIMITS.textHardMax)}
+          placeholder={field.placeholder}
+          className="h-11"
+          {...inputAria}
+        />
+      );
+      break;
+    case "textarea":
+      control = (
+        <Textarea
+          id={`${anchorId}-input`}
+          rows={3}
+          value={textValue}
+          onChange={(event) => onAnswer(field.id, event.target.value)}
+          maxLength={Math.min(
+            field.maxLen ?? FORM_LIMITS.textareaDefaultMax,
+            FORM_LIMITS.textHardMax,
+          )}
+          placeholder={field.placeholder}
+          {...inputAria}
+        />
+      );
+      break;
+    case "url":
+      control = (
+        <div className="flex flex-col gap-1">
+          <Input
+            id={`${anchorId}-input`}
+            type="url"
+            value={textValue}
+            onChange={(event) => onAnswer(field.id, event.target.value)}
+            placeholder={field.placeholder || "https://..."}
+            className="h-11"
+            {...inputAria}
+          />
+          <p className="text-xs text-muted-foreground">http(s)://…</p>
+        </div>
+      );
+      break;
+    case "date":
+      control = (
+        <Input
+          id={`${anchorId}-input`}
+          type="date"
+          value={textValue}
+          onChange={(event) => onAnswer(field.id, event.target.value)}
+          className="h-11"
+          {...inputAria}
+        />
+      );
+      break;
+    case "number":
+      control = (
+        <Input
+          id={`${anchorId}-input`}
+          type="number"
+          inputMode="decimal"
+          step="any"
+          min={field.min}
+          max={field.max}
+          value={typeof value === "number" ? String(value) : textValue}
+          onChange={(event) => onAnswer(field.id, event.target.value)}
+          className="h-11"
+          {...inputAria}
+        />
+      );
+      break;
+    case "rating": {
+      const ratingMax = field.max ?? FORM_LIMITS.ratingMaxDefault;
+      const current = typeof value === "number" ? value : 0;
+      control = (
+        <div className="flex items-center gap-1" role="group" aria-label={label}>
+          {Array.from({ length: ratingMax }, (_, index) => index + 1).map((star) => (
+            <button
+              key={star}
+              type="button"
+              aria-label={fillTemplate(t.apply.formSection.ratingAria, { n: star })}
+              aria-pressed={current === star}
+              onClick={() => onAnswer(field.id, current === star ? undefined : star)}
+              className="rounded p-0.5 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Star
+                className={cn(
+                  "size-7 transition-colors",
+                  current >= star
+                    ? "fill-amber-400 text-amber-500 dark:fill-amber-500 dark:text-amber-400"
+                    : "text-muted-foreground/40 hover:text-amber-400",
+                )}
+                aria-hidden="true"
+              />
+            </button>
+          ))}
+        </div>
+      );
+      break;
+    }
+    case "radio": {
+      const options = field.options;
+      const otherSelected =
+        typeof value === "string" && value !== "" && !options.includes(value);
+      const otherText =
+        otherSelected && typeof value === "string" && value !== FORM_OTHER_VALUE ? value : "";
+      control = (
+        <div className="flex flex-col gap-2">
+          <RadioGroup
+            value={(otherSelected ? FORM_OTHER_VALUE : textValue) || undefined}
+            onValueChange={(next) =>
+              onAnswer(field.id, next === FORM_OTHER_VALUE ? FORM_OTHER_VALUE : next)
+            }
+            className="gap-2.5"
+            aria-label={label}
+          >
+            {options.map((option, index) => (
+              <div key={option} className="flex items-center gap-2.5">
+                <RadioGroupItem value={option} id={`${anchorId}-opt-${index}`} />
+                <Label
+                  htmlFor={`${anchorId}-opt-${index}`}
+                  className="cursor-pointer font-normal"
+                >
+                  {option}
+                </Label>
+              </div>
+            ))}
+            {field.allowOther ? (
+              <div className="flex items-center gap-2.5">
+                <RadioGroupItem value={FORM_OTHER_VALUE} id={`${anchorId}-other`} />
+                <Label htmlFor={`${anchorId}-other`} className="cursor-pointer font-normal">
+                  {t.apply.formSection.otherLabel}
+                </Label>
+              </div>
+            ) : null}
+          </RadioGroup>
+          {field.allowOther && otherSelected ? (
+            <Input
+              value={otherText}
+              onChange={(event) => onAnswer(field.id, event.target.value)}
+              placeholder={t.apply.formSection.otherPlaceholder}
+              maxLength={FORM_LIMITS.optionMaxLen}
+              className="ml-7 h-10"
+              aria-label={t.apply.formSection.otherLabel}
+            />
+          ) : null}
+        </div>
+      );
+      break;
+    }
+    case "dropdown": {
+      const options = field.options;
+      const otherSelected =
+        typeof value === "string" && value !== "" && !options.includes(value);
+      const otherText =
+        otherSelected && typeof value === "string" && value !== FORM_OTHER_VALUE ? value : "";
+      control = (
+        <div className="flex flex-col gap-2">
+          <Select
+            value={(otherSelected ? FORM_OTHER_VALUE : textValue) || undefined}
+            onValueChange={(next) =>
+              onAnswer(field.id, next === FORM_OTHER_VALUE ? FORM_OTHER_VALUE : next)
+            }
+          >
+            <SelectTrigger
+              id={`${anchorId}-input`}
+              className="h-11 w-full"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? errorId : undefined}
+            >
+              <SelectValue placeholder={t.apply.formSection.chooseOption} />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+              {field.allowOther ? (
+                <SelectItem value={FORM_OTHER_VALUE}>
+                  {t.apply.formSection.otherLabel}
+                </SelectItem>
+              ) : null}
+            </SelectContent>
+          </Select>
+          {field.allowOther && otherSelected ? (
+            <Input
+              value={otherText}
+              onChange={(event) => onAnswer(field.id, event.target.value)}
+              placeholder={t.apply.formSection.otherPlaceholder}
+              maxLength={FORM_LIMITS.optionMaxLen}
+              className="h-10"
+              aria-label={t.apply.formSection.otherLabel}
+            />
+          ) : null}
+        </div>
+      );
+      break;
+    }
+    case "checkbox": {
+      const options = field.options;
+      const selected = Array.isArray(value) ? value : [];
+      const other = checkboxOtherOf(value, options);
+      control = (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground">{t.apply.formSection.chooseMulti}</p>
+          <div className="flex flex-col gap-2.5" role="group" aria-label={label}>
+            {options.map((option, index) => (
+              <div key={option} className="flex items-center gap-2.5">
+                <Checkbox
+                  id={`${anchorId}-opt-${index}`}
+                  checked={selected.includes(option)}
+                  onCheckedChange={(checked) => {
+                    const next =
+                      checked === true
+                        ? [...selected, option]
+                        : selected.filter((item) => item !== option);
+                    onAnswer(field.id, next);
+                  }}
+                />
+                <Label
+                  htmlFor={`${anchorId}-opt-${index}`}
+                  className="cursor-pointer font-normal"
+                >
+                  {option}
+                </Label>
+              </div>
+            ))}
+            {field.allowOther ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2.5">
+                  <Checkbox
+                    id={`${anchorId}-other`}
+                    checked={other.checked}
+                    onCheckedChange={(checked) => {
+                      if (checked === true) {
+                        onAnswer(field.id, [...selected, FORM_OTHER_VALUE]);
+                      } else {
+                        onAnswer(
+                          field.id,
+                          selected.filter((item) => options.includes(item)),
+                        );
+                      }
+                    }}
+                  />
+                  <Label htmlFor={`${anchorId}-other`} className="cursor-pointer font-normal">
+                    {t.apply.formSection.otherLabel}
+                  </Label>
+                </div>
+                {other.checked ? (
+                  <Input
+                    value={other.text}
+                    onChange={(event) => {
+                      const kept = selected.filter((item) => options.includes(item));
+                      const text = event.target.value;
+                      onAnswer(
+                        field.id,
+                        text.trim() ? [...kept, text] : [...kept, FORM_OTHER_VALUE],
+                      );
+                    }}
+                    placeholder={t.apply.formSection.otherPlaceholder}
+                    maxLength={FORM_LIMITS.optionMaxLen}
+                    className="ml-7 h-10"
+                    aria-label={t.apply.formSection.otherLabel}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      );
+      break;
+    }
+    case "file": {
+      const file = value instanceof File ? value : null;
+      control = (
+        <div className="flex flex-col gap-2">
+          <label
+            htmlFor={`${anchorId}-input`}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setFileDragging(true);
+            }}
+            onDragLeave={() => setFileDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setFileDragging(false);
+              acceptFormFile(event.dataTransfer.files?.[0] ?? null);
+            }}
+            className={cn(
+              "flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-4 text-center transition-colors",
+              fileDragging
+                ? "border-primary bg-rose-50 dark:bg-rose-500/10"
+                : "hover:bg-accent/50",
+              error && "border-rose-400 dark:border-rose-500",
+            )}
+          >
+            <Upload
+              className="h-5 w-5 text-rose-600 dark:text-rose-400"
+              aria-hidden="true"
+            />
+            <span className="text-xs text-muted-foreground">
+              {t.apply.formSection.fileChoose} — {t.apply.uploads.dropHint}
+            </span>
+            <input
+              id={`${anchorId}-input`}
+              name={`formFile_${field.id}`}
+              type="file"
+              className="sr-only"
+              onChange={(event) => {
+                acceptFormFile(event.target.files?.[0] ?? null);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {t.apply.formSection.fileHint}
+          </p>
+          {file ? (
+            <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
+              <span className="flex min-w-0 items-center gap-2 text-sm">
+                <FileText
+                  className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                  aria-hidden="true"
+                />
+                <span className="truncate">{file.name}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatMb(file.size)}
+                </span>
+              </span>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-muted-foreground"
+                  onClick={() => document.getElementById(`${anchorId}-input`)?.click()}
+                >
+                  {t.apply.formSection.fileChange}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  aria-label={t.apply.formSection.fileRemove}
+                  onClick={() => onAnswer(field.id, undefined)}
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      );
+      break;
+    }
+    default:
+      control = null;
+  }
+
+  return (
+    <div id={anchorId} className="flex scroll-mt-24 flex-col gap-2">
+      {field.type === "text" ||
+      field.type === "textarea" ||
+      field.type === "url" ||
+      field.type === "date" ||
+      field.type === "number" ||
+      field.type === "dropdown" ? (
+        <Label htmlFor={`${anchorId}-input`} className="gap-2">
+          {label} {requiredMark}
+        </Label>
+      ) : (
+        <p className="text-sm font-medium leading-none">
+          {label} {requiredMark}
+        </p>
+      )}
+      {field.helpText ? (
+        <p className="text-xs text-muted-foreground">{field.helpText}</p>
+      ) : null}
+      {control}
+      {error ? (
+        <p id={errorId} className="text-sm text-rose-600">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 /* ------------------------- Komponen pratinjau lamaran ------------------------- */
