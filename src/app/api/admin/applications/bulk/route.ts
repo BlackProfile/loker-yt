@@ -1,17 +1,41 @@
-// POST /api/admin/applications/bulk — aksi massal: ubah status, hapus, atur talent pool, atau tolak (OWNER/HR).
+// POST /api/admin/applications/bulk — aksi massal: ubah status, hapus (soft),
+// atur talent pool, tolak, atur tag, arsip, atau batalkan arsip (OWNER/HR).
 // Aksi "reject": status -> REJECTED + alasan terstruktur + tanggal ditolak (per lamaran, lewat transaksi).
+// Aksi "delete": SOFT DELETE (deletedAt=now) — lamaran masuk tong sampah dan
+//                masih bisa dipulihkan dari tab Data.
+// Aksi "tag": gabungkan tag unik (maks 12, masing-masing <=24 karakter) ke tiap lamaran.
+// Aksi "archive"/"unarchive": set/kosongkan archivedAt (+ log ARCHIVE per lamaran,
+//                webhook "application.archived" untuk arsip).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
-import { sanitizeRejectionReason } from "@/lib/seed";
+import { parseTags, sanitizeRejectionReason } from "@/lib/seed";
 import { stageLabel } from "@/lib/stages";
 import { REJECTION_REASON_LABELS, type RejectionReason } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { emitWebhook } from "@/lib/webhooks";
 
 export const dynamic = "force-dynamic";
 
 const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
 const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
+
+const MAX_TAGS = 12;
+const MAX_TAG_LENGTH = 24;
+
+/** Rapikan daftar tag masuk: string saja, trim, maks 24 char, unik, maks 12. */
+function sanitizeIncomingTags(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const clean = item.trim().slice(0, MAX_TAG_LENGTH);
+    if (!clean) continue;
+    if (!out.includes(clean)) out.push(clean);
+    if (out.length >= MAX_TAGS) break;
+  }
+  return out;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,7 +61,7 @@ export async function POST(req: NextRequest) {
     }
 
     const action = typeof data.action === "string" ? data.action : "";
-    if (!["status", "delete", "talentPool", "reject"].includes(action)) {
+    if (!["status", "delete", "talentPool", "reject", "tag", "archive", "unarchive"].includes(action)) {
       return NextResponse.json({ error: "Aksi tidak valid." }, { status: 400 });
     }
 
@@ -111,11 +135,73 @@ export async function POST(req: NextRequest) {
       affected = rows.length;
       logAction = "BULK_STATUS";
       logDetail = `${affected} lamaran ditolak massal (alasan: ${REJECTION_REASON_LABELS[reason as RejectionReason]})`;
+    } else if (action === "tag") {
+      // Gabungkan tag unik ke setiap lamaran terpilih (maks 12, tiap tag <=24 char).
+      const incoming = sanitizeIncomingTags(data.tags);
+      if (incoming === null) {
+        return NextResponse.json({ error: "Daftar tag tidak valid." }, { status: 400 });
+      }
+      if (incoming.length === 0) {
+        return NextResponse.json({ error: "Tulis minimal satu tag." }, { status: 400 });
+      }
+      const rows = await db.application.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, tags: true },
+      });
+      await db.$transaction(
+        rows.map((row) => {
+          const merged = [...parseTags(row.tags)];
+          for (const tag of incoming) {
+            if (!merged.includes(tag)) merged.push(tag);
+          }
+          return db.application.update({
+            where: { id: row.id },
+            data: { tags: JSON.stringify(merged.slice(0, MAX_TAGS)) },
+          });
+        }),
+      );
+      affected = rows.length;
+      logAction = "BULK_TAG";
+      logDetail = `${affected} lamaran diberi tag: ${incoming.join(", ")}`;
+    } else if (action === "archive") {
+      // Arsip massal: archivedAt=now + log ARCHIVE per lamaran + webhook.
+      const now = new Date();
+      const result = await db.application.updateMany({
+        where: { id: { in: ids } },
+        data: { archivedAt: now },
+      });
+      affected = result.count;
+      if (affected > 0) {
+        await db.activityLog.createMany({
+          data: ids.map((id) => ({
+            applicationId: id,
+            actor: session.name,
+            action: "ARCHIVE",
+            detail: "Diarsipkan massal dari panel admin",
+          })),
+        });
+        void emitWebhook("application.archived", { ids });
+      }
+      logAction = "BULK_ARCHIVE";
+      logDetail = `${affected} lamaran diarsipkan`;
+    } else if (action === "unarchive") {
+      const result = await db.application.updateMany({
+        where: { id: { in: ids } },
+        data: { archivedAt: null },
+      });
+      affected = result.count;
+      logAction = "BULK_UNARCHIVE";
+      logDetail = `${affected} lamaran dikeluarkan dari arsip`;
     } else {
-      const result = await db.application.deleteMany({ where: { id: { in: ids } } });
+      // SOFT DELETE: masuk tong sampah (deletedAt=now), bukan hapus permanen.
+      // Pemulihan tersedia dari tab Data.
+      const result = await db.application.updateMany({
+        where: { id: { in: ids } },
+        data: { deletedAt: new Date() },
+      });
       affected = result.count;
       logAction = "BULK_DELETE";
-      logDetail = `${affected} lamaran dihapus`;
+      logDetail = `${affected} lamaran dipindahkan ke tong sampah (soft delete)`;
     }
 
     await db.activityLog.create({

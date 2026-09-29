@@ -4,6 +4,7 @@
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { HomeView } from "@/components/home-view";
+import { PreviewBanner } from "@/components/landing/preview-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -57,5 +58,10 @@ export async function generateMetadata({
 export default async function Page({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const initialPosisiSlug = firstSlug(params.posisi);
-  return <HomeView initialPosisiSlug={initialPosisiSlug} />;
+  return (
+    <>
+      <PreviewBanner />
+      <HomeView initialPosisiSlug={initialPosisiSlug} />
+    </>
+  );
 }

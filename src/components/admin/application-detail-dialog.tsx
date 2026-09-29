@@ -565,6 +565,9 @@ export function ApplicationDetailDialog({
   const noteTemplates = pos?.noteTemplates ?? [];
   const replyTemplates = pos?.replyTemplates ?? null;
 
+  // Catatan video intro urut berdasarkan detik (Task 27-e).
+  const videoNotes = [...(app.videoNotes ?? [])].sort((a, b) => a.t - b.t);
+
   const rubricScoresCount = rubricCriteria.filter(
     (c) => typeof rubricValues[c] === "number"
   ).length;
@@ -1196,6 +1199,27 @@ export function ApplicationDetailDialog({
               </InfoItem>
             </div>
 
+            {/* Cetak dokumen (Task 27-e): profil pelamar & surat penawaran */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                className="h-11 sm:h-9"
+                onClick={handlePrintProfile}
+              >
+                <FileDown className="size-4" aria-hidden="true" />
+                Unduh Profil (PDF)
+              </Button>
+              <Button
+                variant="outline"
+                className="h-11 sm:h-9"
+                onClick={handlePrintOffer}
+                disabled={!app.offerStatus}
+              >
+                <FileText className="size-4" aria-hidden="true" />
+                Surat Penawaran (PDF)
+              </Button>
+            </div>
+
             {/* Sumber & atribusi UTM */}
             {showSourceBlock ? (
               <div className="flex flex-col gap-1.5 rounded-lg border p-3">
@@ -1338,6 +1362,94 @@ export function ApplicationDetailDialog({
                         Transkripsi sedang diproses...
                       </p>
                     )}
+                    {/* Catatan bertimestamp video intro (Task 27-e) */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                          <StickyNote
+                            className="size-4 text-amber-600 dark:text-amber-400"
+                            aria-hidden="true"
+                          />
+                          Catatan Video
+                        </CardTitle>
+                        <CardDescription className="text-xs">
+                          Tandai momen penting per detik saat meninjau video/audio intro.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-3">
+                        {videoNotes.length > 0 ? (
+                          <div className="flex max-h-64 flex-col gap-1.5 overflow-y-auto nice-scrollbar">
+                            {videoNotes.map((note, i) => (
+                              <div
+                                key={`${note.t}-${i}`}
+                                className="flex items-start gap-2 rounded-md bg-muted/50 px-2.5 py-1.5"
+                              >
+                                <span className="shrink-0 rounded bg-rose-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+                                  {formatTimestamp(note.t)}
+                                </span>
+                                <span className="min-w-0 flex-1 break-words text-sm">
+                                  &mdash; {note.note}
+                                </span>
+                                {canMutate ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleRemoveVideoNote(note)}
+                                    aria-label={`Hapus catatan pada ${formatTimestamp(note.t)}`}
+                                    disabled={videoNotesSaving}
+                                    className="shrink-0 text-muted-foreground outline-none hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 dark:hover:text-rose-400"
+                                  >
+                                    <X className="size-3.5" aria-hidden="true" />
+                                  </button>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">Belum ada catatan video.</p>
+                        )}
+                        {canMutate ? (
+                          <form onSubmit={handleAddVideoNote} className="flex flex-col gap-2">
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <Input
+                                type="number"
+                                min={0}
+                                step={1}
+                                value={videoNoteSec}
+                                onChange={(e) => setVideoNoteSec(e.target.value)}
+                                placeholder="Detik"
+                                aria-label="Detik ke berapa dalam video"
+                                inputMode="numeric"
+                                className="h-11 w-full sm:h-9 sm:w-24"
+                                disabled={videoNotesSaving}
+                              />
+                              <Input
+                                value={videoNoteText}
+                                onChange={(e) => setVideoNoteText(e.target.value)}
+                                placeholder="Isi catatan (maks. 300 karakter)"
+                                aria-label="Isi catatan video"
+                                maxLength={300}
+                                className="h-11 w-full sm:h-9 sm:flex-1"
+                                disabled={videoNotesSaving}
+                              />
+                            </div>
+                            <Button
+                              type="submit"
+                              variant="outline"
+                              size="sm"
+                              className="h-11 w-fit active:scale-[0.99] sm:h-9"
+                              disabled={videoNotesSaving || !videoNoteText.trim()}
+                            >
+                              {videoNotesSaving ? (
+                                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <StickyNote className="size-4" aria-hidden="true" />
+                              )}
+                              Tambah Catatan
+                            </Button>
+                          </form>
+                        ) : null}
+                      </CardContent>
+                    </Card>
                   </div>
                 ) : null}
                 {/* Dokumen wajib tambahan yang diunggah pelamar (customDocs posisi) */}

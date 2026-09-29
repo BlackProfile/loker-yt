@@ -23,6 +23,7 @@ import {
   CalendarDays,
   Database,
   ExternalLink,
+  Eye,
   FileBarChart,
   FileText,
   Handshake,
@@ -35,6 +36,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ScrollText,
+  Search,
   Settings,
   Sun,
   UserCog,
@@ -78,6 +80,7 @@ import { TemplatesTab } from "./templates-tab";
 import { DataTab } from "./data-tab";
 import { NotificationBell } from "./notification-bell";
 import { AdminAskWidget } from "./admin-ask-widget";
+import { CommandPalette } from "./command-palette";
 
 type Phase = "checking" | "login" | "ready";
 
@@ -512,6 +515,8 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     return "dashboard";
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Command palette (Ctrl+K / Cmd+K) — juga dibuka dari tombol pencarian header.
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Mode ciut sidebar — tersimpan di localStorage agar diperlakukan abadi.
   const [collapsed, setCollapsed] = useState(() => {
@@ -650,6 +655,19 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
+  // Shortcut global Ctrl+K / Cmd+K untuk command palette (hanya saat login).
+  useEffect(() => {
+    if (phase !== "ready") return;
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase]);
+
   async function handleLogout() {
     try {
       await apiPost<{ ok: boolean }>("/api/admin/logout");
@@ -701,6 +719,15 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   return (
     <AdminSessionProvider value={sessionContextValue}>
       <NewApplicationToaster />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onNavigate={handleNavigate}
+        navItems={ALL_NAV_ITEMS.filter(
+          (item) => !item.roles || item.roles.includes(role),
+        )}
+        activeTab={effectiveTab}
+      />
       <div className="flex min-h-screen bg-zinc-50 dark:bg-background">
         {/* Overlay drawer seluler */}
         {mobileOpen ? (
@@ -773,10 +800,31 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 sm:size-9"
+                  onClick={() => setPaletteOpen(true)}
+                  aria-label="Buka pencarian (Ctrl+K)"
+                >
+                  <Search className="size-4" aria-hidden="true" />
+                </Button>
                 <RealtimeIndicator />
                 <ThemeToggle />
                 <NotificationBell onOpenTasks={() => setActiveTab("tasks")} />
                 <AdminAskWidget />
+                <Button
+                  variant="outline"
+                  className="h-11 active:scale-[0.99] sm:h-10"
+                  onClick={() =>
+                    window.open("/?preview=1", "_blank", "noopener,noreferrer")
+                  }
+                  aria-label="Lihat sebagai pelamar"
+                >
+                  <Eye className="size-4" aria-hidden="true" />
+                  <span className="hidden lg:inline">Lihat sebagai Pelamar</span>
+                  <span className="lg:hidden">Pelamar</span>
+                </Button>
                 <Button
                   variant="outline"
                   className="h-11 active:scale-[0.99] sm:h-10"

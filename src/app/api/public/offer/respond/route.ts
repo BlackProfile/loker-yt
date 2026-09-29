@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { APPLICATION_INCLUDE, serializeApplication } from "@/lib/seed";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { emitWebhook } from "@/lib/webhooks";
 import { sendSystemEvent } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -103,6 +104,12 @@ export async function POST(req: NextRequest) {
           detail: `Pelamar menolak penawaran${reason ? ` — alasan: ${reason}` : ""}`,
         },
       });
+      // Webhook keluar (Task 27): pelamar sudah menjawab penawaran (fire-and-forget).
+      await emitWebhook("offer.responded", {
+        id: application.id,
+        name: application.name,
+        offerStatus: "DECLINED",
+      });
       void sendSystemEvent({
         title: "Offer Ditolak Pelamar",
         detail: `${application.name} menolak penawaran posisi ${application.position?.title ?? "-"}${reason ? ` — alasan: ${reason}` : ""}. Pertimbangkan kandidat cadangan.`,
@@ -171,6 +178,13 @@ export async function POST(req: NextRequest) {
           detail: "Diterima (Hired) — onboarding dimulai",
         },
       ],
+    });
+
+    // Webhook keluar (Task 27): pelamar sudah menjawab penawaran (fire-and-forget).
+    await emitWebhook("offer.responded", {
+      id: application.id,
+      name: application.name,
+      offerStatus: "ACCEPTED",
     });
 
     // Cek-in masa percobaan 30/60/90 hari: dibuat sekali di awal onboarding
