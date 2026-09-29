@@ -7,7 +7,7 @@
 // panjang (hairline) sebagai pembatas antar fitur agar mudah dipindai.
 // Batas karakter/item dikunci via maxLength & maxItems editor (selaras server).
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,13 +24,30 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   ArrowLeft,
+  BookmarkPlus,
   Briefcase,
   ClipboardCheck,
   Gift,
   Handshake,
+  History,
   Image as ImageIcon,
   Languages,
+  LayoutTemplate,
   ListChecks,
   Loader2,
   MessagesSquare,
@@ -74,8 +91,8 @@ import {
   stagesForPosition,
   stageLabel,
 } from "@/lib/stages";
-import { apiFetch, apiPatch, apiPost } from "./api";
-import { isoToLocalInput, localInputToIso } from "./format";
+import { apiFetch, apiGet, apiPatch, apiPost } from "./api";
+import { formatDateTime, isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
 import { ScreeningQuestionsEditor, StringListEditor } from "./position-list-editors";
 
@@ -327,6 +344,251 @@ const CUSTOM_DOC_MAX_LEN = 80;
 
 // Sentinel opsi "(nonaktif)" — Radix Select melarang SelectItem dengan value "".
 const SHORTLIST_NONE = "__nonaktif__";
+
+// ============================================================
+// DRAFT AUTOSAVE (hanya mode "Tambah Posisi")
+// Seluruh FormState disimpan ke localStorage "lumina-draft-posisi" dengan
+// debounce 1500ms. Restore hanya menyalin key yang valid (sanitizer di bawah).
+// ============================================================
+
+const DRAFT_KEY = "lumina-draft-posisi";
+
+type DraftEnvelope = { form: FormState; updatedAt: string };
+
+function draftString(value: unknown, maxLen: number, fallback: string): string {
+  return typeof value === "string" ? value.slice(0, maxLen) : fallback;
+}
+
+// String|null dari payload API → string kosong bila null/bukan string.
+function draftStringOrNull(value: unknown, maxLen: number): string {
+  return typeof value === "string" ? value.slice(0, maxLen) : "";
+}
+
+function draftStringArray(
+  value: unknown,
+  maxItems: number,
+  maxLen: number,
+  fallback: string[]
+): string[] {
+  if (!Array.isArray(value) || value.length > maxItems) return fallback;
+  return value
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.slice(0, maxLen));
+}
+
+function draftBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+// Angka tersimpan sebagai string di FormState — terima angka atau string angka.
+function draftNumberString(value: unknown, fallback: string): string {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) return value.trim();
+  return fallback;
+}
+
+function draftStageCategories(value: unknown): Record<string, StageCategory> {
+  const result: Record<string, StageCategory> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return result;
+  const entries = Object.entries(value as Record<string, unknown>).slice(0, 24);
+  for (const [stage, category] of entries) {
+    const key = typeof stage === "string" ? stage.trim().slice(0, 40) : "";
+    if (
+      key &&
+      typeof category === "string" &&
+      (STAGE_CATEGORIES as readonly string[]).includes(category)
+    ) {
+      result[key] = category as StageCategory;
+    }
+  }
+  return result;
+}
+
+function draftScreeningQuestions(value: unknown): ScreeningQuestion[] {
+  if (!Array.isArray(value)) return [];
+  const items: ScreeningQuestion[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const rec = entry as Record<string, unknown>;
+    const id = draftStringOrNull(rec.id, 40);
+    const label = draftStringOrNull(rec.label, 200).trim();
+    if (!id || label.length < 3) continue;
+    items.push({ id, label, required: rec.required === true });
+    if (items.length >= 10) break;
+  }
+  return items;
+}
+
+// Rencana ronde: bentuk FormState (interviewers string) maupun payload API
+// (interviewers string[], durationMin number) diterima agar bisa dipakai ulang
+// oleh template posisi.
+function draftRoundPlan(value: unknown): FormState["roundPlan"] {
+  if (!Array.isArray(value)) return [];
+  const rows: FormState["roundPlan"] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const rec = entry as Record<string, unknown>;
+    const name = draftStringOrNull(rec.name, 60).trim();
+    if (!name) continue;
+    const durationMin = draftNumberString(rec.durationMin, "");
+    const interviewers = Array.isArray(rec.interviewers)
+      ? rec.interviewers
+          .filter((v): v is string => typeof v === "string")
+          .join(", ")
+          .slice(0, 300)
+      : draftStringOrNull(rec.interviewers, 300);
+    rows.push({ name, durationMin, interviewers });
+    if (rows.length >= 10) break;
+  }
+  return rows;
+}
+
+/**
+ * Salin data mentah (draf localStorage / data template) ke FormState —
+ * HANYA key yang valid disalin; key asing diabaikan dan field tidak valid
+ * jatuh ke nilai default. Menerima bentuk FormState maupun payload API.
+ * Return null bila data bukan objek.
+ */
+function formDataFromUnknown(raw: unknown): {
+  form: FormState;
+  customDocs: string[];
+} | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const d = raw as Record<string, unknown>;
+  return {
+    form: {
+      title: draftString(d.title, 120, ""),
+      department: draftString(d.department, 80, ""),
+      type:
+        typeof d.type === "string" && (POSITION_TYPES as readonly string[]).includes(d.type)
+          ? d.type
+          : "Full-time",
+      location: draftString(d.location, 120, "Remote"),
+      description: draftString(d.description, 20000, ""),
+      requirements: draftStringArray(d.requirements, 20, 200, []),
+      titleEn: draftStringOrNull(d.titleEn, 120),
+      descriptionEn: draftStringOrNull(d.descriptionEn, 20000),
+      requirementsEn: draftStringArray(d.requirementsEn, 20, 200, []),
+      isActive: draftBoolean(d.isActive, true),
+      publishAtLocal:
+        draftString(d.publishAtLocal, 40, "") ||
+        isoToLocalInput(typeof d.publishAt === "string" ? d.publishAt : null),
+      closesAtLocal:
+        draftString(d.closesAtLocal, 40, "") ||
+        isoToLocalInput(typeof d.closesAt === "string" ? d.closesAt : null),
+      order: draftNumberString(d.order, ""),
+      coverFileId:
+        typeof d.coverFileId === "string" && d.coverFileId
+          ? d.coverFileId.slice(0, 64)
+          : null,
+      salaryText: draftStringOrNull(d.salaryText, 80),
+      salaryMin: draftNumberString(d.salaryMin, ""),
+      salaryMax: draftNumberString(d.salaryMax, ""),
+      salaryVisible: draftBoolean(d.salaryVisible, false),
+      benefits: draftStringArray(d.benefits, 10, 120, []),
+      examples: draftStringArray(d.examples, 6, 300, []),
+      urgent: draftBoolean(d.urgent, false),
+      featured: draftBoolean(d.featured, false),
+      requireCv: draftBoolean(d.requireCv, true),
+      requireIntro: draftBoolean(d.requireIntro, false),
+      requirePortfolio: draftBoolean(d.requirePortfolio, false),
+      maxApplicants: draftNumberString(d.maxApplicants, ""),
+      screeningQuestions: draftScreeningQuestions(d.screeningQuestions),
+      stages: draftStringArray(d.stages, 12, 40, []),
+      stageCategories: draftStageCategories(d.stageCategories),
+      aiCriteria: draftStringOrNull(d.aiCriteria, 600),
+      autoShortlistScore: draftNumberString(d.autoShortlistScore, ""),
+      autoShortlistStage: draftStringOrNull(d.autoShortlistStage, 40),
+      applyTemplate: draftStringOrNull(d.applyTemplate, 500),
+      acceptTemplate: draftStringOrNull(d.acceptTemplate, 500),
+      rejectTemplate: draftStringOrNull(d.rejectTemplate, 500),
+      assignmentTitle: draftStringOrNull(d.assignmentTitle, 120),
+      assignmentUrl: draftStringOrNull(d.assignmentUrl, 300),
+      assignmentNote: draftStringOrNull(d.assignmentNote, 400),
+      rubricCriteria: draftStringArray(d.rubricCriteria, 8, 60, []),
+      checklistTemplate: draftStringArray(d.checklistTemplate, 8, 120, []),
+      noteTemplates: draftStringArray(d.noteTemplates, 8, 200, []),
+      interviewMode:
+        typeof d.interviewMode === "string" &&
+        (INTERVIEW_MODES as readonly string[]).includes(d.interviewMode)
+          ? (d.interviewMode as InterviewMode)
+          : "ONLINE",
+      interviewPlatform:
+        typeof d.interviewPlatform === "string" &&
+        (INTERVIEW_PLATFORMS as readonly string[]).includes(d.interviewPlatform)
+          ? (d.interviewPlatform as InterviewPlatform)
+          : "GOOGLE_MEET",
+      interviewDuration: draftNumberString(d.interviewDuration, "45"),
+      roundPlan: draftRoundPlan(d.roundPlan),
+      interviewCriteria: draftStringArray(d.interviewCriteria, 8, 60, []),
+      interviewInviteTemplate: draftStringOrNull(d.interviewInviteTemplate, 800),
+      offerTemplate: draftStringOrNull(d.offerTemplate, 800),
+      welcomeTemplate: draftStringOrNull(d.welcomeTemplate, 800),
+      probationMonths: draftNumberString(d.probationMonths, ""),
+      onboardingDocs: draftStringArray(d.onboardingDocs, 10, 120, []),
+      reapplyCooldownDays: draftNumberString(d.reapplyCooldownDays, ""),
+      autoCloseOnHired: draftBoolean(d.autoCloseOnHired, false),
+    },
+    customDocs: draftStringArray(d.customDocs, MAX_CUSTOM_DOCS, CUSTOM_DOC_MAX_LEN, []),
+  };
+}
+
+// Jumlah field FormState yang berbeda dari nilai default (untuk syarat kartu draf).
+function countFilledFields(form: FormState): number {
+  let count = 0;
+  for (const key of Object.keys(EMPTY_FORM) as (keyof FormState)[]) {
+    if (JSON.stringify(form[key]) !== JSON.stringify(EMPTY_FORM[key])) count++;
+  }
+  return count;
+}
+
+function writeDraftToStorage(form: FormState): void {
+  try {
+    const envelope = { v: 1, updatedAt: new Date().toISOString(), data: form };
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify(envelope));
+  } catch {
+    // localStorage tidak tersedia/penuh — autosave bersifat best-effort.
+  }
+}
+
+function removeDraftStorage(): void {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // diabaikan — konsisten dengan writeDraftToStorage.
+  }
+}
+
+function readDraftStorage(): DraftEnvelope | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const env = parsed as Record<string, unknown>;
+    const restored = formDataFromUnknown(env.data);
+    if (!restored) return null;
+    return { form: restored.form, updatedAt: draftStringOrNull(env.updatedAt, 40) };
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================
+// TEMPLATE POSISI
+// data = objek payload tombol Simpan (buildPositionPayload), bukan FormState.
+// ============================================================
+
+type PositionTemplateMeta = {
+  id: string;
+  name: string;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PositionTemplateDetail = PositionTemplateMeta & { data: Record<string, unknown> };
 
 // Garis panjang pembatas antar section fitur — selebar area formulir.
 function FormDivider() {
