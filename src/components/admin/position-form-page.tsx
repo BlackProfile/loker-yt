@@ -91,6 +91,7 @@ import {
   stagesForPosition,
   stageLabel,
 } from "@/lib/stages";
+import { isFormSchemaActive } from "@/lib/form-schema";
 import { apiFetch, apiGet, apiPatch, apiPost } from "./api";
 import { formatDateTime, isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
@@ -1746,6 +1747,14 @@ export function PositionFormPage({
                 title="Formulir & Screening"
                 hint="Berkas wajib, kuota pelamar, dan pertanyaan screening."
               >
+                  {/* Posisi memakai Form Builder (skema aktif): pengaturan berkas
+                      bawaan pindah ke tab Pertanyaan — bagian Berkas. */}
+                  {editing && isFormSchemaActive({ formSchema: editing.formSchema }) ? (
+                    <p className="text-xs text-muted-foreground">
+                      Pengaturan CV, intro, dan portofolio kini ada di Form Builder — tab
+                      Pertanyaan, bagian Berkas.
+                    </p>
+                  ) : (
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     {(
                       [
@@ -1770,6 +1779,7 @@ export function PositionFormPage({
                       </div>
                     ))}
                   </div>
+                  )}
 
                   <div className="flex flex-col gap-1.5 sm:max-w-56">
                     <Label htmlFor="pos-maxApplicants">Kuota Pelamar (opsional)</Label>

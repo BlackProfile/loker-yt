@@ -12,6 +12,11 @@ import { parseScreeningQuestions, parseStringRecord, parseRequirements } from "@
 import {
   FORM_LIMITS,
   isAllowedFormFile,
+  isExperienceEnabled,
+  isFormSchemaActive,
+  isMotivationEnabled,
+  isWaRequired,
+  normalizeFormSchema,
   parseFormSchema,
   validateFormAnswers,
   type FormAnswerValue,
@@ -248,9 +253,6 @@ export async function POST(req: NextRequest) {
     if (!EMAIL_REGEX.test(email)) {
       return NextResponse.json({ error: "Format email tidak valid." }, { status: 400 });
     }
-    if (phone.replace(/\D/g, "").length < 8) {
-      return NextResponse.json({ error: "Nomor telepon/WhatsApp minimal 8 digit." }, { status: 400 });
-    }
     if (!positionId) {
       return NextResponse.json({ error: "Posisi wajib dipilih." }, { status: 400 });
     }
@@ -273,10 +275,37 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       );
     }
-    if (experience.length < 10) {
+
+    // Skema formulir v2 (Form Builder): sumber kebenaran seluruh bagian.
+    // Skema lama (v1) dinormalisasi; konfigurasi berkas mengikuti kolom posisi.
+    const parsedFormSchema = parseFormSchema(position.formSchema);
+    const formSchema = normalizeFormSchema(parsedFormSchema, {
+      requireCv: position.requireCv,
+      requireIntro: position.requireIntro,
+      requirePortfolio: position.requirePortfolio,
+    });
+    const schemaActive = isFormSchemaActive({ formSchema });
+    const biodataSection = formSchema?.sections.find((s) => s.kind === "biodata");
+    const waRequired = schemaActive && biodataSection ? isWaRequired(biodataSection) : true;
+    const experienceSection = formSchema?.sections.find((s) => s.kind === "experience");
+    const experienceEnabled =
+      schemaActive && experienceSection ? isExperienceEnabled(experienceSection) : true;
+    const motivationEnabled =
+      schemaActive && experienceSection ? isMotivationEnabled(experienceSection) : true;
+
+    // Nomor WhatsApp: wajib sesuai konfigurasi bagian Data Diri; bila diisi
+    // (atau wajib), formatnya tetap divalidasi.
+    const phoneDigits = phone.replace(/\D/g, "");
+    if (phoneDigits.length > 0 && phoneDigits.length < 8) {
+      return NextResponse.json({ error: "Nomor telepon/WhatsApp minimal 8 digit." }, { status: 400 });
+    }
+    if (waRequired && phoneDigits.length === 0) {
+      return NextResponse.json({ error: "Nomor telepon/WhatsApp wajib diisi." }, { status: 400 });
+    }
+    if (experienceEnabled && experience.length < 10) {
       return NextResponse.json({ error: "Ceritakan pengalamanmu minimal 10 karakter." }, { status: 400 });
     }
-    if (motivation.length < 10) {
+    if (motivationEnabled && motivation.length < 10) {
       return NextResponse.json({ error: "Ceritakan motivasimu minimal 10 karakter." }, { status: 400 });
     }
 
@@ -360,12 +389,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Validasi jawaban Form Builder (Task 30) — aktif hanya bila posisi punya skema.
-    // Saat skema aktif, pertanyaan screening klasik & customDocs DILEWATI: skema
-    // adalah sumber kebenaran formulir pertanyaan kustom.
-    const formSchema = parseFormSchema(position.formSchema);
+    // Validasi jawaban Form Builder (Task 30) — aktif bila posisi punya skema
+    // aktif (ada field, atau skema v2). Saat skema aktif, pertanyaan screening
+    // klasik & customDocs DILEWATI: skema adalah sumber kebenaran formulir.
     let formAnswersJson: string | null = null;
-    if (formSchema && formSchema.fields.length > 0) {
+    if (formSchema && schemaActive) {
       const validated = validateFormAnswers(formSchema, fields.formAnswers ?? null);
       if (!validated.ok) {
         return NextResponse.json({ error: validated.error }, { status: 400 });

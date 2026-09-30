@@ -33,6 +33,18 @@ import {
   FORM_LIMITS,
   formatAnswerValue,
   isAllowedFormFile,
+  isCvEnabled,
+  isCvRequired,
+  isExperienceEnabled,
+  isFormSchemaActive,
+  isIntroEnabled,
+  isIntroRequired,
+  isMotivationEnabled,
+  isPortfolioEnabled,
+  isPortfolioRequired,
+  isWaRequired,
+  sectionFields,
+  sectionHasStep,
   type FormField,
   type FormSection,
 } from "@/lib/form-schema";
@@ -105,6 +117,18 @@ function isAllowedExtraDoc(file: File): boolean {
 type FormAnswerInput = string | string[] | number | File;
 type FormAnswers = Record<string, FormAnswerInput>;
 
+/** Hasil validasi satu langkah bagian skema (mode skema aktif). */
+type SchemaStepCheck = {
+  /** Error nilai bawaan (nama/email/WA/pengalaman/portofolio, dst). */
+  valueErrors: FormErrors;
+  /** Error pertanyaan kustom bagian ini: {"form:"+fieldId: pesan}. */
+  fieldErrors: Record<string, string>;
+  /** CV wajib (flag bagian Berkas) tapi belum diunggah. */
+  cvMissing: boolean;
+  /** Audio/video intro wajib (flag bagian Berkas) tapi belum diunggah. */
+  introMissing: boolean;
+};
+
 /** Label field terlokalisasi: EN bila labelEn terisi, selain itu fallback label ID. */
 function formFieldLabel(field: FormField, lang: Lang): string {
   return lang === "en" && field.labelEn ? field.labelEn : field.label;
@@ -113,6 +137,26 @@ function formFieldLabel(field: FormField, lang: Lang): string {
 /** Judul bagian skema terlokalisasi (titleEn bila ada, fallback judul ID). */
 function formSectionTitle(section: FormSection, lang: Lang): string {
   return lang === "en" && section.titleEn ? section.titleEn : section.title;
+}
+
+/** Jawaban satu field terformat satu baris untuk pratinjau (berkas = nama+ukuran). */
+function formAnswerDisplay(
+  field: FormField,
+  value: FormAnswerInput | undefined,
+): string {
+  if (field.type === "file") {
+    return value instanceof File ? `${value.name} (${formatMb(value.size)})` : "";
+  }
+  if (Array.isArray(value)) {
+    return formatAnswerValue(value.filter((item) => item !== FORM_OTHER_VALUE));
+  }
+  if (typeof value === "string") {
+    return value === FORM_OTHER_VALUE ? "" : value;
+  }
+  if (typeof value === "number") {
+    return formatAnswerValue(value);
+  }
+  return "";
 }
 
 /** Status pilihan "Lainnya" pada nilai checkbox (sentinel atau teks bebas). */
@@ -777,24 +821,45 @@ export function ApplyWizard({
   const screeningQuestions = selectedPosition?.screeningQuestions ?? [];
   const customDocs = selectedPosition?.customDocs ?? [];
 
-  // Form Builder per posisi: skema aktif = formSchema terisi dengan minimal satu
-  // field. null/kosong = mode klasik — seluruh jalur lama tetap berjalan.
+  // Form Builder per posisi (skema v2): seluruh bagian (Data Diri, Pengalaman,
+  // Berkas, dan bagian tambahan) hidup di skema dan urutan wizard mengikuti
+  // urutan sections. API publik selalu mengirim skema TERNORMALISASI v2 atau
+  // null — wizard tidak menormalkan ulang. null/tidak aktif = mode klasik.
   const rawSchema = selectedPosition?.formSchema ?? null;
-  const schema = rawSchema && rawSchema.fields.length > 0 ? rawSchema : null;
-  // Satu langkah wizard per bagian skema (section tanpa field dilewati),
-  // ditempatkan antara langkah Pengalaman (1) dan Berkas.
+  const schema = rawSchema && isFormSchemaActive({ formSchema: rawSchema }) ? rawSchema : null;
+  // Langkah wizard = section yang punya isi (sectionHasStep — bagian bawaan
+  // yang dikosongkan otomatis dilewati), SESUAI URUTAN di skema. Pratinjau
+  // selalu langkah terakhir. Tidak ada lagi urutan tetap biodata→pengalaman→kustom→berkas.
   const sectionSteps: { section: FormSection; fields: FormField[]; stepIndex: number }[] = [];
   if (schema) {
-    let nextStepIndex = 2;
+    let nextStepIndex = 0;
     for (const section of schema.sections) {
-      const fields = schema.fields.filter((field) => field.sectionId === section.id);
-      if (fields.length === 0) continue;
-      sectionSteps.push({ section, fields, stepIndex: nextStepIndex });
+      if (!sectionHasStep(schema, section)) continue;
+      sectionSteps.push({ section, fields: sectionFields(schema, section.id), stepIndex: nextStepIndex });
       nextStepIndex += 1;
     }
   }
-  const filesStep = schema ? 2 + sectionSteps.length : 2;
-  const previewStep = filesStep + 1;
+  // Mode skema: langkah 0..sectionSteps.length-1 adalah section, pratinjau di akhir.
+  // Mode klasik: tetap 4 langkah (Data Diri → Pengalaman → Berkas → Pratinjau).
+  const previewStep = schema ? sectionSteps.length : 3;
+  const filesStep = 2; // langkah Berkas — hanya mode klasik
+
+  // Entri langkah per bagian bawaan (mode skema) — dipakai render & validasi.
+  const biodataEntry =
+    sectionSteps.find((entry) => entry.section.kind === "biodata") ?? null;
+  const experienceEntry =
+    sectionSteps.find((entry) => entry.section.kind === "experience") ?? null;
+  const filesEntry =
+    sectionSteps.find((entry) => entry.section.kind === "files") ?? null;
+  const biodataStepIndex = schema ? (biodataEntry?.stepIndex ?? -1) : 0;
+  const experienceStepIndex = schema ? (experienceEntry?.stepIndex ?? -1) : 1;
+  const schemaFilesStepIndex = schema ? (filesEntry?.stepIndex ?? -1) : -1;
+
+  // Pengaman posisi berganti: langkah bisa kelebihan dari daftar dinamis
+  // skema posisi baru (pola adjust-state-during-render).
+  if (step > previewStep) {
+    setStep(previewStep);
+  }
 
   // Status rekrutmen dibaca sekali saat mount; gagal dianggap terbuka.
   useEffect(() => {
@@ -969,14 +1034,21 @@ export function ApplyWizard({
     );
   };
 
-  function validateStep1(): FormErrors {
+  /**
+   * Validasi langkah Data Diri (biodata). Nomor WhatsApp wajib hanya bila
+   * konfigurasi bagian biodata skema mengaturnya wajib (mode klasik selalu
+   * wajib); bila opsional tapi diisi, formatnya tetap divalidasi (≥8 digit).
+   */
+  function validateStep1(waRequired: boolean): FormErrors {
     const next: FormErrors = {};
     if (!values.name.trim()) next.name = t.apply.errors.name;
     if (!values.email.trim()) next.email = t.apply.errors.emailRequired;
     else if (!EMAIL_RE.test(values.email.trim())) next.email = t.apply.errors.emailInvalid;
-    if (!values.phone.trim()) next.phone = t.apply.errors.phoneRequired;
-    else if (values.phone.replace(/\D/g, "").length < 8)
+    if (!values.phone.trim()) {
+      if (waRequired) next.phone = t.apply.errors.phoneRequired;
+    } else if (values.phone.replace(/\D/g, "").length < 8) {
       next.phone = t.apply.errors.phoneMin;
+    }
     // Saat lockPosition, posisi tetap dari halaman detail — dianggap valid,
     // error "pilih posisi" tidak perlu ditampilkan.
     if (!lockPosition && positions.length > 0 && !positionId)
@@ -987,11 +1059,20 @@ export function ApplyWizard({
     return next;
   }
 
-  function validateStep2(): FormErrors {
+  /**
+   * Validasi langkah Pengalaman (experience). Dua pertanyaan inti hanya
+   * diwajibkan ≥10 karakter bila flag bagian skema mengaktifkannya (mode
+   * klasik selalu aktif). Screening & portofolio wajib hanya mode klasik —
+   * mode skema memakai langkah dinamis & bagian Berkas.
+   */
+  function validateStep2(opts: {
+    experienceEnabled: boolean;
+    motivationEnabled: boolean;
+  }): FormErrors {
     const next: FormErrors = {};
-    if (values.experience.trim().length < MIN_TEXT_LENGTH)
+    if (opts.experienceEnabled && values.experience.trim().length < MIN_TEXT_LENGTH)
       next.experience = t.apply.errors.experience;
-    if (values.motivation.trim().length < MIN_TEXT_LENGTH)
+    if (opts.motivationEnabled && values.motivation.trim().length < MIN_TEXT_LENGTH)
       next.motivation = t.apply.errors.motivation;
     // Pertanyaan screening wajib milik posisi terpilih — mode klasik saja
     // (skema aktif menggantikan screening dengan langkah dinamis).
@@ -1005,8 +1086,10 @@ export function ApplyWizard({
         }
       }
     }
-    // Posisi tertentu mewajibkan portofolio ATAU link sosial media.
+    // Posisi tertentu mewajibkan portofolio ATAU link sosial media — mode
+    // klasik saja; mode skema memvalidasi lewat bagian Berkas skema.
     if (
+      !schema &&
       selectedPosition?.requirePortfolio &&
       !values.portfolioUrl.trim() &&
       !values.socialLinks.trim()
@@ -1145,13 +1228,125 @@ export function ApplyWizard({
     setStep(next);
   }
 
+  /**
+   * Validasi satu langkah bagian skema sesuai jenisnya — cermin validasi
+   * server: WA wajib per flag biodata, pengalaman/motivasi ≥10 hanya saat
+   * aktif, CV/intro/portofolio wajib per flag bagian Berkas, pertanyaan
+   * kustom lewat validateSectionFields.
+   */
+  function validateSectionStep(entry: {
+    section: FormSection;
+    fields: FormField[];
+  }): SchemaStepCheck {
+    const valueErrors: FormErrors = {};
+    let cvMissing = false;
+    let introMissing = false;
+    switch (entry.section.kind) {
+      case "biodata":
+        Object.assign(valueErrors, validateStep1(isWaRequired(entry.section)));
+        break;
+      case "experience":
+        Object.assign(
+          valueErrors,
+          validateStep2({
+            experienceEnabled: isExperienceEnabled(entry.section),
+            motivationEnabled: isMotivationEnabled(entry.section),
+          }),
+        );
+        break;
+      case "files": {
+        // CV & audio/video intro wajib per flag bagian Berkas (bukan lagi
+        // kolom requireCv/requireIntro posisi — kolom itu tersinkron server).
+        if (isCvRequired(entry.section) && !cvFile) cvMissing = true;
+        if (isIntroRequired(entry.section) && !introFile) introMissing = true;
+        // Portofolio wajib hanya bila slotnya aktif & ditandai wajib —
+        // perilaku lama dipertahankan: portfolioUrl ATAU socialLinks.
+        if (
+          isPortfolioRequired(entry.section) &&
+          !values.portfolioUrl.trim() &&
+          !values.socialLinks.trim()
+        ) {
+          valueErrors.portfolioUrl = t.apply.errors.portfolioRequired;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    return {
+      valueErrors,
+      fieldErrors: validateSectionFields(entry.fields),
+      cvMissing,
+      introMissing,
+    };
+  }
+
+  /** Apakah hasil validasi satu langkah bagian memuat galat? */
+  function stepCheckHasError(check: SchemaStepCheck): boolean {
+    return (
+      Object.values(check.valueErrors).some(Boolean) ||
+      Object.values(check.fieldErrors).some(Boolean) ||
+      check.cvMissing ||
+      check.introMissing
+    );
+  }
+
+  /**
+   * Sorot galat PERTAMA satu langkah bagian (urutan DOM: CV → intro →
+   * portofolio → pertanyaan kustom) dengan toast + scroll. `jump` = langkah
+   * baru saja diganti (tunggu transisi sebelum scroll).
+   */
+  function toastStepCheckFirstError(check: SchemaStepCheck, jump: boolean): void {
+    if (check.cvMissing) {
+      setCvError(t.apply.errors.cvRequired);
+      toast.error(t.apply.errors.cvRequired);
+      return;
+    }
+    if (check.introMissing) {
+      setIntroError(t.apply.errors.introRequired);
+      toast.error(t.apply.errors.introRequired);
+      return;
+    }
+    if (check.valueErrors.portfolioUrl) {
+      toast.error(check.valueErrors.portfolioUrl);
+      return;
+    }
+    const formError = firstFormErrorOf(check.fieldErrors);
+    if (formError) {
+      if (jump) window.setTimeout(() => scrollToFormField(formError.id), 400);
+      else scrollToFormField(formError.id);
+      toast.error(formError.message);
+    }
+  }
+
   function goNext() {
+    if (schema) {
+      // Mode skema: langkah saat ini adalah satu bagian skema — validasi
+      // menyesuaikan jenis bagian + pertanyaan kustom miliknya.
+      const current = sectionSteps.find((entry) => entry.stepIndex === step);
+      if (!current) {
+        goToStep(step + 1);
+        trackStep("advance", step + 1);
+        return;
+      }
+      const check = validateSectionStep(current);
+      setErrors((prev) => ({ ...prev, ...check.valueErrors }));
+      setFormErrors((prev) => ({ ...prev, ...check.fieldErrors }));
+      if (stepCheckHasError(check)) {
+        toastStepCheckFirstError(check, false);
+        return;
+      }
+      goToStep(step + 1);
+      trackStep("advance", step + 1);
+      return;
+    }
+    // Mode klasik — alur 4 langkah lama tanpa perubahan.
     let next: FormErrors = {};
     let formNext: Record<string, string> = {};
     if (step === 0) {
-      next = validateStep1();
+      next = validateStep1(true);
     } else if (step === 1) {
-      next = validateStep2();
+      next = validateStep2({ experienceEnabled: true, motivationEnabled: true });
     } else {
       // Langkah section Form Builder: validasi field milik section ini saja.
       const current = sectionSteps.find((entry) => entry.stepIndex === step);
@@ -1186,8 +1381,35 @@ export function ApplyWizard({
 
   /** Validasi seluruh formulir; bila ada galat, lompat ke langkah pertama yang bermasalah. */
   function validateAllAndJump(): boolean {
-    const e1 = validateStep1();
-    const e2 = validateStep2();
+    if (schema) {
+      // Mode skema: validasi seluruh langkah bagian SESUAI URUTAN skema
+      // (biodata/pengalaman/berkas/kustom di posisi apa pun), lalu lompat ke
+      // langkah bagian pertama yang bermasalah (scroll + toast).
+      const checks = sectionSteps.map((entry) => ({
+        stepIndex: entry.stepIndex,
+        check: validateSectionStep(entry),
+      }));
+      const allValueErrors: FormErrors = {};
+      const allFieldErrors: Record<string, string> = {};
+      for (const { check } of checks) {
+        Object.assign(allValueErrors, check.valueErrors);
+        Object.assign(allFieldErrors, check.fieldErrors);
+        if (check.cvMissing) setCvError(t.apply.errors.cvRequired);
+        if (check.introMissing) setIntroError(t.apply.errors.introRequired);
+      }
+      setErrors((prev) => ({ ...prev, ...allValueErrors }));
+      setFormErrors((prev) => ({ ...prev, ...allFieldErrors }));
+      const bad = checks.find(({ check }) => stepCheckHasError(check));
+      if (bad) {
+        goToStep(bad.stepIndex);
+        toastStepCheckFirstError(bad.check, true);
+        return false;
+      }
+      return true;
+    }
+    // Mode klasik — tanpa perubahan.
+    const e1 = validateStep1(true);
+    const e2 = validateStep2({ experienceEnabled: true, motivationEnabled: true });
     // Langkah section Form Builder ikut divalidasi (mode skema aktif).
     const formByStep = sectionSteps.map((entry) => ({
       stepIndex: entry.stepIndex,
@@ -1335,6 +1557,315 @@ export function ApplyWizard({
   }
 
   /**
+   * Blok unggah CV — dipakai langkah Berkas klasik DAN bagian Berkas skema
+   * (markup & state sama persis; hanya tanda wajib/opsional yang mengikuti
+   * parameter: kolom posisi di mode klasik, flag bagian Berkas di mode skema).
+   */
+  function renderCvUpload(required: boolean) {
+    return (
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="apply-cv" className="gap-2">
+          {t.apply.uploads.cvLabel}
+          <span
+            className={cn(
+              "text-xs font-normal",
+              required ? "text-rose-600" : "text-muted-foreground",
+            )}
+          >
+            ({required ? t.apply.uploads.required : t.apply.uploads.optional})
+          </span>
+        </Label>
+        {required ? (
+          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+            <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {t.apply.uploads.cvRequiredHint}
+          </p>
+        ) : null}
+        <label
+          htmlFor="apply-cv"
+          onDragOver={(e) => {
+            e.preventDefault();
+            setCvDragging(true);
+          }}
+          onDragLeave={() => setCvDragging(false)}
+          onDrop={onDropFactory(acceptCv, setCvDragging)}
+          className={cn(
+            "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-6 text-center transition-colors",
+            cvDragging
+              ? "border-primary bg-rose-50 dark:bg-rose-500/10"
+              : "hover:bg-accent/50",
+            cvError && "border-rose-400 dark:border-rose-500",
+          )}
+        >
+          <Upload className="h-6 w-6 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+          <span className="text-sm text-muted-foreground">
+            {t.apply.uploads.dropHint}
+          </span>
+          <input
+            id="apply-cv"
+            name="cvFile"
+            type="file"
+            accept=".pdf,application/pdf"
+            className="sr-only"
+            onChange={onCvInput}
+          />
+        </label>
+        {cvFile ? (
+          <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
+            <span className="flex min-w-0 items-center gap-2 text-sm">
+              <FileText
+                className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                aria-hidden="true"
+              />
+              <span className="truncate">{cvFile.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {formatMb(cvFile.size)}
+              </span>
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              aria-label={t.apply.uploads.remove}
+              onClick={() => setCvFile(null)}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
+        {cvError ? <p className="text-sm text-rose-600">{cvError}</p> : null}
+      </div>
+    );
+  }
+
+  /**
+   * Blok unggah audio/video perkenalan — dipakai langkah Berkas klasik DAN
+   * bagian Berkas skema (markup & state sama persis).
+   */
+  function renderIntroUpload(required: boolean) {
+    return (
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="apply-intro" className="gap-2">
+          {t.apply.uploads.introLabel}
+          <span
+            className={cn(
+              "text-xs font-normal",
+              required ? "text-rose-600" : "text-muted-foreground",
+            )}
+          >
+            ({required ? t.apply.uploads.required : t.apply.uploads.optional})
+          </span>
+        </Label>
+        {required ? (
+          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+            <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {t.apply.uploads.introRequiredHint}
+          </p>
+        ) : null}
+        <label
+          htmlFor="apply-intro"
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIntroDragging(true);
+          }}
+          onDragLeave={() => setIntroDragging(false)}
+          onDrop={onDropFactory(acceptIntro, setIntroDragging)}
+          className={cn(
+            "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-6 text-center transition-colors",
+            introDragging
+              ? "border-primary bg-rose-50 dark:bg-rose-500/10"
+              : "hover:bg-accent/50",
+            introError && "border-rose-400 dark:border-rose-500",
+          )}
+        >
+          <Mic className="h-6 w-6 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+          <span className="text-sm text-muted-foreground">
+            {t.apply.uploads.dropHint}
+          </span>
+          <input
+            id="apply-intro"
+            name="introFile"
+            type="file"
+            accept="audio/*,.mp3,.wav,.m4a"
+            className="sr-only"
+            onChange={onIntroInput}
+          />
+        </label>
+        {introFile ? (
+          <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
+            <span className="flex min-w-0 items-center gap-2 text-sm">
+              <Mic
+                className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                aria-hidden="true"
+              />
+              <span className="truncate">{introFile.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {formatMb(introFile.size)}
+              </span>
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              aria-label={t.apply.uploads.remove}
+              onClick={() => setIntroFile(null)}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
+        {introError ? (
+          <p className="text-sm text-rose-600">{introError}</p>
+        ) : null}
+      </div>
+    );
+  }
+
+  /**
+   * Baris pratinjau berkas terunggah (CV / audio intro) — dipakai kartu
+   * Berkas pratinjau klasik DAN kartu bagian Berkas skema.
+   */
+  function renderPreviewFileRow(
+    kind: "cv" | "intro",
+    required: boolean,
+  ) {
+    const file = kind === "cv" ? cvFile : introFile;
+    const Icon = kind === "cv" ? FileText : Mic;
+    return (
+      <div className="flex items-center gap-2.5 text-sm">
+        <Icon
+          className={cn(
+            "h-4 w-4 shrink-0",
+            file
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-muted-foreground/50",
+          )}
+          aria-hidden="true"
+        />
+        {file ? (
+          <span className="min-w-0 truncate font-medium">
+            {file.name}{" "}
+            <span className="text-xs text-muted-foreground">
+              ({formatMb(file.size)})
+            </span>
+          </span>
+        ) : (
+          <span className="italic text-muted-foreground/70">
+            {t.apply.preview.noFile}
+          </span>
+        )}
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          ({required ? t.apply.uploads.required : t.apply.uploads.optional})
+        </span>
+      </div>
+    );
+  }
+
+  /**
+   * Kartu pratinjau per bagian skema (mode skema aktif) — isi mengikuti jenis
+   * bagian: biodata (nama/email/WA/posisi/sumber), pengalaman (hanya yang
+   * aktif), berkas (hanya slot aktif: nama CV, nama audio, URL portofolio),
+   * kustom — semua ditambah pertanyaan kustom milik bagian itu. Tombol Ubah
+   * menuju langkah bagian terkait.
+   */
+  function renderSchemaPreviewSection(entry: {
+    section: FormSection;
+    fields: FormField[];
+    stepIndex: number;
+  }) {
+    const section = entry.section;
+    return (
+      <PreviewSection
+        key={section.id}
+        title={formSectionTitle(section, lang)}
+        editLabel={t.apply.preview.edit}
+        onEdit={() => goToStep(entry.stepIndex)}
+      >
+        {section.kind === "biodata" ? (
+          <>
+            <PreviewRow
+              label={t.apply.summary.name}
+              value={values.name}
+              fallback={t.apply.preview.notFilled}
+            />
+            <PreviewRow
+              label={t.apply.summary.email}
+              value={values.email}
+              fallback={t.apply.preview.notFilled}
+            />
+            <PreviewRow
+              label={t.apply.summary.phone}
+              value={values.phone}
+              fallback={t.apply.preview.notFilled}
+            />
+            <PreviewRow
+              label={t.apply.summary.position}
+              value={selectedPosition?.title ?? ""}
+              fallback={t.apply.summary.notChosen}
+            />
+            {source ? (
+              <PreviewRow
+                label={t.apply.fields.source}
+                value={source}
+                fallback={t.apply.preview.notFilled}
+              />
+            ) : null}
+          </>
+        ) : null}
+        {section.kind === "experience" ? (
+          <>
+            {isExperienceEnabled(section) ? (
+              <PreviewRow
+                label={t.apply.fields.experience}
+                value={values.experience}
+                fallback={t.apply.preview.notFilled}
+              />
+            ) : null}
+            {isMotivationEnabled(section) ? (
+              <PreviewRow
+                label={t.apply.fields.motivation}
+                value={values.motivation}
+                fallback={t.apply.preview.notFilled}
+              />
+            ) : null}
+          </>
+        ) : null}
+        {section.kind === "files" ? (
+          <>
+            {isCvEnabled(section)
+              ? renderPreviewFileRow("cv", isCvRequired(section))
+              : null}
+            {isIntroEnabled(section)
+              ? renderPreviewFileRow("intro", isIntroRequired(section))
+              : null}
+            {isPortfolioEnabled(section) ? (
+              <PreviewRow
+                label={t.apply.fields.portfolio}
+                value={values.portfolioUrl}
+                fallback={t.apply.preview.notFilled}
+              />
+            ) : null}
+          </>
+        ) : null}
+        {entry.fields.map((field) => (
+          <PreviewRow
+            key={field.id}
+            label={formFieldLabel(field, lang)}
+            value={formAnswerDisplay(field, formAnswers[field.id])}
+            fallback={
+              field.type === "file"
+                ? t.apply.preview.noFile
+                : t.apply.preview.notAnswered
+            }
+          />
+        ))}
+      </PreviewSection>
+    );
+  }
+
+  /**
    * Pengiriman sesungguhnya. Hanya dipanggil setelah pengguna melihat pratinjau
    * dan menekan konfirmasi pada dialog — tidak pernah kirim otomatis.
    */
@@ -1358,8 +1889,22 @@ export function ApplyWizard({
         fd.append("portfolioUrl", values.portfolioUrl.trim());
       if (values.socialLinks.trim())
         fd.append("socialLinks", values.socialLinks.trim());
-      fd.append("experience", values.experience.trim());
-      fd.append("motivation", values.motivation.trim());
+      // Pengalaman & motivasi dikirim string kosong bila bagian Pengalaman
+      // skema mematikannya (server juga melewati validasi ≥10 saat flag mati).
+      const experienceSection =
+        schema?.sections.find((section) => section.kind === "experience") ?? null;
+      const experienceOn =
+        schema && experienceSection ? isExperienceEnabled(experienceSection) : true;
+      const motivationOn =
+        schema && experienceSection ? isMotivationEnabled(experienceSection) : true;
+      fd.append(
+        "experience",
+        schema && !experienceOn ? "" : values.experience.trim(),
+      );
+      fd.append(
+        "motivation",
+        schema && !motivationOn ? "" : values.motivation.trim(),
+      );
       // Anti-spam (Task 27): honeypot + waktu buka formulir — diverifikasi server.
       fd.append("website", websiteRef.current?.value ?? "");
       fd.append("formStartedAt", String(formStartedAtRef.current));
@@ -1380,6 +1925,11 @@ export function ApplyWizard({
       if (utm.source) fd.append("utmSource", utm.source);
       if (utm.medium) fd.append("utmMedium", utm.medium);
       if (utm.campaign) fd.append("utmCampaign", utm.campaign);
+      // Halaman perujuk (referrer) saat wizard dibuka — opsional; server
+      // menyimpan maksimal 300 karakter untuk analitik sumber lamaran.
+      if (typeof document !== "undefined" && document.referrer) {
+        fd.append("referrer", document.referrer.slice(0, 300));
+      }
       if (cvFile) fd.append("cvFile", cvFile);
       if (introFile) fd.append("introFile", introFile);
       if (schema) {
@@ -1473,19 +2023,30 @@ export function ApplyWizard({
     event.preventDefault();
     if (submitting) return;
 
-    // Langkah sebelum Berkas (0-1 + langkah section skema): validasi lalu maju.
-    if (step < filesStep) {
-      goNext();
-      return;
-    }
+    if (schema) {
+      // Mode skema: langkah 0..previewStep-1 adalah bagian skema (urutan
+      // bebas) — validasi bagian berjalan lalu maju; bagian terakhir menuju
+      // pratinjau. Berkas wajib divalidasi saat meninggalkan bagian Berkas.
+      if (step < previewStep) {
+        goNext();
+        return;
+      }
+    } else {
+      // Mode klasik — alur 4 langkah lama tanpa perubahan.
+      // Langkah sebelum Berkas (0-1): validasi lalu maju.
+      if (step < filesStep) {
+        goNext();
+        return;
+      }
 
-    // Langkah Berkas: validasi semuanya (termasuk berkas wajib), lalu pratinjau.
-    if (step === filesStep) {
-      if (!validateAllAndJump()) return;
-      if (!validateRequiredFiles()) return;
-      goToStep(previewStep);
-      trackStep("advance", previewStep);
-      return;
+      // Langkah Berkas: validasi semuanya (termasuk berkas wajib), lalu pratinjau.
+      if (step === filesStep) {
+        if (!validateAllAndJump()) return;
+        if (!validateRequiredFiles()) return;
+        goToStep(previewStep);
+        trackStep("advance", previewStep);
+        return;
+      }
     }
 
     // Langkah Pratinjau: wajib pernyataan kebenaran data sebelum konfirmasi.
@@ -1712,17 +2273,20 @@ export function ApplyWizard({
     );
   }
 
-  // Stepper dinamis: judul section skema disisipkan antara Pengalaman & Berkas
-  // (mode klasik tetap 4 langkah).
+  // Stepper dinamis (mode skema): judul langkah = judul bagian skema
+  // (section.title / titleEn) SESUAI URUTAN di skema + Pratinjau terakhir.
+  // Mode klasik tetap 4 langkah lama.
   const stepLabels: string[] = schema
     ? [
-        t.apply.steps[0],
-        t.apply.steps[1],
         ...sectionSteps.map((entry) => formSectionTitle(entry.section, lang)),
-        t.apply.steps[2],
         t.apply.steps[3],
       ]
     : t.apply.steps;
+
+  // Nomor WhatsApp wajib? Mode klasik selalu wajib; mode skema mengikuti flag
+  // waRequired bagian biodata (opsional tetap divalidasi ≥8 digit bila diisi).
+  const biodataWaRequired =
+    schema && biodataEntry ? isWaRequired(biodataEntry.section) : true;
 
   return (
     <div className="@container flex flex-col gap-6">
@@ -1845,9 +2409,17 @@ export function ApplyWizard({
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="flex flex-col gap-5"
           >
-        {/* LANGKAH 1: Data Diri */}
-        {step === 0 && (
+        {/* LANGKAH BIODATA — mode klasik selalu langkah 1; mode skema posisinya
+            mengikuti urutan bagian Data Diri di skema. Isi = nama, email, nomor
+            WhatsApp (wajib per flag), pilihan posisi, sumber + pertanyaan
+            kustom milik bagian ini. */}
+        {step === biodataStepIndex && (
           <div className="flex flex-col gap-5">
+            {schema && biodataEntry?.section.description ? (
+              <p className="text-xs text-muted-foreground">
+                {biodataEntry.section.description}
+              </p>
+            ) : null}
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-name">
@@ -1897,8 +2469,15 @@ export function ApplyWizard({
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="apply-phone">
-                  {t.apply.fields.phone} <span className="text-rose-600">*</span>
+                <Label htmlFor="apply-phone" className="gap-2">
+                  {t.apply.fields.phone}
+                  {biodataWaRequired ? (
+                    <span className="text-rose-600">*</span>
+                  ) : (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({t.apply.uploads.optional})
+                    </span>
+                  )}
                 </Label>
                 <Input
                   id="apply-phone"
@@ -1987,12 +2566,36 @@ export function ApplyWizard({
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Pertanyaan kustom milik bagian Data Diri (mode skema aktif) */}
+            {schema && biodataEntry
+              ? biodataEntry.fields.map((field) => (
+                  <FormFieldRenderer
+                    key={field.id}
+                    field={field}
+                    value={formAnswers[field.id]}
+                    error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
+                    onAnswer={handleFormAnswer}
+                    onAnswerError={handleFormAnswerError}
+                  />
+                ))
+              : null}
           </div>
         )}
 
-        {/* LANGKAH 2: Pengalaman */}
-        {step === 1 && (
+        {/* LANGKAH PENGALAMAN — mode klasik selalu langkah 2; mode skema
+            posisinya mengikuti urutan bagian Pengalaman di skema. Textarea
+            pengalaman & alasan bergabung tampil hanya bila flag bagian
+            mengaktifkannya; screening & link portofolio/sosial hanya mode
+            klasik (mode skema memakai bagian Berkas). */}
+        {step === experienceStepIndex && (
           <div className="flex flex-col gap-5">
+            {schema && experienceEntry?.section.description ? (
+              <p className="text-xs text-muted-foreground">
+                {experienceEntry.section.description}
+              </p>
+            ) : null}
+            {(!schema || (experienceEntry && isExperienceEnabled(experienceEntry.section))) ? (
             <div className="flex flex-col gap-2">
               <Label htmlFor="apply-experience">
                 {t.apply.fields.experience} <span className="text-rose-600">*</span>
@@ -2015,7 +2618,9 @@ export function ApplyWizard({
                 </p>
               ) : null}
             </div>
+            ) : null}
 
+            {(!schema || (experienceEntry && isMotivationEnabled(experienceEntry.section))) ? (
             <div className="flex flex-col gap-2">
               <Label htmlFor="apply-motivation">
                 {t.apply.fields.motivation} <span className="text-rose-600">*</span>
@@ -2038,6 +2643,7 @@ export function ApplyWizard({
                 </p>
               ) : null}
             </div>
+            ) : null}
 
             {/* Pertanyaan screening khusus posisi terpilih (v3) — hanya mode
                 klasik; skema aktif menggantikannya dengan langkah dinamis */}
@@ -2102,6 +2708,9 @@ export function ApplyWizard({
               </div>
             ) : null}
 
+            {/* Link portofolio & sosial media — hanya mode klasik; mode skema
+                memindahkan portofolio ke bagian Berkas skema */}
+            {!schema ? (
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-portfolio">{t.apply.fields.portfolio}</Label>
@@ -2143,198 +2752,138 @@ export function ApplyWizard({
                 </p>
               ) : null}
             </div>
+            ) : null}
+
+            {/* Pertanyaan kustom milik bagian Pengalaman (mode skema aktif) */}
+            {schema && experienceEntry
+              ? experienceEntry.fields.map((field) => (
+                  <FormFieldRenderer
+                    key={field.id}
+                    field={field}
+                    value={formAnswers[field.id]}
+                    error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
+                    onAnswer={handleFormAnswer}
+                    onAnswerError={handleFormAnswerError}
+                  />
+                ))
+              : null}
           </div>
         )}
 
-        {/* LANGKAH DINAMIS: satu langkah per bagian Form Builder (mode skema
-            aktif) — section tanpa field dilewati dan tidak menjadi langkah. */}
-        {sectionSteps.map((entry) =>
-          step === entry.stepIndex ? (
-            <div key={entry.section.id} className="flex flex-col gap-5">
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-semibold">
-                  {formSectionTitle(entry.section, lang)}
-                </p>
-                {entry.section.description ? (
-                  <p className="text-xs text-muted-foreground">
-                    {entry.section.description}
+        {/* LANGKAH DINAMIS (mode skema): bagian kustom — judul & deskripsi
+            bagian lalu FormFieldRenderer untuk tiap pertanyaannya. Bagian
+            bawaan (biodata/pengalaman/berkas) dirender oleh blok khususnya
+            masing-masing sesuai posisinya di skema. */}
+        {schema
+          ? sectionSteps
+              .filter((entry) => entry.section.kind === "custom")
+              .map((entry) =>
+                step === entry.stepIndex ? (
+                  <div key={entry.section.id} className="flex flex-col gap-5">
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm font-semibold">
+                        {formSectionTitle(entry.section, lang)}
+                      </p>
+                      {entry.section.description ? (
+                        <p className="text-xs text-muted-foreground">
+                          {entry.section.description}
+                        </p>
+                      ) : null}
+                    </div>
+                    {entry.fields.map((field) => (
+                      <FormFieldRenderer
+                        key={field.id}
+                        field={field}
+                        value={formAnswers[field.id]}
+                        error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
+                        onAnswer={handleFormAnswer}
+                        onAnswerError={handleFormAnswerError}
+                      />
+                    ))}
+                  </div>
+                ) : null,
+              )
+          : null}
+
+        {/* LANGKAH BAGIAN BERKAS (mode skema): slot CV / audio-video intro /
+            link portofolio tampil mengikuti flag bagian Berkas skema — di
+            posisi skema mana pun — plus pertanyaan kustom miliknya. */}
+        {schema && filesEntry && step === schemaFilesStepIndex ? (
+          <div className="flex flex-col gap-5">
+            {filesEntry.section.description ? (
+              <p className="text-xs text-muted-foreground">
+                {filesEntry.section.description}
+              </p>
+            ) : null}
+            {isCvEnabled(filesEntry.section)
+              ? renderCvUpload(isCvRequired(filesEntry.section))
+              : null}
+            {isIntroEnabled(filesEntry.section)
+              ? renderIntroUpload(isIntroRequired(filesEntry.section))
+              : null}
+            {isPortfolioEnabled(filesEntry.section) ? (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="apply-portfolio" className="gap-2">
+                  {t.apply.fields.portfolio}
+                  <span
+                    className={cn(
+                      "text-xs font-normal",
+                      isPortfolioRequired(filesEntry.section)
+                        ? "text-rose-600"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    (
+                      {isPortfolioRequired(filesEntry.section)
+                        ? t.apply.uploads.required
+                        : t.apply.uploads.optional}
+                    )
+                  </span>
+                </Label>
+                <Input
+                  id="apply-portfolio"
+                  name="portfolioUrl"
+                  type="url"
+                  value={values.portfolioUrl}
+                  onChange={(e) => setField("portfolioUrl", e.target.value)}
+                  placeholder="https://..."
+                  className="h-11"
+                  aria-invalid={errors.portfolioUrl ? true : undefined}
+                  aria-describedby={
+                    errors.portfolioUrl ? "apply-portfolio-error" : undefined
+                  }
+                />
+                {errors.portfolioUrl ? (
+                  <p id="apply-portfolio-error" className="text-sm text-rose-600">
+                    {errors.portfolioUrl}
                   </p>
                 ) : null}
               </div>
-              {entry.fields.map((field) => (
-                <FormFieldRenderer
-                  key={field.id}
-                  field={field}
-                  value={formAnswers[field.id]}
-                  error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
-                  onAnswer={handleFormAnswer}
-                  onAnswerError={handleFormAnswerError}
-                />
-              ))}
-            </div>
-          ) : null,
-        )}
+            ) : null}
+            {filesEntry.fields.map((field) => (
+              <FormFieldRenderer
+                key={field.id}
+                field={field}
+                value={formAnswers[field.id]}
+                error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
+                onAnswer={handleFormAnswer}
+                onAnswerError={handleFormAnswerError}
+              />
+            ))}
+            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+              {t.apply.trust[0]}
+            </p>
+          </div>
+        ) : null}
 
-        {/* LANGKAH BERKAS: CV & audio perkenalan (mode klasik: langkah ke-3;
-            mode skema: setelah semua langkah section) */}
-        {step === filesStep && (
+        {/* LANGKAH BERKAS KLASIK: CV & audio perkenalan + dokumen tambahan
+            (customDocs) — hanya mode klasik; mode skema memakai bagian Berkas
+            skema di atas. */}
+        {!schema && step === filesStep && (
           <div className="flex flex-col gap-5">
-
-            {/* Dropzone CV */}
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="apply-cv" className="gap-2">
-                {t.apply.uploads.cvLabel}
-                <span
-                  className={cn(
-                    "text-xs font-normal",
-                    selectedPosition?.requireCv
-                      ? "text-rose-600"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  ({selectedPosition?.requireCv ? t.apply.uploads.required : t.apply.uploads.optional})
-                </span>
-              </Label>
-              {selectedPosition?.requireCv ? (
-                <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
-                  <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  {t.apply.uploads.cvRequiredHint}
-                </p>
-              ) : null}
-              <label
-                htmlFor="apply-cv"
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setCvDragging(true);
-                }}
-                onDragLeave={() => setCvDragging(false)}
-                onDrop={onDropFactory(acceptCv, setCvDragging)}
-                className={cn(
-                  "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-6 text-center transition-colors",
-                  cvDragging
-                    ? "border-primary bg-rose-50 dark:bg-rose-500/10"
-                    : "hover:bg-accent/50",
-                  cvError && "border-rose-400 dark:border-rose-500",
-                )}
-              >
-                <Upload className="h-6 w-6 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                <span className="text-sm text-muted-foreground">
-                  {t.apply.uploads.dropHint}
-                </span>
-                <input
-                  id="apply-cv"
-                  name="cvFile"
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="sr-only"
-                  onChange={onCvInput}
-                />
-              </label>
-              {cvFile ? (
-                <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
-                  <span className="flex min-w-0 items-center gap-2 text-sm">
-                    <FileText
-                      className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                      aria-hidden="true"
-                    />
-                    <span className="truncate">{cvFile.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatMb(cvFile.size)}
-                    </span>
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0"
-                    aria-label={t.apply.uploads.remove}
-                    onClick={() => setCvFile(null)}
-                  >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              ) : null}
-              {cvError ? <p className="text-sm text-rose-600">{cvError}</p> : null}
-            </div>
-
-            {/* Dropzone Intro Audio */}
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="apply-intro" className="gap-2">
-                {t.apply.uploads.introLabel}
-                <span
-                  className={cn(
-                    "text-xs font-normal",
-                    selectedPosition?.requireIntro
-                      ? "text-rose-600"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  ({selectedPosition?.requireIntro ? t.apply.uploads.required : t.apply.uploads.optional})
-                </span>
-              </Label>
-              {selectedPosition?.requireIntro ? (
-                <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
-                  <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  {t.apply.uploads.introRequiredHint}
-                </p>
-              ) : null}
-              <label
-                htmlFor="apply-intro"
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIntroDragging(true);
-                }}
-                onDragLeave={() => setIntroDragging(false)}
-                onDrop={onDropFactory(acceptIntro, setIntroDragging)}
-                className={cn(
-                  "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-6 text-center transition-colors",
-                  introDragging
-                    ? "border-primary bg-rose-50 dark:bg-rose-500/10"
-                    : "hover:bg-accent/50",
-                  introError && "border-rose-400 dark:border-rose-500",
-                )}
-              >
-                <Mic className="h-6 w-6 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                <span className="text-sm text-muted-foreground">
-                  {t.apply.uploads.dropHint}
-                </span>
-                <input
-                  id="apply-intro"
-                  name="introFile"
-                  type="file"
-                  accept="audio/*,.mp3,.wav,.m4a"
-                  className="sr-only"
-                  onChange={onIntroInput}
-                />
-              </label>
-              {introFile ? (
-                <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
-                  <span className="flex min-w-0 items-center gap-2 text-sm">
-                    <Mic
-                      className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                      aria-hidden="true"
-                    />
-                    <span className="truncate">{introFile.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatMb(introFile.size)}
-                    </span>
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0"
-                    aria-label={t.apply.uploads.remove}
-                    onClick={() => setIntroFile(null)}
-                  >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              ) : null}
-              {introError ? (
-                <p className="text-sm text-rose-600">{introError}</p>
-              ) : null}
-            </div>
+            {renderCvUpload(selectedPosition?.requireCv === true)}
+            {renderIntroUpload(selectedPosition?.requireIntro === true)}
 
             {/* Dokumen wajib tambahan milik posisi (customDocs) — hanya mode
                 klasik; skema aktif memakai field file milik skema */}
@@ -2458,6 +3007,8 @@ export function ApplyWizard({
               </p>
             </div>
 
+            {/* Mode klasik: kartu Data Diri (mode skema memakai kartu per bagian) */}
+            {!schema ? (
             <PreviewSection
               title={t.apply.preview.sectionPersonal}
               editLabel={t.apply.preview.edit}
@@ -2492,7 +3043,10 @@ export function ApplyWizard({
                 />
               ) : null}
             </PreviewSection>
+            ) : null}
 
+            {/* Mode klasik: kartu Pengalaman & Jawaban */}
+            {!schema ? (
             <PreviewSection
               title={t.apply.preview.sectionAnswers}
               editLabel={t.apply.preview.edit}
@@ -2519,49 +3073,13 @@ export function ApplyWizard({
                 fallback={t.apply.preview.notFilled}
               />
             </PreviewSection>
+            ) : null}
 
-            {/* Jawaban Form Builder — satu kartu per bagian skema, tombol Ubah
-                menuju langkah section terkait (mode skema aktif) */}
+            {/* Mode skema: satu kartu per bagian yang punya langkah, SESUAI
+                URUTAN skema — isi kartu mengikuti jenis bagian + pertanyaan
+                kustomnya; tombol Ubah menuju langkah bagian terkait */}
             {schema
-              ? sectionSteps.map((entry) => (
-                  <PreviewSection
-                    key={entry.section.id}
-                    title={formSectionTitle(entry.section, lang)}
-                    editLabel={t.apply.preview.edit}
-                    onEdit={() => goToStep(entry.stepIndex)}
-                  >
-                    {entry.fields.map((field) => {
-                      const value = formAnswers[field.id];
-                      let display = "";
-                      if (field.type === "file") {
-                        display =
-                          value instanceof File
-                            ? `${value.name} (${formatMb(value.size)})`
-                            : "";
-                      } else if (Array.isArray(value)) {
-                        display = formatAnswerValue(
-                          value.filter((item) => item !== FORM_OTHER_VALUE),
-                        );
-                      } else if (typeof value === "string") {
-                        display = value === FORM_OTHER_VALUE ? "" : value;
-                      } else if (typeof value === "number") {
-                        display = formatAnswerValue(value);
-                      }
-                      return (
-                        <PreviewRow
-                          key={field.id}
-                          label={formFieldLabel(field, lang)}
-                          value={display}
-                          fallback={
-                            field.type === "file"
-                              ? t.apply.preview.noFile
-                              : t.apply.preview.notAnswered
-                          }
-                        />
-                      );
-                    })}
-                  </PreviewSection>
-                ))
+              ? sectionSteps.map((entry) => renderSchemaPreviewSection(entry))
               : null}
 
             {/* Jawaban screening posisi — hanya bila posisi punya pertanyaan (mode klasik) */}
@@ -2582,67 +3100,18 @@ export function ApplyWizard({
               </PreviewSection>
             ) : null}
 
+            {/* Mode klasik: kartu Berkas Terlampir (mode skema memakai kartu
+                per bagian — slot berkas aktif ada di kartu bagian Berkas) */}
+            {!schema ? (
             <PreviewSection
               title={t.apply.preview.sectionFiles}
               editLabel={t.apply.preview.edit}
               onEdit={() => goToStep(filesStep)}
             >
-              <div className="flex items-center gap-2.5 text-sm">
-                <FileText
-                  className={cn(
-                    "h-4 w-4 shrink-0",
-                    cvFile
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-muted-foreground/50",
-                  )}
-                  aria-hidden="true"
-                />
-                {cvFile ? (
-                  <span className="min-w-0 truncate font-medium">
-                    {cvFile.name}{" "}
-                    <span className="text-xs text-muted-foreground">
-                      ({formatMb(cvFile.size)})
-                    </span>
-                  </span>
-                ) : (
-                  <span className="italic text-muted-foreground/70">
-                    {t.apply.preview.noFile}
-                  </span>
-                )}
-                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                  ({selectedPosition?.requireCv ? t.apply.uploads.required : t.apply.uploads.optional})
-                </span>
-              </div>
-              <div className="flex items-center gap-2.5 text-sm">
-                <Mic
-                  className={cn(
-                    "h-4 w-4 shrink-0",
-                    introFile
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-muted-foreground/50",
-                  )}
-                  aria-hidden="true"
-                />
-                {introFile ? (
-                  <span className="min-w-0 truncate font-medium">
-                    {introFile.name}{" "}
-                    <span className="text-xs text-muted-foreground">
-                      ({formatMb(introFile.size)})
-                    </span>
-                  </span>
-                ) : (
-                  <span className="italic text-muted-foreground/70">
-                    {t.apply.preview.noFile}
-                  </span>
-                )}
-                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                  ({selectedPosition?.requireIntro ? t.apply.uploads.required : t.apply.uploads.optional})
-                </span>
-              </div>
-              {/* Dokumen wajib tambahan — pratinjau berkas terunggah per label
-                  (hanya mode klasik; skema aktif diringkas di kartu section) */}
-              {!schema
-                ? customDocs.map((label, index) => {
+              {renderPreviewFileRow("cv", selectedPosition?.requireCv === true)}
+              {renderPreviewFileRow("intro", selectedPosition?.requireIntro === true)}
+              {/* Dokumen wajib tambahan — pratinjau berkas terunggah per label */}
+              {customDocs.map((label, index) => {
                 const file = extraFiles[index];
                 return (
                   <div key={`${label}-${index}`} className="flex items-center gap-2.5 text-sm">
@@ -2672,9 +3141,9 @@ export function ApplyWizard({
                     </span>
                   </div>
                 );
-                })
-              : null}
+              })}
             </PreviewSection>
+            ) : null}
 
             {/* Pernyataan kebenaran data — wajib dicentang sebelum konfirmasi */}
             <div
@@ -2768,14 +3237,21 @@ export function ApplyWizard({
             {t.apply.buttons.back}
           </Button>
 
-          {step < filesStep ? (
-            <Button type="submit" className="h-11 min-w-32">
-              {t.apply.buttons.next}
-            </Button>
-          ) : step === filesStep ? (
-            <Button type="submit" className="h-11 min-w-40">
-              <Eye className="h-4 w-4" aria-hidden="true" />
-              {t.apply.buttons.review}
+          {/* Langkah bagian terakhir (mode skema) atau Berkas (mode klasik)
+              menampilkan tombol pratinjau; langkah pratinjau menampilkan kirim. */}
+          {step < previewStep ? (
+            <Button
+              type="submit"
+              className={cn("h-11", step === previewStep - 1 ? "min-w-40" : "min-w-32")}
+            >
+              {step === previewStep - 1 ? (
+                <>
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                  {t.apply.buttons.review}
+                </>
+              ) : (
+                t.apply.buttons.next
+              )}
             </Button>
           ) : (
             <Button

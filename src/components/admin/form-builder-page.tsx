@@ -1,14 +1,15 @@
 "use client";
 
 // Form Builder per Posisi — halaman penuh 3 tab (ala Google Forms, bahasa desain
-// Lumina): Pertanyaan (penyusun skema), Jawaban (statistik + ekspor CSV), dan
-// Setelan (buka/tutup, berkas wajib, kuota, tanggal).
+// Lumina): Pertanyaan (penyusun skema v2 — SEMUA bagian bisa diedit, diurut, dan
+// dikonfigurasi; urutan kartu = urutan wizard publik), Jawaban (statistik +
+// ekspor CSV), dan Setelan (buka/tutup, kuota, tanggal).
 // Skema disimpan via PUT /api/admin/positions/{id}/form; jawaban dibaca dari
 // /api/admin/positions/{id}/form-responses (JSON/CSV). Halaman ini tidak pernah
 // memakai popup untuk navigasi utama — Kembali berupa full-page (onBack).
 // Kontrak skema ada di src/lib/form-schema.ts (client-safe).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -46,7 +47,8 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
-  Briefcase,
+  ChevronDown,
+  ChevronUp,
   ClipboardList,
   Copy,
   Eye,
@@ -60,7 +62,6 @@ import {
   Settings2,
   Sparkles,
   Trash2,
-  User,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -68,9 +69,24 @@ import {
   FORM_FIELD_TYPES,
   FORM_FIELD_TYPE_LABELS,
   FORM_LIMITS,
+  FORM_SCHEMA_VERSION,
+  FORM_SECTION_KIND_LABELS,
+  defaultBiodataSection,
+  defaultExperienceSection,
+  defaultFilesSection,
   isChoiceType,
+  isCvEnabled,
+  isCvRequired,
+  isExperienceEnabled,
   isFormSchemaActive,
+  isIntroEnabled,
+  isIntroRequired,
+  isMotivationEnabled,
+  isPortfolioEnabled,
+  isPortfolioRequired,
+  isWaRequired,
   newFormId,
+  normalizeFormSchema,
   type FormAnswerValue,
   type FormField,
   type FormFieldType,
@@ -137,19 +153,62 @@ type AiQuestionsResponse = { questions: { label: string }[] };
 
 /* -------------------------------- Utilitas -------------------------------- */
 
-/** Skema kosong untuk posisi tanpa konten klasik: satu bagian siap isi. */
+/** Skema kosong untuk posisi tanpa konten klasik: v2 lengkap dengan 3 bagian bawaan. */
 function emptySchema(): FormSchema {
   return {
-    version: 1,
-    sections: [{ id: newFormId("sec"), title: "Bagian 1" }],
+    version: FORM_SCHEMA_VERSION,
+    sections: [defaultBiodataSection(), defaultExperienceSection(), defaultFilesSection()],
     fields: [],
     retiredFields: [],
   };
 }
 
-/** Bagian & pertanyaan saja — dasar perbandingan "dirty" (retired diurus server). */
+/** Jumlah bagian kustom (tambahan) dalam skema. */
+function customSectionCount(schema: FormSchema): number {
+  return schema.sections.filter((s) => s.kind === "custom").length;
+}
+
+/**
+ * Sisipkan bagian kustom baru SEBELUM bagian Berkas agar wizard tetap ditutup
+ * Berkas (konvensi migrasi); bila Berkas tidak ada, tambahkan di akhir.
+ */
+function insertCustomSection(sections: FormSection[], section: FormSection): FormSection[] {
+  const next = [...sections];
+  const filesIdx = next.map((s) => s.kind).lastIndexOf("files");
+  if (filesIdx >= 0) next.splice(filesIdx, 0, section);
+  else next.push(section);
+  return next;
+}
+
+/**
+ * Fingerprint kanonik bagian + pertanyaan — dasar perbandingan "dirty"
+ * (retiredFields diurus server). Urutan bagian, judul, deskripsi, dan SEMUA
+ * flag bawaan ikut diperhitungkan; flag dibaca lewat semantik getter (aman
+ * untuk properti yang belum terisi) agar bentuk tersimpan tidak memicu
+ * false-positive.
+ */
 function editableFingerprint(schema: FormSchema | null): string {
-  return JSON.stringify({ sections: schema?.sections ?? [], fields: schema?.fields ?? [] });
+  const canonical = {
+    sections: (schema?.sections ?? []).map((s) => ({
+      id: s.id,
+      kind: s.kind,
+      title: s.title,
+      description: s.description ?? null,
+      titleEn: s.titleEn ?? null,
+      waRequired: s.kind === "biodata" ? s.waRequired !== false : null,
+      experienceEnabled: s.kind === "experience" ? s.experienceEnabled !== false : null,
+      motivationEnabled: s.kind === "experience" ? s.motivationEnabled !== false : null,
+      cvEnabled: s.kind === "files" ? s.cvEnabled !== false : null,
+      cvRequired: s.kind === "files" ? s.cvEnabled !== false && s.cvRequired === true : null,
+      introEnabled: s.kind === "files" ? s.introEnabled !== false : null,
+      introRequired: s.kind === "files" ? s.introEnabled !== false && s.introRequired === true : null,
+      portfolioEnabled: s.kind === "files" ? s.portfolioEnabled !== false : null,
+      portfolioRequired:
+        s.kind === "files" ? s.portfolioEnabled !== false && s.portfolioRequired === true : null,
+    })),
+    fields: schema?.fields ?? [],
+  };
+  return JSON.stringify(canonical);
 }
 
 /** ISO (bisa null) -> yyyy-mm-dd untuk <input type="date"> (zona lokal). */
@@ -206,24 +265,308 @@ function IconButton({
   );
 }
 
-/** Kartu blok statis (Data Diri / Pengalaman / Berkas) yang tidak bisa diedit. */
-function StaticBlockCard({
-  icon: Icon,
-  title,
+/**
+ * Baris item inti bagian bawaan: label + (bila terkunci) badge "Wajib" + ikon
+ * kunci + hint kecil, dengan konten kanan opsional (saklar).
+ */
+function CoreItemRow({
+  label,
+  required,
   hint,
+  children,
 }: {
-  icon: typeof User;
-  title: string;
-  hint: string;
+  label: string;
+  /** Item terkunci yang selalu wajib — tampilkan badge "Wajib" + ikon kunci. */
+  required?: boolean;
+  hint?: string;
+  children?: ReactNode;
 }) {
   return (
-    <Card className="gap-1.5 rounded-2xl border-dashed p-4 md:p-5">
-      <div className="flex items-center gap-2">
-        <Icon className="size-4 shrink-0 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-        <p className="text-sm font-semibold">{title}</p>
-        <Lock className="ml-auto size-3.5 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+        <p className="text-sm font-medium">{label}</p>
+        {required ? (
+          <Badge
+            variant="outline"
+            className="border-rose-200 bg-rose-50 px-1.5 text-[10px] text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+          >
+            Wajib
+          </Badge>
+        ) : null}
+        {required ? (
+          <Lock className="size-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+        ) : null}
+        {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
       </div>
-      <p className="text-xs text-muted-foreground">{hint}</p>
+      {children ? <div className="flex shrink-0 items-center gap-4">{children}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * Kartu satu bagian skema (semua jenis). Bagian bawaan tidak bisa dihapus
+ * (ikon kunci + alasan) tetapi judul, deskripsi, posisi, dan isinya bisa
+ * diatur; bagian kustom bisa dihapus penuh. Urutan kartu = urutan wizard.
+ */
+function SectionCard({
+  section,
+  index,
+  totalSections,
+  fields,
+  canAddField,
+  canMutate,
+  onPatch,
+  onMove,
+  onRemove,
+  onFieldChange,
+  onFieldMove,
+  onFieldDuplicate,
+  onFieldRemove,
+  onAddField,
+}: {
+  section: FormSection;
+  index: number;
+  totalSections: number;
+  fields: FormField[];
+  canAddField: boolean;
+  canMutate: boolean;
+  onPatch: (patch: Partial<Omit<FormSection, "id" | "kind">>) => void;
+  onMove: (dir: 1 | -1) => void;
+  onRemove: () => void;
+  onFieldChange: (fieldId: string, patch: Partial<FormField>) => void;
+  onFieldMove: (fieldId: string, dir: 1 | -1) => void;
+  onFieldDuplicate: (fieldId: string) => void;
+  onFieldRemove: (fieldId: string) => void;
+  onAddField: () => void;
+}) {
+  const isBuiltin = section.kind !== "custom";
+  const lockHint =
+    section.kind === "biodata"
+      ? "Dipakai untuk identitas, deteksi lamaran ganda, dan komunikasi — tidak bisa dihapus."
+      : "Tidak bisa dihapus — matikan isinya agar langkah ini dilewati di wizard.";
+
+  return (
+    <Card className="gap-4 rounded-2xl p-5 md:p-6">
+      {/* Kepala bagian: badge jenis + judul + deskripsi + kontrol urutan */}
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+            {isBuiltin ? (
+              <Badge
+                variant="outline"
+                className="border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+              >
+                Bawaan — {FORM_SECTION_KIND_LABELS[section.kind]}
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="border-zinc-200 text-zinc-600 dark:border-zinc-800 dark:text-zinc-400"
+              >
+                Tambahan
+              </Badge>
+            )}
+          </div>
+          <Label className="sr-only" htmlFor={`section-title-${section.id}`}>
+            Judul bagian
+          </Label>
+          <Input
+            id={`section-title-${section.id}`}
+            value={section.title}
+            onChange={(e) => onPatch({ title: e.target.value })}
+            maxLength={FORM_LIMITS.sectionTitleMax}
+            placeholder="Judul bagian"
+            className="h-10 border-transparent bg-zinc-50/60 text-base font-semibold dark:bg-zinc-900/40"
+            disabled={!canMutate}
+          />
+          <Label className="sr-only" htmlFor={`section-desc-${section.id}`}>
+            Deskripsi bagian
+          </Label>
+          <Input
+            id={`section-desc-${section.id}`}
+            value={section.description ?? ""}
+            onChange={(e) => onPatch({ description: e.target.value || undefined })}
+            maxLength={FORM_LIMITS.sectionDescMax}
+            placeholder="Deskripsi opsional untuk bagian ini"
+            className="mt-1.5 h-9 border-transparent bg-zinc-50/60 text-sm text-muted-foreground dark:bg-zinc-900/40"
+            disabled={!canMutate}
+          />
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <IconButton
+            icon={ChevronUp}
+            label="Naikkan bagian"
+            onClick={() => onMove(-1)}
+            disabled={!canMutate || index === 0}
+          />
+          <IconButton
+            icon={ChevronDown}
+            label="Turunkan bagian"
+            onClick={() => onMove(1)}
+            disabled={!canMutate || index === totalSections - 1}
+          />
+          {isBuiltin ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="inline-flex size-8 items-center justify-center text-muted-foreground/60"
+                  aria-label={lockHint}
+                >
+                  <Lock className="size-3.5" aria-hidden="true" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-60">{lockHint}</TooltipContent>
+            </Tooltip>
+          ) : (
+            <IconButton
+              icon={Trash2}
+              label="Hapus bagian"
+              onClick={onRemove}
+              disabled={!canMutate}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Isi khusus bagian bawaan */}
+      {section.kind === "biodata" ? (
+        <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+          <CoreItemRow label="Nama Lengkap" required />
+          <CoreItemRow label="Email" required hint="Dipakai kirim update &amp; deteksi duplikat" />
+          <CoreItemRow label="Nomor WhatsApp">
+            <Switch
+              checked={isWaRequired(section)}
+              onCheckedChange={(checked) => onPatch({ waRequired: checked })}
+              disabled={!canMutate}
+              className="data-[state=checked]:bg-rose-600"
+              aria-label="Wajib diisi"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Wajib diisi</Label>
+          </CoreItemRow>
+        </div>
+      ) : null}
+
+      {section.kind === "experience" ? (
+        <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+          <CoreItemRow label="Ceritakan pengalamanmu">
+            <Switch
+              checked={isExperienceEnabled(section)}
+              onCheckedChange={(checked) => onPatch({ experienceEnabled: checked })}
+              disabled={!canMutate}
+              aria-label="Aktifkan pertanyaan pengalaman"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
+          </CoreItemRow>
+          <CoreItemRow label="Alasan bergabung">
+            <Switch
+              checked={isMotivationEnabled(section)}
+              onCheckedChange={(checked) => onPatch({ motivationEnabled: checked })}
+              disabled={!canMutate}
+              aria-label="Aktifkan pertanyaan alasan bergabung"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
+          </CoreItemRow>
+          <p className="text-xs text-muted-foreground">
+            Wajib saat aktif. Matikan keduanya dan biarkan tanpa pertanyaan tambahan agar langkah
+            ini dilewati di wizard.
+          </p>
+        </div>
+      ) : null}
+
+      {section.kind === "files" ? (
+        <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+          <CoreItemRow label="CV (PDF, maks 5 MB)">
+            <Switch
+              checked={isCvEnabled(section)}
+              onCheckedChange={(checked) => onPatch({ cvEnabled: checked })}
+              disabled={!canMutate}
+              aria-label="Aktifkan CV"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
+            <Switch
+              checked={isCvRequired(section)}
+              onCheckedChange={(checked) => onPatch({ cvRequired: checked })}
+              disabled={!canMutate || !isCvEnabled(section)}
+              className="data-[state=checked]:bg-rose-600"
+              aria-label="CV wajib diisi"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
+          </CoreItemRow>
+          <CoreItemRow label="Audio/Video perkenalan (maks 10 MB)">
+            <Switch
+              checked={isIntroEnabled(section)}
+              onCheckedChange={(checked) => onPatch({ introEnabled: checked })}
+              disabled={!canMutate}
+              aria-label="Aktifkan perkenalan audio/video"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
+            <Switch
+              checked={isIntroRequired(section)}
+              onCheckedChange={(checked) => onPatch({ introRequired: checked })}
+              disabled={!canMutate || !isIntroEnabled(section)}
+              className="data-[state=checked]:bg-rose-600"
+              aria-label="Perkenalan wajib diisi"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
+          </CoreItemRow>
+          <CoreItemRow label="Link Portofolio">
+            <Switch
+              checked={isPortfolioEnabled(section)}
+              onCheckedChange={(checked) => onPatch({ portfolioEnabled: checked })}
+              disabled={!canMutate}
+              aria-label="Aktifkan portofolio"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
+            <Switch
+              checked={isPortfolioRequired(section)}
+              onCheckedChange={(checked) => onPatch({ portfolioRequired: checked })}
+              disabled={!canMutate || !isPortfolioEnabled(section)}
+              className="data-[state=checked]:bg-rose-600"
+              aria-label="Portofolio wajib diisi"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
+          </CoreItemRow>
+          <p className="text-xs text-muted-foreground">
+            CV dipakai screening AI &amp; arsip — matikan hanya jika memang tidak perlu. Matikan
+            semua slot &amp; tanpa pertanyaan agar langkah dilewati.
+          </p>
+        </div>
+      ) : null}
+
+      {/* Daftar pertanyaan kustom bagian ini */}
+      {fields.length === 0 ? (
+        <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
+          Belum ada pertanyaan di bagian ini.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {fields.map((field, fieldIndex) => (
+            <FieldEditorCard
+              key={field.id}
+              field={field}
+              canMoveUp={fieldIndex > 0}
+              canMoveDown={fieldIndex < fields.length - 1}
+              canMutate={canMutate}
+              onChange={(patch) => onFieldChange(field.id, patch)}
+              onMove={(dir) => onFieldMove(field.id, dir)}
+              onDuplicate={() => onFieldDuplicate(field.id)}
+              onRemove={() => onFieldRemove(field.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 w-fit"
+        onClick={onAddField}
+        disabled={!canMutate || !canAddField}
+      >
+        <Plus className="size-4" aria-hidden="true" />
+        Tambah pertanyaan
+      </Button>
     </Card>
   );
 }
@@ -615,8 +958,10 @@ export function FormBuilderPage({
     )
       .then((data) => {
         if (cancelled) return;
-        const saved = data.schema ?? null;
-        const derived = data.derived ?? null;
+        // GET sudah mengembalikan v2; normalisasi defensif menjamin ketiga
+        // bagian bawaan ada (skema v1 sisa otomatis dirakit ulang menjadi v2).
+        const saved = normalizeFormSchema(data.schema ?? null);
+        const derived = normalizeFormSchema(data.derived ?? null);
         setSavedSchema(saved);
         setDerivedAvailable(!saved && derived != null);
         setDraft(saved ?? derived ?? emptySchema());
@@ -639,7 +984,7 @@ export function FormBuilderPage({
 
   /* -------------------------------- Mutasi draft -------------------------------- */
 
-  function updateSection(sectionId: string, patch: Partial<Pick<FormSection, "title" | "description">>) {
+  function updateSection(sectionId: string, patch: Partial<Omit<FormSection, "id" | "kind">>) {
     setDraft((prev) => ({
       ...prev,
       sections: prev.sections.map((s) => (s.id === sectionId ? { ...s, ...patch } : s)),
@@ -659,13 +1004,17 @@ export function FormBuilderPage({
 
   function addSection() {
     setDraft((prev) => {
-      if (prev.sections.length >= FORM_LIMITS.maxSections) return prev;
+      // Batas dihitung dari bagian TAMBAHAN (kustom), bukan total bagian —
+      // 3 bagian bawaan tidak dihitung.
+      if (customSectionCount(prev) >= FORM_LIMITS.maxSections) return prev;
+      if (prev.sections.length >= FORM_LIMITS.maxTotalSections) return prev;
       return {
         ...prev,
-        sections: [
-          ...prev.sections,
-          { id: newFormId("sec"), title: `Bagian ${prev.sections.length + 1}` },
-        ],
+        sections: insertCustomSection(prev.sections, {
+          id: newFormId("sec"),
+          kind: "custom",
+          title: `Bagian ${customSectionCount(prev) + 1}`,
+        }),
       };
     });
   }
@@ -810,8 +1159,10 @@ export function FormBuilderPage({
     }
     setSaving(true);
     try {
+      // Kirim skema v2 lengkap; retiredFields dikembalikan apa adanya — server
+      // yang menggabungkannya dengan makam field lama.
       const res = await apiPut<FormPutResponse>(`/api/admin/positions/${position.id}/form`, {
-        schema: draft,
+        schema: { ...draft, version: FORM_SCHEMA_VERSION },
       });
       if (res.schema) {
         setDraft(res.schema);
@@ -870,22 +1221,47 @@ export function FormBuilderPage({
         toast.info("Tidak ada pertanyaan baru dari AI (sudah ada semua atau batas tercapai).");
         return;
       }
-      setDraft((prev) => {
-        let sections = prev.sections;
-        if (sections.length === 0) {
-          sections = [{ id: newFormId("sec"), title: "Pertanyaan Screening" }];
+      // Target: bagian KUSTOM terakhir. Bila belum ada, siapkan bagian baru
+      // "Pertanyaan Screening" — hormati batas bagian tambahan.
+      const createsSection = !draft.sections.some((s) => s.kind === "custom");
+      if (createsSection) {
+        const canCreate =
+          customSectionCount(draft) < FORM_LIMITS.maxSections &&
+          draft.sections.length < FORM_LIMITS.maxTotalSections;
+        if (!canCreate) {
+          toast.error(
+            `Maksimal ${FORM_LIMITS.maxSections} bagian tambahan — hasil AI tidak bisa ditempatkan.`,
+          );
+          return;
         }
-        const targetSectionId = sections[sections.length - 1].id;
+      }
+      setDraft((prev) => {
+        const lastCustom = [...prev.sections].reverse().find((s) => s.kind === "custom");
+        if (lastCustom) {
+          return {
+            ...prev,
+            fields: [
+              ...prev.fields,
+              ...newFields.map((f) => ({ ...f, sectionId: lastCustom.id })),
+            ],
+          };
+        }
+        const section: FormSection = {
+          id: newFormId("sec"),
+          kind: "custom",
+          title: "Pertanyaan Screening",
+        };
         return {
           ...prev,
-          sections,
-          fields: [
-            ...prev.fields,
-            ...newFields.map((f) => ({ ...f, sectionId: targetSectionId })),
-          ],
+          sections: insertCustomSection(prev.sections, section),
+          fields: [...prev.fields, ...newFields.map((f) => ({ ...f, sectionId: section.id }))],
         };
       });
-      toast.success(`${newFields.length} pertanyaan dari AI ditambahkan ke bagian terakhir.`);
+      toast.success(
+        createsSection
+          ? `${newFields.length} pertanyaan dari AI ditambahkan ke bagian baru "Pertanyaan Screening".`
+          : `${newFields.length} pertanyaan dari AI ditambahkan ke bagian kustom terakhir.`,
+      );
     } catch (err) {
       reportError(err);
     } finally {
@@ -935,9 +1311,6 @@ export function FormBuilderPage({
 
   type SettingsState = {
     applyOpen: boolean;
-    requireCv: boolean;
-    requireIntro: boolean;
-    requirePortfolio: boolean;
     maxApplicants: string;
     publishAt: string;
     closesAt: string;
@@ -946,9 +1319,6 @@ export function FormBuilderPage({
   function settingsFromPosition(p: Position): SettingsState {
     return {
       applyOpen: p.applyOpen,
-      requireCv: p.requireCv,
-      requireIntro: p.requireIntro,
-      requirePortfolio: p.requirePortfolio,
       maxApplicants: p.maxApplicants != null ? String(p.maxApplicants) : "",
       publishAt: dateInputFromIso(p.publishAt),
       closesAt: dateInputFromIso(p.closesAt),
@@ -967,11 +1337,6 @@ export function FormBuilderPage({
     const initial = settingsFromPosition(position);
     const payload: Record<string, unknown> = {};
     if (settings.applyOpen !== initial.applyOpen) payload.applyOpen = settings.applyOpen;
-    if (settings.requireCv !== initial.requireCv) payload.requireCv = settings.requireCv;
-    if (settings.requireIntro !== initial.requireIntro) payload.requireIntro = settings.requireIntro;
-    if (settings.requirePortfolio !== initial.requirePortfolio) {
-      payload.requirePortfolio = settings.requirePortfolio;
-    }
     if (settings.maxApplicants !== initial.maxApplicants) {
       const trimmed = settings.maxApplicants.trim();
       if (!trimmed) {
@@ -1024,6 +1389,7 @@ export function FormBuilderPage({
 
   const csvUrl = `/api/admin/positions/${position.id}/form-responses?format=csv`;
   const totalFields = draft.fields.length;
+  const customCount = customSectionCount(draft);
   // Info migrasi: screening/customDocs lama masih berisi DAN skema tersimpan aktif.
   const hasLegacySchema =
     savedSchema != null &&
@@ -1143,158 +1509,56 @@ export function FormBuilderPage({
             </div>
           ) : (
             <>
-              <StaticBlockCard
-                icon={User}
-                title="Data Diri (bawaan)"
-                hint="Nama, Email, No. WhatsApp — selalu ada, tidak bisa dihapus."
-              />
+              {draft.sections.map((section, sectionIndex) => (
+                <Reveal key={section.id} delay={Math.min(sectionIndex * 0.04, 0.2)}>
+                  <SectionCard
+                    section={section}
+                    index={sectionIndex}
+                    totalSections={draft.sections.length}
+                    fields={draft.fields.filter((f) => f.sectionId === section.id)}
+                    canAddField={totalFields < FORM_LIMITS.maxFields}
+                    canMutate={canMutate}
+                    onPatch={(patch) => updateSection(section.id, patch)}
+                    onMove={(dir) => moveSection(section.id, dir)}
+                    onRemove={() => removeSection(section.id)}
+                    onFieldChange={updateField}
+                    onFieldMove={moveField}
+                    onFieldDuplicate={duplicateField}
+                    onFieldRemove={removeField}
+                    onAddField={() => addField(section.id)}
+                  />
+                </Reveal>
+              ))}
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-fit sm:h-10"
+                  onClick={addSection}
+                  disabled={!canMutate || customCount >= FORM_LIMITS.maxSections}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  Tambah Bagian
+                  <span className="text-xs text-muted-foreground">
+                    ({customCount}/{FORM_LIMITS.maxSections})
+                  </span>
+                </Button>
+                {customCount >= FORM_LIMITS.maxSections ? (
+                  <p className="text-xs text-muted-foreground">
+                    Maksimal {FORM_LIMITS.maxSections} bagian tambahan.
+                  </p>
+                ) : null}
+              </div>
 
               <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <span>Urutan wizard publik:</span>
-                <span className="font-medium text-foreground">Data Diri</span>
-                <span aria-hidden="true">→</span>
-                <span className="font-medium text-foreground">Pengalaman</span>
-                <span aria-hidden="true">→</span>
-                <span className="font-medium text-foreground">bagian di bawah ini</span>
-                <span aria-hidden="true">→</span>
-                <span className="font-medium text-foreground">Berkas</span>
-                <span aria-hidden="true">→</span>
-                <span className="font-medium text-foreground">Pratinjau</span>
+                <span>
+                  Urutan wizard publik mengikuti urutan bagian di atas — Pratinjau selalu terakhir.
+                </span>
                 <Badge variant="secondary" className="ml-1">
                   {totalFields}/{FORM_LIMITS.maxFields} pertanyaan
                 </Badge>
               </p>
-
-              {draft.sections.map((section, sectionIndex) => {
-                const sectionFields = draft.fields.filter((f) => f.sectionId === section.id);
-                return (
-                  <Reveal key={section.id} delay={Math.min(sectionIndex * 0.04, 0.2)}>
-                    <Card className="gap-4 rounded-2xl p-5 md:p-6">
-                      {/* Kepala bagian */}
-                      <div className="flex items-start gap-2">
-                        <div className="min-w-0 flex-1">
-                          <Label
-                            className="sr-only"
-                            htmlFor={`section-title-${section.id}`}
-                          >
-                            Judul bagian
-                          </Label>
-                          <Input
-                            id={`section-title-${section.id}`}
-                            value={section.title}
-                            onChange={(e) => updateSection(section.id, { title: e.target.value })}
-                            maxLength={FORM_LIMITS.sectionTitleMax}
-                            placeholder="Judul bagian"
-                            className="h-10 border-transparent bg-zinc-50/60 text-base font-semibold dark:bg-zinc-900/40"
-                            disabled={!canMutate}
-                          />
-                          <Label
-                            className="sr-only"
-                            htmlFor={`section-desc-${section.id}`}
-                          >
-                            Deskripsi bagian
-                          </Label>
-                          <Input
-                            id={`section-desc-${section.id}`}
-                            value={section.description ?? ""}
-                            onChange={(e) =>
-                              updateSection(section.id, {
-                                description: e.target.value || undefined,
-                              })
-                            }
-                            maxLength={FORM_LIMITS.sectionDescMax}
-                            placeholder="Deskripsi opsional untuk bagian ini"
-                            className="mt-1.5 h-9 border-transparent bg-zinc-50/60 text-sm text-muted-foreground dark:bg-zinc-900/40"
-                            disabled={!canMutate}
-                          />
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <IconButton
-                            icon={ArrowUp}
-                            label="Naikkan bagian"
-                            onClick={() => moveSection(section.id, -1)}
-                            disabled={!canMutate || sectionIndex === 0}
-                          />
-                          <IconButton
-                            icon={ArrowDown}
-                            label="Turunkan bagian"
-                            onClick={() => moveSection(section.id, 1)}
-                            disabled={
-                              !canMutate || sectionIndex === draft.sections.length - 1
-                            }
-                          />
-                          <IconButton
-                            icon={Trash2}
-                            label="Hapus bagian"
-                            onClick={() => removeSection(section.id)}
-                            disabled={!canMutate}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Daftar pertanyaan */}
-                      {sectionFields.length === 0 ? (
-                        <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-                          Belum ada pertanyaan di bagian ini.
-                        </p>
-                      ) : (
-                        <div className="flex flex-col gap-3">
-                          {sectionFields.map((field, fieldIndex) => (
-                            <FieldEditorCard
-                              key={field.id}
-                              field={field}
-                              canMoveUp={fieldIndex > 0}
-                              canMoveDown={fieldIndex < sectionFields.length - 1}
-                              canMutate={canMutate}
-                              onChange={(patch) => updateField(field.id, patch)}
-                              onMove={(dir) => moveField(field.id, dir)}
-                              onDuplicate={() => duplicateField(field.id)}
-                              onRemove={() => removeField(field.id)}
-                            />
-                          ))}
-                        </div>
-                      )}
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-9 w-fit"
-                        onClick={() => addField(section.id)}
-                        disabled={!canMutate || totalFields >= FORM_LIMITS.maxFields}
-                      >
-                        <Plus className="size-4" aria-hidden="true" />
-                        Tambah pertanyaan
-                      </Button>
-                    </Card>
-                  </Reveal>
-                );
-              })}
-
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 w-fit sm:h-10"
-                onClick={addSection}
-                disabled={!canMutate || draft.sections.length >= FORM_LIMITS.maxSections}
-              >
-                <Plus className="size-4" aria-hidden="true" />
-                Tambah Bagian
-                <span className="text-xs text-muted-foreground">
-                  ({draft.sections.length}/{FORM_LIMITS.maxSections})
-                </span>
-              </Button>
-
-              <StaticBlockCard
-                icon={Briefcase}
-                title="Pengalaman (bawaan)"
-                hint="Pengalaman & alasan bergabung — selalu ada, tidak bisa dihapus."
-              />
-              <StaticBlockCard
-                icon={FileText}
-                title="Berkas (bawaan)"
-                hint="Pengaturan CV/Intro/Portofolio ada di tab Setelan."
-              />
             </>
           )}
         </TabsContent>
@@ -1611,34 +1875,6 @@ export function FormBuilderPage({
                 className="data-[state=checked]:bg-rose-600"
                 aria-label="Buka formulir lamaran"
               />
-            </div>
-
-            <div className="border-t pt-4">
-              <p className="text-sm font-semibold">Berkas wajib dari pendaftar</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Dokumen bawaan yang harus diunggah pelamar di langkah Berkas.
-              </p>
-              <div className="mt-3 flex flex-col gap-3">
-                {(
-                  [
-                    { key: "requireCv", label: "Wajib CV" },
-                    { key: "requireIntro", label: "Wajib Intro Video/Audio" },
-                    { key: "requirePortfolio", label: "Wajib Portofolio" },
-                  ] as const
-                ).map((item) => (
-                  <div key={item.key} className="flex items-center justify-between gap-3">
-                    <Label className="text-sm font-normal">{item.label}</Label>
-                    <Switch
-                      checked={settings[item.key]}
-                      onCheckedChange={(checked) =>
-                        setSettings((prev) => ({ ...prev, [item.key]: checked }))
-                      }
-                      disabled={!canMutate}
-                      aria-label={item.label}
-                    />
-                  </div>
-                ))}
-              </div>
             </div>
 
             <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">

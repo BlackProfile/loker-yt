@@ -16,7 +16,7 @@ import {
 } from "@/lib/defaults";
 import { hashPassword } from "@/lib/server-auth";
 import { generateUniqueTrackingCode } from "@/lib/tracking";
-import { parseFormAnswers, parseFormSchema } from "@/lib/form-schema";
+import { normalizeFormSchema, parseFormAnswers, parseFormSchema } from "@/lib/form-schema";
 import {
   AI_RECOMMENDATION_LABELS,
   INTERVIEW_MODES,
@@ -311,7 +311,13 @@ export function serializePosition(record: PositionRecordModel): Position {
     customDocs: parseRequirements(record.customDocs),
     maxApplicants: record.maxApplicants,
     applyOpen: record.applyOpen !== false,
-    formSchema: parseFormSchema(record.formSchema),
+    // Normalisasi ke v2: skema lama (v1) otomatis dirakit ulang menjadi skema
+    // lengkap dengan bagian bawaan; konfigurasi berkas mengikuti kolom posisi.
+    formSchema: normalizeFormSchema(parseFormSchema(record.formSchema), {
+      requireCv: record.requireCv,
+      requireIntro: record.requireIntro,
+      requirePortfolio: record.requirePortfolio,
+    }),
 
     publishAt: record.publishAt ? record.publishAt.toISOString() : null,
 

@@ -11,6 +11,9 @@ import { getSession } from "@/lib/server-auth";
 import { serializePosition } from "@/lib/seed";
 import {
   buildDefaultSchema,
+  filesConfigFromSchema,
+  normalizeFormSchema,
+  parseFormSchema,
   sanitizeFormSchemaInput,
   type FormSchema,
 } from "@/lib/form-schema";
@@ -35,16 +38,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Skema tersimpan (null = mode klasik) + skema bawaan hasil migrasi otomatis.
+    // Keduanya dinormalisasi ke v2; konfigurasi berkas draf mengikuti kolom posisi.
     let derived: FormSchema | null = null;
     if (!position.formSchema) {
       derived = buildDefaultSchema({
         screeningQuestions: parseScreeningQuestionsSafe(position.screeningQuestions),
         customDocs: parseStringArraySafe(position.customDocs),
+        requireCv: position.requireCv,
+        requireIntro: position.requireIntro,
+        requirePortfolio: position.requirePortfolio,
       });
     }
 
+    const filesFallback = {
+      requireCv: position.requireCv,
+      requireIntro: position.requireIntro,
+      requirePortfolio: position.requirePortfolio,
+    };
     return NextResponse.json({
-      schema: position.formSchema ? parseJsonSafe(position.formSchema) : null,
+      schema: position.formSchema
+        ? normalizeFormSchema(parseFormSchema(position.formSchema), filesFallback)
+        : null,
       derived,
     });
   } catch (error) {
@@ -85,9 +99,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Skema formulir wajib dikirim." }, { status: 400 });
     }
 
+    // v2: kolom berkas selalu mengikuti konfigurasi bagian Berkas di skema agar
+    // fitur lama (kartu Ketentuan publik, prompt AI) tetap konsisten.
+    // Kembali ke mode klasik (null) TIDAK mengubah kolom berkas yang ada.
+    const savedSchema = sanitized.value ? parseFormSchema(sanitized.value) : null;
+    const filesSync = savedSchema
+      ? filesConfigFromSchema(normalizeFormSchema(savedSchema) ?? savedSchema)
+      : null;
+
     const updated = await db.position.update({
       where: { id },
-      data: { formSchema: sanitized.value },
+      data: {
+        formSchema: sanitized.value,
+        ...(filesSync
+          ? {
+              requireCv: filesSync.requireCv,
+              requireIntro: filesSync.requireIntro,
+              requirePortfolio: filesSync.requirePortfolio,
+            }
+          : {}),
+      },
     });
 
     await db.activityLog.create({
@@ -101,7 +132,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     void emitRealtime(REALTIME_EVENTS.positions);
     return NextResponse.json({
-      schema: updated.formSchema ? parseJsonSafe(updated.formSchema) : null,
+      schema: updated.formSchema
+        ? normalizeFormSchema(parseFormSchema(updated.formSchema))
+        : null,
       position: serializePosition(updated),
     });
   } catch (error) {

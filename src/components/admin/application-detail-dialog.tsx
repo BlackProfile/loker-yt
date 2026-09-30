@@ -80,7 +80,12 @@ import {
   type LogEntry,
   type VideoNote,
 } from "@/lib/types";
-import type { FormAnswerValue } from "@/lib/form-schema";
+import {
+  isExperienceEnabled,
+  isFormSchemaActive,
+  isMotivationEnabled,
+  type FormAnswerValue,
+} from "@/lib/form-schema";
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
@@ -610,6 +615,26 @@ export function ApplicationDetailDialog({
   // dan lamaran menyimpan jawaban formulir (Application.formAnswers).
   const formSchema = pos?.formSchema ?? null;
   const formAnswers = app.formAnswers ?? null;
+  const formSchemaActive = formSchema != null && isFormSchemaActive({ formSchema });
+  // Skema v2: bagian Pengalaman bisa mematikan kedua pertanyaan intinya —
+  // bila keduanya mati DAN nilai tersimpan kosong, blok lama disembunyikan
+  // agar tidak menampilkan dua tanda "-" tanpa makna.
+  const experienceSection = formSchema?.sections.find((s) => s.kind === "experience") ?? null;
+  const experienceCoreEnabled =
+    formSchemaActive && experienceSection
+      ? isExperienceEnabled(experienceSection)
+      : true;
+  const motivationCoreEnabled =
+    formSchemaActive && experienceSection
+      ? isMotivationEnabled(experienceSection)
+      : true;
+  const showExperienceBlock = !(
+    formSchemaActive &&
+    !experienceCoreEnabled &&
+    !motivationCoreEnabled &&
+    app.experience.trim() === "" &&
+    app.motivation.trim() === ""
+  );
 
   const rubricCriteria = pos?.rubricCriteria ?? [];
   const checklistTemplate = pos?.checklistTemplate ?? [];
@@ -1610,21 +1635,24 @@ export function ApplicationDetailDialog({
               </div>
             ) : null}
 
-            {/* Pengalaman & Alasan */}
-            <div className="flex flex-col gap-4">
-              <div>
-                <h4 className="mb-1 text-sm font-semibold">Pengalaman</h4>
-                <p className="text-sm whitespace-pre-line text-muted-foreground">
-                  {app.experience || "-"}
-                </p>
+            {/* Pengalaman & Alasan — disembunyikan bila bagian Pengalaman
+                skema v2 mematikan keduanya dan nilainya kosong */}
+            {showExperienceBlock ? (
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h4 className="mb-1 text-sm font-semibold">Pengalaman</h4>
+                  <p className="text-sm whitespace-pre-line text-muted-foreground">
+                    {app.experience || "-"}
+                  </p>
+                </div>
+                <div>
+                  <h4 className="mb-1 text-sm font-semibold">Alasan Bergabung</h4>
+                  <p className="text-sm whitespace-pre-line text-muted-foreground">
+                    {app.motivation || "-"}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="mb-1 text-sm font-semibold">Alasan Bergabung</h4>
-                <p className="text-sm whitespace-pre-line text-muted-foreground">
-                  {app.motivation || "-"}
-                </p>
-              </div>
-            </div>
+            ) : null}
 
             {/* Rubrik evaluasi */}
             {rubricCriteria.length > 0 ? (

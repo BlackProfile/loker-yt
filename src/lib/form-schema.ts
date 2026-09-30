@@ -3,17 +3,24 @@
 // validasi submit, tab Jawaban, dan ekspor CSV. File ini CLIENT-SAFE:
 // tidak boleh mengimpor modul server-only (db/prisma).
 //
-// Model mental (Opsi hybrid):
-// - Blok bawaan TERKUNCI: Data Diri (nama/email/WA), Pengalaman (experience/motivation),
-//   Berkas (requireCv/requireIntro/requirePortfolio) — tetap kolom Application.
-// - Zona bebas: `Position.formSchema` (JSON string) berisi sections + fields.
-//   Setiap section menjadi satu langkah wizard publik (antara Pengalaman dan Berkas).
-// - Jawaban pelamar tersimpan di `Application.formAnswers` (JSON string) dengan kunci
-//   fieldId yang stabil — ganti label tidak pernah merusak data; field yang dihapus
-//   dipindahkan ke `retiredFields` agar jawaban lama tetap bisa dirender.
+// Model mental (v2 — SEMUA bagian bisa diedit):
+// - Seluruh bagian (Data Diri, Pengalaman, Berkas, dan bagian tambahan) hidup di
+//   `Position.formSchema` (JSON string) sebagai `sections` berurutan bebas.
+//   Urutan wizard publik = urutan sections di skema (Pratinjau selalu terakhir).
+// - Bagian bawaan TIDAK BISA dihapus (dibutuhkan untuk identitas, duplikat, dan
+//   komunikasi) tetapi ISA diedit: judul, deskripsi, posisi, dan isi itemnya
+//   (WA wajib/tidak, pengalaman & motivasi aktif/tidak, CV/intro/portofolio
+//   aktif & wajib/tidak). Bagian yang isinya kosong otomatis dilewati wizard.
+// - Kolom Application tetap: name/email/phone (biodata), experience/motivation
+//   (pengalaman), cvFileId/introFileId/portfolioUrl (berkas), formAnswers
+//   (semua pertanyaan kustom di bagian mana pun, kunci fieldId stabil).
+// - Field yang dihapus dipindah ke `retiredFields` agar jawaban lama tetap
+//   bisa dirender di tab Jawaban dan CSV.
 //
 // null pada kolom = mode klasik (wizard lama: screeningQuestions + customDocs).
-// Schema aktif = fields.length > 0.
+// Schema aktif = fields.length > 0 ATAU version >= 2 (skema v2 selalu aktif).
+
+export const FORM_SCHEMA_VERSION = 2;
 
 export const FORM_FIELD_TYPES = [
   "text",
@@ -40,7 +47,8 @@ export function isChoiceType(type: FormFieldType): boolean {
 /* ---------------------------------- Batasan ---------------------------------- */
 
 export const FORM_LIMITS = {
-  maxSections: 5,
+  maxSections: 5, // maks bagian TAMBAHAN (kustom) per skema
+  maxTotalSections: 8, // 3 bagian bawaan + 5 tambahan
   maxFields: 25,
   maxOptions: 12,
   labelMin: 2,
@@ -132,11 +140,36 @@ export type FormField = {
   max?: number; // number & rating (rating = skala 1..max)
 };
 
+/** Jenis bagian: tiga bawaan + kustom. Bagian bawaan tak bisa dihapus, tapi isa dikonfigurasi. */
+export type FormSectionKind = "biodata" | "experience" | "files" | "custom";
+
+export const FORM_SECTION_KINDS: FormSectionKind[] = ["biodata", "experience", "files", "custom"];
+
+/** ID stabil bagian bawaan — dipakai konsisten saat migrasi & sanitasi. */
+export const BIODATA_SECTION_ID = "sec_biodata";
+export const EXPERIENCE_SECTION_ID = "sec_experience";
+export const FILES_SECTION_ID = "sec_files";
+
 export type FormSection = {
   id: string;
+  kind: FormSectionKind;
   title: string;
   description?: string;
   titleEn?: string;
+
+  // Konfigurasi bagian bawaan (boleh tidak ada = pakai nilai bawaan):
+  // biodata — WA boleh tidak wajib (nama & email selalu wajib, identitas pelamar).
+  waRequired?: boolean;
+  // experience — dua pertanyaan inti bisa dimatikan satu per satu.
+  experienceEnabled?: boolean;
+  motivationEnabled?: boolean;
+  // files — tiga slot berkas bawaan bisa dimatikan; wajib hanya berlaku saat aktif.
+  cvEnabled?: boolean;
+  cvRequired?: boolean;
+  introEnabled?: boolean;
+  introRequired?: boolean;
+  portfolioEnabled?: boolean;
+  portfolioRequired?: boolean;
 };
 
 export type RetiredFormField = { id: string; label: string };
@@ -153,6 +186,141 @@ function isKnownFieldType(type: unknown): type is FormFieldType {
   return (FORM_FIELD_TYPES as readonly string[]).includes(String(type));
 }
 
+/* ------------------------------ Bagian bawaan ------------------------------ */
+
+/** Label singkat jenis bagian untuk UI admin (Indonesia). */
+export const FORM_SECTION_KIND_LABELS: Record<FormSectionKind, string> = {
+  biodata: "Data Diri",
+  experience: "Pengalaman",
+  files: "Berkas",
+  custom: "Tambahan",
+};
+
+export function defaultBiodataSection(): FormSection {
+  return {
+    id: BIODATA_SECTION_ID,
+    kind: "biodata",
+    title: "Data Diri",
+    titleEn: "Personal Details",
+    waRequired: true,
+  };
+}
+
+export function defaultExperienceSection(): FormSection {
+  return {
+    id: EXPERIENCE_SECTION_ID,
+    kind: "experience",
+    title: "Pengalaman",
+    titleEn: "Experience",
+    experienceEnabled: true,
+    motivationEnabled: true,
+  };
+}
+
+export function defaultFilesSection(files?: {
+  requireCv?: boolean;
+  requireIntro?: boolean;
+  requirePortfolio?: boolean;
+}): FormSection {
+  return {
+    id: FILES_SECTION_ID,
+    kind: "files",
+    title: "Berkas",
+    titleEn: "Documents",
+    cvEnabled: true,
+    cvRequired: files?.requireCv === true,
+    introEnabled: true,
+    introRequired: files?.requireIntro === true,
+    portfolioEnabled: true,
+    portfolioRequired: files?.requirePortfolio === true,
+  };
+}
+
+/* --------------------- Getter konfigurasi (aman & konsisten) --------------------- */
+// Nilai tidak ada = pakai perilaku lama (legacy): WA wajib, pengalaman & motivasi
+// aktif, CV/intro/portofolio tampil (opsional kecuali diatur wajib).
+
+export function isWaRequired(section: FormSection): boolean {
+  return section.kind !== "biodata" || section.waRequired !== false;
+}
+
+export function isExperienceEnabled(section: FormSection): boolean {
+  return section.kind !== "experience" || section.experienceEnabled !== false;
+}
+
+export function isMotivationEnabled(section: FormSection): boolean {
+  return section.kind !== "experience" || section.motivationEnabled !== false;
+}
+
+export function isCvEnabled(section: FormSection): boolean {
+  return section.kind !== "files" || section.cvEnabled !== false;
+}
+
+export function isCvRequired(section: FormSection): boolean {
+  return isCvEnabled(section) && section.cvRequired === true;
+}
+
+export function isIntroEnabled(section: FormSection): boolean {
+  return section.kind !== "files" || section.introEnabled !== false;
+}
+
+export function isIntroRequired(section: FormSection): boolean {
+  return isIntroEnabled(section) && section.introRequired === true;
+}
+
+export function isPortfolioEnabled(section: FormSection): boolean {
+  return section.kind !== "files" || section.portfolioEnabled !== false;
+}
+
+export function isPortfolioRequired(section: FormSection): boolean {
+  return isPortfolioEnabled(section) && section.portfolioRequired === true;
+}
+
+/** Semua field milik satu bagian (urut sesuai array fields). */
+export function sectionFields(schema: FormSchema, sectionId: string): FormField[] {
+  return schema.fields.filter((f) => f.sectionId === sectionId);
+}
+
+/**
+ * Apakah bagian ini menghasilkan satu langkah wizard publik?
+ * Bagian bawaan yang seluruh isinya dimatikan dan tanpa pertanyaan tambahan
+ * dilewati (tidak muncul di wizard).
+ */
+export function sectionHasStep(schema: FormSchema, section: FormSection): boolean {
+  const fields = sectionFields(schema, section.id);
+  switch (section.kind) {
+    case "biodata":
+      return true; // identitas selalu ada
+    case "experience":
+      return isExperienceEnabled(section) || isMotivationEnabled(section) || fields.length > 0;
+    case "files":
+      return (
+        isCvEnabled(section) || isIntroEnabled(section) || isPortfolioEnabled(section) || fields.length > 0
+      );
+    default:
+      return fields.length > 0;
+  }
+}
+
+/**
+ * Konversi konfigurasi bagian Berkas menjadi kolom Position.requireCv/requireIntro/
+ * requirePortfolio agar fitur lama (kartu Ketentuan, prompt AI) tetap konsisten.
+ * "Wajib" hanya berlaku bila slotnya aktif.
+ */
+export function filesConfigFromSchema(schema: FormSchema): {
+  requireCv: boolean;
+  requireIntro: boolean;
+  requirePortfolio: boolean;
+} {
+  const files = schema.sections.find((s) => s.kind === "files");
+  if (!files) return { requireCv: false, requireIntro: false, requirePortfolio: false };
+  return {
+    requireCv: isCvRequired(files),
+    requireIntro: isIntroRequired(files),
+    requirePortfolio: isPortfolioRequired(files),
+  };
+}
+
 /* ------------------------------- ID generator -------------------------------- */
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]{1,39}$/i;
@@ -166,6 +334,37 @@ export function newFormId(prefix: string): string {
 }
 
 /* ---------------------------------- Parser ---------------------------------- */
+
+/** Jenis bagian dari input mentah: valid, atau ditebak dari id bawaan, atau kustom. */
+function parseSectionKind(value: unknown, id: string): FormSectionKind {
+  if (typeof value === "string" && (FORM_SECTION_KINDS as readonly string[]).includes(value)) {
+    return value as FormSectionKind;
+  }
+  if (id === BIODATA_SECTION_ID) return "biodata";
+  if (id === EXPERIENCE_SECTION_ID) return "experience";
+  if (id === FILES_SECTION_ID) return "files";
+  return "custom";
+}
+
+/** Flag boolean satu bagian dinormalisasi eksplisit (tanpa undefined). */
+function normalizeSectionFlags(section: FormSection, raw: Record<string, unknown>): FormSection {
+  if (section.kind === "biodata") {
+    section.waRequired = raw.waRequired !== false;
+  }
+  if (section.kind === "experience") {
+    section.experienceEnabled = raw.experienceEnabled !== false;
+    section.motivationEnabled = raw.motivationEnabled !== false;
+  }
+  if (section.kind === "files") {
+    section.cvEnabled = raw.cvEnabled !== false;
+    section.cvRequired = section.cvEnabled && raw.cvRequired === true;
+    section.introEnabled = raw.introEnabled !== false;
+    section.introRequired = section.introEnabled && raw.introRequired === true;
+    section.portfolioEnabled = raw.portfolioEnabled !== false;
+    section.portfolioRequired = section.portfolioEnabled && raw.portfolioRequired === true;
+  }
+  return section;
+}
 
 /** Parse skema dari kolom DB — toleran terhadap data rusak (null bila tidak layak). */
 export function parseFormSchema(raw: string | null | undefined): FormSchema | null {
@@ -192,12 +391,12 @@ export function parseFormSchema(raw: string | null | undefined): FormSchema | nu
     const title = typeof s.title === "string" ? s.title.trim().slice(0, FORM_LIMITS.sectionTitleMax) : "";
     if (!id || !title || seenSections.has(id)) continue;
     seenSections.add(id);
-    const section: FormSection = { id, title };
+    const section: FormSection = { id, kind: parseSectionKind(s.kind, id), title };
     const desc = typeof s.description === "string" ? s.description.trim().slice(0, FORM_LIMITS.sectionDescMax) : "";
     if (desc) section.description = desc;
     const titleEn = typeof s.titleEn === "string" ? s.titleEn.trim().slice(0, FORM_LIMITS.sectionTitleMax) : "";
     if (titleEn) section.titleEn = titleEn;
-    sections.push(section);
+    sections.push(normalizeSectionFlags(section, s));
   }
 
   const fields: FormField[] = [];
@@ -270,6 +469,62 @@ export function parseFormSchema(raw: string | null | undefined): FormSchema | nu
   return { version, sections, fields, retiredFields };
 }
 
+/* --------------------------------- Normalisasi --------------------------------- */
+
+/**
+ * Normalisasi skema APAPUN (v1 lama atau v2 rusak) menjadi bentuk v2 lengkap:
+ * ketiga bagian bawaan dijamin ada, urutan bagian kustom dipertahankan.
+ * `filesFallback` dipakai saat migrasi skema v1 agar konfigurasi berkas
+ * mengikuti kolom Position.requireCv/requireIntro/requirePortfolio yang lama.
+ * Tidak mengubah data tersimpan — hanya bentuk di memori untuk semua konsumen.
+ */
+export function normalizeFormSchema(
+  schema: FormSchema | null,
+  filesFallback?: { requireCv?: boolean; requireIntro?: boolean; requirePortfolio?: boolean },
+): FormSchema | null {
+  if (!schema) return null;
+  const hasKind = (kind: FormSectionKind) => schema.sections.some((s) => s.kind === kind);
+  if (
+    schema.version >= FORM_SCHEMA_VERSION &&
+    hasKind("biodata") &&
+    hasKind("experience") &&
+    hasKind("files")
+  ) {
+    return schema;
+  }
+
+  // Rakit ulang: sisipkan bagian bawaan yang hilang, pertahankan bagian lain.
+  const taken = new Set(schema.sections.map((s) => s.id));
+  const freeId = (base: string): string => {
+    let id = base;
+    let i = 2;
+    while (taken.has(id)) id = `${base}_${i++}`;
+    taken.add(id);
+    return id;
+  };
+
+  const firstOfKind = (kind: FormSectionKind) => schema.sections.find((s) => s.kind === kind);
+  const biodata = firstOfKind("biodata") ?? defaultBiodataSection();
+  if (!firstOfKind("biodata")) biodata.id = freeId(BIODATA_SECTION_ID);
+  const experience = firstOfKind("experience") ?? defaultExperienceSection();
+  if (!firstOfKind("experience")) experience.id = freeId(EXPERIENCE_SECTION_ID);
+  const files = firstOfKind("files") ?? defaultFilesSection(filesFallback);
+  if (!firstOfKind("files")) files.id = freeId(FILES_SECTION_ID);
+
+  const bawaanIds = new Set([biodata.id, experience.id, files.id]);
+  // Duplikat bagian bawaan yang tersisa (data rusak) diturunkan jadi bagian kustom.
+  const others = schema.sections
+    .filter((s) => !bawaanIds.has(s.id))
+    .map((s) => (s.kind === "custom" ? s : { ...s, kind: "custom" as const }));
+
+  return {
+    version: FORM_SCHEMA_VERSION,
+    sections: [biodata, experience, ...others, files],
+    fields: schema.fields,
+    retiredFields: schema.retiredFields,
+  };
+}
+
 /** Parse jawaban formulir pelamar dari kolom DB — toleran terhadap data rusak. */
 export function parseFormAnswers(
   raw: string | null | undefined,
@@ -320,12 +575,16 @@ type SimpleQuestion = { id: string; label: string; required: boolean };
  * Bangun skema awal dari pengaturan klasik posisi (screeningQuestions + customDocs).
  * Dipakai saat admin membuka builder dan posisi masih mode klasik — draf awal
  * siap diedit; TIDAK tersimpan sebelum admin menekan Simpan.
+ * Hasil sudah v2: ketiga bagian bawaan ikut hadir dan bisa langsung diedit.
  */
 export function buildDefaultSchema(input: {
   screeningQuestions: SimpleQuestion[];
   customDocs: string[];
+  requireCv?: boolean;
+  requireIntro?: boolean;
+  requirePortfolio?: boolean;
 }): FormSchema {
-  const sections: FormSection[] = [];
+  const sections: FormSection[] = [defaultBiodataSection(), defaultExperienceSection()];
   const fields: FormField[] = [];
 
   const questions = input.screeningQuestions.slice(0, FORM_LIMITS.maxFields);
@@ -336,7 +595,7 @@ export function buildDefaultSchema(input: {
 
   if (questions.length > 0) {
     const sectionId = `sec_pertanyaan_${Date.now().toString(36)}`;
-    sections.push({ id: sectionId, title: "Pertanyaan Screening" });
+    sections.push({ id: sectionId, kind: "custom", title: "Pertanyaan Screening" });
     questions.forEach((q, index) => {
       fields.push({
         id: `sq_${q.id || index + 1}`,
@@ -353,7 +612,7 @@ export function buildDefaultSchema(input: {
 
   if (docs.length > 0) {
     const sectionId = `sec_dokumen_${Date.now().toString(36)}`;
-    sections.push({ id: sectionId, title: "Dokumen Tambahan" });
+    sections.push({ id: sectionId, kind: "custom", title: "Dokumen Tambahan" });
     docs.forEach((label, index) => {
       fields.push({
         id: `doc_${index + 1}_${Date.now().toString(36)}`,
@@ -367,7 +626,8 @@ export function buildDefaultSchema(input: {
     });
   }
 
-  return { version: 1, sections, fields, retiredFields: [] };
+  sections.push(defaultFilesSection(input));
+  return { version: FORM_SCHEMA_VERSION, sections, fields, retiredFields: [] };
 }
 
 /* --------------------------------- Sanitasi --------------------------------- */
@@ -379,9 +639,11 @@ export type FormSchemaSanitizeResult =
 /**
  * Sanitasi input skema dari admin (PUT /form atau PATCH posisi).
  * - null/""  -> null (kembali ke mode klasik)
- * - objek    -> JSON string yang sudah bersih
- * Retired fields otomatis digabung dari previousSchemaRaw (field lama yang hilang
- * dari skema baru dipindah ke makam, bukan dihapus, agar jawaban lama tetap terbaca).
+ * - objek    -> JSON string v2 yang sudah bersih (version dipaksa 2)
+ * Ketiga bagian bawaan dijamin ada (disisipkan otomatis bila klien lupa),
+ * urutan bagian dari klien dipertahankan apa adanya. Retired fields otomatis
+ * digabung dari previousSchemaRaw (field lama yang hilang dipindah ke makam,
+ * bukan dihapus, agar jawaban lama tetap terbaca).
  */
 export function sanitizeFormSchemaInput(
   value: unknown,
@@ -399,11 +661,14 @@ export function sanitizeFormSchemaInput(
 
   // Sections
   if (!Array.isArray(obj.sections)) return { ok: false, error: "Bagian formulir harus berupa daftar." };
-  if (obj.sections.length > LIMIT.maxSections) {
-    return { ok: false, error: `Maksimal ${LIMIT.maxSections} bagian formulir.` };
+  if (obj.sections.length > LIMIT.maxTotalSections) {
+    return { ok: false, error: `Maksimal ${LIMIT.maxTotalSections} bagian formulir (termasuk 3 bagian bawaan).` };
   }
+
   const sections: FormSection[] = [];
   const sectionIds = new Set<string>();
+  const seenKinds = new Set<FormSectionKind>();
+  let customCount = 0;
   for (let i = 0; i < obj.sections.length; i++) {
     const raw = obj.sections[i];
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -413,11 +678,26 @@ export function sanitizeFormSchemaInput(
     const id = typeof s.id === "string" && ID_RE.test(s.id) ? s.id : "";
     if (!id) return { ok: false, error: `Bagian #${i + 1} butuh ID yang valid.` };
     if (sectionIds.has(id)) return { ok: false, error: `ID bagian "${id}" ganda.` };
+    const kind = parseSectionKind(s.kind, id);
+    if (kind !== "custom") {
+      if (seenKinds.has(kind)) {
+        return {
+          ok: false,
+          error: `Bagian bawaan "${FORM_SECTION_KIND_LABELS[kind]}" hanya boleh satu.`,
+        };
+      }
+      seenKinds.add(kind);
+    } else {
+      customCount += 1;
+      if (customCount > LIMIT.maxSections) {
+        return { ok: false, error: `Maksimal ${LIMIT.maxSections} bagian tambahan.` };
+      }
+    }
     const title = typeof s.title === "string" ? s.title.trim() : "";
     if (title.length < 1 || title.length > LIMIT.sectionTitleMax) {
       return { ok: false, error: `Judul bagian #${i + 1} harus 1-${LIMIT.sectionTitleMax} karakter.` };
     }
-    const section: FormSection = { id, title };
+    const section: FormSection = { id, kind, title };
     const desc = typeof s.description === "string" ? s.description.trim() : "";
     if (desc) {
       if (desc.length > LIMIT.sectionDescMax) {
@@ -433,8 +713,13 @@ export function sanitizeFormSchemaInput(
       section.titleEn = titleEn;
     }
     sectionIds.add(id);
-    sections.push(section);
+    sections.push(normalizeSectionFlags(section, s));
   }
+
+  // Jaminan bawaan: biodata di depan, pengalaman setelahnya, berkas di akhir.
+  if (!seenKinds.has("biodata")) sections.unshift(defaultBiodataSection());
+  if (!seenKinds.has("experience")) sections.splice(1, 0, defaultExperienceSection());
+  if (!seenKinds.has("files")) sections.push(defaultFilesSection());
 
   // Fields
   if (!Array.isArray(obj.fields)) return { ok: false, error: "Pertanyaan formulir harus berupa daftar." };
@@ -563,7 +848,7 @@ export function sanitizeFormSchemaInput(
   }
 
   const schema: FormSchema = {
-    version: typeof obj.version === "number" && Number.isFinite(obj.version) ? Math.max(1, Math.round(obj.version)) : 1,
+    version: FORM_SCHEMA_VERSION,
     sections,
     fields,
     retiredFields,
@@ -696,9 +981,16 @@ export function validateFormAnswers(
 
 /* --------------------------------- Utilitas --------------------------------- */
 
-/** Skema dianggap aktif bila ada minimal satu field — posisi lain tetap mode klasik. */
+/**
+ * Skema dianggap aktif bila ada minimal satu field ATAU sudah v2 (skema v2
+ * selalu jadi sumber kebenaran formulir — meski tanpa pertanyaan kustom,
+ * konfigurasi bagian bawaan tetap berlaku).
+ */
 export function isFormSchemaActive(position: { formSchema: FormSchema | null }): boolean {
-  return position.formSchema !== null && position.formSchema.fields.length > 0;
+  return (
+    position.formSchema !== null &&
+    (position.formSchema.fields.length > 0 || position.formSchema.version >= FORM_SCHEMA_VERSION)
+  );
 }
 
 /** Format jawaban menjadi satu baris teks (untuk CSV, print, dan prompt AI). */

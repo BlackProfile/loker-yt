@@ -69,7 +69,15 @@ import {
 } from "@/components/landing/landing-utils";
 import { DeadlineCountdown } from "@/components/landing/deadline-countdown";
 import { ApplyWizard } from "@/components/landing/apply-wizard";
-import { isFormSchemaActive } from "@/lib/form-schema";
+import {
+  isCvEnabled,
+  isCvRequired,
+  isFormSchemaActive,
+  isIntroEnabled,
+  isIntroRequired,
+  isPortfolioEnabled,
+  isPortfolioRequired,
+} from "@/lib/form-schema";
 import { stageLabel, stagesForPosition } from "@/lib/stages";
 
 const SOON_DAYS = 3;
@@ -505,15 +513,53 @@ function PositionDetailViewInner({
     position.requirePortfolio ? t.detail.termsFilesPortfolio : null,
   ].filter((x): x is string => x !== null);
 
-  // Form Builder per posisi: saat skema aktif, berkas tambahan yang diminta
-  // adalah field tipe "file" milik skema (customDocs klasik diabaikan wizard).
+  // Form Builder per posisi (skema v2): kartu Ketentuan berkas mengikuti
+  // konfigurasi bagian Berkas skema — slot CV/intro/portofolio tampil hanya
+  // bila flag *Enabled aktif, tanda wajib mengikuti flag *Required (bukan
+  // lagi kolom posisi); label field tipe "file" milik skema tetap ditambahkan.
+  // Mode klasik (skema null/tidak aktif) tak berubah.
   const schemaActive = isFormSchemaActive(position);
+  const schemaFilesSection = schemaActive
+    ? (position.formSchema?.sections.find((s) => s.kind === "files") ?? null)
+    : null;
+  // Label field tipe "file" milik skema (labelEn-aware) — tetap ditambahkan.
   const schemaFileLabels = schemaActive
     ? (position.formSchema?.fields ?? [])
         .filter((field) => field.type === "file")
         .map((field) => (lang === "en" && field.labelEn ? field.labelEn : field.label))
     : [];
-  const requiredFilesWithSchema = [...requiredFiles, ...schemaFileLabels];
+  // Daftar berkas per slot: label + tanda wajib (badge) untuk mode skema.
+  const schemaFileItems: { label: string; required: boolean }[] = schemaFilesSection
+    ? [
+        isCvEnabled(schemaFilesSection)
+          ? {
+              label: t.detail.termsFilesCv,
+              required: isCvRequired(schemaFilesSection),
+            }
+          : null,
+        isIntroEnabled(schemaFilesSection)
+          ? {
+              label: t.detail.termsFilesIntro,
+              required: isIntroRequired(schemaFilesSection),
+            }
+          : null,
+        isPortfolioEnabled(schemaFilesSection)
+          ? {
+              label: t.detail.termsFilesPortfolio,
+              required: isPortfolioRequired(schemaFilesSection),
+            }
+          : null,
+        ...(position.formSchema?.fields ?? [])
+          .filter((field) => field.type === "file")
+          .map((field) => ({
+            label: lang === "en" && field.labelEn ? field.labelEn : field.label,
+            required: field.required,
+          })),
+      ].filter((x): x is { label: string; required: boolean } => x !== null)
+    : [];
+  const requiredFilesWithSchema = schemaFilesSection
+    ? schemaFileItems.map((item) => item.label)
+    : [...requiredFiles, ...schemaFileLabels];
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -663,7 +709,26 @@ function PositionDetailViewInner({
                 <SectionTitle icon={ClipboardList}>{t.detail.sectionTerms}</SectionTitle>
                 <Card className="mt-3 divide-y rounded-2xl p-2 md:p-3">
                   <TermRow icon={FileText} label={t.detail.termsFiles}>
-                    {requiredFilesWithSchema.length > 0 ? (
+                    {schemaFileItems.length > 0 ? (
+                      <span className="flex flex-wrap gap-1.5">
+                        {schemaFileItems.map((item) => (
+                          <span
+                            key={item.label}
+                            className="rounded-md bg-zinc-100 px-2 py-0.5 text-xs font-medium dark:bg-zinc-800"
+                          >
+                            {item.label}
+                            {/* Slot wajib bagian Berkas skema ditandai rose */}
+                            {item.required ? (
+                              <span className="ml-1 font-semibold text-rose-600 dark:text-rose-400">
+                                {t.apply.uploads.required}
+                              </span>
+                            ) : null}
+                          </span>
+                        ))}
+                      </span>
+                    ) : schemaFilesSection ? (
+                      <span className="text-muted-foreground">{t.detail.termsFilesNone}</span>
+                    ) : requiredFilesWithSchema.length > 0 ? (
                       <span>{requiredFilesWithSchema.join(" · ")}</span>
                     ) : (
                       <span className="text-muted-foreground">{t.detail.termsFilesNone}</span>

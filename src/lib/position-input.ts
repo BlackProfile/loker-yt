@@ -6,7 +6,13 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ensureUniqueSlug, parseRequirements, slugifyTitle } from "@/lib/seed";
 import { stagesForPosition, isBuiltInStage } from "@/lib/stages";
-import { sanitizeFormSchemaInput } from "@/lib/form-schema";
+import {
+  filesConfigFromSchema,
+  FORM_SCHEMA_VERSION,
+  normalizeFormSchema,
+  parseFormSchema,
+  sanitizeFormSchemaInput,
+} from "@/lib/form-schema";
 import {
   INTERVIEW_MODES,
   INTERVIEW_PLATFORMS,
@@ -475,6 +481,19 @@ export async function sanitizePositionInput(
   });
   if (!formSchema.ok) return formSchema;
   if (formSchema.value !== undefined) f.formSchema = formSchema.value;
+
+  // v2: bila skema efektif (baru dikirim ATAU milik record saat ini) sudah v2,
+  // kolom berkas SELALU mengikuti bagian Berkas di skema — nilai requireCv/
+  // requireIntro/requirePortfolio dari payload diabaikan agar tidak drift.
+  // Skema klasik/v1 tidak disentuh (perilaku lama tetap).
+  const effectiveSchemaRaw = formSchema.value !== undefined ? formSchema.value : opts.current?.formSchema ?? null;
+  const effectiveSchema = parseFormSchema(effectiveSchemaRaw);
+  if (effectiveSchema && effectiveSchema.version >= FORM_SCHEMA_VERSION) {
+    const filesSync = filesConfigFromSchema(normalizeFormSchema(effectiveSchema) ?? effectiveSchema);
+    f.requireCv = filesSync.requireCv;
+    f.requireIntro = filesSync.requireIntro;
+    f.requirePortfolio = filesSync.requirePortfolio;
+  }
 
   // Pipeline & otomasi
   const stages = sanitizeStages(data.stages);
