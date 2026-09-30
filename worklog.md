@@ -1576,3 +1576,21 @@ Work Log:
 
 Stage Summary:
 - "Satu Pintu Kelola Posisi" LIVE end-to-end: setiap pengaturan per posisi kini punya SATU rumah kanonik — Konten (Edit Posisi), Formulir (Builder 2 tab), Penerimaan (gabungan Publikasi & Status + Setelan builder + dokumen tambahan), Seleksi, Wawancara, Pesan (4 kelompok template tergabung: otomasi status + offer + welcome + onboarding), Statistik (halaman penuh, dialog dihapus); Kelola = hub dengan sub-nav & deep-link 8 bagian; kartu posisi 13 kontrol → 4; kartu ringkasan formulir v2-aware; rediscover/nurture masuk hub; QR inline tanpa dialog. Auto-push akan menyinkronkan ke GitHub.
+
+---
+Task ID: fix-28 (hotfix UI landing)
+Agent: Z.ai Code (main)
+Task: Perbaiki jarak kosong besar antara header dan section Lowongan di halaman publik saat Hero dimatikan (laporan user + screenshot).
+
+Work Log:
+- Reproduksi & diagnosis: via /api/public/content terlihat `sections.hero = false` (dimatikan dari panel admin), sehingga PositionsSection menjadi section pertama tepat di bawah header sticky. Section ini membawa `py-16 md:py-24` (padding-top 64/96px) yang semestinya adalah padding JARAK ANTAR-SECTION, bukan padding pembuka halaman — itulah celah kosong yang dilihat user.
+- Perbaikan di `src/components/landing/landing-page.tsx` (LandingShell): className `<main>` dibuat kondisional via `cn()` — bila `!sections.hero`, tambahkan arbitrary variant `[&>section:first-child]:pt-8 md:[&>section:first-child]:pt-12` (32px/48px). Specificity `main > section:first-child` (0,1,2) mengalahkan `py-16` (0,1,0) tanpa perlu `!important`. Rule hanya aktif saat Hero nonaktif agar Hero (yang tak berpadding pada elemen section-nya) tidak ikut bergeser.
+- Verifikasi E2E via gateway :81 (agent-browser):
+  - Hero OFF: section pertama = `#posisi`, padding-top terukur 48px (desktop) / 32px (mobile 390px) — celah besar hilang, tampilan rapi.
+  - Hero ON (toggle sementara via PUT /api/admin/settings dengan login OWNER): `main` hanya ber-class `flex-1`, padding-top section hero tetap 0px — layout Hero tidak berubah. Setelan dikembalikan ke kondisi semula (hero=false) setelah pengujian.
+- `bun run lint` bersih; dev.log tanpa error.
+
+Stage Summary:
+- Root cause: Hero dimatikan + padding antar-section (py-16/md:py-24) dipakai sebagai padding pembuka halaman.
+- Fix: satu className kondisional pada `<main>` di LandingShell; generik untuk SEMUA section (bukan cuma Lowongan) — bila suatu saat section pertama bukan Lowongan (mis. Cek Status saja), rule tetap berlaku otomatis.
+- Tidak ada perubahan kontrak data/API; aman untuk Hero aktif maupun nonaktif.

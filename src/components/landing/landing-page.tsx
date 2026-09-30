@@ -909,7 +909,19 @@ function LandingShell({
             </Container>
           </div>
         ) : null}
-        <main className="flex-1">
+        <main
+          className={cn(
+            "flex-1",
+            // Saat Hero dimatikan, section pertama (mis. Lowongan) langsung di bawah
+            // header dan padding atasnya (py-16/md:py-24 — padding jarak antar-section)
+            // terlihat seperti celah kosong besar. Kecilkan menjadi 32px/48px.
+            // Specificity `main > section:first-child` (0,1,2) mengalahkan py-16 (0,1,0).
+            // Hanya aktif saat Hero nonaktif agar Hero (yang tak berpadding pada elemen
+            // section-nya) tidak ikut terdorong ke bawah.
+            !sections.hero &&
+              "[&>section:first-child]:pt-8 md:[&>section:first-child]:pt-12",
+          )}
+        >
           {sections.hero ? (
             <Hero
               content={content}
