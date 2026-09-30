@@ -1,21 +1,36 @@
 "use client";
 
-// Halaman khusus per lowongan (dibuka dari tab Posisi → tombol "Kelola").
-// Menyatukan semua yang dibutuhkan untuk mengelola SATU lowongan di satu
-// tempat: identitas & statistik ringkas, ringkasan formulir lamaran,
-// pratinjau konten, dan daftar pelamar posisi ini. Bisa di-deep-link:
-// #admin/posisi/<id> (kelola), #admin/posisi/<id>/edit (edit posisi),
-// #admin/posisi/<id>/formulir (edit formulir lamaran).
-// Dua jalur EDIT terpisah — semuanya halaman penuh (bukan popup):
-//   1. "Edit Posisi"      → seluruh pengaturan info lowongan (PositionFormPage mode="posisi")
-//   2. "Formulir Lamaran" → berkas wajib, kuota, screening, dokumen pendaftar
-//                            (PositionFormPage mode="formulir")
+// HUB "Satu Pintu Kelola Posisi" — halaman khusus per lowongan (dibuka dari tab
+// Posisi → tombol "Kelola", deep-link: #admin/posisi/<id>[/suffix]).
+// Satu halaman dengan sub-navigasi pill: Ringkasan (hub), Konten, Formulir,
+// Penerimaan, Seleksi, Wawancara, Pesan, dan Statistik. Setiap mode merender
+// halaman penuh; perpindahan mode dikelola parent lewat onModeChange agar hash
+// URL ikut tersinkron. Aksi cepat (Cari Talent Lama / Nurture) tinggal di
+// Ringkasan bersama dialognya.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
   BarChart3,
@@ -24,54 +39,113 @@ import {
   Copy,
   ExternalLink,
   FileText,
+  Inbox,
+  LayoutDashboard,
   ListChecks,
   Loader2,
   MapPin,
+  MessagesSquare,
   Pencil,
   QrCode,
+  RefreshCw,
   ScrollText,
+  Search,
+  Sprout,
   Users,
+  Video,
+  Workflow,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Application, Position, PositionStatsRow } from "@/lib/types";
-import { apiGet } from "./api";
-import { copyText, formatDateTime, initialsOf } from "./format";
+import {
+  isCvEnabled,
+  isCvRequired,
+  isFormSchemaActive,
+  isIntroEnabled,
+  isIntroRequired,
+  isPortfolioEnabled,
+  isPortfolioRequired,
+} from "@/lib/form-schema";
+import { cn } from "@/lib/utils";
+import { apiGet, apiPost } from "./api";
+import { copyText, formatDateTime, formatDate, initialsOf } from "./format";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { Reveal } from "./motion-primitives";
 import { AiScoreBadge, StatusBadge } from "./status-badge";
 import { PositionFormPage } from "./position-form-page";
 import { FormBuilderPage } from "./form-builder-page";
+import {
+  PositionIntakePage,
+  PositionInterviewPage,
+  PositionMessagesPage,
+  PositionSelectionPage,
+} from "./position-settings-pages";
+import { PositionStatsPage } from "./position-stats-page";
+import { positionDeepLink } from "./position-qr-dialog";
 
-type EditMode = "posisi" | "formulir";
+export type ManageMode =
+  | "view"
+  | "konten"
+  | "formulir"
+  | "penerimaan"
+  | "seleksi"
+  | "wawancara"
+  | "pesan"
+  | "statistik";
 
 type Props = {
   position: Position;
   stats: PositionStatsRow | null;
-  /** Mode edit aktif — null berarti tampilan kelola biasa. */
-  editMode: EditMode | null;
-  /** Minta buka salah satu halaman edit (dari tombol di halaman ini). */
-  onEdit: (mode: EditMode) => void;
-  /** Tutup halaman edit kembali ke tampilan kelola (batal maupun setelah simpan). */
-  onExitEdit: () => void;
+  mode: ManageMode;
+  onModeChange: (m: ManageMode) => void;
   onBack: () => void;
-  onStats: (position: Position) => void;
-  onQr: (position: Position) => void;
-  onUpdated: (position: Position) => void;
+  onUpdated: (p: Position) => void;
 };
+
+const SUB_NAV: { mode: ManageMode; label: string; icon: LucideIcon }[] = [
+  { mode: "view", label: "Ringkasan", icon: LayoutDashboard },
+  { mode: "konten", label: "Konten", icon: FileText },
+  { mode: "formulir", label: "Formulir", icon: ListChecks },
+  { mode: "penerimaan", label: "Penerimaan", icon: Inbox },
+  { mode: "seleksi", label: "Seleksi", icon: Workflow },
+  { mode: "wawancara", label: "Wawancara", icon: Video },
+  { mode: "pesan", label: "Pesan", icon: MessagesSquare },
+  { mode: "statistik", label: "Statistik", icon: BarChart3 },
+];
+
+/* ------------------------- Talent rediscovery & nurture ------------------------- */
+
+type RediscoverResult = {
+  id: string;
+  name: string;
+  skor: number;
+  alasan: string;
+  appliedAt: string;
+  priorTitle: string | null;
+};
+
+// Warna badge skor kecocokan (emerald kuat, amber menengah, zinc sisanya).
+function skorBadgeClass(skor: number): string {
+  if (skor >= 75) {
+    return "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400";
+  }
+  if (skor >= 45) {
+    return "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400";
+  }
+  return "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+}
 
 export function PositionManagePage({
   position,
   stats,
-  editMode,
-  onEdit,
-  onExitEdit,
+  mode,
+  onModeChange,
   onBack,
-  onStats,
-  onQr,
   onUpdated,
 }: Props) {
-  const { canMutate } = useAdminSession();
+  const { canMutate, reportError } = useAdminSession();
 
   /* ---------------------------- Pelamar posisi ---------------------------- */
 
@@ -107,7 +181,7 @@ export function PositionManagePage({
     return Math.max(0, position.maxApplicants - used);
   }, [applicants, position.maxApplicants]);
 
-  const publicUrl = `${window.location.origin}/?posisi=${encodeURIComponent(position.slug ?? position.id)}`;
+  const publicUrl = positionDeepLink(position);
 
   async function handleCopyLink() {
     const ok = await copyText(publicUrl);
@@ -115,42 +189,187 @@ export function PositionManagePage({
     else toast.error("Gagal menyalin tautan");
   }
 
-  // Edit lengkap sebagai halaman penuh (bukan popup): seluruh tampilan kelola
-  // digantikan halaman sesuai mode. "Formulir Lamaran" kini memakai Form Builder
-  // (3 tab: Pertanyaan/Jawaban/Setelan); "Edit Posisi" tetap PositionFormPage.
-  if (editMode === "formulir") {
+  /* ------------------------------ QR tautan ------------------------------ */
+
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  // setState hanya di callback async (bukan body effect secara sinkron).
+  useEffect(() => {
+    let cancelled = false;
+    setQrDataUrl(null);
+    QRCode.toDataURL(publicUrl, { width: 256, margin: 2 })
+      .then((dataUrl) => {
+        if (!cancelled) setQrDataUrl(dataUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [publicUrl]);
+
+  /* --------------------------- Talent rediscovery (AI) --------------------------- */
+
+  const [rediscoverTarget, setRediscoverTarget] = useState<Position | null>(null);
+  const [rediscoverLoading, setRediscoverLoading] = useState(false);
+  const [rediscoverError, setRediscoverError] = useState<string | null>(null);
+  const [rediscoverData, setRediscoverData] = useState<{ total: number; results: RediscoverResult[] } | null>(null);
+
+  async function openRediscover(target: Position) {
+    setRediscoverTarget(target);
+    setRediscoverData(null);
+    setRediscoverError(null);
+    setRediscoverLoading(true);
+    try {
+      const data = await apiPost<{ total: number; results: RediscoverResult[] }>(
+        `/api/admin/positions/${target.id}/rediscover`
+      );
+      setRediscoverData(data);
+    } catch (err) {
+      setRediscoverError(
+        err instanceof Error ? err.message : "Gagal mencari talent lama. Coba lagi."
+      );
+    } finally {
+      setRediscoverLoading(false);
+    }
+  }
+
+  async function retryRediscover() {
+    if (rediscoverTarget) await openRediscover(rediscoverTarget);
+  }
+
+  /* ----------------------------- Nurture kandidat ----------------------------- */
+
+  const [nurtureTarget, setNurtureTarget] = useState<Position | null>(null);
+  const [nurtureCount, setNurtureCount] = useState<number | null>(null);
+  const [nurtureLoading, setNurtureLoading] = useState(false);
+  const [nurtureSending, setNurtureSending] = useState(false);
+
+  async function openNurture(target: Position) {
+    setNurtureTarget(target);
+    setNurtureCount(null);
+    setNurtureLoading(true);
+    try {
+      const data = await apiGet<{ count: number }>(
+        `/api/admin/positions/${target.id}/nurture?preview=1`
+      );
+      setNurtureCount(data.count);
+    } catch (err) {
+      setNurtureTarget(null);
+      reportError(err);
+    } finally {
+      setNurtureLoading(false);
+    }
+  }
+
+  async function handleNurture() {
+    if (!nurtureTarget || nurtureSending) return;
+    setNurtureSending(true);
+    try {
+      const data = await apiPost<{ queued: number }>(
+        `/api/admin/positions/${nurtureTarget.id}/nurture`
+      );
+      toast.success(`${data.queued} email disiapkan`, {
+        description: `Email nurture untuk posisi ${nurtureTarget.title} masuk kotak keluar.`,
+      });
+      setNurtureTarget(null);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setNurtureSending(false);
+    }
+  }
+
+  /* --------------------------- Ringkasan formulir --------------------------- */
+
+  // Form Builder v2 aktif → ringkasan mengikuti skema; selain itu ringkasan
+  // klasik (flag berkas + pertanyaan screening).
+  const schemaActive = isFormSchemaActive(position);
+  const activeSchema = schemaActive ? position.formSchema : null;
+  const filesSection =
+    activeSchema?.sections.find((s) => s.kind === "files") ?? null;
+
+  if (mode === "formulir") {
     return (
       <FormBuilderPage
         position={position}
-        onBack={onExitEdit}
+        onBack={() => onModeChange("view")}
         onUpdated={onUpdated}
+        onOpenIntake={() => onModeChange("penerimaan")}
       />
     );
   }
 
-  if (editMode) {
+  if (mode === "konten") {
     return (
       <PositionFormPage
         editing={position}
-        statsRow={stats}
-        mode={editMode}
-        onCancel={onExitEdit}
-        onSaved={(updated) => {
-          onUpdated(updated);
-          onExitEdit();
+        onCancel={() => onModeChange("view")}
+        onSaved={(p) => {
+          onUpdated(p);
+          onModeChange("view");
         }}
       />
     );
   }
 
-  // Ringkasan berkas yang diminta dari pendaftar (diedit di halaman Formulir).
-  const docSummary: { label: string; required: boolean }[] = [
-    { label: "CV", required: position.requireCv },
-    { label: "Audio/Video Intro", required: position.requireIntro },
-    { label: "Portofolio", required: position.requirePortfolio },
-    ...position.customDocs.map((doc) => ({ label: doc, required: true })),
-  ];
+  if (mode === "penerimaan") {
+    return (
+      <PositionIntakePage
+        key={position.id}
+        position={position}
+        onBack={() => onModeChange("view")}
+        onSaved={(p) => onUpdated(p)}
+      />
+    );
+  }
 
+  if (mode === "seleksi") {
+    return (
+      <PositionSelectionPage
+        key={position.id}
+        position={position}
+        statsRow={stats}
+        onBack={() => onModeChange("view")}
+        onSaved={(p) => onUpdated(p)}
+      />
+    );
+  }
+
+  if (mode === "wawancara") {
+    return (
+      <PositionInterviewPage
+        key={position.id}
+        position={position}
+        onBack={() => onModeChange("view")}
+        onSaved={(p) => onUpdated(p)}
+      />
+    );
+  }
+
+  if (mode === "pesan") {
+    return (
+      <PositionMessagesPage
+        key={position.id}
+        position={position}
+        onBack={() => onModeChange("view")}
+        onSaved={(p) => onUpdated(p)}
+      />
+    );
+  }
+
+  if (mode === "statistik") {
+    return (
+      <PositionStatsPage
+        position={position}
+        stats={stats}
+        onBack={() => onModeChange("view")}
+      />
+    );
+  }
+
+  // mode === "view" — Ringkasan (halaman utama hub).
   return (
     <div className="flex flex-col gap-4">
       {/* Header halaman */}
@@ -187,69 +406,34 @@ export function PositionManagePage({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11 sm:h-9"
-              onClick={() => onStats(position)}
-              aria-label="Statistik posisi"
-            >
-              <BarChart3 className="size-4" aria-hidden="true" />
-              <span className="sm:hidden">Statistik</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11 sm:h-9"
-              onClick={() => onQr(position)}
-              aria-label="QR posisi"
-            >
-              <QrCode className="size-4" aria-hidden="true" />
-              <span className="sm:hidden">QR</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11 sm:h-9"
-              onClick={() => void handleCopyLink()}
-              aria-label="Salin tautan posisi"
-            >
-              <Copy className="size-4" aria-hidden="true" />
-              <span className="sm:hidden">Salin Link</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11 sm:h-9"
-              onClick={() =>
-                window.open(
-                  position.slug
-                    ? `/?posisi=${encodeURIComponent(position.slug)}`
-                    : "/",
-                  "_blank",
-                  "noopener,noreferrer",
-                )
-              }
-              aria-label="Lihat halaman publik posisi"
-            >
-              <ExternalLink className="size-4" aria-hidden="true" />
-              <span className="hidden md:inline">Lihat Halaman Publik</span>
-              <span className="md:hidden">Publik</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11 sm:h-9"
-              onClick={() => onEdit("formulir")}
-              disabled={!canMutate}
-            >
-              <ListChecks className="size-4" aria-hidden="true" />
-              Formulir Lamaran
-            </Button>
+            {position.isActive ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-11 sm:h-9"
+                  onClick={() => void openRediscover(position)}
+                  disabled={!canMutate || rediscoverLoading}
+                >
+                  <Search className="size-4" aria-hidden="true" />
+                  Cari Talent Lama
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-11 sm:h-9"
+                  onClick={() => void openNurture(position)}
+                  disabled={!canMutate || nurtureSending}
+                >
+                  <Sprout className="size-4" aria-hidden="true" />
+                  Nurture Kandidat
+                </Button>
+              </>
+            ) : null}
             <Button
               size="sm"
               className="h-11 sm:h-9"
-              onClick={() => onEdit("posisi")}
+              onClick={() => onModeChange("konten")}
               disabled={!canMutate}
             >
               <Pencil className="size-4" aria-hidden="true" />
@@ -259,8 +443,36 @@ export function PositionManagePage({
         </div>
       </Reveal>
 
+      {/* Sub-navigasi bagian kelola */}
+      <Reveal delay={0.05}>
+        <nav
+          aria-label="Bagian kelola posisi"
+          className="nice-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 pb-1"
+        >
+          {SUB_NAV.map((item) => {
+            const active = mode === item.mode;
+            return (
+              <Button
+                key={item.mode}
+                className={cn(
+                  "h-11 shrink-0 gap-1.5 rounded-full px-3 text-xs sm:h-8 sm:text-sm",
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-transparent text-muted-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800",
+                )}
+                onClick={() => onModeChange(item.mode)}
+                aria-current={active ? "page" : undefined}
+              >
+                <item.icon className="size-4" aria-hidden="true" />
+                {item.label}
+              </Button>
+            );
+          })}
+        </nav>
+      </Reveal>
+
       {/* Statistik ringkas */}
-      <Reveal delay={0.05} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <Reveal delay={0.1} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           {
             label: "Lamaran masuk",
@@ -292,8 +504,71 @@ export function PositionManagePage({
         ))}
       </Reveal>
 
-      {/* Ringkasan formulir lamaran — diedit di halaman "Formulir Lamaran" */}
-      <Reveal delay={0.1}>
+      {/* Bagikan posisi — tautan + QR halaman publik */}
+      <Reveal delay={0.15}>
+        <Card className="gap-4 rounded-2xl p-5 md:p-6">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <QrCode className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+              Bagikan Posisi
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Tautan & QR untuk halaman publik posisi ini.
+            </CardDescription>
+          </div>
+          <div className="flex flex-col items-center gap-4 sm:flex-row">
+            <div className="flex shrink-0 items-center justify-center rounded-xl border bg-white p-2">
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt={`QR code tautan posisi ${position.title}`}
+                  className="size-32 sm:size-40"
+                  width={256}
+                  height={256}
+                />
+              ) : (
+                <Loader2
+                  className="size-8 animate-spin text-muted-foreground"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <input
+                readOnly
+                value={publicUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                aria-label="Tautan publik posisi"
+                className="w-full rounded-lg border bg-zinc-50/60 px-3 py-2 font-mono text-xs text-muted-foreground dark:bg-zinc-900/40"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  className="h-11 sm:h-9"
+                  onClick={() => void handleCopyLink()}
+                >
+                  <Copy className="size-4" aria-hidden="true" />
+                  Salin Link
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-11 sm:h-9"
+                  onClick={() =>
+                    window.open(publicUrl, "_blank", "noopener,noreferrer")
+                  }
+                >
+                  <ExternalLink className="size-4" aria-hidden="true" />
+                  Lihat Halaman Publik
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </Reveal>
+
+      {/* Ringkasan formulir lamaran — diedit di mode "formulir" */}
+      <Reveal delay={0.2}>
         <Card className="gap-4 rounded-2xl p-5 md:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
@@ -302,54 +577,108 @@ export function PositionManagePage({
                 Formulir Lamaran
               </CardTitle>
               <CardDescription className="mt-1">
-                Berkas wajib, kuota pelamar, dan pertanyaan screening yang
-                diisi pelamar saat melamar posisi ini.
+                {schemaActive
+                  ? "Pertanyaan dan berkas lamaran mengikuti skema Form Builder posisi ini."
+                  : "Berkas wajib, kuota pelamar, dan pertanyaan screening yang diisi pelamar saat melamar posisi ini."}
               </CardDescription>
             </div>
             <Button
               size="sm"
               className="h-11 shrink-0 sm:h-9"
-              onClick={() => onEdit("formulir")}
+              onClick={() => onModeChange("formulir")}
               disabled={!canMutate}
             >
               <Pencil className="size-4" aria-hidden="true" />
-              Edit Formulir
+              Kelola Formulir
             </Button>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {docSummary.map((doc) => (
-              <Badge
-                key={doc.label}
-                variant="secondary"
-                className={
-                  doc.required
-                    ? "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
-                    : ""
-                }
-              >
-                {doc.label} · {doc.required ? "wajib" : "opsional"}
-              </Badge>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-1.5 border-t pt-3">
-            <Badge variant="secondary">
-              Kuota: {position.maxApplicants != null ? position.maxApplicants : "tanpa batas"}
-            </Badge>
-            <Badge variant="secondary">
-              {position.screeningQuestions.length} pertanyaan screening
-            </Badge>
-            {position.screeningQuestions.length > 0 ? (
-              <Badge variant="secondary">
-                {position.screeningQuestions.filter((q) => q.required).length} wajib dijawab
-              </Badge>
-            ) : null}
+            {schemaActive && activeSchema ? (
+              <>
+                <Badge
+                  variant="outline"
+                  className="border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+                >
+                  Skema aktif
+                </Badge>
+                <Badge variant="secondary">{activeSchema.sections.length} bagian</Badge>
+                <Badge variant="secondary">{activeSchema.fields.length} pertanyaan</Badge>
+                {filesSection ? (
+                  <>
+                    {isCvEnabled(filesSection) ? (
+                      <Badge variant="secondary">
+                        CV · {isCvRequired(filesSection) ? "wajib" : "opsional"}
+                      </Badge>
+                    ) : null}
+                    {isIntroEnabled(filesSection) ? (
+                      <Badge variant="secondary">
+                        Audio/Video Intro ·{" "}
+                        {isIntroRequired(filesSection) ? "wajib" : "opsional"}
+                      </Badge>
+                    ) : null}
+                    {isPortfolioEnabled(filesSection) ? (
+                      <Badge variant="secondary">
+                        Portofolio ·{" "}
+                        {isPortfolioRequired(filesSection) ? "wajib" : "opsional"}
+                      </Badge>
+                    ) : null}
+                  </>
+                ) : null}
+                {position.customDocs.length > 0 ? (
+                  <Badge variant="secondary">
+                    {position.customDocs.length} dokumen tambahan
+                  </Badge>
+                ) : null}
+                <Badge variant="secondary">
+                  Kuota:{" "}
+                  {position.maxApplicants != null ? position.maxApplicants : "tanpa batas"}
+                </Badge>
+              </>
+            ) : (
+              <>
+                {[
+                  { label: "CV", required: position.requireCv },
+                  { label: "Audio/Video Intro", required: position.requireIntro },
+                  { label: "Portofolio", required: position.requirePortfolio },
+                ].map((doc) => (
+                  <Badge
+                    key={doc.label}
+                    variant="secondary"
+                    className={
+                      doc.required
+                        ? "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+                        : ""
+                    }
+                  >
+                    {doc.label} · {doc.required ? "wajib" : "opsional"}
+                  </Badge>
+                ))}
+                {position.customDocs.length > 0 ? (
+                  <Badge variant="secondary">
+                    {position.customDocs.length} dokumen tambahan
+                  </Badge>
+                ) : null}
+                <Badge variant="secondary">
+                  Kuota:{" "}
+                  {position.maxApplicants != null ? position.maxApplicants : "tanpa batas"}
+                </Badge>
+                <Badge variant="secondary">
+                  {position.screeningQuestions.length} pertanyaan screening
+                </Badge>
+                {position.screeningQuestions.length > 0 ? (
+                  <Badge variant="secondary">
+                    {position.screeningQuestions.filter((q) => q.required).length} wajib dijawab
+                  </Badge>
+                ) : null}
+              </>
+            )}
           </div>
         </Card>
       </Reveal>
 
       {/* Pratinjau konten + pelamar posisi */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
-        <Reveal delay={0.15} className="xl:col-span-2">
+        <Reveal delay={0.25} className="xl:col-span-2">
           <Card className="gap-4 rounded-2xl p-5 md:p-6">
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -374,16 +703,16 @@ export function PositionManagePage({
             <Button
               variant="outline"
               className="mx-auto min-h-11 sm:min-h-10"
-              onClick={() => onEdit("posisi")}
+              onClick={() => onModeChange("konten")}
               disabled={!canMutate}
             >
               <Pencil className="size-4" aria-hidden="true" />
-              Edit Posisi
+              Edit Konten
             </Button>
           </Card>
         </Reveal>
 
-        <Reveal delay={0.2} className="xl:col-span-3">
+        <Reveal delay={0.3} className="xl:col-span-3">
           <Card className="gap-4 rounded-2xl p-5 md:p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -463,6 +792,130 @@ export function PositionManagePage({
           </Card>
         </Reveal>
       </div>
+
+      {/* Dialog hasil talent rediscovery (AI) */}
+      <Dialog
+        open={!!rediscoverTarget}
+        onOpenChange={(open) => {
+          if (!open) setRediscoverTarget(null);
+        }}
+      >
+        <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+              Cari Talent Lama
+            </DialogTitle>
+            <DialogDescription>
+              {rediscoverTarget ? rediscoverTarget.title : "-"}
+              {rediscoverTarget ? ` — ${rediscoverTarget.department}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="nice-scrollbar -mr-2 max-h-[70vh] overflow-y-auto pr-2">
+            {rediscoverLoading ? (
+              <div className="flex flex-col items-center gap-3 py-10 text-center">
+                <Loader2 className="size-6 animate-spin text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                <p className="text-sm text-muted-foreground">
+                  Menganalisis kandidat dari talent pool & pelamar ditolak dengan AI...
+                </p>
+              </div>
+            ) : rediscoverError ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <p className="text-sm text-rose-600 dark:text-rose-400">{rediscoverError}</p>
+                <Button variant="outline" onClick={() => void retryRediscover()} className="h-9">
+                  <RefreshCw className="size-4" aria-hidden="true" />
+                  Coba Lagi
+                </Button>
+              </div>
+            ) : rediscoverData && rediscoverData.results.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs text-muted-foreground">
+                  Dianalisis dari {rediscoverData.total} kandidat (talent pool & ditolak, maks 150) — 5 teratas.
+                </p>
+                <ul className="flex flex-col gap-2">
+                  {rediscoverData.results.map((result, index) => (
+                    <li key={result.id} className="flex flex-col gap-1.5 rounded-xl border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                          <span className="shrink-0 tabular-nums text-muted-foreground">{index + 1}.</span>
+                          <span className="truncate">{result.name}</span>
+                        </p>
+                        <Badge variant="outline" className={`shrink-0 tabular-nums ${skorBadgeClass(result.skor)}`}>
+                          Skor {result.skor}
+                        </Badge>
+                      </div>
+                      {result.alasan ? (
+                        <p className="text-xs leading-relaxed text-muted-foreground">{result.alasan}</p>
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        Lamar {formatDate(result.appliedAt)}
+                        {result.priorTitle ? ` — ${result.priorTitle}` : ""}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Belum ada kandidat lama yang cocok ditemukan untuk posisi ini.
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Konfirmasi nurture kandidat ditolak */}
+      <AlertDialog
+        open={!!nurtureTarget}
+        onOpenChange={(open) => {
+          if (!open) setNurtureTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Nurture Kandidat?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {nurtureLoading ? (
+                "Menghitung kandidat yang memenuhi kriteria..."
+              ) : nurtureCount === 0 ? (
+                <>
+                  Tidak ada kandidat yang memenuhi kriteria: ditolak lebih dari 60 hari lalu (bukan karena menarik
+                  diri) pada posisi ini atau posisi satu departemen dengan &quot;
+                  {nurtureTarget?.title ?? "-"}&quot;.
+                </>
+              ) : (
+                <>
+                  Email &quot;Kabar baik dari Lumina Studio&quot; akan disiapkan untuk{" "}
+                  <span className="font-semibold text-foreground tabular-nums">{nurtureCount}</span> kandidat yang
+                  ditolak lebih dari 60 hari lalu (bukan karena menarik diri) pada posisi ini atau posisi satu
+                  departemen. Email masuk kotak keluar beserta catatan log.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={nurtureSending}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleNurture();
+              }}
+              disabled={nurtureLoading || nurtureCount === 0 || nurtureSending}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              {nurtureSending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menyiapkan...
+                </>
+              ) : (
+                "Ya, Siapkan Email"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

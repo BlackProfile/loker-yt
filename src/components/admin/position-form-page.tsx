@@ -1,13 +1,18 @@
 "use client";
 
-// Halaman formulir posisi (bukan popup) — pusat kendali semua field per
-// lowongan, dirender inline di halaman kelola. Dipakai untuk EDIT (dari
-// PositionManagePage) maupun TAMBAH posisi baru (dari daftar Posisi).
-// Layout: section fitur FLAT selebar layar (tanpa accordion), dipisah garis
-// panjang (hairline) sebagai pembatas antar fitur agar mudah dipindai.
-// Batas karakter/item dikunci via maxLength & maxItems editor (selaras server).
+// Halaman KONTEN posisi — sub-halaman "Satu Pintu Kelola Posisi". Hanya
+// berisi konten lowongan: Dasar, Konten Bahasa Inggris (opsional), Tampilan
+// & Konten, dan Benefit & Karya (+ switch Publikasi saat membuat posisi
+// baru). Setelan lain (Publikasi & Status, Pipeline & AI, Otomasi Pesan,
+// Evaluasi, Wawancara, Penawaran & Onboarding) kini ada di halaman setelan
+// per posisi (position-settings-pages.tsx).
+// Dipakai untuk EDIT (dari PositionManagePage) maupun TAMBAH posisi baru
+// (dari daftar Posisi). Layout: section fitur FLAT selebar layar (tanpa
+// accordion), dipisah garis panjang (hairline) sebagai pembatas antar fitur
+// agar mudah dipindai. Batas karakter/item dikunci via maxLength & maxItems
+// editor (selaras server).
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,7 +26,6 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
@@ -41,41 +45,26 @@ import {
   ArrowLeft,
   BookmarkPlus,
   Briefcase,
-  ClipboardCheck,
+  Flame,
   Gift,
-  Handshake,
   History,
   Image as ImageIcon,
   Languages,
   LayoutTemplate,
-  ListChecks,
   Loader2,
-  MessagesSquare,
   Pin,
-  Flame,
-  Plus,
   Send,
-  Sparkles,
   Trash2,
-  TriangleAlert,
   Upload,
-  Video,
   Wallet,
   Wand2,
-  Workflow,
-  X,
-  FileText,
-  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  INTERVIEW_MODE_LABELS,
   INTERVIEW_MODES,
-  INTERVIEW_PLATFORM_LABELS,
   INTERVIEW_PLATFORMS,
   POSITION_TYPES,
   STAGE_CATEGORIES,
-  STAGE_CATEGORY_LABELS,
   type AiCoverResponse,
   type AdminUploadResponse,
   type InterviewMode,
@@ -85,17 +74,17 @@ import {
   type ScreeningQuestion,
   type StageCategory,
 } from "@/lib/types";
-import {
-  defaultCategoryForCustomStage,
-  isBuiltInStage,
-  stagesForPosition,
-  stageLabel,
-} from "@/lib/stages";
-import { isFormSchemaActive } from "@/lib/form-schema";
 import { apiFetch, apiGet, apiPatch, apiPost } from "./api";
 import { formatDateTime, isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
-import { ScreeningQuestionsEditor, StringListEditor } from "./position-list-editors";
+import { StringListEditor } from "./position-list-editors";
+import {
+  CUSTOM_DOC_MAX_LEN,
+  FormDivider,
+  FormSection,
+  MAX_CUSTOM_DOCS,
+  isInt,
+} from "./position-form-parts";
 
 type FormState = {
   title: string;
@@ -279,75 +268,10 @@ function buildFormState(p: Position): FormState {
   };
 }
 
-const PUB_MODE = {
-  tayang: {
-    label: "Tayang",
-    className:
-      "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400",
-  },
-  terjadwal: {
-    label: "Terjadwal",
-    className:
-      "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400",
-  },
-  draft: {
-    label: "Draft",
-    className:
-      "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  },
-  tutup: {
-    label: "Tutup",
-    className:
-      "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400",
-  },
-} as const;
 
-function formPublicationMode(form: FormState): {
-  key: keyof typeof PUB_MODE;
-  hint: string;
-} {
-  if (!form.isActive) {
-    return { key: "draft", hint: "Posisi tidak tampil di halaman publik." };
-  }
-  if (form.publishAtLocal) {
-    const t = new Date(form.publishAtLocal).getTime();
-    if (!Number.isNaN(t) && t > Date.now()) {
-      return {
-        key: "terjadwal",
-        hint: "Posisi otomatis tayang tepat pada jadwal publikasi di atas.",
-      };
-    }
-  }
-  if (form.closesAtLocal) {
-    const t = new Date(form.closesAtLocal).getTime();
-    if (!Number.isNaN(t) && t <= Date.now()) {
-      return {
-        key: "tutup",
-        hint: "Posisi sudah melewati tanggal penutupan dan tidak menerima lamaran baru.",
-      };
-    }
-  }
-  return { key: "tayang", hint: "Posisi tampil di halaman publik sekarang." };
-}
-
-const DEMO_TEMPLATES = {
-  apply:
-    "Terima kasih {nama}, lamaranmu untuk posisi {posisi} sudah kami terima. Pantau statusnya kapan saja dengan kode {kode}.",
-  accept:
-    "Selamat {nama}, kamu diterima untuk posisi {posisi}! Tim kami akan menghubungimu untuk langkah selanjutnya.",
-  reject:
-    "Terima kasih {nama}, setelah meninjau lamaranmu untuk posisi {posisi}, kami memutuskan untuk tidak melanjutkan proses. Semoga sukses di kesempatan berikutnya!",
-};
 
 const COVER_MAX_BYTES = 3 * 1024 * 1024;
 const COVER_MIME = ["image/png", "image/jpeg", "image/webp"];
-
-// Batas dokumen wajib tambahan (halaman Formulir Lamaran) — selaras server.
-const MAX_CUSTOM_DOCS = 8;
-const CUSTOM_DOC_MAX_LEN = 80;
-
-// Sentinel opsi "(nonaktif)" — Radix Select melarang SelectItem dengan value "".
-const SHORTLIST_NONE = "__nonaktif__";
 
 // ============================================================
 // DRAFT AUTOSAVE (hanya mode "Tambah Posisi")
@@ -595,66 +519,16 @@ type PositionTemplateMeta = {
 
 type PositionTemplateDetail = PositionTemplateMeta & { data: Record<string, unknown> };
 
-// Garis panjang pembatas antar section fitur — selebar area formulir.
-function FormDivider() {
-  return (
-    <hr
-      aria-hidden="true"
-      className="h-px w-full border-0 bg-zinc-200 dark:bg-zinc-800"
-    />
-  );
-}
-
-// Header section fitur flat: ikon dalam kotak rose + judul + petunjuk singkat.
-function FormSection({
-  id,
-  icon: Icon,
-  title,
-  hint,
-  children,
-}: {
-  id: string;
-  icon: LucideIcon;
-  title: string;
-  hint: string;
-  children: ReactNode;
-}) {
-  return (
-    <section aria-labelledby={`formsec-${id}`} className="flex flex-col gap-4">
-      <div className="flex items-center gap-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
-          <Icon className="size-4" aria-hidden="true" />
-        </span>
-        <div className="min-w-0">
-          <h3
-            id={`formsec-${id}`}
-            className="text-sm font-semibold leading-tight"
-          >
-            {title}
-          </h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
-        </div>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function isInt(value: string): boolean {
-  return /^-?\d+$/.test(value.trim());
-}
-
 export function PositionFormPage({
   editing,
-  statsRow,
-  mode = "posisi",
   onSaved,
   onCancel,
 }: {
   editing: Position | null;
-  statsRow: PositionStatsRow | null;
-  /** "posisi" = info lowongan; "formulir" = formulir lamaran (berkas, kuota, screening). */
+  /** @deprecated diabaikan — halaman ini kini hanya konten. */
   mode?: "posisi" | "formulir";
+  /** @deprecated diabaikan — statistik pipeline kini di halaman setelannya sendiri. */
+  statsRow?: PositionStatsRow | null;
   onSaved: (updated: Position) => void;
   onCancel: () => void;
 }) {
@@ -669,7 +543,7 @@ export function PositionFormPage({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---- Draf autosave (hanya mode Tambah Posisi; tidak jalan di mode edit) ----
-  const draftEnabled = editing === null && mode === "posisi";
+  const draftEnabled = editing === null;
   const [draftOffer, setDraftOffer] = useState<DraftEnvelope | null>(() =>
     draftEnabled ? readDraftStorage() : null
   );
@@ -683,37 +557,11 @@ export function PositionFormPage({
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
 
-  // ---- Generator pertanyaan screening AI (halaman Formulir Lamaran) ----
-  const [aiQuestionsLoading, setAiQuestionsLoading] = useState(false);
-
-  // Dokumen wajib tambahan (editor di halaman Formulir Lamaran) — baru
-  // tersimpan saat tombol Simpan diklik, bukan tiap perubahan.
+  // Dokumen wajib tambahan — editornya kini ada di halaman setelan Penerimaan;
+  // nilainya tetap diinisialisasi dari posisi & dikirim utuh di payload.
   const [customDocs, setCustomDocs] = useState<string[]>(() =>
     editing ? [...editing.customDocs] : []
   );
-  const [newDoc, setNewDoc] = useState("");
-
-  const addCustomDoc = useCallback(() => {
-    const label = newDoc.trim().slice(0, CUSTOM_DOC_MAX_LEN);
-    if (label.length < 2) {
-      toast.error("Nama dokumen minimal 2 karakter.");
-      return;
-    }
-    if (customDocs.length >= MAX_CUSTOM_DOCS) {
-      toast.error(`Maksimal ${MAX_CUSTOM_DOCS} dokumen tambahan.`);
-      return;
-    }
-    if (customDocs.some((d) => d.toLowerCase() === label.toLowerCase())) {
-      toast.error("Dokumen dengan nama itu sudah ada.");
-      return;
-    }
-    setCustomDocs((prev) => [...prev, label]);
-    setNewDoc("");
-  }, [newDoc, customDocs]);
-
-  const removeCustomDoc = useCallback((label: string) => {
-    setCustomDocs((prev) => prev.filter((d) => d !== label));
-  }, []);
 
   // Autosave draf: tulis ke localStorage 1500ms setelah perubahan form terakhir.
   // Tidak menulis bila form masih kosong agar draf lama tidak tertimpa isian kosong.
@@ -811,50 +659,6 @@ export function PositionFormPage({
       .finally(() => setSavingTemplate(false));
   }
 
-  // ---- Generator pertanyaan screening AI ----
-
-  // Pola id sama dengan ScreeningQuestionsEditor agar konsisten.
-  function newScreeningQuestionId(): string {
-    return `q${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-3)}`;
-  }
-
-  function handleGenerateQuestions() {
-    if (!editing || aiQuestionsLoading) return;
-    setAiQuestionsLoading(true);
-    apiPost<{ questions: { label: string }[] }>("/api/admin/ai/screening-questions", {
-      positionId: editing.id,
-    })
-      .then((res) => {
-        const incoming = (Array.isArray(res.questions) ? res.questions : [])
-          .map((q) => (q && typeof q.label === "string" ? q.label.trim().slice(0, 200) : ""))
-          .filter((label) => label.length >= 3)
-          .filter((label, index, all) => all.indexOf(label) === index)
-          .filter(
-            (label) =>
-              !form.screeningQuestions.some(
-                (q) => q.label.trim().toLowerCase() === label.toLowerCase()
-              )
-          );
-        const room = Math.max(0, 10 - form.screeningQuestions.length);
-        const toAdd = incoming.slice(0, room);
-        if (toAdd.length === 0) {
-          toast.info(
-            "Tidak ada pertanyaan baru yang bisa ditambahkan — daftar penuh atau hasil AI sudah ada."
-          );
-          return;
-        }
-        const added = toAdd.map((label) => ({
-          id: newScreeningQuestionId(),
-          label,
-          required: false,
-        }));
-        set("screeningQuestions", [...form.screeningQuestions, ...added]);
-        toast.success(`${toAdd.length} pertanyaan ditambahkan dari AI`);
-      })
-      .catch((err) => reportError(err))
-      .finally(() => setAiQuestionsLoading(false));
-  }
-
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
@@ -862,22 +666,6 @@ export function PositionFormPage({
     () => form.stages.map((s) => s.trim()).filter(Boolean),
     [form.stages]
   );
-
-  // Tahap kustom (di luar 5 bawaan) — untuk editor kategori fitur tab Pipeline.
-  const customStages = useMemo(
-    () => cleanedStages.filter((s) => !isBuiltInStage(s)),
-    [cleanedStages]
-  );
-
-  // Lamaran pada tahap di luar daftar pipeline tersimpan (dari stats funnel).
-  const outOfStageApps = useMemo(() => {
-    if (!editing || !statsRow) return 0;
-    const inFunnel = statsRow.funnel.reduce((sum, f) => sum + f.count, 0);
-    return Math.max(0, statsRow.applications - inFunnel);
-  }, [editing, statsRow]);
-
-  const pubMode = formPublicationMode(form);
-  const pub = PUB_MODE[pubMode.key];
 
   function validate(): string[] {
     const errors: string[] = [];
@@ -1044,9 +832,7 @@ export function PositionFormPage({
       let updated: Position;
       if (editing) {
         updated = await apiPatch<Position>(`/api/admin/positions/${editing.id}`, payload);
-        toast.success(
-          mode === "formulir" ? "Formulir lamaran disimpan" : "Posisi diperbarui"
-        );
+        toast.success("Posisi diperbarui");
       } else {
         updated = await apiPost<Position>("/api/admin/positions", payload);
         toast.success("Posisi ditambahkan");
@@ -1131,17 +917,11 @@ export function PositionFormPage({
         </div>
         <div className="min-w-0">
           <h2 className="truncate text-lg font-bold leading-tight">
-            {editing
-              ? mode === "formulir"
-                ? `Formulir Lamaran: ${editing.title}`
-                : `Edit Posisi: ${editing.title}`
-              : "Tambah Posisi"}
+            {editing ? `Edit Posisi: ${editing.title}` : "Tambah Posisi"}
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {editing
-              ? mode === "formulir"
-                ? "Atur berkas wajib, kuota pelamar, dan pertanyaan screening yang diisi pelamar."
-                : "Perbarui pengaturan posisi lowongan, lalu klik Simpan."
+              ? "Perbarui konten lowongan, lalu klik Simpan."
               : "Lengkapi detail posisi lowongan baru untuk halaman publik."}
           </p>
         </div>
@@ -1266,9 +1046,7 @@ export function PositionFormPage({
             ) : null}
 
             <div className="flex flex-col gap-5">
-              {/* Halaman EDIT POSISI: seluruh section info lowongan. */}
-              {mode === "posisi" ? (
-                <>
+              {/* Halaman KONTEN: Dasar, Konten Bahasa Inggris, Tampilan & Konten, Benefit & Karya. */}
               {/* a. Dasar */}
               <FormSection
                 id="dasar"
@@ -1407,98 +1185,6 @@ export function PositionFormPage({
                 </FormSection>
 
                 <FormDivider />
-
-              {/* b. Publikasi & Status */}
-              <FormSection
-                id="publikasi"
-                icon={Send}
-                title="Publikasi & Status"
-                hint="Status tayang, jadwal publikasi & penutupan, dan urutan tampil."
-              >
-                  <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                    <div>
-                      <p className="text-sm font-medium">Aktifkan posisi</p>
-                      <p className="text-xs text-muted-foreground">
-                        Dasar tampil di halaman publik
-                      </p>
-                    </div>
-                    <Switch
-                      checked={form.isActive}
-                      onCheckedChange={(checked) => set("isActive", checked)}
-                      aria-label="Aktifkan posisi (tampil di halaman publik)"
-                    />
-                  </div>
-
-                  {/* Formulir lamaran per posisi — buka/tutup terpisah dari status tayang */}
-                  <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                    <div>
-                      <p className="text-sm font-medium">Buka formulir lamaran</p>
-                      <p className="text-xs text-muted-foreground">
-                        Saat ditutup, posisi tetap tayang tetapi tidak menerima lamaran baru
-                      </p>
-                    </div>
-                    <Switch
-                      checked={form.applyOpen}
-                      onCheckedChange={(checked) => set("applyOpen", checked)}
-                      aria-label="Buka atau tutup formulir lamaran posisi ini"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
-                    <Badge className={pub.className} variant="outline">
-                      {pub.label}
-                    </Badge>
-                    <p className="text-xs text-muted-foreground">{pubMode.hint}</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="pos-publishAt">Jadwal Publikasi (opsional)</Label>
-                      <Input
-                        id="pos-publishAt"
-                        type="datetime-local"
-                        value={form.publishAtLocal}
-                        onChange={(e) => set("publishAtLocal", e.target.value)}
-                        className="h-10"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Posisi mulai tayang otomatis setelah waktu ini.
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="pos-closesAt">Tanggal Penutupan (opsional)</Label>
-                      <Input
-                        id="pos-closesAt"
-                        type="datetime-local"
-                        value={form.closesAtLocal}
-                        onChange={(e) => set("closesAtLocal", e.target.value)}
-                        className="h-10"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Posisi berhenti tampil setelah waktu ini.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5 sm:max-w-56">
-                    <Label htmlFor="pos-order">Urutan Tampil</Label>
-                    <Input
-                      id="pos-order"
-                      type="number"
-                      step={1}
-                      value={form.order}
-                      onChange={(e) => set("order", e.target.value)}
-                      placeholder="Otomatis"
-                      className="h-10"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Angka kecil tampil lebih dulu. Kosongkan untuk urutan otomatis.
-                    </p>
-                  </div>
-                </FormSection>
-
-                <FormDivider />
-
               {/* c. Tampilan & Konten */}
               <FormSection
                 id="tampilan"
@@ -1734,796 +1420,34 @@ export function PositionFormPage({
                 </FormSection>
 
                 <FormDivider />
-                </>
-              ) : null}
 
-              {/* Halaman FORMULIR LAMARAN: berkas wajib, kuota, screening, dokumen. */}
-              {mode === "formulir" ? (
-                <>
-              {/* f. Formulir & Screening */}
-              <FormSection
-                id="formulir"
-                icon={ListChecks}
-                title="Formulir & Screening"
-                hint="Berkas wajib, kuota pelamar, dan pertanyaan screening."
-              >
-                  {/* Posisi memakai Form Builder (skema aktif): pengaturan berkas
-                      bawaan pindah ke tab Pertanyaan — bagian Berkas. */}
-                  {editing && isFormSchemaActive({ formSchema: editing.formSchema }) ? (
-                    <p className="text-xs text-muted-foreground">
-                      Pengaturan CV, intro, dan portofolio kini ada di Form Builder — tab
-                      Pertanyaan, bagian Berkas.
-                    </p>
-                  ) : (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    {(
-                      [
-                        ["requireCv", "Wajib CV", "Berkas PDF saat melamar"],
-                        ["requireIntro", "Wajib Intro Video", "Audio/video perkenalan"],
-                        ["requirePortfolio", "Wajib Portofolio", "Tautan portofolio karya"],
-                      ] as const
-                    ).map(([key, label, hint]) => (
-                      <div
-                        key={key}
-                        className="flex items-center justify-between gap-3 rounded-lg border p-3 sm:flex-col sm:items-start sm:justify-between"
-                      >
-                        <div>
-                          <p className="text-sm font-medium">{label}</p>
-                          <p className="text-xs text-muted-foreground">{hint}</p>
-                        </div>
-                        <Switch
-                          checked={form[key]}
-                          onCheckedChange={(checked) => set(key, checked)}
-                          aria-label={label}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  )}
-
-                  <div className="flex flex-col gap-1.5 sm:max-w-56">
-                    <Label htmlFor="pos-maxApplicants">Kuota Pelamar (opsional)</Label>
-                    <Input
-                      id="pos-maxApplicants"
-                      type="number"
-                      min={1}
-                      max={10000}
-                      step={1}
-                      value={form.maxApplicants}
-                      onChange={(e) => set("maxApplicants", e.target.value)}
-                      placeholder="Tanpa kuota"
-                      className="h-10"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Posisi otomatis berhenti menerima lamaran saat kuota penuh.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2">
-                    <Label>Pertanyaan Screening</Label>
-                    {editing ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1 px-2 text-xs active:scale-[0.99]"
-                        onClick={handleGenerateQuestions}
-                        disabled={aiQuestionsLoading}
-                      >
-                        {aiQuestionsLoading ? (
-                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <Sparkles className="size-3.5" aria-hidden="true" />
-                        )}
-                        Generate dengan AI
-                      </Button>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="inline-block">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 gap-1 px-2 text-xs"
-                              disabled
-                            >
-                              <Sparkles className="size-3.5" aria-hidden="true" />
-                              Generate dengan AI
-                            </Button>
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent>Simpan posisi dulu</TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                    <ScreeningQuestionsEditor
-                      items={form.screeningQuestions}
-                      onChange={(items) => set("screeningQuestions", items)}
-                      maxItems={10}
-                    />
-
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="pos-customDocs">Dokumen Wajib Tambahan</Label>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      Misal: KTP, Ijazah, Sertifikat, Surat Sehat. Pelamar wajib
-                      mengunggah semuanya (PDF/gambar/Word, maks 5 MB per berkas,
-                      maksimal {MAX_CUSTOM_DOCS} dokumen).
-                    </p>
-                    {customDocs.length > 0 ? (
-                      <ul className="flex flex-col gap-1.5">
-                        {customDocs.map((doc) => (
-                          <li
-                            key={doc}
-                            className="flex min-h-10 items-center justify-between gap-2 rounded-lg border bg-zinc-50/60 px-3 py-1.5 dark:bg-zinc-900/40"
-                          >
-                            <span className="flex min-w-0 items-center gap-2 text-sm">
-                              <FileText
-                                className="size-3.5 shrink-0 text-rose-600 dark:text-rose-400"
-                                aria-hidden="true"
-                              />
-                              <span className="truncate">{doc}</span>
-                            </span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-8 shrink-0 text-muted-foreground hover:text-rose-600"
-                              onClick={() => removeCustomDoc(doc)}
-                              aria-label={`Hapus dokumen ${doc}`}
-                            >
-                              <X className="size-4" aria-hidden="true" />
-                            </Button>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
-                        Belum ada dokumen tambahan.
-                      </p>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id="pos-customDocs"
-                        value={newDoc}
-                        onChange={(e) => setNewDoc(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addCustomDoc();
-                          }
-                        }}
-                        placeholder="Nama dokumen, mis. KTP"
-                        className="h-11 sm:flex-1"
-                        maxLength={CUSTOM_DOC_MAX_LEN}
-                        disabled={customDocs.length >= MAX_CUSTOM_DOCS}
-                        aria-label="Nama dokumen baru"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-11 shrink-0 sm:h-10"
-                        onClick={addCustomDoc}
-                        disabled={customDocs.length >= MAX_CUSTOM_DOCS}
-                      >
-                        <Plus className="size-4" aria-hidden="true" />
-                        Tambah
-                      </Button>
-                    </div>
-                  </div>
-                </FormSection>
-                </>
-              ) : null}
-
-              {/* Lanjutan EDIT POSISI: pipeline, pesan, evaluasi, wawancara, penawaran. */}
-              {mode === "posisi" ? (
-                <>
-              {/* g. Pipeline & AI */}
-              <FormSection
-                id="pipeline"
-                icon={Workflow}
-                title="Pipeline & AI"
-                hint="Tahapan seleksi kustom, auto-shortlist, dan kriteria AI."
-              >
-                  <div className="flex flex-col gap-1.5">
-                    <Label>Pipeline Tahap Kustom</Label>
-                    {outOfStageApps > 0 ? (
-                      <div
-                        className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
-                        role="alert"
-                      >
-                        <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                        <span>
-                          {outOfStageApps} lamaran posisi ini berada pada tahap yang tidak ada di daftar
-                          pipeline tersimpan. Tambahkan kembali tahap tersebut, atau lamaran itu tidak akan
-                          tampil di funnel &amp; papan kanban.
-                        </span>
-                      </div>
-                    ) : null}
-                    <StringListEditor
-                      name="Tahap pipeline"
-                      items={form.stages}
-                      onChange={(items) => {
-                        set("stages", items);
-                        // Tahap yang dihapus dari pipeline tidak valid lagi untuk auto-shortlist.
-                        setForm((f) =>
-                          f.autoShortlistStage &&
-                          !items.map((s) => s.trim()).includes(f.autoShortlistStage)
-                            ? { ...f, autoShortlistStage: "" }
-                            : f
-                        );
-                      }}
-                      maxItems={12}
-                      maxLength={40}
-                      addLabel="Tambah tahap"
-                      placeholder="mis. Tes Menulis"
-                      hint="Kosong = pipeline bawaan (Baru/Ditinjau/Wawancara/Diterima/Ditolak)"
-                    />
-                  </div>
-
-                  {customStages.length > 0 ? (
-                    <div className="flex flex-col gap-1.5">
-                      <Label>Kategori Fitur Tahap Kustom</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Tentukan di kategori mana tiap tahap kustom muncul di tab Pipeline:
-                        Ditinjau, Wawancara, Diterima, atau Ditolak.
-                      </p>
-                      <div className="flex flex-col gap-2">
-                        {customStages.map((stage) => (
-                          <div key={stage} className="flex items-center gap-2">
-                            <span className="min-w-0 flex-1 truncate rounded-lg border bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
-                              {stage}
-                            </span>
-                            <Select
-                              value={
-                                form.stageCategories[stage] ??
-                                defaultCategoryForCustomStage(stage)
-                              }
-                              onValueChange={(v) =>
-                                setForm((f) => ({
-                                  ...f,
-                                  stageCategories: {
-                                    ...f.stageCategories,
-                                    [stage]: v as StageCategory,
-                                  },
-                                }))
-                              }
-                            >
-                              <SelectTrigger
-                                className="h-10 w-40 shrink-0"
-                                aria-label={`Kategori fitur untuk tahap ${stage}`}
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {STAGE_CATEGORIES.map((c) => (
-                                  <SelectItem key={c} value={c}>
-                                    {STAGE_CATEGORY_LABELS[c]}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="pos-shortlistScore">Ambang Skor Auto-Shortlist (opsional)</Label>
-                      <Input
-                        id="pos-shortlistScore"
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={1}
-                        value={form.autoShortlistScore}
-                        onChange={(e) => set("autoShortlistScore", e.target.value)}
-                        placeholder="mis. 80"
-                        className="h-10"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Lamaran Baru dengan skor AI mencapai angka ini dipindah otomatis.
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <Label>Tahap Tujuan Auto-Shortlist</Label>
-                      <Select
-                        value={form.autoShortlistStage || SHORTLIST_NONE}
-                        onValueChange={(v) =>
-                          set("autoShortlistStage", v === SHORTLIST_NONE ? "" : v)
-                        }
-                        disabled={cleanedStages.length === 0}
-                      >
-                        <SelectTrigger
-                          className="h-10 w-full"
-                          aria-label="Tahap tujuan auto-shortlist"
-                        >
-                          <SelectValue placeholder="(nonaktif)" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {/* Radix melarang SelectItem value="" — pakai sentinel */}
-                          <SelectItem value={SHORTLIST_NONE}>(nonaktif)</SelectItem>
-                          {stagesForPosition(cleanedStages).map((stage) => (
-                            <SelectItem key={stage} value={stage}>
-                              {stageLabel(stage)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        {cleanedStages.length === 0
-                          ? "Isi pipeline tahap kustom di atas untuk mengaktifkan pilihan ini."
-                          : "Lamaran dipindah ke tahap ini saat ambang skor tercapai."}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="pos-aiCriteria">Kriteria AI (opsional)</Label>
-                    <Textarea
-                      id="pos-aiCriteria"
-                      value={form.aiCriteria}
-                      onChange={(e) => set("aiCriteria", e.target.value)}
-                      placeholder="mis. Utamakan kandidat dengan pengalaman editing YouTube dan pemahaman tren konten pendek."
-                      rows={3}
-                      maxLength={600}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Mempengaruhi prompt screening AI khusus posisi ini. Maksimal 600 karakter.
-                    </p>
-                  </div>
-                </FormSection>
-
-                <FormDivider />
-
-              {/* g. Otomasi Pesan */}
-              <FormSection
-                id="otomasi"
-                icon={MessagesSquare}
-                title="Otomasi Pesan"
-                hint="Template pesan otomatis dan info tes untuk pelamar."
-              >
-                  <p className="text-xs text-muted-foreground">
-                    Variabel yang tersedia:{" "}
-                    <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[11px] dark:bg-zinc-800">
-                      {"{nama}"}
-                    </code>
-                    ,{" "}
-                    <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[11px] dark:bg-zinc-800">
-                      {"{posisi}"}
-                    </code>
-                    ,{" "}
-                    <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[11px] dark:bg-zinc-800">
-                      {"{kode}"}
-                    </code>{" "}
-                    (kode pelacakan; hanya untuk pesan lamaran). Maksimal 500 karakter per template.
-                  </p>
-
-                  {(
-                    [
-                      ["applyTemplate", "Template Konfirmasi Lamaran", DEMO_TEMPLATES.apply, "Dikirim otomatis saat pelamar selesai mendaftar."],
-                      ["acceptTemplate", "Template Diterima", DEMO_TEMPLATES.accept, "Dikirim saat lamaran dipindah ke tahap Diterima."],
-                      ["rejectTemplate", "Template Ditolak", DEMO_TEMPLATES.reject, "Dikirim saat lamaran dipindah ke tahap Ditolak."],
-                    ] as const
-                  ).map(([key, label, demo, hint]) => (
-                    <div key={key} className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <Label htmlFor={`pos-${key}`}>{label}</Label>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 gap-1 px-2 text-xs active:scale-[0.99]"
-                          onClick={() => set(key, demo)}
-                        >
-                          <Sparkles className="size-3.5" aria-hidden="true" />
-                          Isi contoh
-                        </Button>
-                      </div>
-                      <Textarea
-                        id={`pos-${key}`}
-                        value={form[key]}
-                        onChange={(e) => set(key, e.target.value)}
-                        placeholder="Kosongkan untuk tidak mengirim pesan otomatis."
-                        rows={3}
-                        maxLength={500}
-                      />
-                      <p className="text-xs text-muted-foreground">{hint}</p>
-                    </div>
-                  ))}
-
-                  <div className="rounded-lg border p-3">
-                    <p className="text-sm font-medium">Tes untuk Pelamar</p>
-                    <p className="mb-3 text-xs text-muted-foreground">
-                      Info tes/brief dikirim bersama pesan konfirmasi lamaran. Kosongkan bila tidak ada tes.
-                    </p>
-                    <div className="flex flex-col gap-3">
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="pos-assignmentTitle">Judul Tes</Label>
-                        <Input
-                          id="pos-assignmentTitle"
-                          value={form.assignmentTitle}
-                          onChange={(e) => set("assignmentTitle", e.target.value)}
-                          placeholder="mis. Tes Editing 60 Detik"
-                          className="h-10"
-                          maxLength={120}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="pos-assignmentUrl">URL Tes</Label>
-                        <Input
-                          id="pos-assignmentUrl"
-                          value={form.assignmentUrl}
-                          onChange={(e) => set("assignmentUrl", e.target.value)}
-                          placeholder="https://drive.google.com/..."
-                          className="h-10"
-                          maxLength={300}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="pos-assignmentNote">Catatan Tes</Label>
-                        <Textarea
-                          id="pos-assignmentNote"
-                          value={form.assignmentNote}
-                          onChange={(e) => set("assignmentNote", e.target.value)}
-                          placeholder="Instruksi singkat pengerjaan tes..."
-                          rows={2}
-                          maxLength={400}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </FormSection>
-
-                <FormDivider />
-
-              {/* h. Evaluasi */}
-              <FormSection
-                id="evaluasi"
-                icon={ClipboardCheck}
-                title="Evaluasi"
-                hint="Rubrik penilaian, checklist, dan catatan cepat tim."
-              >
-                  <div className="flex flex-col gap-1.5">
-                    <Label>Kriteria Rubrik Penilaian</Label>
-                    <StringListEditor
-                      name="Kriteria rubrik"
-                      items={form.rubricCriteria}
-                      onChange={(items) => set("rubricCriteria", items)}
-                      maxItems={8}
-                      maxLength={60}
-                      addLabel="Tambah kriteria"
-                      placeholder="mis. Kualitas storytelling"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label>Template Checklist</Label>
-                    <StringListEditor
-                      name="Item checklist"
-                      items={form.checklistTemplate}
-                      onChange={(items) => set("checklistTemplate", items)}
-                      maxItems={8}
-                      maxLength={120}
-                      addLabel="Tambah item checklist"
-                      placeholder="mis. Cek reel di Instagram kandidat"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label>Template Catatan Cepat</Label>
-                    <StringListEditor
-                      name="Template catatan"
-                      items={form.noteTemplates}
-                      onChange={(items) => set("noteTemplates", items)}
-                      maxItems={8}
-                      maxLength={200}
-                      addLabel="Tambah template catatan"
-                      placeholder="mis. Portofolio kuat, cek di wawancara"
-                      hint="Klik cepat saat menulis catatan pada lamaran"
-                    />
-                  </div>
-                </FormSection>
-
-                <FormDivider />
-
-              {/* i. Wawancara */}
-              <FormSection
-                id="wawancara"
-                icon={Video}
-                title="Wawancara"
-                hint="Mode, platform, durasi bawaan, kriteria scorecard, dan template undangan."
-              >
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1.5">
-                      <Label>Mode Bawaan</Label>
-                      <Select
-                        value={form.interviewMode}
-                        onValueChange={(v) => set("interviewMode", v as InterviewMode)}
-                      >
-                        <SelectTrigger className="h-10 w-full" aria-label="Mode wawancara bawaan">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {INTERVIEW_MODES.map((m) => (
-                            <SelectItem key={m} value={m}>
-                              {INTERVIEW_MODE_LABELS[m]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <Label>Platform Bawaan</Label>
-                      <Select
-                        value={form.interviewPlatform}
-                        onValueChange={(v) => set("interviewPlatform", v as InterviewPlatform)}
-                      >
-                        <SelectTrigger className="h-10 w-full" aria-label="Platform wawancara bawaan">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {INTERVIEW_PLATFORMS.map((p) => (
-                            <SelectItem key={p} value={p}>
-                              {INTERVIEW_PLATFORM_LABELS[p]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5 sm:max-w-56">
-                    <Label htmlFor="pos-interviewDuration">Durasi Default (menit)</Label>
-                    <Input
-                      id="pos-interviewDuration"
-                      type="number"
-                      min={10}
-                      max={480}
-                      step={5}
-                      value={form.interviewDuration}
-                      onChange={(e) => set("interviewDuration", e.target.value)}
-                      placeholder="45"
-                      className="h-10"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Terisi otomatis saat menjadwalkan wawancara (10-480 menit).
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label>Kriteria Scorecard</Label>
-                    <StringListEditor
-                      name="Kriteria scorecard"
-                      items={form.interviewCriteria}
-                      onChange={(items) => set("interviewCriteria", items)}
-                      maxItems={8}
-                      maxLength={60}
-                      addLabel="Tambah kriteria"
-                      placeholder="mis. Komunikasi"
-                      hint="Kosongkan untuk memakai kriteria bawaan (Komunikasi, Portofolio, dll.)"
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Rencana Ronde Wawancara (opsional)</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8"
-                        disabled={form.roundPlan.length >= 10}
-                        onClick={() =>
-                          set("roundPlan", [...form.roundPlan, { name: "", durationMin: "", interviewers: "" }])
-                        }
-                      >
-                        <Plus className="size-3.5" aria-hidden="true" />
-                        Tambah ronde
-                      </Button>
-                    </div>
-                    {form.roundPlan.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        Contoh: HR Screen 30 menit, lalu User Trial 60 menit. Setelah sebuah ronde selesai, admin bisa
-                        menjadwalkan ronde berikutnya sekali klik dari dialog wawancara.
-                      </p>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        {form.roundPlan.map((row, index) => (
-                          <div
-                            key={index}
-                            className="grid grid-cols-1 items-end gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_110px_1fr_auto]"
-                          >
-                            <div className="flex flex-col gap-1">
-                              <Label className="text-xs">Nama ronde {index + 1}</Label>
-                              <Input
-                                value={row.name}
-                                onChange={(e) =>
-                                  set(
-                                    "roundPlan",
-                                    form.roundPlan.map((r, i) =>
-                                      i === index ? { ...r, name: e.target.value } : r,
-                                    ),
-                                  )
-                                }
-                                placeholder="mis. HR Screen"
-                                className="h-9"
-                                maxLength={60}
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <Label className="text-xs">Durasi (menit)</Label>
-                              <Input
-                                type="number"
-                                min={10}
-                                max={480}
-                                value={row.durationMin}
-                                onChange={(e) =>
-                                  set(
-                                    "roundPlan",
-                                    form.roundPlan.map((r, i) =>
-                                      i === index ? { ...r, durationMin: e.target.value } : r,
-                                    ),
-                                  )
-                                }
-                                placeholder="45"
-                                className="h-9"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <Label className="text-xs">Pewawancara (pisah koma)</Label>
-                              <Input
-                                value={row.interviewers}
-                                onChange={(e) =>
-                                  set(
-                                    "roundPlan",
-                                    form.roundPlan.map((r, i) =>
-                                      i === index ? { ...r, interviewers: e.target.value } : r,
-                                    ),
-                                  )
-                                }
-                                placeholder="mis. Ajo (HR), Jawa (Owner)"
-                                className="h-9"
-                              />
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-9 px-2 text-rose-600 hover:text-rose-700"
-                              aria-label={`Hapus ronde ${index + 1}`}
-                              onClick={() => set("roundPlan", form.roundPlan.filter((_, i) => i !== index))}
-                            >
-                              <Trash2 className="size-4" aria-hidden="true" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="pos-interviewInviteTemplate">Template Undangan Wawancara</Label>
-                    <Textarea
-                      id="pos-interviewInviteTemplate"
-                      value={form.interviewInviteTemplate}
-                      onChange={(e) => set("interviewInviteTemplate", e.target.value)}
-                      placeholder="Hai {nama}, kamu diundang wawancara untuk posisi {posisi} pada {tanggal} pukul {jam} via {mode}. Link: {link}"
-                      rows={3}
-                      maxLength={800}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Variabel: {"{nama}"} {"{posisi}"} {"{tanggal}"} {"{jam}"} {"{link}"} {"{mode}"}
-                    </p>
-                  </div>
-                </FormSection>
-
-                <FormDivider />
-
-              {/* j. Penawaran & Onboarding */}
-              <FormSection
-                id="penawaran"
-                icon={Handshake}
-                title="Penawaran & Onboarding"
-                hint="Template penawaran & sambutan, masa percobaan, dokumen onboarding, dan jeda lamar ulang."
-              >
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="pos-offerTemplate">Template Pesan Penawaran</Label>
-                    <Textarea
-                      id="pos-offerTemplate"
-                      value={form.offerTemplate}
-                      onChange={(e) => set("offerTemplate", e.target.value)}
-                      placeholder="Selamat {nama}! Kami menawarkanmu posisi {posisi} dengan gaji {gaji}, mulai {tanggal}. Mohon konfirmasi sebelum {deadline}."
-                      rows={3}
-                      maxLength={800}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Variabel: {"{nama}"} {"{posisi}"} {"{gaji}"} {"{tanggal}"} {"{deadline}"}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="pos-welcomeTemplate">Template Pesan Sambutan</Label>
-                    <Textarea
-                      id="pos-welcomeTemplate"
-                      value={form.welcomeTemplate}
-                      onChange={(e) => set("welcomeTemplate", e.target.value)}
-                      placeholder="Selamat bergabung, {nama}! Hari pertamamu di posisi {posisi} dimulai {tanggal}."
-                      rows={3}
-                      maxLength={800}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Variabel: {"{nama}"} {"{posisi}"} {"{tanggal}"}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="pos-probationMonths">Masa Percobaan (bulan)</Label>
-                      <Input
-                        id="pos-probationMonths"
-                        type="number"
-                        min={0}
-                        max={12}
-                        step={1}
-                        value={form.probationMonths}
-                        onChange={(e) => set("probationMonths", e.target.value)}
-                        placeholder="0"
-                        className="h-10"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Batas akhir masa percobaan dihitung dari tanggal diterima (0-12).
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="pos-reapplyCooldown">Jeda Lamar Ulang (hari)</Label>
-                      <Input
-                        id="pos-reapplyCooldown"
-                        type="number"
-                        min={0}
-                        max={365}
-                        step={1}
-                        value={form.reapplyCooldownDays}
-                        onChange={(e) => set("reapplyCooldownDays", e.target.value)}
-                        placeholder="0"
-                        className="h-10"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Pelamar yang ditolak bisa melamar lagi setelah jeda ini. 0 = bebas.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label>Dokumen Wajib Onboarding</Label>
-                    <StringListEditor
-                      name="Dokumen onboarding"
-                      items={form.onboardingDocs}
-                      onChange={(items) => set("onboardingDocs", items)}
-                      maxItems={10}
-                      maxLength={120}
-                      addLabel="Tambah dokumen"
-                      placeholder="mis. Kontrak Kerja"
-                      hint="Daftar ini otomatis jadi checklist dokumen saat pelamar diterima"
-                    />
-                  </div>
-
+              {editing === null ? (
+                <FormSection
+                  id="publikasi-create"
+                  icon={Send}
+                  title="Publikasi"
+                  hint="Tentukan apakah posisi langsung tayang setelah disimpan."
+                >
                   <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
                     <div>
-                      <p className="text-sm font-medium">Tutup otomatis saat diterima</p>
+                      <p className="text-sm font-medium">Aktifkan posisi</p>
                       <p className="text-xs text-muted-foreground">
-                        Lowongan berhenti menerima lamaran begitu ada kandidat menerima penawaran
+                        Dasar tampil di halaman publik
                       </p>
                     </div>
                     <Switch
-                      checked={form.autoCloseOnHired}
-                      onCheckedChange={(checked) => set("autoCloseOnHired", checked)}
-                      aria-label="Tutup lowongan otomatis saat ada kandidat diterima"
+                      checked={form.isActive}
+                      onCheckedChange={(checked) => set("isActive", checked)}
+                      aria-label="Aktifkan posisi (tampil di halaman publik)"
                     />
                   </div>
                 </FormSection>
-                </>
-              ) : null}
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Status tayang, jadwal, kuota, dan penerimaan kini dikelola di
+                  tab Penerimaan halaman Kelola.
+                </p>
+              )}
             </div>
 
             {/* Tombol submit tersembunyi agar Enter mensubmit form */}
@@ -2536,9 +1460,7 @@ export function PositionFormPage({
         <div className="flex items-center justify-between gap-3 rounded-2xl border bg-background/95 p-3 shadow-lg backdrop-blur">
           <p className="hidden text-xs text-muted-foreground sm:block">
             {editing
-              ? mode === "formulir"
-                ? "Formulir berlaku untuk lamaran yang masuk setelah disimpan."
-                : "Perubahan berlaku setelah tombol Simpan diklik."
+              ? "Perubahan berlaku setelah tombol Simpan diklik."
               : "Posisi tampil di halaman publik setelah disimpan."}
           </p>
           <div className="flex flex-1 items-center justify-end gap-2 sm:flex-none">
@@ -2563,11 +1485,7 @@ export function PositionFormPage({
                   Menyimpan...
                 </>
               ) : editing ? (
-                mode === "formulir" ? (
-                  "Simpan Formulir"
-                ) : (
-                  "Simpan Perubahan"
-                )
+                "Simpan Perubahan"
               ) : (
                 "Tambah Posisi"
               )}

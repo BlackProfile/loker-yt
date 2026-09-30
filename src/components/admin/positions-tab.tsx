@@ -1,20 +1,16 @@
 "use client";
 
-// Tab Posisi — pusat kendali per lowongan: daftar posisi dengan badge status
-// publikasi, flag unggulan/urgent/kuota/tes, mini-statistik, share kit (QR +
-// salin link), statistik per posisi, dan form lengkap v3.
+// Tab Posisi — daftar posisi dengan badge status publikasi, flag
+// unggulan/urgent/kuota/tes, mini-statistik, switch aktif & buka/tutup formulir,
+// tombol Kelola (hub "Satu Pintu Kelola Posisi"), dan menu aksi lain
+// (salin link, halaman publik, duplikat, hapus). Halaman kelola per posisi
+// (konten, formulir, penerimaan, seleksi, wawancara, pesan, statistik)
+// dirender oleh PositionManagePage dengan deep-link #admin/posisi/<id>[/suffix].
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
@@ -31,15 +27,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
-  BarChart3,
   Briefcase,
   ClipboardList,
   Copy,
+  EllipsisVertical,
   ExternalLink,
   Eye,
   FileText,
@@ -48,14 +50,10 @@ import {
   Link2,
   Loader2,
   MapPin,
-  Pencil,
   Pin,
   Plus,
-  QrCode,
   RefreshCw,
-  Search,
   Settings2,
-  Sprout,
   TrendingUp,
   Trash2,
   Users,
@@ -63,39 +61,45 @@ import {
 import { toast } from "sonner";
 import type { Position, PositionStatsRow } from "@/lib/types";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
-import { copyText, formatDate } from "./format";
+import { copyText } from "./format";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { Reveal } from "./motion-primitives";
 import { PositionFormPage } from "./position-form-page";
-import { PositionStatsDialog } from "./position-stats-dialog";
-import { PositionQrDialog } from "./position-qr-dialog";
-import { PositionManagePage } from "./position-manage-page";
-
-type ManageViewMode = "view" | "posisi" | "formulir";
+import { PositionManagePage, type ManageMode } from "./position-manage-page";
 
 /**
- * Baca id + mode dari deep-link #admin/posisi/<id>[/edit|/formulir].
- * "view" = halaman kelola, "posisi" = edit posisi, "formulir" = edit formulir
- * lamaran — semuanya halaman penuh, bukan popup.
+ * Baca id + mode dari deep-link #admin/posisi/<id>[/suffix].
+ * Suffix: /konten, /formulir, /penerimaan, /seleksi, /wawancara, /pesan,
+ * /statistik — plus alias lama /edit (→ konten). Tanpa suffix = "view"
+ * (ringkasan hub). Semuanya halaman penuh, bukan popup.
  */
-function readManageHash(): { id: string | null; mode: ManageViewMode } {
+const MANAGE_MODE_BY_SUFFIX: Record<string, ManageMode> = {
+  edit: "konten", // alias suffix lama
+  konten: "konten",
+  formulir: "formulir",
+  penerimaan: "penerimaan",
+  seleksi: "seleksi",
+  wawancara: "wawancara",
+  pesan: "pesan",
+  statistik: "statistik",
+};
+
+function readManageHash(): { id: string | null; mode: ManageMode } {
   if (typeof window === "undefined") return { id: null, mode: "view" };
   const match = window.location.hash.match(
-    /^#admin\/posisi\/([A-Za-z0-9_-]{1,40})(?:\/(edit|formulir))?$/
+    /^#admin\/posisi\/([A-Za-z0-9_-]{1,40})(?:\/(konten|edit|formulir|penerimaan|seleksi|wawancara|pesan|statistik))?$/
   );
   if (!match) return { id: null, mode: "view" };
   return {
     id: match[1],
-    mode:
-      match[2] === "formulir" ? "formulir" : match[2] === "edit" ? "posisi" : "view",
+    mode: match[2] ? MANAGE_MODE_BY_SUFFIX[match[2]] ?? "view" : "view",
   };
 }
 
-function manageHashFor(id: string, mode: ManageViewMode): string {
-  if (mode === "formulir") return `#admin/posisi/${id}/formulir`;
-  if (mode === "posisi") return `#admin/posisi/${id}/edit`;
-  return `#admin/posisi/${id}`;
+function manageHashFor(id: string, mode: ManageMode): string {
+  if (mode === "view") return `#admin/posisi/${id}`;
+  return `#admin/posisi/${id}/${mode}`;
 }
 
 /* ------------------------------ Status publikasi ------------------------------ */
@@ -137,28 +141,6 @@ function isExpired(closesAt: string | null): boolean {
   return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
 }
 
-/* ------------------------- Talent rediscovery & nurture ------------------------- */
-
-type RediscoverResult = {
-  id: string;
-  name: string;
-  skor: number;
-  alasan: string;
-  appliedAt: string;
-  priorTitle: string | null;
-};
-
-// Warna badge skor kecocokan (emerald kuat, amber menengah, zinc sisanya).
-function skorBadgeClass(skor: number): string {
-  if (skor >= 75) {
-    return "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400";
-  }
-  if (skor >= 45) {
-    return "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400";
-  }
-  return "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
-}
-
 /* ---------------------------------- Komponen ---------------------------------- */
 
 export function PositionsTab() {
@@ -174,19 +156,17 @@ export function PositionsTab() {
   const [deleteTarget, setDeleteTarget] = useState<Position | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const [statsTarget, setStatsTarget] = useState<Position | null>(null);
-  const [qrTarget, setQrTarget] = useState<Position | null>(null);
-
-  // Halaman khusus per posisi — mendukung deep-link #admin/posisi/<id>
-  // plus suffix /edit (edit posisi) dan /formulir (edit formulir lamaran).
+  // Halaman khusus per posisi — mendukung deep-link #admin/posisi/<id> plus
+  // suffix /konten, /formulir, /penerimaan, /seleksi, /wawancara, /pesan,
+  // /statistik, dan alias lama /edit.
   const initialManage = readManageHash();
   const [manageId, setManageId] = useState<string | null>(() => initialManage.id);
-  const [manageMode, setManageMode] = useState<ManageViewMode>(
+  const [manageMode, setManageMode] = useState<ManageMode>(
     () => initialManage.mode
   );
   const managing = manageId ? positions.find((p) => p.id === manageId) ?? null : null;
 
-  function openManage(position: Position, mode: ManageViewMode = "view") {
+  function openManage(position: Position, mode: ManageMode = "view") {
     setManageId(position.id);
     setManageMode(mode);
     // pushState (bukan replace) agar tombol Back browser kembali ke tampilan
@@ -196,15 +176,18 @@ export function PositionsTab() {
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 
-  // Keluar mode edit kembali ke tampilan kelola — replaceState agar tombol
-  // Back dari kelola tetap menuju daftar posisi (bukan mode edit lagi).
-  function exitEdit() {
+  // Ganti mode di dalam hub (dari sub-navigasi/tombol halaman) — "view"
+  // memakai replaceState agar tombol Back dari hub tetap menuju daftar posisi,
+  // mode lain memakai pushState agar Back kembali ke ringkasan hub.
+  function changeManageMode(mode: ManageMode) {
     if (!manageId) return;
-    setManageMode("view");
-    if (window.location.hash !== manageHashFor(manageId, "view")) {
-      history.replaceState(null, "", manageHashFor(manageId, "view"));
+    setManageMode(mode);
+    const target = manageHashFor(manageId, mode);
+    if (mode === "view") {
+      if (window.location.hash !== target) history.replaceState(null, "", target);
+    } else if (window.location.hash !== target) {
+      history.pushState(null, "", target);
     }
-    window.scrollTo({ top: 0, behavior: "auto" });
   }
 
   function closeManage() {
@@ -215,18 +198,6 @@ export function PositionsTab() {
     }
     window.scrollTo({ top: 0, behavior: "auto" });
   }
-
-  // Talent rediscovery (AI) — dipicu per posisi aktif.
-  const [rediscoverTarget, setRediscoverTarget] = useState<Position | null>(null);
-  const [rediscoverLoading, setRediscoverLoading] = useState(false);
-  const [rediscoverError, setRediscoverError] = useState<string | null>(null);
-  const [rediscoverData, setRediscoverData] = useState<{ total: number; results: RediscoverResult[] } | null>(null);
-
-  // Nurture kandidat ditolak — AlertDialog konfirmasi dengan jumlah kandidat.
-  const [nurtureTarget, setNurtureTarget] = useState<Position | null>(null);
-  const [nurtureCount, setNurtureCount] = useState<number | null>(null);
-  const [nurtureLoading, setNurtureLoading] = useState(false);
-  const [nurtureSending, setNurtureSending] = useState(false);
 
   const load = useCallback(
     async (silent = false) => {
@@ -256,11 +227,14 @@ export function PositionsTab() {
   }, [load]);
 
   // Sinkronkan tombol back/forward browser & perubahan hash saat tab ini
-  // terbuka: #admin/posisi/<id> membuka halaman kelola, /edit atau /formulir
-  // membuka mode edit terkait, hash lain menutup semuanya.
+  // terbuka: #admin/posisi/<id> membuka hub kelola, suffix membuka mode
+  // terkait, hash lain menutup semuanya.
   useEffect(() => {
     const onHash = () => {
       const h = readManageHash();
+      // Deep-link ke posisi tertentu menutup mode "Tambah Posisi" agar hub
+      // kelola benar-benar tampil (deep-link selalu menang).
+      if (h.id) setCreating(false);
       setManageId((prev) => (prev === h.id ? prev : h.id));
       setManageMode((prev) => (prev === h.mode ? prev : h.mode));
     };
@@ -270,7 +244,7 @@ export function PositionsTab() {
 
   // Realtime: posisi dibuat/diubah/dihapus (admin lain maupun aksi sendiri) →
   // segarkan daftar & statistik di belakang (senyap, mode silent dari tombol
-  // Segarkan). Dialog form yang sedang terbuka TIDAK terpengaruh: key dialog
+  // Segarkan). Halaman form yang sedang terbuka TIDAK terpengaruh: key halaman
   // tidak berubah sehingga state form pengguna tidak di-reset — daftar di
   // belakang saja yang diperbarui.
   useLiveRefresh("positions:changed", () => {
@@ -280,12 +254,6 @@ export function PositionsTab() {
   function openCreate() {
     setCreating(true);
     window.scrollTo({ top: 0, behavior: "auto" });
-  }
-
-  function openEdit(position: Position) {
-    // Edit posisi kini halaman khusus (bukan popup): buka halaman kelola
-    // langsung dalam mode edit posisi.
-    openManage(position, "posisi");
   }
 
   async function handleToggle(position: Position, isActive: boolean) {
@@ -374,68 +342,6 @@ export function PositionsTab() {
     else toast.error("Gagal menyalin tautan");
   }
 
-  /* --------------------------- Talent rediscovery (AI) --------------------------- */
-
-  async function openRediscover(position: Position) {
-    setRediscoverTarget(position);
-    setRediscoverData(null);
-    setRediscoverError(null);
-    setRediscoverLoading(true);
-    try {
-      const data = await apiPost<{ total: number; results: RediscoverResult[] }>(
-        `/api/admin/positions/${position.id}/rediscover`
-      );
-      setRediscoverData(data);
-    } catch (err) {
-      setRediscoverError(
-        err instanceof Error ? err.message : "Gagal mencari talent lama. Coba lagi."
-      );
-    } finally {
-      setRediscoverLoading(false);
-    }
-  }
-
-  async function retryRediscover() {
-    if (rediscoverTarget) await openRediscover(rediscoverTarget);
-  }
-
-  /* ----------------------------- Nurture kandidat ----------------------------- */
-
-  async function openNurture(position: Position) {
-    setNurtureTarget(position);
-    setNurtureCount(null);
-    setNurtureLoading(true);
-    try {
-      const data = await apiGet<{ count: number }>(
-        `/api/admin/positions/${position.id}/nurture?preview=1`
-      );
-      setNurtureCount(data.count);
-    } catch (err) {
-      setNurtureTarget(null);
-      reportError(err);
-    } finally {
-      setNurtureLoading(false);
-    }
-  }
-
-  async function handleNurture() {
-    if (!nurtureTarget || nurtureSending) return;
-    setNurtureSending(true);
-    try {
-      const data = await apiPost<{ queued: number }>(
-        `/api/admin/positions/${nurtureTarget.id}/nurture`
-      );
-      toast.success(`${data.queued} email disiapkan`, {
-        description: `Email nurture untuk posisi ${nurtureTarget.title} masuk kotak keluar.`,
-      });
-      setNurtureTarget(null);
-    } catch (err) {
-      reportError(err);
-    } finally {
-      setNurtureSending(false);
-    }
-  }
-
   const totalApplications = useMemo(
     () =>
       Object.values(statsMap).reduce((sum, row) => sum + row.applications, 0),
@@ -447,8 +353,6 @@ export function PositionsTab() {
       {creating ? (
         <PositionFormPage
           editing={null}
-          statsRow={null}
-          mode="posisi"
           onCancel={() => setCreating(false)}
           onSaved={(created) => {
             setCreating(false);
@@ -461,16 +365,11 @@ export function PositionsTab() {
           key={`${managing.id}-${manageMode}`}
           position={managing}
           stats={statsMap[managing.id] ?? null}
-          editMode={manageMode === "view" ? null : manageMode}
-          onEdit={(mode) => openManage(managing, mode)}
-          onExitEdit={exitEdit}
+          mode={manageMode}
+          onModeChange={changeManageMode}
           onBack={closeManage}
-          onStats={setStatsTarget}
-          onQr={setQrTarget}
-          onUpdated={(updated) =>
-            setPositions((prev) =>
-              prev.map((p) => (p.id === updated.id ? updated : p))
-            )
+          onUpdated={(p) =>
+            setPositions((prev) => prev.map((x) => (x.id === p.id ? p : x)))
           }
         />
       ) : (
@@ -701,122 +600,61 @@ export function PositionsTab() {
                       </span>
                     </div>
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 sm:size-9"
+                      variant="outline"
+                      size="sm"
+                      className="h-11 sm:h-9"
                       onClick={() => openManage(position)}
-                      aria-label={`Kelola posisi ${position.title}`}
-                      title="Kelola posisi"
                     >
                       <Settings2 className="size-4" aria-hidden="true" />
+                      Kelola
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 sm:size-9"
-                      onClick={() => setStatsTarget(position)}
-                      aria-label={`Statistik posisi ${position.title}`}
-                      title="Statistik"
-                    >
-                      <BarChart3 className="size-4" aria-hidden="true" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 sm:size-9"
-                      onClick={() => setQrTarget(position)}
-                      aria-label={`QR posisi ${position.title}`}
-                      title="QR Code"
-                    >
-                      <QrCode className="size-4" aria-hidden="true" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 sm:size-9"
-                      onClick={() =>
-                        window.open(
-                          position.slug
-                            ? `/?posisi=${encodeURIComponent(position.slug)}`
-                            : "/",
-                          "_blank",
-                          "noopener,noreferrer",
-                        )
-                      }
-                      aria-label={`Lihat halaman publik posisi ${position.title}`}
-                      title="Lihat Halaman Publik"
-                    >
-                      <ExternalLink className="size-4" aria-hidden="true" />
-                    </Button>
-                    {position.isActive ? (
-                      <>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
                         <Button
                           variant="ghost"
                           size="icon"
                           className="size-11 sm:size-9"
-                          onClick={() => void openRediscover(position)}
-                          disabled={!canMutate || rediscoverLoading}
-                          aria-label={`Cari talent lama untuk posisi ${position.title}`}
-                          title="Cari Talent Lama"
+                          aria-label={`Menu lain untuk posisi ${position.title}`}
                         >
-                          <Search className="size-4" aria-hidden="true" />
+                          <EllipsisVertical className="size-4" aria-hidden="true" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-11 sm:size-9"
-                          onClick={() => void openNurture(position)}
-                          disabled={!canMutate || nurtureSending}
-                          aria-label={`Nurture kandidat untuk posisi ${position.title}`}
-                          title="Nurture Kandidat"
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem onClick={() => void handleCopyLink(position)}>
+                          <Link2 className="size-4" aria-hidden="true" />
+                          Salin Link
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            window.open(
+                              position.slug
+                                ? `/?posisi=${encodeURIComponent(position.slug)}`
+                                : "/",
+                              "_blank",
+                              "noopener,noreferrer",
+                            )
+                          }
                         >
-                          <Sprout className="size-4" aria-hidden="true" />
-                        </Button>
-                      </>
-                    ) : null}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 sm:size-9"
-                      onClick={() => void handleCopyLink(position)}
-                      aria-label={`Salin tautan posisi ${position.title}`}
-                      title="Salin Link"
-                    >
-                      <Link2 className="size-4" aria-hidden="true" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 sm:size-9"
-                      onClick={() => void handleDuplicate(position)}
-                      disabled={!canMutate}
-                      aria-label={`Duplikat posisi ${position.title}`}
-                      title="Duplikat"
-                    >
-                      <Copy className="size-4" aria-hidden="true" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 sm:size-9"
-                      onClick={() => openEdit(position)}
-                      disabled={!canMutate}
-                      aria-label={`Edit posisi ${position.title}`}
-                      title="Edit"
-                    >
-                      <Pencil className="size-4" aria-hidden="true" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-11 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
-                      onClick={() => setDeleteTarget(position)}
-                      disabled={!canMutate}
-                      aria-label={`Hapus posisi ${position.title}`}
-                      title="Hapus"
-                    >
-                      <Trash2 className="size-4" aria-hidden="true" />
-                    </Button>
+                          <ExternalLink className="size-4" aria-hidden="true" />
+                          Lihat Halaman Publik
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => void handleDuplicate(position)}
+                          disabled={!canMutate}
+                        >
+                          <Copy className="size-4" aria-hidden="true" />
+                          Duplikat
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setDeleteTarget(position)}
+                          disabled={!canMutate}
+                          className="text-rose-600"
+                        >
+                          <Trash2 className="size-4" aria-hidden="true" />
+                          Hapus
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardContent>
               </Card>
@@ -826,25 +664,6 @@ export function PositionsTab() {
       )}
       </>
       )}
-
-      {/* Dialog statistik per posisi */}
-      <PositionStatsDialog
-        open={!!statsTarget}
-        onOpenChange={(open) => {
-          if (!open) setStatsTarget(null);
-        }}
-        position={statsTarget}
-        stats={statsTarget ? statsMap[statsTarget.id] ?? null : null}
-      />
-
-      {/* Dialog QR deep link */}
-      <PositionQrDialog
-        open={!!qrTarget}
-        onOpenChange={(open) => {
-          if (!open) setQrTarget(null);
-        }}
-        position={qrTarget}
-      />
 
       {/* Konfirmasi hapus posisi */}
       <AlertDialog
@@ -879,130 +698,6 @@ export function PositionsTab() {
                 </>
               ) : (
                 "Ya, Hapus"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Dialog hasil talent rediscovery (AI) */}
-      <Dialog
-        open={!!rediscoverTarget}
-        onOpenChange={(open) => {
-          if (!open) setRediscoverTarget(null);
-        }}
-      >
-        <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Search className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-              Cari Talent Lama
-            </DialogTitle>
-            <DialogDescription>
-              {rediscoverTarget ? rediscoverTarget.title : "-"}
-              {rediscoverTarget ? ` — ${rediscoverTarget.department}` : ""}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="nice-scrollbar -mr-2 max-h-[70vh] overflow-y-auto pr-2">
-            {rediscoverLoading ? (
-              <div className="flex flex-col items-center gap-3 py-10 text-center">
-                <Loader2 className="size-6 animate-spin text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-                <p className="text-sm text-muted-foreground">
-                  Menganalisis kandidat dari talent pool & pelamar ditolak dengan AI...
-                </p>
-              </div>
-            ) : rediscoverError ? (
-              <div className="flex flex-col items-center gap-3 py-8 text-center">
-                <p className="text-sm text-rose-600 dark:text-rose-400">{rediscoverError}</p>
-                <Button variant="outline" onClick={() => void retryRediscover()} className="h-9">
-                  <RefreshCw className="size-4" aria-hidden="true" />
-                  Coba Lagi
-                </Button>
-              </div>
-            ) : rediscoverData && rediscoverData.results.length > 0 ? (
-              <div className="flex flex-col gap-3">
-                <p className="text-xs text-muted-foreground">
-                  Dianalisis dari {rediscoverData.total} kandidat (talent pool & ditolak, maks 150) — 5 teratas.
-                </p>
-                <ul className="flex flex-col gap-2">
-                  {rediscoverData.results.map((result, index) => (
-                    <li key={result.id} className="flex flex-col gap-1.5 rounded-xl border p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-                          <span className="shrink-0 tabular-nums text-muted-foreground">{index + 1}.</span>
-                          <span className="truncate">{result.name}</span>
-                        </p>
-                        <Badge variant="outline" className={`shrink-0 tabular-nums ${skorBadgeClass(result.skor)}`}>
-                          Skor {result.skor}
-                        </Badge>
-                      </div>
-                      {result.alasan ? (
-                        <p className="text-xs leading-relaxed text-muted-foreground">{result.alasan}</p>
-                      ) : null}
-                      <p className="text-xs text-muted-foreground">
-                        Lamar {formatDate(result.appliedAt)}
-                        {result.priorTitle ? ` — ${result.priorTitle}` : ""}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Belum ada kandidat lama yang cocok ditemukan untuk posisi ini.
-              </p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Konfirmasi nurture kandidat ditolak */}
-      <AlertDialog
-        open={!!nurtureTarget}
-        onOpenChange={(open) => {
-          if (!open) setNurtureTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Nurture Kandidat?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {nurtureLoading ? (
-                "Menghitung kandidat yang memenuhi kriteria..."
-              ) : nurtureCount === 0 ? (
-                <>
-                  Tidak ada kandidat yang memenuhi kriteria: ditolak lebih dari 60 hari lalu (bukan karena menarik
-                  diri) pada posisi ini atau posisi satu departemen dengan &quot;
-                  {nurtureTarget?.title ?? "-"}&quot;.
-                </>
-              ) : (
-                <>
-                  Email &quot;Kabar baik dari Lumina Studio&quot; akan disiapkan untuk{" "}
-                  <span className="font-semibold text-foreground tabular-nums">{nurtureCount}</span> kandidat yang
-                  ditolak lebih dari 60 hari lalu (bukan karena menarik diri) pada posisi ini atau posisi satu
-                  departemen. Email masuk kotak keluar beserta catatan log.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={nurtureSending}>Batal</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                void handleNurture();
-              }}
-              disabled={nurtureLoading || nurtureCount === 0 || nurtureSending}
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
-            >
-              {nurtureSending ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  Menyiapkan...
-                </>
-              ) : (
-                "Ya, Siapkan Email"
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

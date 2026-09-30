@@ -1,24 +1,21 @@
 "use client";
 
-// Dialog statistik per posisi: views, lamaran, konversi, rata-rata skor AI,
+// Halaman statistik per posisi — konversi utuh dari PositionStatsDialog menjadi
+// halaman penuh tanpa popup: views, lamaran, konversi, rata-rata skor AI,
 // funnel tahap (bar horizontal warna per tahap), dan sumber pelamar.
 // Data dibaca dari baris GET /api/admin/position-stats (tanpa fetch ulang).
+// Dirender oleh position-manage-page.tsx pada mode "statistik".
 
 import {
-  BarChart3,
+  ArrowLeft,
   Eye,
   FileText,
   Inbox,
   Sparkles,
   TrendingUp,
 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { Position, PositionStatsRow } from "@/lib/types";
 import { stageDotClass, stageLabel } from "@/lib/stages";
@@ -44,35 +41,42 @@ function StatCell({
   );
 }
 
-export function PositionStatsDialog({
-  open,
-  onOpenChange,
+export function PositionStatsPage({
   position,
   stats,
+  onBack,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  position: Position | null;
+  position: Position;
   stats: PositionStatsRow | null;
+  onBack: () => void;
 }) {
   const maxFunnel = stats
     ? stats.funnel.reduce((max, f) => Math.max(max, f.count), 0)
     : 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <BarChart3 className="size-5 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-            Statistik Posisi
-          </DialogTitle>
-          <DialogDescription>
-            {position ? position.title : "-"}
-            {position ? ` — ${position.department}` : ""}
-          </DialogDescription>
-        </DialogHeader>
+    <div className="flex flex-col gap-4">
+      {/* Header halaman */}
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 h-11 gap-2 sm:h-9"
+          onClick={onBack}
+          aria-label="Kembali ke ringkasan posisi"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Kelola Posisi
+        </Button>
+        <h2 className="mt-1 text-lg font-bold leading-tight">
+          Statistik — {position.title}
+        </h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {position.department}
+        </p>
+      </div>
 
+      <Card className="gap-4 rounded-2xl p-5 md:p-6">
         <div className="-mr-2 max-h-[70vh] overflow-y-auto pr-2 nice-scrollbar">
           {!stats ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
@@ -185,7 +189,7 @@ export function PositionStatsDialog({
             </div>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </Card>
+    </div>
   );
 }

@@ -1,9 +1,10 @@
 "use client";
 
-// Form Builder per Posisi — halaman penuh 3 tab (ala Google Forms, bahasa desain
+// Form Builder per Posisi — halaman penuh 2 tab (ala Google Forms, bahasa desain
 // Lumina): Pertanyaan (penyusun skema v2 — SEMUA bagian bisa diedit, diurut, dan
-// dikonfigurasi; urutan kartu = urutan wizard publik), Jawaban (statistik +
-// ekspor CSV), dan Setelan (buka/tutup, kuota, tanggal).
+// dikonfigurasi; urutan kartu = urutan wizard publik) dan Jawaban (statistik +
+// ekspor CSV). Setelan penerimaan (buka/tutup, kuota, jadwal tayang) pindah ke
+// sub-halaman "Penerimaan" — halaman ini hanya menyediakan tautan onOpenIntake.
 // Skema disimpan via PUT /api/admin/positions/{id}/form; jawaban dibaca dari
 // /api/admin/positions/{id}/form-responses (JSON/CSV). Halaman ini tidak pernah
 // memakai popup untuk navigasi utama — Kembali berupa full-page (onBack).
@@ -78,7 +79,6 @@ import {
   isCvEnabled,
   isCvRequired,
   isExperienceEnabled,
-  isFormSchemaActive,
   isIntroEnabled,
   isIntroRequired,
   isMotivationEnabled,
@@ -94,14 +94,12 @@ import {
   type FormSection,
 } from "@/lib/form-schema";
 import { STATUS_LABELS, type ApplicationStatus, type Position } from "@/lib/types";
-import { ApiError, apiGet, apiPatch, apiPost, apiPut } from "./api";
-import { formatDateTime, isoToLocalInput, localInputToIso } from "./format";
+import { ApiError, apiGet, apiPost, apiPut } from "./api";
+import { formatDateTime } from "./format";
 import { useAdminSession } from "./admin-context";
 import { Reveal } from "./motion-primitives";
 import { RatingStars } from "./rating-stars";
 import { cn } from "@/lib/utils";
-
-type BuilderTab = "pertanyaan" | "jawaban" | "setelan";
 
 /* ------------------------- Kontrak form-responses ------------------------- */
 
@@ -209,17 +207,6 @@ function editableFingerprint(schema: FormSchema | null): string {
     fields: schema?.fields ?? [],
   };
   return JSON.stringify(canonical);
-}
-
-/** ISO (bisa null) -> yyyy-mm-dd untuk <input type="date"> (zona lokal). */
-function dateInputFromIso(iso: string | null | undefined): string {
-  return isoToLocalInput(iso).slice(0, 10);
-}
-
-/** yyyy-mm-dd -> ISO. publishAt mulai hari, closesAt akhir hari (23:59:59 lokal). */
-function isoFromDateInput(value: string, endOfDay: boolean): string | null {
-  if (!value) return null;
-  return localInputToIso(`${value}T${endOfDay ? "23:59:59" : "00:00:00"}`);
 }
 
 function labelForStatus(status: string): string {
@@ -932,12 +919,15 @@ export function FormBuilderPage({
   onBack,
   onUpdated,
   onOpenApplication,
+  onOpenIntake,
 }: {
   position: Position;
   onBack: () => void;
   onUpdated: (position: Position) => void;
   /** Opsional: buka detail lamaran dari tab Jawaban (halaman lain, bukan dialog di sini). */
   onOpenApplication?: (applicationId: string) => void;
+  /** Opsional: buka sub-halaman "Penerimaan" (kuota, jadwal tayang, buka/tutup pindah ke sana). */
+  onOpenIntake?: () => void;
 }) {
   const { canMutate, reportError } = useAdminSession();
 
@@ -1307,71 +1297,6 @@ export function FormBuilderPage({
     return map;
   }, [draft, savedSchema]);
 
-  /* -------------------------------- Tab Setelan -------------------------------- */
-
-  type SettingsState = {
-    applyOpen: boolean;
-    maxApplicants: string;
-    publishAt: string;
-    closesAt: string;
-  };
-
-  function settingsFromPosition(p: Position): SettingsState {
-    return {
-      applyOpen: p.applyOpen,
-      maxApplicants: p.maxApplicants != null ? String(p.maxApplicants) : "",
-      publishAt: dateInputFromIso(p.publishAt),
-      closesAt: dateInputFromIso(p.closesAt),
-    };
-  }
-
-  const [settings, setSettings] = useState<SettingsState>(() => settingsFromPosition(position));
-  const [savingSettings, setSavingSettings] = useState(false);
-
-  const settingsDirty = useMemo(() => {
-    const initial = settingsFromPosition(position);
-    return JSON.stringify(settings) !== JSON.stringify(initial);
-  }, [position, settings]);
-
-  async function handleSaveSettings() {
-    const initial = settingsFromPosition(position);
-    const payload: Record<string, unknown> = {};
-    if (settings.applyOpen !== initial.applyOpen) payload.applyOpen = settings.applyOpen;
-    if (settings.maxApplicants !== initial.maxApplicants) {
-      const trimmed = settings.maxApplicants.trim();
-      if (!trimmed) {
-        payload.maxApplicants = null;
-      } else {
-        const parsed = Number(trimmed);
-        if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
-          toast.error("Kuota pelamar harus angka bulat 1-10000, atau dikosongkan untuk tanpa kuota.");
-          return;
-        }
-        payload.maxApplicants = parsed;
-      }
-    }
-    if (settings.publishAt !== initial.publishAt) {
-      payload.publishAt = isoFromDateInput(settings.publishAt, false);
-    }
-    if (settings.closesAt !== initial.closesAt) {
-      payload.closesAt = isoFromDateInput(settings.closesAt, true);
-    }
-    if (Object.keys(payload).length === 0) {
-      toast.info("Tidak ada perubahan setelan yang dikirim.");
-      return;
-    }
-    setSavingSettings(true);
-    try {
-      const updated = await apiPatch<Position>(`/api/admin/positions/${position.id}`, payload);
-      onUpdated(updated);
-      toast.success("Setelan formulir disimpan");
-    } catch (err) {
-      reportError(err);
-    } finally {
-      setSavingSettings(false);
-    }
-  }
-
   /* --------------------------------- Navigasi --------------------------------- */
 
   function handleBackClick() {
@@ -1380,7 +1305,7 @@ export function FormBuilderPage({
   }
 
   function handleTabChange(value: string) {
-    if (value !== "pertanyaan" && value !== "jawaban" && value !== "setelan") return;
+    if (value !== "pertanyaan" && value !== "jawaban") return;
     if (value === "jawaban" && !responsesLoaded) {
       setResponsesLoaded(true);
       void loadResponses();
@@ -1390,11 +1315,6 @@ export function FormBuilderPage({
   const csvUrl = `/api/admin/positions/${position.id}/form-responses?format=csv`;
   const totalFields = draft.fields.length;
   const customCount = customSectionCount(draft);
-  // Info migrasi: screening/customDocs lama masih berisi DAN skema tersimpan aktif.
-  const hasLegacySchema =
-    savedSchema != null &&
-    isFormSchemaActive({ formSchema: savedSchema }) &&
-    (position.screeningQuestions.length > 0 || position.customDocs.length > 0);
 
   /* ---------------------------------- Render ---------------------------------- */
 
@@ -1493,10 +1413,6 @@ export function FormBuilderPage({
             <ClipboardList className="size-4" aria-hidden="true" />
             Jawaban
           </TabsTrigger>
-          <TabsTrigger value="setelan">
-            <Settings2 className="size-4" aria-hidden="true" />
-            Setelan
-          </TabsTrigger>
         </TabsList>
 
         {/* ================================ PERTANYAAN ================================ */}
@@ -1559,6 +1475,26 @@ export function FormBuilderPage({
                   {totalFields}/{FORM_LIMITS.maxFields} pertanyaan
                 </Badge>
               </p>
+
+              {/* Setelan penerimaan (kuota, jadwal tayang, buka/tutup) pindah ke Penerimaan */}
+              <div className="flex items-center justify-between gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+                <p className="text-xs text-muted-foreground">
+                  Kuota pelamar, jadwal tayang, dan buka/tutup formulir kini dikelola di halaman
+                  Penerimaan.
+                </p>
+                {onOpenIntake ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-11 sm:h-9 shrink-0"
+                    onClick={() => onOpenIntake?.()}
+                    aria-label="Buka halaman Penerimaan"
+                  >
+                    <Settings2 className="size-4" aria-hidden="true" />
+                    Buka Penerimaan
+                  </Button>
+                ) : null}
+              </div>
             </>
           )}
         </TabsContent>
@@ -1855,113 +1791,6 @@ export function FormBuilderPage({
               </Card>
             </>
           )}
-        </TabsContent>
-
-        {/* ================================= SETELAN ================================= */}
-        <TabsContent value="setelan" className="flex flex-col gap-4">
-          <Card className="gap-5 rounded-2xl p-5 md:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">Buka formulir lamaran</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Saat ditutup, posisi tetap tayang tetapi tidak menerima lamaran baru.
-                  Saklar global di Pengaturan tetap menjadi induk.
-                </p>
-              </div>
-              <Switch
-                checked={settings.applyOpen}
-                onCheckedChange={(checked) => setSettings((prev) => ({ ...prev, applyOpen: checked }))}
-                disabled={!canMutate}
-                className="data-[state=checked]:bg-rose-600"
-                aria-label="Buka formulir lamaran"
-              />
-            </div>
-
-            <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="max-applicants" className="text-sm">
-                  Kuota pelamar
-                </Label>
-                <Input
-                  id="max-applicants"
-                  type="number"
-                  min={1}
-                  max={10000}
-                  value={settings.maxApplicants}
-                  onChange={(e) =>
-                    setSettings((prev) => ({ ...prev, maxApplicants: e.target.value }))
-                  }
-                  placeholder="Tanpa kuota"
-                  className="h-10"
-                  disabled={!canMutate}
-                />
-                <p className="text-xs text-muted-foreground">
-                  1-10000. Kosongkan untuk tanpa batas.
-                </p>
-              </div>
-              <div className="hidden sm:block" aria-hidden="true" />
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="publish-at" className="text-sm">
-                  Tanggal publikasi
-                </Label>
-                <Input
-                  id="publish-at"
-                  type="date"
-                  value={settings.publishAt}
-                  onChange={(e) =>
-                    setSettings((prev) => ({ ...prev, publishAt: e.target.value }))
-                  }
-                  className="h-10"
-                  disabled={!canMutate}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Posisi tayang mulai tanggal ini.
-                </p>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="closes-at" className="text-sm">
-                  Tanggal penutupan
-                </Label>
-                <Input
-                  id="closes-at"
-                  type="date"
-                  value={settings.closesAt}
-                  onChange={(e) =>
-                    setSettings((prev) => ({ ...prev, closesAt: e.target.value }))
-                  }
-                  className="h-10"
-                  disabled={!canMutate}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Lamaran ditutup setelah akhir hari ini.
-                </p>
-              </div>
-            </div>
-
-            {hasLegacySchema ? (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
-                Pertanyaan screening &amp; dokumen lama sudah dimigrasikan ke Pertanyaan;
-                kolom lama tidak dipakai lagi.
-              </p>
-            ) : null}
-
-            <div className="flex items-center gap-3 border-t pt-4">
-              <Button
-                size="sm"
-                className="h-11 sm:h-9"
-                onClick={() => void handleSaveSettings()}
-                disabled={!canMutate || savingSettings || !settingsDirty}
-              >
-                {savingSettings ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                Simpan Setelan
-              </Button>
-              {settingsDirty ? (
-                <p className="text-xs text-muted-foreground">Ada perubahan belum disimpan.</p>
-              ) : null}
-            </div>
-          </Card>
         </TabsContent>
       </Tabs>
 
