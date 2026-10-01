@@ -17,6 +17,7 @@ import {
   Mic,
   PauseCircle,
   PencilLine,
+  Send,
   ShieldCheck,
   Star,
   Upload,
@@ -194,6 +195,23 @@ function parseDraftFormAnswers(
     }
   }
   return parsed;
+}
+
+/** Cek nilai berupa objek polos (bukan array/null) — untuk respons JSON. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Salin jawaban form yang bisa diserialisasi — berkas (File) tidak ikut. */
+function serializableFormAnswers(
+  answers: FormAnswers,
+): Record<string, string | string[] | number> {
+  const out: Record<string, string | string[] | number> = {};
+  for (const [key, value] of Object.entries(answers)) {
+    if (value === undefined || value instanceof File) continue;
+    out[key] = value;
+  }
+  return out;
 }
 
 type FormFieldRendererProps = {
@@ -919,6 +937,21 @@ export function ApplyWizard({
   const [draft, setDraft] = useState<StoredDraft | null>(null);
   const submittedRef = useRef(false);
   const draftDismissedRef = useRef(false);
+  // Tautan "lanjutkan draft" lintas perangkat: kirim ke email & pulihkan dari URL.
+  const [linkEmail, setLinkEmail] = useState("");
+  const [sendingLink, setSendingLink] = useState(false);
+  const [linkStatus, setLinkStatus] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+  const [linkRestoreNote, setLinkRestoreNote] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+  const linkEmailTouchedRef = useRef(false);
+  // Pembungkus ref agar effect mount sekali dapat memanggil jalur pemulihan
+  // draft terbaru (fungsi render didefinisikan ulang setiap render).
+  const applyDraftRef = useRef<(target: StoredDraft) => void>(() => {});
   // Anti-spam (Task 27): waktu formulir dibuka (time-trap) + ref honeypot.
   const formStartedAtRef = useRef<number>(Date.now());
   const websiteRef = useRef<HTMLInputElement | null>(null);
@@ -937,17 +970,76 @@ export function ApplyWizard({
     }
   }, []);
 
+  // Pulihkan draft dari tautan email (?draft=<token>) — sekali saat mount.
+  // Jalur pemulihan SAMA dengan draft localStorage (applyDraftToForm via ref);
+  // param dibersihkan dari URL dan kasus invalid tidak pernah melempar error.
+  useEffect(() => {
+    let token = "";
+    try {
+      token = new URLSearchParams(window.location.search).get("draft") ?? "";
+    } catch {
+      return;
+    }
+    if (!token) return;
+    const clearUrlParam = () => {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has("draft")) {
+          url.searchParams.delete("draft");
+          window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+        }
+      } catch {
+        // biarkan URL apa adanya
+      }
+    };
+    fetch(`/api/public/apply-draft?token=${encodeURIComponent(token)}`, {
+      cache: "no-store",
+    })
+      .then((res) => (res.ok ? res.json().catch(() => null) : null))
+      .then((json: unknown) => {
+        clearUrlParam();
+        if (!isRecord(json) || json.ok !== true || !isRecord(json.data)) {
+          setLinkRestoreNote({
+            ok: false,
+            message: "Tautan draft tidak valid atau sudah dipakai.",
+          });
+          return;
+        }
+        const data = json.data;
+        applyDraftRef.current({
+          values: isRecord(data.values)
+            ? (data.values as StoredDraft["values"])
+            : undefined,
+          positionId:
+            typeof json.positionId === "string" ? json.positionId : undefined,
+          formAnswers: isRecord(data.formAnswers) ? data.formAnswers : undefined,
+        });
+        setLinkRestoreNote({ ok: true, message: "Draft dari tautan dimuat." });
+      })
+      .catch(() => {
+        clearUrlParam();
+        setLinkRestoreNote({
+          ok: false,
+          message: "Tautan draft tidak valid atau sudah dipakai.",
+        });
+      });
+  }, []);
+
+  // Prefill email tujuan tautan dari kolom email formulir (bila terisi dan
+  // input tautan belum diedit manual).
+  useEffect(() => {
+    if (linkEmailTouchedRef.current) return;
+    const formEmail = values.email.trim();
+    if (formEmail && linkEmail !== formEmail) setLinkEmail(formEmail);
+  }, [values.email, linkEmail]);
+
   useEffect(() => {
     if (submittedRef.current || draftDismissedRef.current) return;
     const hasContent =
       VALUE_KEYS.some((key) => values[key].trim().length > 0) || positionId;
     if (!hasContent) return;
     // Jawaban form ikut disimpan — kecuali berkas (File tidak bisa diserialisasi).
-    const serializableAnswers: Record<string, string | string[] | number> = {};
-    for (const [key, value] of Object.entries(formAnswers)) {
-      if (value === undefined || value instanceof File) continue;
-      serializableAnswers[key] = value;
-    }
+    const serializableAnswers = serializableFormAnswers(formAnswers);
     const timer = window.setTimeout(() => {
       try {
         window.localStorage.setItem(
@@ -2096,20 +2188,23 @@ export function ApplyWizard({
     }
   }
 
-  function restoreDraft() {
-    if (!draft) return;
+  /**
+   * Terapkan isi draft ke state wizard — jalur pemulihan yang SAMA untuk draft
+   * localStorage maupun draft dari tautan email (satu definisi, dua sumber).
+   */
+  function applyDraftToForm(target: StoredDraft) {
     const restored: FormValues = { ...INITIAL_VALUES };
     for (const key of VALUE_KEYS) {
-      const raw = draft.values?.[key];
+      const raw = target.values?.[key];
       if (typeof raw === "string") restored[key] = raw;
     }
     setValues(restored);
     draftDismissedRef.current = false;
     // Posisi tujuan pemulihan: posisi draf bila masih valid & tidak terkunci.
     const draftPositionId =
-      typeof draft.positionId === "string" &&
-      positions.some((p) => p.id === draft.positionId)
-        ? draft.positionId
+      typeof target.positionId === "string" &&
+      positions.some((p) => p.id === target.positionId)
+        ? target.positionId
         : null;
     const willSwitch =
       !lockPosition && draftPositionId !== null && draftPositionId !== positionId;
@@ -2119,11 +2214,11 @@ export function ApplyWizard({
     // Jawaban form (Form Builder) dipulihkan bila posisi tujuan sama dengan
     // posisi draf — posisi berbeda berarti skema formulir berbeda.
     if (
-      draft.formAnswers &&
+      target.formAnswers &&
       draftPositionId !== null &&
       (draftPositionId === positionId || willSwitch)
     ) {
-      const parsed = parseDraftFormAnswers(draft.formAnswers);
+      const parsed = parseDraftFormAnswers(target.formAnswers);
       if (willSwitch) {
         // Posisi akan berganti — blok reset render membersihkan jawaban form;
         // antrekan pemulihan agar diterapkan setelah reset.
@@ -2132,6 +2227,12 @@ export function ApplyWizard({
         setFormAnswers(parsed);
       }
     }
+  }
+  applyDraftRef.current = applyDraftToForm;
+
+  function restoreDraft() {
+    if (!draft) return;
+    applyDraftToForm(draft);
     setDraft(null);
     toast.success(t.apply.draft.title);
   }
@@ -2144,6 +2245,47 @@ export function ApplyWizard({
       // abaikan
     }
     setDraft(null);
+  }
+
+  /** Kirim tautan "lanjutkan draft" (isian teks/pilihan) ke email pelamar. */
+  async function handleSendDraftLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (sendingLink) return;
+    const email = linkEmail.trim();
+    if (!positionId || !EMAIL_RE.test(email)) return;
+    setSendingLink(true);
+    setLinkStatus(null);
+    try {
+      const res = await fetch("/api/public/apply-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          positionId,
+          email,
+          data: JSON.stringify({
+            values,
+            formAnswers: serializableFormAnswers(formAnswers),
+          }),
+        }),
+      });
+      const json: unknown = await res.json().catch(() => null);
+      if (res.ok && isRecord(json) && json.ok === true) {
+        setLinkStatus({
+          ok: true,
+          message: "Tautan dikirim. Cek email kamu (berlaku 7 hari).",
+        });
+      } else {
+        const serverMessage =
+          isRecord(json) && typeof json.error === "string" && json.error.trim()
+            ? json.error
+            : "Gagal mengirim tautan. Coba lagi.";
+        setLinkStatus({ ok: false, message: serverMessage });
+      }
+    } catch {
+      setLinkStatus({ ok: false, message: "Gagal mengirim tautan. Coba lagi." });
+    } finally {
+      setSendingLink(false);
+    }
   }
 
   async function copyTrackingCode() {
@@ -2319,6 +2461,99 @@ export function ApplyWizard({
           </div>
         </Card>
       ) : null}
+
+      {linkRestoreNote ? (
+        <p
+          role="status"
+          className={cn(
+            "flex items-start gap-2 rounded-xl border p-3 text-sm",
+            linkRestoreNote.ok
+              ? "border-emerald-200 bg-emerald-50/60 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+              : "border-amber-200 bg-amber-50/60 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+          )}
+        >
+          {linkRestoreNote.ok ? (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          ) : (
+            <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          )}
+          <span>{linkRestoreNote.message}</span>
+        </p>
+      ) : null}
+
+      {/* Kirim tautan draft ke email — lanjutkan mengisi di perangkat lain. */}
+      <div className="rounded-xl border bg-muted/30 p-4">
+        <div className="flex items-start gap-2.5">
+          <Send
+            className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Lanjutkan mengisi di perangkat lain</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              Kirim tautan draft ke email kamu. Isian teks dan pilihan ikut tersimpan;
+              berkas (CV, intro, dokumen) perlu diunggah ulang. Tautan berlaku 7 hari
+              dan hanya bisa dipakai sekali.
+            </p>
+            <form
+              onSubmit={handleSendDraftLink}
+              className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"
+            >
+              <Label htmlFor="apply-draft-link-email" className="sr-only">
+                Email tujuan tautan draft
+              </Label>
+              <Input
+                id="apply-draft-link-email"
+                name="email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="nama@email.com"
+                value={linkEmail}
+                disabled={sendingLink}
+                onChange={(event) => {
+                  linkEmailTouchedRef.current = true;
+                  setLinkEmail(event.target.value);
+                  setLinkStatus(null);
+                }}
+                className="h-11 flex-1 bg-background sm:h-9"
+              />
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                className="h-11 shrink-0 sm:h-9"
+                disabled={
+                  sendingLink || !positionId || !EMAIL_RE.test(linkEmail.trim())
+                }
+              >
+                {sendingLink ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : null}
+                {sendingLink ? "Mengirim..." : "Kirim tautan ke email"}
+              </Button>
+            </form>
+            {!positionId ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Pilih posisi lamaran terlebih dahulu untuk mengirim tautan.
+              </p>
+            ) : null}
+            {linkStatus ? (
+              <p
+                role="status"
+                className={cn(
+                  "mt-2 text-xs font-medium",
+                  linkStatus.ok
+                    ? "text-emerald-700 dark:text-emerald-400"
+                    : "text-rose-600 dark:text-rose-400",
+                )}
+              >
+                {linkStatus.message}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
 
       {/* Stepper — label langkah hanya tampil bila lebar KARTU cukup
           (@container, bukan viewport): di kolom kanan desktop yang sempit

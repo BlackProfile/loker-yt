@@ -17,10 +17,12 @@ import {
   ExternalLink,
   Loader2,
   MapPin,
+  RefreshCw,
   Search,
   Sparkles,
   Video,
   X,
+  XCircle,
 } from "lucide-react";
 import {
   INTERVIEW_STATUS_LABELS,
@@ -29,6 +31,7 @@ import {
   type InterviewStatus,
   type StageKey,
   type TrackResponse,
+  type TrackSlotInfo,
 } from "@/lib/types";
 import { stageLabel } from "@/lib/stages";
 import {
@@ -166,6 +169,15 @@ export function StatusCheckSection() {
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
   // Slot jadwal self-service: loading per slotId saat memilih.
   const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
+  // Pindah jadwal mandiri: panel slot inline per sesi + daftar slot terbuka.
+  const [slotPanelFor, setSlotPanelFor] = useState<string | null>(null);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsList, setSlotsList] = useState<TrackSlotInfo[]>([]);
+  const [slotsError, setSlotsError] = useState<string | null>(null);
+  const [pendingSlotId, setPendingSlotId] = useState<string | null>(null);
+  // Tidak bisa hadir: konfirmasi inline per sesi.
+  const [cancelOpenFor, setCancelOpenFor] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   async function handleTrack(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -383,6 +395,93 @@ export function StatusCheckSection() {
       return;
     }
     toast.success("Jadwal wawancara berhasil dipilih — detail tampil di daftar wawancara.");
+    scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
+  }
+
+  /** Muat daftar slot terbuka dari API publik (dipakai panel pindah jadwal). */
+  async function loadOpenSlots() {
+    if (slotsLoading) return;
+    setSlotsLoading(true);
+    setSlotsError(null);
+    try {
+      const res = await fetch(`/api/public/slots?code=${encodeURIComponent(trackedCode)}`);
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: unknown; slots?: unknown; error?: unknown }
+        | null;
+      if (!res.ok || !data) {
+        const serverError =
+          typeof data?.error === "string" && data.error ? data.error : null;
+        setSlotsError(serverError ?? t.status.actionFailed);
+        setSlotsList([]);
+        return;
+      }
+      setSlotsList(Array.isArray(data.slots) ? (data.slots as TrackSlotInfo[]) : []);
+    } catch {
+      setSlotsError(t.status.actionFailed);
+    } finally {
+      setSlotsLoading(false);
+    }
+  }
+
+  /** Buka panel pindah jadwal untuk satu sesi + muat slot terbuka. */
+  async function openSlotPanel(interviewId: string) {
+    setRescheduleFor(null);
+    setCancelOpenFor(null);
+    setCancelError(null);
+    setSlotPanelFor(interviewId);
+    setPendingSlotId(null);
+    await loadOpenSlots();
+  }
+
+  function closeSlotPanel() {
+    setSlotPanelFor(null);
+    setPendingSlotId(null);
+    setSlotsError(null);
+  }
+
+  /**
+   * Eksekusi pindah jadwal ke slot terpilih (setelah konfirmasi inline).
+   * Error API ditampilkan apa adanya di panel; sukses memicu recheck senyap.
+   */
+  async function moveInterviewToSlot(interviewId: string, slotId: string) {
+    if (isInterviewBusy(interviewId, "RESLOT")) return;
+    setSlotsError(null);
+    setInterviewBusy(`${interviewId}:RESLOT`);
+    const out = await postAction("/api/public/interview/reschedule-slot", {
+      code: trackedCode,
+      interviewId,
+      slotId,
+    });
+    setInterviewBusy(null);
+    if (!out.ok) {
+      setSlotsError(out.error);
+      setPendingSlotId(null);
+      return;
+    }
+    toast.success("Jadwal wawancara berhasil dipindahkan.");
+    closeSlotPanel();
+    scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
+  }
+
+  /**
+   * Eksekusi pembatalan kehadiran (setelah konfirmasi inline).
+   * Error API ditampilkan apa adanya di kotak konfirmasi.
+   */
+  async function cancelAttendance(interviewId: string) {
+    if (isInterviewBusy(interviewId, "CANCEL_ATTENDANCE")) return;
+    setCancelError(null);
+    setInterviewBusy(`${interviewId}:CANCEL_ATTENDANCE`);
+    const out = await postAction("/api/public/interview/cancel-attendance", {
+      code: trackedCode,
+      interviewId,
+    });
+    setInterviewBusy(null);
+    if (!out.ok) {
+      setCancelError(out.error);
+      return;
+    }
+    toast.success("Kehadiran pada sesi ini dibatalkan.");
+    setCancelOpenFor(null);
     scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
   }
 
@@ -679,6 +778,15 @@ export function StatusCheckSection() {
                           interview.status === "RESCHEDULE_REQUESTED";
                         const cardBusy = interviewBusy?.startsWith(`${interview.id}:`) ?? false;
                         const rescheduleOpen = rescheduleFor === interview.id;
+                        // Sesi mendatang yang masih aktif: boleh pindah slot / tidak bisa hadir.
+                        const selfServiceUpcoming =
+                          new Date(interview.scheduledAt).getTime() > Date.now() &&
+                          (interview.status === "SCHEDULED" ||
+                            interview.status === "CONFIRMED" ||
+                            interview.status === "RESCHEDULE_REQUESTED");
+                        const slotPanelOpen = slotPanelFor === interview.id;
+                        const cancelConfirmOpen = cancelOpenFor === interview.id;
+                        const moveBusy = isInterviewBusy(interview.id, "RESLOT");
                         return (
                           <div
                             key={interview.id}
@@ -807,9 +915,11 @@ export function StatusCheckSection() {
                                     size="sm"
                                     className="h-11 sm:h-9"
                                     disabled={cardBusy}
-                                    onClick={() =>
-                                      setRescheduleFor(rescheduleOpen ? null : interview.id)
-                                    }
+                                    onClick={() => {
+                                      setRescheduleFor(rescheduleOpen ? null : interview.id);
+                                      closeSlotPanel();
+                                      setCancelOpenFor(null);
+                                    }}
                                     aria-expanded={rescheduleOpen}
                                   >
                                     <Clock className="h-4 w-4" aria-hidden="true" />
@@ -912,6 +1022,253 @@ export function StatusCheckSection() {
                                 <BadgeCheck className="h-4 w-4" aria-hidden="true" />
                                 {t.status.interview.confirmDone}
                               </p>
+                            ) : null}
+
+                            {/* Aksi mandiri tambahan: pindah jadwal via slot terbuka & tidak bisa hadir */}
+                            {selfServiceUpcoming ? (
+                              <div className="mt-3 flex flex-col gap-2">
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-11 sm:h-9"
+                                    disabled={cardBusy}
+                                    onClick={() =>
+                                      slotPanelOpen
+                                        ? closeSlotPanel()
+                                        : void openSlotPanel(interview.id)
+                                    }
+                                    aria-expanded={slotPanelOpen}
+                                  >
+                                    <CalendarClock className="h-4 w-4" aria-hidden="true" />
+                                    Pindahkan jadwal
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-11 border-rose-200 bg-transparent text-rose-700 hover:bg-rose-50 hover:text-rose-800 sm:h-9 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
+                                    disabled={cardBusy}
+                                    onClick={() => {
+                                      closeSlotPanel();
+                                      setCancelOpenFor(cancelConfirmOpen ? null : interview.id);
+                                      setCancelError(null);
+                                    }}
+                                    aria-expanded={cancelConfirmOpen}
+                                  >
+                                    <XCircle className="h-4 w-4" aria-hidden="true" />
+                                    Tidak bisa hadir
+                                  </Button>
+                                </div>
+
+                                {slotPanelOpen ? (
+                                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                                        Pindah ke slot terbuka berikut
+                                      </p>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 px-2 text-xs text-amber-800 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-200"
+                                        disabled={slotsLoading || moveBusy}
+                                        onClick={() => void loadOpenSlots()}
+                                      >
+                                        {slotsLoading ? (
+                                          <Loader2
+                                            className="h-3.5 w-3.5 animate-spin"
+                                            aria-hidden="true"
+                                          />
+                                        ) : (
+                                          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                                        )}
+                                        Muat ulang
+                                      </Button>
+                                    </div>
+
+                                    {slotsError ? (
+                                      <div
+                                        role="alert"
+                                        className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
+                                      >
+                                        {slotsError}
+                                      </div>
+                                    ) : null}
+
+                                    {slotsLoading ? (
+                                      <p className="mt-2 flex items-center gap-2 text-xs text-amber-800/85 dark:text-amber-200/80">
+                                        <Loader2
+                                          className="h-3.5 w-3.5 animate-spin"
+                                          aria-hidden="true"
+                                        />
+                                        Memuat slot tersedia...
+                                      </p>
+                                    ) : !slotsError && slotsList.length === 0 ? (
+                                      <p className="mt-2 text-xs text-amber-800/85 dark:text-amber-200/80">
+                                        Belum ada slot terbuka saat ini. Tim akan membuka jadwal
+                                        baru — coba muat ulang nanti.
+                                      </p>
+                                    ) : null}
+
+                                    {slotsList.length > 0 ? (
+                                      <div className="nice-scrollbar mt-2 flex max-h-64 flex-col gap-2 overflow-y-auto">
+                                        {slotsList.map((slot) => {
+                                          const confirming = pendingSlotId === slot.id;
+                                          const slotOnline = slot.mode === "ONLINE";
+                                          return (
+                                            <div
+                                              key={slot.id}
+                                              className="rounded-md border border-amber-200/80 bg-background/70 p-2.5 dark:border-amber-500/20"
+                                            >
+                                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+                                                  {slotOnline ? (
+                                                    <Video className="h-3.5 w-3.5" aria-hidden="true" />
+                                                  ) : (
+                                                    <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                                                  )}
+                                                </span>
+                                                <div className="min-w-0 flex-1">
+                                                  <p className="text-sm font-medium">
+                                                    {formatDateTimeId(slot.scheduledAt)}
+                                                  </p>
+                                                  <p className="text-xs text-muted-foreground">
+                                                    {slot.durationMin} menit ·{" "}
+                                                    {PLATFORM_LABELS[slot.platform]}
+                                                    {slot.interviewers.length > 0
+                                                      ? ` · ${slot.interviewers.join(", ")}`
+                                                      : ""}
+                                                    {!slotOnline && slot.address
+                                                      ? ` · ${slot.address}`
+                                                      : ""}
+                                                  </p>
+                                                </div>
+                                                {!confirming ? (
+                                                  <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-11 sm:h-8"
+                                                    disabled={moveBusy || pendingSlotId !== null}
+                                                    onClick={() => setPendingSlotId(slot.id)}
+                                                  >
+                                                    <CalendarClock
+                                                      className="h-4 w-4"
+                                                      aria-hidden="true"
+                                                    />
+                                                    Pindah ke sini
+                                                  </Button>
+                                                ) : null}
+                                              </div>
+                                              {confirming ? (
+                                                <div className="mt-2 rounded-md border border-amber-300/80 bg-amber-50 p-2.5 dark:border-amber-500/40 dark:bg-amber-500/10">
+                                                  <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                                                    Pindahkan jadwal sesi ini ke{" "}
+                                                    {formatDateTimeId(slot.scheduledAt)}? Slot lama
+                                                    otomatis dibebaskan.
+                                                  </p>
+                                                  <div className="mt-2 flex flex-wrap gap-2">
+                                                    <Button
+                                                      size="sm"
+                                                      className="h-11 sm:h-8"
+                                                      disabled={moveBusy}
+                                                      onClick={() =>
+                                                        void moveInterviewToSlot(
+                                                          interview.id,
+                                                          slot.id,
+                                                        )
+                                                      }
+                                                    >
+                                                      {moveBusy ? (
+                                                        <Loader2
+                                                          className="h-4 w-4 animate-spin"
+                                                          aria-hidden="true"
+                                                        />
+                                                      ) : (
+                                                        <CheckCircle2
+                                                          className="h-4 w-4"
+                                                          aria-hidden="true"
+                                                        />
+                                                      )}
+                                                      Ya, pindahkan
+                                                    </Button>
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="sm"
+                                                      className="h-11 sm:h-8"
+                                                      disabled={moveBusy}
+                                                      onClick={() => setPendingSlotId(null)}
+                                                    >
+                                                      Batal
+                                                    </Button>
+                                                  </div>
+                                                </div>
+                                              ) : null}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : null}
+
+                                    {!slotsError && slotsList.length > 0 ? (
+                                      <p className="mt-2 text-[11px] leading-relaxed text-amber-800/70 dark:text-amber-200/70">
+                                        Jadwal baru langsung aktif tanpa menunggu persetujuan
+                                        admin.
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+
+                                {cancelConfirmOpen ? (
+                                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-500/30 dark:bg-rose-500/10">
+                                    <p className="text-xs font-semibold text-rose-800 dark:text-rose-300">
+                                      Batalkan kehadiran pada sesi ini?
+                                    </p>
+                                    <p className="mt-1 text-xs leading-relaxed text-rose-800/90 dark:text-rose-200/80">
+                                      Sesi ronde {interview.round} pada{" "}
+                                      {formatDateTimeId(interview.scheduledAt)} akan dibatalkan.
+                                      Slot jadwalnya dibebaskan dan tindakan ini tidak bisa
+                                      diurungkan.
+                                    </p>
+                                    {cancelError ? (
+                                      <div
+                                        role="alert"
+                                        className="mt-2 rounded-md border border-rose-200 bg-background/70 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:text-rose-300"
+                                      >
+                                        {cancelError}
+                                      </div>
+                                    ) : null}
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      <Button
+                                        size="sm"
+                                        className="h-11 bg-rose-600 text-white hover:bg-rose-700 sm:h-9"
+                                        disabled={cardBusy}
+                                        onClick={() => void cancelAttendance(interview.id)}
+                                      >
+                                        {isInterviewBusy(interview.id, "CANCEL_ATTENDANCE") ? (
+                                          <Loader2
+                                            className="h-4 w-4 animate-spin"
+                                            aria-hidden="true"
+                                          />
+                                        ) : (
+                                          <XCircle className="h-4 w-4" aria-hidden="true" />
+                                        )}
+                                        Ya, saya tidak bisa hadir
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-11 sm:h-9"
+                                        disabled={cardBusy}
+                                        onClick={() => {
+                                          setCancelOpenFor(null);
+                                          setCancelError(null);
+                                        }}
+                                      >
+                                        Batal
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
                             ) : null}
 
                             <Collapsible className="mt-3">

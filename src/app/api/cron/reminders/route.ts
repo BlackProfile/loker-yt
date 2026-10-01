@@ -8,10 +8,13 @@
 //      pelamar + ActivityLog OFFER_REMIND_H1 + notifikasi in-app (sekali per lamaran)
 //   6. Rekap mingguan: hari SENIN jam 08:00-08:59 lokal, sekali per hari -> statistik
 //      7 hari terakhir via sendSystemEvent (Setting "site".weeklyDigestEnabled, default true)
+//   7. Rekap bulanan: tanggal 1 jam 07:00-07:59 lokal — snapshot bulan sebelumnya
+//      ke MonthlyReport (idempoten) + notifikasi in-app untuk OWNER
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { pushNotification, queueEmail, sendSystemEvent } from "@/lib/notify";
+import { ensureMonthlyReport, previousMonthKey } from "@/lib/monthly-report";
 
 export const dynamic = "force-dynamic";
 
@@ -263,6 +266,22 @@ export async function POST(req: NextRequest) {
       void emitRealtime(REALTIME_EVENTS.applications, REALTIME_EVENTS.interviews);
     }
 
+    // 7) Rekap bulanan: tanggal 1, jam 07:00-07:59 waktu server — snapshot bulan
+    //    sebelumnya ke MonthlyReport (idempoten; sekali per bulan). OWNER diberi
+    //    tahu lewat notifikasi in-app; PDF dicetak dari tab Laporan.
+    let monthlyReport = 0;
+    if (now.getDate() === 1 && now.getHours() === 7) {
+      const created = await ensureMonthlyReport(previousMonthKey(now));
+      if (created) {
+        monthlyReport = 1;
+        await pushNotification({
+          title: "Rekap bulanan siap",
+          body: `Snapshot rekrutmen bulan ${previousMonthKey(now)} sudah dibuat dan bisa dilihat/cetak dari tab Laporan.`,
+          category: "SYSTEM",
+        });
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       offerExpired,
@@ -271,6 +290,7 @@ export async function POST(req: NextRequest) {
       noShows,
       offerRemindersH1,
       weeklyDigest,
+      monthlyReport,
     });
   } catch (error) {
     console.error("[POST /api/cron/reminders]", error);

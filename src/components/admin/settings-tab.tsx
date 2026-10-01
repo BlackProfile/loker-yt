@@ -798,6 +798,263 @@ function RetentionCard() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Email Kandidat — template otomatis saat status lamaran berubah (OWNER saja).
+// ---------------------------------------------------------------------------
+
+type CandidateEmailTemplateUi = { enabled: boolean; subject: string; body: string };
+
+type CandidateEmailsConfigUi = {
+  enabled: boolean;
+  surveyEnabled: boolean;
+  templates: Record<string, CandidateEmailTemplateUi>;
+};
+
+const CANDIDATE_EMAIL_META: { key: string; label: string; hint: string }[] = [
+  { key: "REVIEWED", label: "Sedang Ditinjau", hint: "Nonaktif secara default — aktifkan bila ingin memberi kabar di tahap awal." },
+  { key: "INTERVIEW", label: "Maju Wawancara", hint: "Informasi tahap wawancara; jadwal resmi tetap dikirim dari sesi wawancara." },
+  { key: "ACCEPTED", label: "Diterima", hint: "Selamat + langkah berikutnya; dilengkapi tautan survei pengalaman." },
+  { key: "REJECTED", label: "Ditolak", hint: "Kabar penolakan yang hangat; dilengkapi tautan survei pengalaman." },
+];
+
+const TEMPLATE_VARIABLES = ["{nama}", "{posisi}", "{kode}", "{status}", "{tanggal}", "{situs}"];
+
+function CandidateEmailsCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+  const [config, setConfig] = useState<CandidateEmailsConfigUi | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiGet<{ config: CandidateEmailsConfigUi }>("/api/admin/candidate-emails");
+        setConfig(res.config);
+      } catch (err) {
+        reportError(err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [reportError]);
+
+  async function handleSave() {
+    if (!config) return;
+    setSaving(true);
+    try {
+      const res = await apiPut<{ config: CandidateEmailsConfigUi }>("/api/admin/candidate-emails", {
+        config,
+      });
+      setConfig(res.config);
+      toast.success("Konfigurasi email kandidat tersimpan.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="gap-4 rounded-2xl p-6">
+      <CardHeader className="flex-row items-center justify-between gap-3 px-0">
+        <div className="min-w-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Send className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+            Email Kandidat
+          </CardTitle>
+          <CardDescription className="mt-1">
+            Email otomatis ke pelamar saat status lamarannya berubah. Terarsip di Kotak Keluar.
+          </CardDescription>
+        </div>
+        {isOwner ? (
+          <Button
+            className="h-10 shrink-0"
+            disabled={!config || loading || saving}
+            onClick={() => void handleSave()}
+          >
+            {saving ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Save className="size-4" aria-hidden="true" />
+            )}
+            Simpan
+          </Button>
+        ) : null}
+      </CardHeader>
+      <CardContent className="px-0">
+        {loading || !config ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3 rounded-xl border p-3">
+              <div className="min-w-0">
+                <Label className="text-sm font-medium">Kirim email status otomatis</Label>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Induk semua email status di bawah. Matikan untuk berhenti total.
+                </p>
+              </div>
+              <Switch
+                checked={config.enabled}
+                disabled={!isOwner}
+                onCheckedChange={(checked) =>
+                  setConfig((prev) => (prev ? { ...prev, enabled: checked } : prev))
+                }
+                aria-label="Kirim email status otomatis"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 rounded-xl border p-3">
+              <div className="min-w-0">
+                <Label className="text-sm font-medium">Lampirkan survei pengalaman</Label>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Email Diterima/Ditolak mendapat tautan survei 1 pertanyaan (anonim). Rekap di tab Laporan.
+                </p>
+              </div>
+              <Switch
+                checked={config.surveyEnabled}
+                disabled={!isOwner}
+                onCheckedChange={(checked) =>
+                  setConfig((prev) => (prev ? { ...prev, surveyEnabled: checked } : prev))
+                }
+                aria-label="Lampirkan survei pengalaman"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {CANDIDATE_EMAIL_META.map((meta) => {
+                const template = config.templates[meta.key];
+                if (!template) return null;
+                const open = openKey === meta.key;
+                return (
+                  <div key={meta.key} className="rounded-xl border">
+                    <div className="flex items-center justify-between gap-3 p-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Switch
+                          checked={template.enabled}
+                          disabled={!isOwner}
+                          onCheckedChange={(checked) =>
+                            setConfig((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    templates: {
+                                      ...prev.templates,
+                                      [meta.key]: { ...template, enabled: checked },
+                                    },
+                                  }
+                                : prev,
+                            )
+                          }
+                          aria-label={`Email status ${meta.label}`}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{meta.label}</p>
+                          <p className="truncate text-xs text-muted-foreground">{meta.hint}</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 shrink-0"
+                        onClick={() => setOpenKey(open ? null : meta.key)}
+                        aria-expanded={open}
+                      >
+                        {open ? (
+                          <ChevronUp className="size-4" aria-hidden="true" />
+                        ) : (
+                          <ChevronDown className="size-4" aria-hidden="true" />
+                        )}
+                        Template
+                      </Button>
+                    </div>
+                    {open ? (
+                      <div className="flex flex-col gap-3 border-t p-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">Variabel:</span>
+                          {TEMPLATE_VARIABLES.map((variable) => (
+                            <Badge
+                              key={variable}
+                              variant="outline"
+                              className="cursor-default font-mono text-[11px] font-normal"
+                            >
+                              {variable}
+                            </Badge>
+                          ))}
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor={`ce-subject-${meta.key}`} className="text-xs">
+                            Subjek email
+                          </Label>
+                          <Input
+                            id={`ce-subject-${meta.key}`}
+                            value={template.subject}
+                            maxLength={200}
+                            disabled={!isOwner}
+                            onChange={(event) =>
+                              setConfig((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      templates: {
+                                        ...prev.templates,
+                                        [meta.key]: { ...template, subject: event.target.value },
+                                      },
+                                    }
+                                  : prev,
+                              )
+                            }
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor={`ce-body-${meta.key}`} className="text-xs">
+                            Isi email
+                          </Label>
+                          <Textarea
+                            id={`ce-body-${meta.key}`}
+                            value={template.body}
+                            maxLength={5000}
+                            rows={8}
+                            disabled={!isOwner}
+                            className="nice-scrollbar"
+                            onChange={(event) =>
+                              setConfig((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      templates: {
+                                        ...prev.templates,
+                                        [meta.key]: { ...template, body: event.target.value },
+                                      },
+                                    }
+                                  : prev,
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {!isOwner ? (
+              <p className="text-xs text-muted-foreground">
+                Hanya pemilik situs yang dapat mengubah konfigurasi ini.
+              </p>
+            ) : null}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SettingsTab() {
   const [site, setSite] = useState<SiteContent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1526,6 +1783,9 @@ export function SettingsTab() {
 
       {/* Kotak Keluar Email (arsip + kirim ulang, ketergantungan SMTP) */}
       <EmailOutboxCard />
+
+      {/* Email Kandidat — template otomatis per status lamaran */}
+      <CandidateEmailsCard />
 
       {/* Sesi Aktif (perangkat login + logout paksa) */}
       <ActiveSessionsCard />

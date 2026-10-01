@@ -13,11 +13,12 @@ import { useLiveResource, useRealtimeConnected } from "@/lib/live-client";
 import { LandingPage } from "@/components/landing/landing-page";
 import { EmbedJobs } from "@/components/landing/embed-jobs";
 import { PositionDetailView } from "@/components/landing/position-detail";
+import { SurveyView } from "@/components/landing/survey-view";
 import { AdminApp } from "@/components/admin/admin-app";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type View = "landing" | "detail" | "admin" | "embed";
+type View = "landing" | "detail" | "admin" | "embed" | "survei";
 
 // ---------------------------------------------------------------------------
 // Sumber data publik bersama (realtime + anti-flicker).
@@ -86,6 +87,9 @@ function readLocation(): { view: View; slug: string | null } {
   // "#admin" dan sub-halamannya (mis. "#admin/posisi/<id>") masuk ke panel admin.
   if (window.location.hash.startsWith("#admin")) return { view: "admin", slug: null };
   if (params.get("embed") === "1") return { view: "embed", slug: null };
+  // Survei pengalaman kandidat (?survei=token) — dikirim via email status final.
+  const surveiToken = params.get("survei");
+  if (surveiToken) return { view: "survei", slug: surveiToken.slice(0, 64) };
   const slug = params.get("posisi");
   if (slug) return { view: "detail", slug: slug.slice(0, 80) };
   return { view: "landing", slug: null };
@@ -241,6 +245,8 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
         <AdminApp onExit={exitAdmin} />
       ) : view === "embed" ? (
         <EmbedView data={data} />
+      ) : view === "survei" && slug ? (
+        <SurveyView token={slug} />
       ) : view === "detail" && slug ? (
         <PositionDetailView
           key={slug}

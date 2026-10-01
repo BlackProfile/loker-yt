@@ -466,6 +466,12 @@ export function ApplicationDetailDialog({
   const [rejecting, setRejecting] = useState(false);
   const [rejectMessage, setRejectMessage] = useState<string | null>(null);
 
+  // Panel Email Pelamar — compose manual via /api/admin/applications/[id]/email.
+  const [emailPanelOpen, setEmailPanelOpen] = useState(false);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+
   // Panel Penawaran (form & edit inline memakai state yang sama).
   const [offerForm, setOfferForm] = useState<{
     salary: string;
@@ -1082,6 +1088,38 @@ export function ApplicationDetailDialog({
     const ok = await copyText(app.trackingCode);
     if (ok) toast.success("Kode pelacakan disalin");
     else toast.error("Gagal menyalin ke clipboard");
+  }
+
+  /** Kirim email manual ke pelamar — terarsip di Kotak Keluar + activity log. */
+  async function handleSendEmail() {
+    if (!application) return;
+    const subject = emailSubject.trim();
+    const body = emailBody.trim();
+    if (!subject) {
+      toast.error("Subjek email wajib diisi.");
+      return;
+    }
+    if (!body) {
+      toast.error("Isi email wajib diisi.");
+      return;
+    }
+    setEmailSending(true);
+    try {
+      await apiPost(`/api/admin/applications/${application.id}/email`, { subject, body });
+      toast.success(`Email terkirim ke ${application.email}`);
+      setEmailSubject("");
+      setEmailBody("");
+      setEmailPanelOpen(false);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
+  /** Sisipkan variabel template ke akhir isi email. */
+  function appendEmailVariable(variable: string) {
+    setEmailBody((prev) => (prev.length > 0 ? `${prev}${variable}` : variable));
   }
 
   // Form penawaran — dipakai untuk kirim baru & edit inline saat PENDING.
@@ -1907,6 +1945,78 @@ export function ApplicationDetailDialog({
                   </div>
                 </div>
               ) : null}
+
+              {/* Email pelamar — compose manual (terarsip di Kotak Keluar). */}
+              <Collapsible open={emailPanelOpen} onOpenChange={setEmailPanelOpen}>
+                <div className="flex flex-col gap-2 rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Send className="size-4 text-rose-500" aria-hidden="true" />
+                      <p className="text-sm font-semibold">Email Pelamar</p>
+                    </div>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-9">
+                        {emailPanelOpen ? "Tutup" : "Tulis Email"}
+                      </Button>
+                    </CollapsibleTrigger>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Kirim langsung ke <span className="font-medium">{app.email}</span> — terarsip
+                    di Kotak Keluar dan tercatat di aktivitas.
+                  </p>
+                  <CollapsibleContent className="flex flex-col gap-3 pt-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground">Sisipkan:</span>
+                      {["{nama}", "{posisi}", "{kode}"].map((variable) => (
+                        <button
+                          key={variable}
+                          type="button"
+                          onClick={() => appendEmailVariable(variable)}
+                          className="rounded-full border px-2.5 py-0.5 font-mono text-xs transition-colors hover:bg-accent"
+                          aria-label={`Sisipkan variabel ${variable}`}
+                        >
+                          {variable}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="email-subject">Subjek</Label>
+                      <Input
+                        id="email-subject"
+                        value={emailSubject}
+                        onChange={(e) => setEmailSubject(e.target.value)}
+                        maxLength={200}
+                        placeholder="Subjek email"
+                        disabled={emailSending || !canMutate}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="email-body">Isi email</Label>
+                      <Textarea
+                        id="email-body"
+                        value={emailBody}
+                        onChange={(e) => setEmailBody(e.target.value)}
+                        maxLength={5000}
+                        rows={5}
+                        placeholder="Tulis pesan untuk pelamar..."
+                        disabled={emailSending || !canMutate}
+                      />
+                    </div>
+                    <Button
+                      className="self-start"
+                      disabled={emailSending || !canMutate}
+                      onClick={() => void handleSendEmail()}
+                    >
+                      {emailSending ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Send className="size-4" aria-hidden="true" />
+                      )}
+                      Kirim Email
+                    </Button>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
 
               <div className="flex flex-col gap-2">
                 <Label>Ubah Tahap</Label>

@@ -14,6 +14,7 @@ import { stageLabel } from "@/lib/stages";
 import { REJECTION_REASON_LABELS, type RejectionReason } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
+import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +76,18 @@ export async function POST(req: NextRequest) {
       if (!status || status.length > 40) {
         return NextResponse.json({ error: "Status tidak valid." }, { status: 400 });
       }
+      // Catat dulu lamaran yang BENAR-BENAR berpindah status (bukan yang sudah di
+      // status tujuan) agar email kandidat hanya terkirim untuk perubahan nyata.
+      const changedRows = await db.application.findMany({
+        where: { id: { in: ids }, status: { not: status }, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          trackingCode: true,
+          position: { select: { title: true } },
+        },
+      });
       // Tahap berubah -> bila ditujukan ke Ditolak, penawaran aktif ikut dibatalkan
       // agar halaman status pelamar tidak menampilkan kartu offer yang tak relevan.
       const result = await db.application.updateMany({
@@ -85,6 +98,17 @@ export async function POST(req: NextRequest) {
       const label = stageLabel(status);
       logAction = "BULK_STATUS";
       logDetail = `${affected} lamaran diubah status menjadi ${label}`;
+      // Email otomatis per kandidat yang statusnya benar-benar berubah (fire-and-forget).
+      for (const row of changedRows) {
+        void sendCandidateStatusEmail({
+          applicationId: row.id,
+          name: row.name,
+          email: row.email,
+          trackingCode: row.trackingCode,
+          toStatus: status,
+          positionTitle: row.position?.title ?? null,
+        });
+      }
     } else if (action === "talentPool") {
       if (typeof data.talentPool !== "boolean") {
         return NextResponse.json({ error: "talentPool harus berupa boolean." }, { status: 400 });
@@ -106,7 +130,13 @@ export async function POST(req: NextRequest) {
       const now = new Date();
       const rows = await db.application.findMany({
         where: { id: { in: ids }, status: { not: "REJECTED" } },
-        select: { id: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          trackingCode: true,
+          position: { select: { title: true } },
+        },
       });
       await db.$transaction(
         rows.map((row) =>
@@ -131,6 +161,17 @@ export async function POST(req: NextRequest) {
             detail: `Ditolak massal — alasan: ${REJECTION_REASON_LABELS[reason as RejectionReason]}`,
           })),
         });
+        // Email penolakan otomatis per kandidat (fire-and-forget, ikut config template).
+        for (const row of rows) {
+          void sendCandidateStatusEmail({
+            applicationId: row.id,
+            name: row.name,
+            email: row.email,
+            trackingCode: row.trackingCode,
+            toStatus: "REJECTED",
+            positionTitle: row.position?.title ?? null,
+          });
+        }
       }
       affected = rows.length;
       logAction = "BULK_STATUS";

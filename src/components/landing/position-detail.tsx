@@ -13,6 +13,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  BellRing,
   BookOpenCheck,
   Briefcase,
   CalendarClock,
@@ -25,6 +26,7 @@ import {
   Gift,
   Link2,
   ListChecks,
+  Loader2,
   Lock,
   Mail,
   MapPin,
@@ -45,6 +47,7 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { LangProvider, useLang } from "@/components/landing/lang-context";
@@ -272,6 +275,251 @@ function GateProgressPill({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Daftar tunggu "Ingatkan saya bila dibuka lagi" — baris input email inline
+// (tanpa dialog/modal). Sukses/gagal ditampilkan sebagai pesan inline.
+// ---------------------------------------------------------------------------
+
+const WAITLIST_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const WAITLIST_SUCCESS_FALLBACK = "Siap. Kami email kamu begitu posisi ini dibuka lagi.";
+
+function WaitlistRow({ slug }: { slug: string }) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [message, setMessage] = useState("");
+  const registered = status === "success";
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (status === "loading") return;
+    const value = email.trim();
+    if (!WAITLIST_EMAIL_REGEX.test(value)) {
+      setStatus("error");
+      setMessage("Masukkan alamat email yang valid, misalnya nama@email.com.");
+      return;
+    }
+    setStatus("loading");
+    setMessage("");
+    try {
+      const res = await fetch("/api/public/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, email: value }),
+      });
+      const data: { ok?: boolean; message?: string; error?: string } | null =
+        await res.json().catch(() => null);
+      if (res.ok && data?.ok) {
+        setStatus("success");
+        setMessage(
+          data.message && data.message.trim().length > 0
+            ? data.message
+            : WAITLIST_SUCCESS_FALLBACK,
+        );
+        setEmail("");
+      } else {
+        setStatus("error");
+        setMessage(data?.error ?? "Gagal mendaftar. Coba lagi nanti.");
+      }
+    } catch {
+      setStatus("error");
+      setMessage("Gagal mendaftar. Periksa koneksi internetmu lalu coba lagi.");
+    }
+  };
+
+  return (
+    <div className="rounded-xl border bg-zinc-50/60 p-4 dark:bg-zinc-900/40">
+      <div className="flex items-start gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
+          <BellRing className="size-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-tight">
+            Ingatkan saya bila dibuka lagi
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Tinggalkan email kamu — kami kirim kabar begitu pendaftaran posisi
+            ini dibuka kembali.
+          </p>
+        </div>
+      </div>
+
+      {registered ? (
+        <div
+          className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+          role="status"
+          aria-live="polite"
+        >
+          <Check
+            className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+            aria-hidden="true"
+          />
+          <div className="min-w-0">
+            <p>{message}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setStatus("idle");
+                setMessage("");
+              }}
+              className="mt-1 text-xs font-medium text-emerald-700 underline-offset-2 transition-colors hover:underline dark:text-emerald-300"
+            >
+              Gunakan email lain
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form
+          onSubmit={submit}
+          className="mt-3 flex flex-col gap-2 sm:flex-row"
+          noValidate
+        >
+          <label htmlFor={`waitlist-email-${slug}`} className="sr-only">
+            Alamat email
+          </label>
+          <Input
+            id={`waitlist-email-${slug}`}
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="nama@email.com"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (status === "error") {
+                setStatus("idle");
+                setMessage("");
+              }
+            }}
+            disabled={status === "loading"}
+            aria-invalid={status === "error"}
+            className="min-h-11 flex-1"
+          />
+          <Button
+            type="submit"
+            className="min-h-11 sm:min-h-9"
+            disabled={status === "loading"}
+          >
+            {status === "loading" ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <BellRing className="size-4" aria-hidden="true" />
+            )}
+            Ingatkan saya
+          </Button>
+        </form>
+      )}
+
+      {status === "error" && message ? (
+        <p
+          className="mt-2 text-xs font-medium text-rose-600 dark:text-rose-400"
+          role="alert"
+        >
+          {message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Lowongan serupa: posisi terbuka lain dari daftar tayang (data hidup dari
+// /api/public/content via prop positions). Diurutkan: departemen sama dulu,
+// lalu tipe sama; diambil 3. disembunyikan bila tidak ada kandidat.
+// ---------------------------------------------------------------------------
+
+function SimilarPositions({
+  current,
+  positions,
+  onOpenPosition,
+  title,
+  description,
+}: {
+  current: Position | null;
+  positions: Position[];
+  onOpenPosition: (slug: string) => void;
+  title: string;
+  description: string;
+}) {
+  const candidates = useMemo(() => {
+    const now = Date.now();
+    // Daftar tayang sudah difilter server (aktif, publishAt tercapai, belum
+    // lewat closesAt) — filter diulang ringan di sini sebagai pengaman.
+    const open = positions.filter((p) => {
+      if (current && p.id === current.id) return false;
+      if (!p.isActive) return false;
+      if (p.closesAt && new Date(p.closesAt).getTime() <= now) return false;
+      if (p.publishAt && new Date(p.publishAt).getTime() > now) return false;
+      return true;
+    });
+    if (!current) return open.slice(0, 3);
+    const dept = current.department.trim().toLowerCase();
+    const type = current.type.trim().toLowerCase();
+    return open
+      .sort((a, b) => {
+        const aDept = a.department.trim().toLowerCase() === dept ? 0 : 1;
+        const bDept = b.department.trim().toLowerCase() === dept ? 0 : 1;
+        if (aDept !== bDept) return aDept - bDept;
+        const aType = a.type.trim().toLowerCase() === type ? 0 : 1;
+        const bType = b.type.trim().toLowerCase() === type ? 0 : 1;
+        return aType - bType;
+      })
+      .slice(0, 3);
+  }, [positions, current]);
+
+  if (candidates.length === 0) return null;
+
+  return (
+    <section aria-label={title}>
+      <SectionTitle icon={Sparkles}>{title}</SectionTitle>
+      <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {candidates.map((p) => (
+          <Card key={p.id} className="flex flex-col gap-3 rounded-2xl p-4">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold" title={p.title}>
+                {p.title}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline" className={ROSE_BADGE}>
+                  {p.department}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className="border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                >
+                  <ClipboardList className="size-3" aria-hidden="true" />
+                  {p.type}
+                </Badge>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
+                  {p.location}
+                </span>
+                {p.salaryVisible && p.salaryText ? (
+                  <span className="flex items-center gap-1 font-medium text-emerald-700 dark:text-emerald-400">
+                    <Wallet className="size-3.5 shrink-0" aria-hidden="true" />
+                    {p.salaryText}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-auto h-11 w-full sm:h-9"
+              onClick={() => onOpenPosition(p.slug ?? p.id)}
+            >
+              Lihat detail
+              <ArrowRight className="size-4" aria-hidden="true" />
+            </Button>
+          </Card>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function PositionDetailView(
   props: {
     slug: string;
@@ -280,6 +528,8 @@ export function PositionDetailView(
     positionStats?: Record<string, PositionPublicStats>;
     refreshing?: boolean;
     onBack: () => void;
+    /** Buka lowongan lain dari seksi "Lowongan serupa" (bila tak diberikan, navigasi URL dipakai). */
+    onOpenPosition?: (slug: string) => void;
   },
 ) {
   // Detail dirender dari HomeView (di luar LandingPage) — butuh LangProvider sendiri.
@@ -297,6 +547,7 @@ function PositionDetailViewInner({
   positionStats = {},
   refreshing = false,
   onBack,
+  onOpenPosition,
 }: {
   slug: string;
   content: SiteContent;
@@ -304,6 +555,7 @@ function PositionDetailViewInner({
   positionStats?: Record<string, PositionPublicStats>;
   refreshing?: boolean;
   onBack: () => void;
+  onOpenPosition?: (slug: string) => void;
 }) {
   const { t, lang } = useLang();
   const [copied, setCopied] = useState(false);
@@ -463,7 +715,23 @@ function PositionDetailViewInner({
     }
   };
 
-  // Lowongan hilang dari daftar tayang (ditutup/diarsip/nonaktif) → tampilan "tidak ditemukan".
+  // Buka lowongan lain (seksi "Lowongan serupa"). Bila HomeView tidak
+  // memberikan callback, replikasi perilaku navigasinya: pushState URL
+  // ?posisi=slug lalu event "app:navigate" (didengarkan HomeView) — tanpa reload.
+  const openPosition =
+    onOpenPosition ??
+    ((positionSlug: string) => {
+      history.pushState(
+        null,
+        "",
+        `/?posisi=${encodeURIComponent(positionSlug.slice(0, 80))}`,
+      );
+      window.dispatchEvent(new Event("app:navigate"));
+      window.scrollTo({ top: 0, behavior: "auto" });
+    });
+
+  // Lowongan hilang dari daftar tayang (ditutup/diarsip/nonaktif) → tampilan "tidak ditemukan"
+  // dengan daftar lowongan lain yang masih dibuka.
   if (!position) {
     return (
       <div className="flex min-h-screen flex-col bg-background">
@@ -474,7 +742,7 @@ function PositionDetailViewInner({
           onBack={onBack}
           backLabel={t.detail.back}
         />
-        <main className="flex flex-1 items-center justify-center px-4 py-20">
+        <main className="flex flex-1 flex-col items-center justify-center px-4 py-20">
           <FadeIn className="w-full max-w-md text-center">
             <Card className="gap-4 rounded-2xl p-8">
               <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
@@ -492,6 +760,15 @@ function PositionDetailViewInner({
               </Button>
             </Card>
           </FadeIn>
+          <FadeIn delay={0.1} className="mt-12 w-full max-w-3xl">
+            <SimilarPositions
+              current={null}
+              positions={positions}
+              onOpenPosition={openPosition}
+              title="Lowongan yang masih dibuka"
+              description="Mungkin salah satu dari lowongan berikut cocok untukmu."
+            />
+          </FadeIn>
         </main>
       </div>
     );
@@ -504,7 +781,15 @@ function PositionDetailViewInner({
   // Formulir per posisi: terbuka bila formulir global aktif, kuota belum penuh,
   // DAN formulir posisi ini tidak ditutup oleh admin (applyOpen).
   const positionFormClosed = position.applyOpen === false;
-  const canApplyOnline = content.sections.applyForm && !quotaFull && !positionFormClosed;
+  // Batas waktu lewat dihitung di klien juga — posisi yang baru saja melewati
+  // closesAt (belum keluar dari daftar tayang) langsung diperlakukan tertutup.
+  const deadlinePassed =
+    !!position.closesAt && new Date(position.closesAt).getTime() <= Date.now();
+  // Posisi tidak bisa dilamar: lewat closesAt ATAU applyOpen false ATAU kuota penuh.
+  // Kondisi ini yang memunculkan daftar tunggu & seksi lowongan serupa.
+  const applyUnavailable = quotaFull || positionFormClosed || deadlinePassed;
+  const canApplyOnline =
+    content.sections.applyForm && !quotaFull && !positionFormClosed && !deadlinePassed;
   const stages = stagesForPosition(position.stages);
 
   const requiredFiles = [
@@ -917,6 +1202,9 @@ function PositionDetailViewInner({
                             ? t.detail.formClosedDesc
                             : t.detail.applyClosedDesc}
                       </p>
+                      {/* Daftar tunggu hanya untuk posisi yang memang tertutup
+                          (bukan saat formulir global dimatikan admin). */}
+                      {applyUnavailable ? <WaitlistRow slug={position.slug ?? slug} /> : null}
                     </div>
                   )}
 
@@ -951,6 +1239,20 @@ function PositionDetailViewInner({
                 </Card>
               </FadeIn>
             </div>
+
+            {/* Posisi tidak bisa dilamar → lowongan serupa yang masih membuka
+                pendaftaran (sembunyi otomatis bila tidak ada kandidat). */}
+            {applyUnavailable ? (
+              <FadeIn delay={0.15}>
+                <SimilarPositions
+                  current={position}
+                  positions={positions}
+                  onOpenPosition={openPosition}
+                  title="Lowongan serupa"
+                  description="Sementara posisi ini belum bisa dilamar, lowongan lain berikut masih membuka pendaftaran."
+                />
+              </FadeIn>
+            ) : null}
           </div>
         </Container>
       </main>

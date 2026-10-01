@@ -16,6 +16,7 @@ import { isBuiltInStage } from "@/lib/stages";
 import { STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
+import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
 
 export const dynamic = "force-dynamic";
 
@@ -332,6 +333,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         name: existing.name,
         from: existing.status,
         to: updateData.status,
+      });
+      // Email otomatis ke kandidat saat status berubah (template per status,
+      // bisa dimatikan dari Setelan). Fire-and-forget — tidak pernah melempar error.
+      void sendCandidateStatusEmail({
+        applicationId: id,
+        name: existing.name,
+        email: existing.email,
+        trackingCode: existing.trackingCode,
+        toStatus: updateData.status as string,
+        positionTitle: updated.position?.title ?? null,
       });
     }
 

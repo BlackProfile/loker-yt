@@ -36,7 +36,7 @@ export async function generateMetadata({
     const title = `Lowongan ${position.title} — Lumina Studio`;
     const images = position.coverFileId
       ? [{ url: `/api/files/${position.coverFileId}`, width: 1344, height: 768 }]
-      : undefined;
+      : [{ url: `/api/og?posisi=${slug}`, width: 1200, height: 630 }];
 
     return {
       title,

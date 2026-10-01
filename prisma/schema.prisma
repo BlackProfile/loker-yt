@@ -122,6 +122,10 @@ model Position {
   deletedAt DateTime?
 
   interviewSlots InterviewSlot[]
+
+  // Lanjutkan draft di perangkat lain (ide 5) & daftar tunggu posisi (ide 4)
+  drafts   ApplicationDraft[] @relation("drafts")
+  waitlist PositionWaitlist[] @relation("waitlist")
 }
 
 // Aset file yang diunggah pelamar (CV, audio intro)
@@ -218,6 +222,7 @@ model Application {
   checkIns    CheckIn[]
   emailOut    EmailOutbox[]
   slotBooking InterviewSlot[] @relation("slotBooking")
+  surveys     CandidateSurvey[] @relation("surveys")
 
   interviews       Interview[]
   createdAt        DateTime   @default(now())
@@ -446,4 +451,52 @@ model CheckIn {
   createdAt     DateTime    @default(now())
 
   @@index([applicationId])
+}
+
+// Draft lamaran lintas perangkat — pelamar mengirim tautan lanjutkan ke emailnya
+// dari wizard (localStorage hanya lokal per perangkat). Token dipakai sekali via
+// GET /api/public/apply-draft?token=... lalu baris dihapus (ide 5).
+model ApplicationDraft {
+  id         String    @id @default(cuid())
+  token      String    @unique
+  positionId String?
+  position   Position? @relation("drafts", fields: [positionId], references: [id], onDelete: Cascade)
+  email      String
+  data       String // JSON isi draft wizard (jawaban per langkah)
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
+}
+
+// Survei pengalaman kandidat 1 pertanyaan setelah keputusan (diterima/ditolak).
+// Token unik dikirim lewat email status; jawaban direkap agregat di laporan (ide 7).
+model CandidateSurvey {
+  id            String       @id @default(cuid())
+  token         String       @unique
+  applicationId String?
+  application   Application? @relation("surveys", fields: [applicationId], references: [id], onDelete: SetNull)
+  score         Int // 1-5
+  comment       String?
+  createdAt     DateTime     @default(now())
+}
+
+// Daftar tunggu "Ingatkan saya bila dibuka lagi" pada posisi tutup/kuota penuh (ide 4).
+model PositionWaitlist {
+  id         String    @id @default(cuid())
+  email      String
+  positionId String?
+  position   Position? @relation("waitlist", fields: [positionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+
+  @@unique([email, positionId])
+}
+
+// Rekap bulanan otomatis — snapshot statistik bulan sebelumnya dibuat cron,
+// ditampilkan & bisa dicetak PDF dari tab Laporan (ide 8).
+model MonthlyReport {
+  id        String   @id @default(cuid())
+  month     String   @unique // format "YYYY-MM"
+  data      String // JSON snapshot statistik
+  createdAt DateTime @default(now())
 }
