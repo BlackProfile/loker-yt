@@ -13,9 +13,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
-import { pushNotification, queueEmail, sendSystemEvent } from "@/lib/notify";
+import { pushNotification, queueEmail, sendSystemEvent, getSiteUrl } from "@/lib/notify";
+import type { TelegramButton } from "@/lib/notify";
 import { ensureMonthlyReport, previousMonthKey } from "@/lib/monthly-report";
-import { runTelegramDigest } from "@/lib/telegram-bot";
+import { runTelegramDigest, runTelegramQuotaCheck, runTelegramSnoozeDispatch, runTelegramWeeklyChart } from "@/lib/telegram-bot";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +95,12 @@ export async function POST(req: NextRequest) {
           applicationId: iv.applicationId,
           action: "INTERVIEW_REMINDER",
           trackingCode: iv.application.trackingCode ?? undefined,
+          telegramButtons: [
+            ...(iv.application.trackingCode
+              ? [[{ text: "Lihat Kandidat", url: `${getSiteUrl()}/?kandidat=${encodeURIComponent(iv.application.trackingCode)}#admin` }]]
+              : []),
+            [{ text: "Buka Panel Admin", url: `${getSiteUrl()}/#admin` }],
+          ],
         });
         remindersHour += 1;
       } else if (minutesLeft > 60 && !iv.reminderDaySent) {
@@ -112,6 +119,12 @@ export async function POST(req: NextRequest) {
           applicationId: iv.applicationId,
           action: "INTERVIEW_REMINDER",
           trackingCode: iv.application.trackingCode ?? undefined,
+          telegramButtons: [
+            ...(iv.application.trackingCode
+              ? [[{ text: "Lihat Kandidat", url: `${getSiteUrl()}/?kandidat=${encodeURIComponent(iv.application.trackingCode)}#admin` }]]
+              : []),
+            [{ text: "Buka Panel Admin", url: `${getSiteUrl()}/#admin` }],
+          ],
         });
         remindersDay += 1;
       }
@@ -295,6 +308,31 @@ export async function POST(req: NextRequest) {
       // bot Telegram tidak wajib — kegagalan tidak boleh menggagalkan cron
     }
 
+    // 9) Pengingat snooze bot Telegram (kandidat yang ditunda admin, jatuh tempo hari itu).
+    let telegramSnooze = 0;
+    try {
+      telegramSnooze = await runTelegramSnoozeDispatch();
+    } catch {
+      // diam — bot tidak wajib
+    }
+
+    // 10) Alert kuota posisi hampir penuh/penuh (dedup per level sisa kuota).
+    let telegramQuota = 0;
+    try {
+      telegramQuota = await runTelegramQuotaCheck();
+    } catch {
+      // diam
+    }
+
+    // 11) Grafik mingguan Senin pagi (PNG, menyusul digest; idempoten per hari).
+    let telegramChart = 0;
+    try {
+      const chart = await runTelegramWeeklyChart();
+      telegramChart = chart.sent;
+    } catch {
+      // diam
+    }
+
     return NextResponse.json({
       ok: true,
       offerExpired,
@@ -305,6 +343,9 @@ export async function POST(req: NextRequest) {
       weeklyDigest,
       monthlyReport,
       telegramDigest,
+      telegramSnooze,
+      telegramQuota,
+      telegramChart,
     });
   } catch (error) {
     console.error("[POST /api/cron/reminders]", error);

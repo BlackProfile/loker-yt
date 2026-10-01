@@ -215,6 +215,10 @@ model Application {
   videoNotes     String?   // JSON {t:detik,note:string}[] catatan bertimestamp saat review video intro
   consentAt      DateTime? // saat pelamar menyetujui pernyataan privasi di formulir
 
+  // Bot Telegram — snooze & lampiran
+  snoozeUntil DateTime? // bila diisi, bot mengingatkan admin pada waktu ini lalu membersihkannya
+  botFiles    String    @default("[]") // JSON {fileId,filename,mimeType,size,sentAt}[] lampiran yang dikirim admin via bot Telegram
+
   // Task 30 — jawaban Form Builder per posisi (kunci fieldId stabil); null = lamaran mode klasik
   formAnswers    String?
 

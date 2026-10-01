@@ -50,6 +50,7 @@ export type TelegramAlertKey =
   | "survey" // survei pengalaman kandidat diisi
   | "emailFailed" // email di kotak keluar gagal terkirim
   | "system" // event sistem: wawancara, offer, NO_SHOW, rekap
+  | "quota" // kuota posisi hampir penuh / penuh
   | "digest"; // digest pagi 07:00 WIB
 
 export const TELEGRAM_ALERT_KEYS: TelegramAlertKey[] = [
@@ -57,6 +58,7 @@ export const TELEGRAM_ALERT_KEYS: TelegramAlertKey[] = [
   "survey",
   "emailFailed",
   "system",
+  "quota",
   "digest",
 ];
 
@@ -65,6 +67,7 @@ export const TELEGRAM_ALERT_LABELS: Record<TelegramAlertKey, string> = {
   survey: "Survei kandidat diisi",
   emailFailed: "Email gagal terkirim",
   system: "Event sistem (wawancara, offer, rekap)",
+  quota: "Kuota posisi hampir penuh",
   digest: "Digest pagi (07.00 WIB)",
 };
 
@@ -75,6 +78,7 @@ export const DEFAULT_TELEGRAM_ALERTS: TelegramAlerts = {
   survey: true,
   emailFailed: true,
   system: true,
+  quota: true,
   digest: true,
 };
 
@@ -134,6 +138,9 @@ export type SiteContent = {
   telegramAllowedChats: string[]; // daftar chat id terdaftar (hasil pairing /mulai KODE)
   telegramAlerts: TelegramAlerts; // jenis alert yang dikirim ke Telegram
   telegramLastDigest: string; // tanggal digest terakhir "YYYY-MM-DD" (Asia/Bangkok) — internal
+  telegramMutes: Record<string, string>; // mode diam per chat: chatId -> ISO waktu sampai bisu — internal
+  telegramLastChart: string; // tanggal grafik mingguan terakhir "YYYY-MM-DD" (Asia/Bangkok) — internal
+  telegramQuotaAlerts: Record<string, number>; // dedup alert kuota: positionId -> sisa kuota saat terakhir diingatkan — internal
   // Mode tutup rekrutmen — saat true, halaman publik menampilkan banner
   // pengumuman dan formulir lamaran tidak bisa dikirim.
   recruitmentClosed: boolean;

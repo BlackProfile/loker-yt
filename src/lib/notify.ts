@@ -25,6 +25,7 @@ export type AutomationSettings = {
   telegramWriteEnabled: boolean; // izinkan aksi tulis dari bot Telegram
   telegramAllowedChats: string[]; // chat terdaftar (hasil pairing); gabungan dengan legacy chatId
   telegramAlerts: TelegramAlerts; // toggle per jenis alert
+  telegramMutes: Record<string, string>; // mode diam per chat: chatId -> ISO waktu sampai bisu
 };
 
 const DEFAULT_AUTOMATION: AutomationSettings = {
@@ -35,6 +36,7 @@ const DEFAULT_AUTOMATION: AutomationSettings = {
   telegramWriteEnabled: true,
   telegramAllowedChats: [],
   telegramAlerts: { ...DEFAULT_TELEGRAM_ALERTS },
+  telegramMutes: {},
 };
 
 /** Baca Setting "site" dan ambil field otomasi secara aman (fallback default bila rusak). */
@@ -69,6 +71,20 @@ export async function getAutomationSettings(): Promise<AutomationSettings> {
     const legacyChat = typeof obj.telegramChatId === "string" ? obj.telegramChatId.trim() : "";
     if (legacyChat && !allowedChats.includes(legacyChat)) allowedChats.push(legacyChat);
 
+    // Mode diam per chat: {chatId: ISO} — entri rusak/kedaluwarsa dibuang.
+    const mutes: Record<string, string> = {};
+    const rawMutes =
+      obj.telegramMutes && typeof obj.telegramMutes === "object" && !Array.isArray(obj.telegramMutes)
+        ? (obj.telegramMutes as Record<string, unknown>)
+        : {};
+    for (const [chatId, until] of Object.entries(rawMutes)) {
+      if (typeof until !== "string") continue;
+      const ts = Date.parse(until);
+      if (Number.isFinite(ts) && ts > Date.now() && chatId.length <= 60) {
+        mutes[chatId] = until;
+      }
+    }
+
     return {
       chatbotEnabled: typeof obj.chatbotEnabled === "boolean" ? obj.chatbotEnabled : false,
       discordWebhookUrl: typeof obj.discordWebhookUrl === "string" ? obj.discordWebhookUrl.trim() : "",
@@ -77,6 +93,7 @@ export async function getAutomationSettings(): Promise<AutomationSettings> {
       telegramWriteEnabled: typeof obj.telegramWriteEnabled === "boolean" ? obj.telegramWriteEnabled : true,
       telegramAllowedChats: allowedChats,
       telegramAlerts: alerts,
+      telegramMutes: mutes,
     };
   } catch {
     return { ...DEFAULT_AUTOMATION };
@@ -86,6 +103,22 @@ export async function getAutomationSettings(): Promise<AutomationSettings> {
 /** True bila URL berformat webhook Discord yang valid. */
 export function isValidDiscordWebhook(url: string): boolean {
   return DISCORD_WEBHOOK_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
+
+/**
+ * Mode diam (per chat): true bila chat sedang dibisukan sampai waktu tertentu.
+ * Chat yang bisu tetap bisa memakai perintah bot — hanya notifikasi proaktif yang ditahan.
+ */
+export function isChatMuted(settings: AutomationSettings, chatId: string): boolean {
+  const until = settings.telegramMutes[chatId];
+  if (!until) return false;
+  const ts = Date.parse(until);
+  return Number.isFinite(ts) && ts > Date.now();
+}
+
+/** Daftar chat terdaftar yang TIDAK sedang dibisukan — untuk pengiriman notifikasi proaktif. */
+export function activeChats(settings: AutomationSettings): string[] {
+  return settings.telegramAllowedChats.filter((chat) => !isChatMuted(settings, chat));
 }
 
 /** fetch dengan timeout (default 8 detik). */
@@ -248,9 +281,10 @@ export async function sendTelegramAlert(
     const settings = await getAutomationSettings();
     if (!settings.telegramBotToken) return 0;
     if (!settings.telegramAlerts[alertKey]) return 0;
-    if (settings.telegramAllowedChats.length === 0) return 0;
+    const chats = activeChats(settings);
+    if (chats.length === 0) return 0;
     let sent = 0;
-    for (const chat of settings.telegramAllowedChats) {
+    for (const chat of chats) {
       const result = await sendTelegramNotification(settings.telegramBotToken, chat, text, opts);
       if (result === "ok") sent += 1;
     }
@@ -269,6 +303,7 @@ export async function sendNewApplicationNotifications(app: {
   name: string;
   positionTitle: string | null;
   trackingCode: string | null;
+  hasCv?: boolean; // bila true, tombol "Unduh CV" tampil di notifikasi Telegram
 }): Promise<void> {
   let discord: NotifyChannelResult = "nonaktif";
   let telegram: NotifyChannelResult = "nonaktif";
@@ -283,6 +318,9 @@ export async function sendNewApplicationNotifications(app: {
     const telegramButtons: TelegramButton[][] = [[
       { text: "Tinjau di Dashboard", url: `${getSiteUrl()}/?kandidat=${encodeURIComponent(trackingCode)}#admin` },
     ]];
+    if (app.hasCv) {
+      telegramButtons.push([{ text: "Unduh CV", callback_data: `app:${app.id}:cv` }]);
+    }
     if (settings.telegramWriteEnabled) {
       telegramButtons.push([
         { text: "Ajak Wawancara", callback_data: `app:${app.id}:interview` },
@@ -308,10 +346,11 @@ export async function sendNewApplicationNotifications(app: {
       }
     }
 
-    // Channel Telegram — dikirim ke semua chat terdaftar (whitelist), digate toggle alert.
-    if (settings.telegramBotToken && settings.telegramAlerts.newApplication && settings.telegramAllowedChats.length > 0) {
+    // Channel Telegram — dikirim ke semua chat terdaftar yang tidak sedang dibisukan,
+    // digate toggle alert.
+    if (settings.telegramBotToken && settings.telegramAlerts.newApplication) {
       try {
-        for (const chat of settings.telegramAllowedChats) {
+        for (const chat of activeChats(settings)) {
           const result = await sendTelegramNotification(settings.telegramBotToken, chat, telegramText, {
             buttons: telegramButtons,
           });
@@ -353,6 +392,7 @@ export async function sendSystemEvent(params: {
   action?: string; // default "NOTIFY"
   category?: string; // kategori notifikasi in-app: SYSTEM | OFFER | INTERVIEW | APPLICATION | LOGIN
   trackingCode?: string; // untuk tautan "Lihat Kandidat" di tombol Telegram
+  telegramButtons?: TelegramButton[][]; // tombol Telegram kustom (menggantikan tombol Lihat Kandidat bila diisi)
 }): Promise<void> {
   const action = params.action ?? "NOTIFY";
   let discord: NotifyChannelResult = "nonaktif";
@@ -376,18 +416,16 @@ export async function sendSystemEvent(params: {
         discord = "gagal";
       }
     }
-    // Telegram: dikirim ke semua chat terdaftar, digate toggle "system" (event sistem).
-    if (settings.telegramBotToken && settings.telegramAlerts.system && settings.telegramAllowedChats.length > 0) {
+    // Telegram: dikirim ke semua chat terdaftar yang tidak dibisukan, digate toggle "system".
+    if (settings.telegramBotToken && settings.telegramAlerts.system) {
       try {
-        for (const chat of settings.telegramAllowedChats) {
-          const result = await sendTelegramNotification(
-            settings.telegramBotToken,
-            chat,
-            telegramText,
-            params.applicationId && params.trackingCode && settings.telegramWriteEnabled
-              ? { buttons: [[{ text: "Lihat Kandidat", url: `${getSiteUrl()}/?kandidat=${encodeURIComponent(params.trackingCode)}#admin` }]] }
-              : undefined,
-          );
+        const fallbackButtons: TelegramButton[][] | undefined =
+          params.applicationId && params.trackingCode && settings.telegramWriteEnabled
+            ? [[{ text: "Lihat Kandidat", url: `${getSiteUrl()}/?kandidat=${encodeURIComponent(params.trackingCode)}#admin` }]]
+            : undefined;
+        const buttons = params.telegramButtons ?? fallbackButtons;
+        for (const chat of activeChats(settings)) {
+          const result = await sendTelegramNotification(settings.telegramBotToken, chat, telegramText, buttons ? { buttons } : undefined);
           if (result === "ok") telegram = "ok";
           else if (result === "gagal") telegram = "gagal";
         }

@@ -631,6 +631,30 @@ function sanitizeTelegramAlerts(value: unknown, fallback: TelegramAlerts): Teleg
   return out;
 }
 
+/** Sanitasi map chatId -> ISO waktu (mode diam): buang entri rusak/kedaluwarsa. */
+function sanitizeStringMap(value: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof val !== "string" || !key || key.length > 60) continue;
+    const ts = Date.parse(val);
+    if (Number.isFinite(ts) && ts > Date.now()) out[key] = val;
+  }
+  return out;
+}
+
+/** Sanitasi map positionId -> angka (dedup alert kuota): buang entri rusak. */
+function sanitizeNumberMap(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof val === "number" && Number.isFinite(val) && key && key.length <= 40) {
+      out[key] = val;
+    }
+  }
+  return out;
+}
+
 /** Sanitasi daftar chat id Telegram: string bersih unik, maks 20 entri. */
 function sanitizeChatIdList(value: unknown, fallback: string[]): string[] {
   if (!Array.isArray(value)) return [...fallback];
@@ -671,6 +695,9 @@ export function sanitizeSiteContent(value: unknown, fallback: SiteContent = DEFA
     telegramAllowedChats: sanitizeChatIdList(obj.telegramAllowedChats, fallback.telegramAllowedChats),
     telegramAlerts: sanitizeTelegramAlerts(obj.telegramAlerts, fallback.telegramAlerts),
     telegramLastDigest: pickString(obj, "telegramLastDigest", fallback.telegramLastDigest),
+    telegramMutes: sanitizeStringMap(obj.telegramMutes),
+    telegramLastChart: pickString(obj, "telegramLastChart", fallback.telegramLastChart),
+    telegramQuotaAlerts: sanitizeNumberMap(obj.telegramQuotaAlerts),
     recruitmentClosed: pickBoolean(obj, "recruitmentClosed", fallback.recruitmentClosed),
     recruitmentClosedMessage: pickString(obj, "recruitmentClosedMessage", fallback.recruitmentClosedMessage),
     sections: sanitizeSections(obj.sections, fallback.sections),
@@ -918,7 +945,11 @@ async function runSeed(): Promise<void> {
         await db.setting.update({ where: { key: "site" }, data: { value: JSON.stringify(merged) } });
       }
     } catch {
-      await db.setting.update({ where: { key: "site" }, data: { value: JSON.stringify(DEFAULT_SITE) } });
+      // JSON site rusak — JANGAN menimpa dengan default (bisa menghapus token bot,
+      // whitelist chat, dll. karena glitch baca sesaat). Biarkan nilai lama; semua
+      // pembaca sudah fallback ke default per-field, dan admin bisa memperbaiki
+      // lewat PUT /api/admin/settings.
+      console.error("[seed] JSON Setting 'site' tidak valid — nilai lama dipertahankan.");
     }
   }
 

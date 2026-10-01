@@ -50,6 +50,7 @@ export async function startBackgroundProcessing(applicationId: string): Promise<
           name: application.name,
           positionTitle: application.position?.title ?? null,
           trackingCode: application.trackingCode,
+          hasCv: Boolean(application.cvFileId),
         });
       }
     } catch (error) {
