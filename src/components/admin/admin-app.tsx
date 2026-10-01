@@ -518,6 +518,18 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   // Command palette (Ctrl+K / Cmd+K) — juga dibuka dari tombol pencarian header.
   const [paletteOpen, setPaletteOpen] = useState(false);
 
+  // Deep-link ?kandidat=<trackingCode> — tombol "Tinjau di Dashboard" pada
+  // pesan bot Telegram. Diproses SEKALI per mount (guard ref) dan hanya setelah
+  // panel admin tampil (phase "ready"); hasil pencariannya diserahkan ke
+  // PipelineTab untuk membuka dialog detail seperti klik baris kandidat.
+  const deepLinkProcessedRef = useRef(false);
+  const [deepLinkApplication, setDeepLinkApplication] =
+    useState<Application | null>(null);
+  const consumeDeepLink = useCallback(
+    () => setDeepLinkApplication(null),
+    [],
+  );
+
   // Mode ciut sidebar — tersimpan di localStorage agar diperlakukan abadi.
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -632,6 +644,49 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
         // Header tetap menampilkan nama sebelumnya.
       });
   });
+
+  // Deep-link ?kandidat=<kode> dari bot Telegram (tombol "Tinjau di Dashboard"):
+  // hanya diproses saat panel admin sudah tampil (sesi valid — pola phase
+  // "ready" yang sama dengan gate sesi di atas). Lamaran dicari dari daftar
+  // admin dengan trackingCode case-insensitive (filter q di API hanya
+  // mencocokkan nama/email, bukan kode). Ditemukan -> tab Pipeline + dialog
+  // detail; tidak ditemukan -> toast error tanpa mengubah tab. URL dibersihkan
+  // setelah diproses agar refresh tidak membuka ulang deep-link.
+  useEffect(() => {
+    if (phase !== "ready") return;
+    if (deepLinkProcessedRef.current) return;
+    deepLinkProcessedRef.current = true;
+
+    const code = new URLSearchParams(window.location.search)
+      .get("kandidat")
+      ?.trim()
+      .slice(0, 40);
+    if (!code) return;
+
+    void (async () => {
+      let match: Application | null = null;
+      try {
+        const list = await apiGet<Application[]>("/api/admin/applications");
+        const needle = code.toLowerCase();
+        match =
+          (Array.isArray(list) ? list : []).find(
+            (a) => a.trackingCode.toLowerCase() === needle,
+          ) ?? null;
+      } catch (err) {
+        reportError(err);
+        window.history.replaceState(null, "", `${window.location.pathname}#admin`);
+        return;
+      }
+      if (match) {
+        setDeepLinkApplication(match);
+        setActiveTab("pipeline");
+      } else {
+        toast.error(`Kandidat dengan kode ${code} tidak ditemukan.`);
+      }
+      // Pertahankan hash #admin agar refresh tetap mendarat di panel admin.
+      window.history.replaceState(null, "", `${window.location.pathname}#admin`);
+    })();
+  }, [phase, reportError]);
 
   // Tutup drawer seluler dengan tombol Escape.
   useEffect(() => {
@@ -873,7 +928,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
             ) : null}
             {effectiveTab === "pipeline" ? (
               <TabReveal>
-                <PipelineTab onNavigate={setActiveTab} />
+                <PipelineTab
+                  onNavigate={setActiveTab}
+                  deepLinkApplication={deepLinkApplication}
+                  onDeepLinkConsumed={consumeDeepLink}
+                />
               </TabReveal>
             ) : null}
             {effectiveTab === "applications" ? (

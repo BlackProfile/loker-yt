@@ -1,10 +1,11 @@
 // Nilai default aplikasi rekrutmen konten kreator.
 // File ini murni konstanta (tanpa import server), aman diimpor dari klien maupun server.
-import type {
-  Role,
-  ScreeningQuestion,
-  SectionVisibility,
-  SiteContent,
+import {
+  DEFAULT_TELEGRAM_ALERTS,
+  type Role,
+  type ScreeningQuestion,
+  type SectionVisibility,
+  type SiteContent,
 } from "@/lib/types";
 
 export const DEFAULT_ADMIN_PASSWORD = "admin123";
@@ -127,6 +128,10 @@ export const DEFAULT_SITE: SiteContent = {
   discordWebhookUrl: "",
   telegramBotToken: "",
   telegramChatId: "",
+  telegramWriteEnabled: true,
+  telegramAllowedChats: [],
+  telegramAlerts: { ...DEFAULT_TELEGRAM_ALERTS },
+  telegramLastDigest: "",
   recruitmentClosed: false,
   recruitmentClosedMessage: "",
   sections: { ...DEFAULT_SECTIONS },

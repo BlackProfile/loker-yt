@@ -77,6 +77,7 @@ import {
   TrendingUp,
   Users,
   Wallet,
+  X,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -84,7 +85,10 @@ import { toast } from "sonner";
 import {
   BENEFIT_ICONS,
   ROLE_LABELS,
+  TELEGRAM_ALERT_KEYS,
+  TELEGRAM_ALERT_LABELS,
   type FaqItem,
+  type TelegramAlertKey,
   type Role,
   type SectionKey,
   type SiteContent,
@@ -410,6 +414,471 @@ function EmailOutboxCard() {
             {formatDateTime(rows[0]?.createdAt).includes("-") ? "" : ""}.
           </p>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ------------------------------ Bot Telegram (bot dua arah admin) ------------------------------
+
+type TelegramPairInfo = { code: string; expiresAt: string };
+
+type TelegramAlertsUi = Record<TelegramAlertKey, boolean>;
+
+type TelegramBotState = {
+  hasToken: boolean;
+  legacyChatId: string;
+  allowedChats: string[];
+  writeEnabled: boolean;
+  alerts: Partial<TelegramAlertsUi> | null;
+  pair: TelegramPairInfo | null;
+};
+
+function normalizeTelegramAlerts(value: TelegramBotState["alerts"]): TelegramAlertsUi {
+  const base = {} as TelegramAlertsUi;
+  for (const key of TELEGRAM_ALERT_KEYS) {
+    base[key] = value?.[key] === true;
+  }
+  return base;
+}
+
+// Kedaluwarsa kode pemasangan: "dd MMM yyyy HH.mm" (id-ID).
+function formatPairExpiry(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+// Kartu mandiri: data dimuat sendiri via GET /api/admin/telegram/bot dan setiap aksi
+// tersimpan langsung via POST (tidak lewat tombol Simpan utama / state site).
+function TelegramBotCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasToken, setHasToken] = useState(false);
+  const [legacyChatId, setLegacyChatId] = useState("");
+  const [allowedChats, setAllowedChats] = useState<string[]>([]);
+  const [writeEnabled, setWriteEnabled] = useState(false);
+  const [alerts, setAlerts] = useState<TelegramAlertsUi>(() => normalizeTelegramAlerts(null));
+  const [pair, setPair] = useState<TelegramPairInfo | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [pairCreating, setPairCreating] = useState(false);
+  const [pairCancelling, setPairCancelling] = useState(false);
+  const [removingChat, setRemovingChat] = useState<string | null>(null);
+  const [writeSaving, setWriteSaving] = useState(false);
+  const [alertSaving, setAlertSaving] = useState<TelegramAlertKey | null>(null);
+  const [origin, setOrigin] = useState("");
+
+  const applyState = useCallback((data: TelegramBotState) => {
+    setHasToken(Boolean(data.hasToken));
+    setLegacyChatId(typeof data.legacyChatId === "string" ? data.legacyChatId : "");
+    setAllowedChats(Array.isArray(data.allowedChats) ? data.allowedChats : []);
+    setWriteEnabled(Boolean(data.writeEnabled));
+    setAlerts(normalizeTelegramAlerts(data.alerts));
+    setPair(data.pair ?? null);
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await apiGet<TelegramBotState>("/api/admin/telegram/bot");
+      applyState(data);
+    } catch (err) {
+      reportError(err);
+      setLoadError(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+    } finally {
+      setLoading(false);
+    }
+  }, [applyState, reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+
+  // Auto-poll GET tiap 5 detik selama kode pemasangan aktif. Bila kode hilang dari
+  // respons (chat berhasil dipasangkan / kedaluwarsa), muat ulang status lalu berhenti.
+  useEffect(() => {
+    if (!pair) return;
+    const expiresMs = new Date(pair.expiresAt).getTime();
+    let stopped = false;
+    const tick = async () => {
+      if (stopped) return;
+      try {
+        const data = await apiGet<TelegramBotState>("/api/admin/telegram/bot");
+        if (stopped) return;
+        if (!data.pair) {
+          applyState(data);
+          if (!Number.isNaN(expiresMs) && Date.now() < expiresMs) {
+            toast.success("Chat baru terhubung ke bot.");
+          }
+        }
+        // Kode masih aktif: state lain sengaja tidak ditimpa agar toggle optimistik aman.
+      } catch {
+        // Gagal polling sesaat diabaikan; percobaan berikutnya mencoba lagi.
+      }
+    };
+    const interval = setInterval(() => void tick(), 5000);
+    // Hentikan otomatis tepat setelah masa berlaku kode berakhir (maks 15 menit).
+    const stopTimer = setTimeout(() => {
+      stopped = true;
+      setPair(null);
+    }, Math.max(expiresMs - Date.now(), 0) + 5000);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+      clearTimeout(stopTimer);
+    };
+  }, [pair, applyState]);
+
+  async function handleTest() {
+    if (testing) return;
+    setTesting(true);
+    try {
+      const res = await apiPost<{ ok: boolean; results: { chatId: string; result: string }[] }>(
+        "/api/admin/telegram/bot",
+        { action: "test" }
+      );
+      const results = Array.isArray(res.results) ? res.results : [];
+      for (const item of results) {
+        if (item.result === "ok") toast.success(`Chat ${item.chatId}: ok`);
+        else if (item.result === "gagal") toast.error(`Chat ${item.chatId}: gagal`);
+        else toast.info(`Chat ${item.chatId}: nonaktif`);
+      }
+      if (results.length > 0 && results.every((item) => item.result === "ok")) {
+        toast.success("Pesan uji terkirim");
+      }
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handleCreatePair() {
+    if (pairCreating) return;
+    setPairCreating(true);
+    try {
+      const res = await apiPost<{ ok: boolean; code: string; expiresAt: string }>(
+        "/api/admin/telegram/bot",
+        { action: "create-pair" }
+      );
+      setPair({ code: res.code, expiresAt: res.expiresAt });
+      toast.success("Kode pemasangan dibuat. Berlaku 15 menit.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setPairCreating(false);
+    }
+  }
+
+  async function handleCancelPair() {
+    if (pairCancelling) return;
+    setPairCancelling(true);
+    try {
+      await apiPost<{ ok: boolean }>("/api/admin/telegram/bot", { action: "cancel-pair" });
+      setPair(null);
+      toast.success("Kode pemasangan dibatalkan.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setPairCancelling(false);
+    }
+  }
+
+  async function handleRemoveChat(chatId: string) {
+    if (removingChat) return;
+    setRemovingChat(chatId);
+    try {
+      const res = await apiPost<{ ok: boolean; allowedChats: string[] }>(
+        "/api/admin/telegram/bot",
+        { action: "remove-chat", chatId }
+      );
+      setAllowedChats(Array.isArray(res.allowedChats) ? res.allowedChats : []);
+      toast.success(`Chat ${chatId} dihapus dari daftar.`);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setRemovingChat(null);
+    }
+  }
+
+  async function handleSetWrite(enabled: boolean) {
+    if (writeSaving) return;
+    const prev = writeEnabled;
+    setWriteEnabled(enabled); // optimistik
+    setWriteSaving(true);
+    try {
+      const res = await apiPost<{ ok: boolean; writeEnabled: boolean }>(
+        "/api/admin/telegram/bot",
+        { action: "set-write", enabled }
+      );
+      setWriteEnabled(Boolean(res.writeEnabled));
+      toast.success(enabled ? "Aksi tulis via bot diaktifkan." : "Aksi tulis via bot dinonaktifkan.");
+    } catch (err) {
+      setWriteEnabled(prev); // kembalikan bila gagal
+      reportError(err);
+    } finally {
+      setWriteSaving(false);
+    }
+  }
+
+  async function handleSetAlert(key: TelegramAlertKey, enabled: boolean) {
+    if (alertSaving) return;
+    const prev = alerts[key];
+    setAlerts((current) => ({ ...current, [key]: enabled })); // optimistik
+    setAlertSaving(key);
+    try {
+      const res = await apiPost<{ ok: boolean; key: TelegramAlertKey; enabled: boolean }>(
+        "/api/admin/telegram/bot",
+        { action: "set-alert", key, enabled }
+      );
+      setAlerts((current) => ({ ...current, [key]: Boolean(res.enabled) }));
+      toast.success(`${TELEGRAM_ALERT_LABELS[key]} ${enabled ? "diaktifkan" : "dinonaktifkan"}.`);
+    } catch (err) {
+      setAlerts((current) => ({ ...current, [key]: prev })); // kembalikan bila gagal
+      reportError(err);
+    } finally {
+      setAlertSaving(null);
+    }
+  }
+
+  // legacyChatId tetap ditampilkan meski tidak masuk whitelist (tidak bisa dihapus dari sini).
+  const extraLegacyRows =
+    legacyChatId && !allowedChats.includes(legacyChatId) ? [legacyChatId] : [];
+  const chatRows = [...allowedChats, ...extraLegacyRows];
+
+  return (
+    <Card className="gap-4 rounded-2xl p-6">
+      <CardHeader className="px-0">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Send className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+          Bot Telegram
+        </CardTitle>
+        <CardDescription className="mt-1">
+          Bot dua arah untuk admin: perintah ringkasan, aksi kandidat, dan digest pagi langsung
+          dari Telegram.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 px-0">
+        {loading ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center gap-3 py-6">
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <Button variant="outline" className="h-9" onClick={() => void load()}>
+              Coba Lagi
+            </Button>
+          </div>
+        ) : (
+          <>
+            {/* Status token & chat */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {hasToken ? (
+                <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400">
+                  Token terpasang
+                </Badge>
+              ) : (
+                <Badge className="border border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
+                  Token belum diisi
+                </Badge>
+              )}
+              {!hasToken ? (
+                <p className="text-xs text-muted-foreground">
+                  Isi Telegram Bot Token di kartu Integrasi &amp; Otomasi lalu klik Simpan.
+                </p>
+              ) : null}
+              {allowedChats.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Belum ada chat terdaftar — buat kode pemasangan di bawah.
+                </p>
+              ) : null}
+            </div>
+
+            {/* Uji kirim pesan ke semua chat terdaftar */}
+            <Button
+              variant="outline"
+              className="h-10 w-fit"
+              onClick={() => void handleTest()}
+              disabled={testing || !isOwner}
+            >
+              {testing ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Send className="size-4" aria-hidden="true" />
+              )}
+              Uji Bot
+            </Button>
+
+            {/* Panel pemasangan chat (kode sekali pakai, 15 menit) */}
+            <div className="rounded-lg border p-3">
+              {pair ? (
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs text-muted-foreground">
+                      Kode pemasangan (berlaku sampai {formatPairExpiry(pair.expiresAt)})
+                    </p>
+                    <p className="font-mono text-2xl font-semibold tracking-widest text-rose-600 dark:text-rose-400">
+                      {pair.code}
+                    </p>
+                  </div>
+                  <ol className="list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
+                    <li>Buka Telegram dan cari bot kamu.</li>
+                    <li>
+                      Kirim pesan:{" "}
+                      <code className="font-mono text-foreground">/mulai KODE</code> (ganti KODE
+                      dengan angka di atas).
+                    </li>
+                    <li>Chat otomatis terdaftar dan bisa memakai semua perintah bot.</li>
+                  </ol>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 w-fit"
+                    onClick={() => void handleCancelPair()}
+                    disabled={pairCancelling || !isOwner}
+                  >
+                    {pairCancelling ? (
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    ) : null}
+                    Batalkan kode
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-start gap-2">
+                  <p className="text-sm font-medium">Pasang chat admin baru</p>
+                  <p className="text-xs text-muted-foreground">
+                    Buat kode sekali pakai, lalu kirim ke bot dari Telegram admin.
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="h-10 w-fit"
+                    onClick={() => void handleCreatePair()}
+                    disabled={pairCreating || !isOwner}
+                  >
+                    {pairCreating ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : null}
+                    Buat Kode Pemasangan
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Daftar chat terdaftar */}
+            {chatRows.length > 0 ? (
+              <div className="flex flex-col gap-2 rounded-lg border p-3">
+                {chatRows.map((chatId) => {
+                  const isLegacy = chatId === legacyChatId;
+                  return (
+                    <div key={chatId} className="flex items-center justify-between gap-2">
+                      <p className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <span className="truncate font-mono text-sm">{chatId}</span>
+                        {isLegacy ? (
+                          <span className="text-xs text-muted-foreground">
+                            (dari kolom Chat ID lama)
+                          </span>
+                        ) : null}
+                      </p>
+                      {!isLegacy ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 shrink-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950"
+                          onClick={() => void handleRemoveChat(chatId)}
+                          disabled={removingChat !== null || !isOwner}
+                          aria-label={`Hapus chat ${chatId}`}
+                        >
+                          {removingChat === chatId ? (
+                            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <X className="size-3.5" aria-hidden="true" />
+                          )}
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {/* Aksi tulis via bot (optimistik) */}
+            <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+              <div className="min-w-0">
+                <Label htmlFor="tg-write-toggle" className="text-sm font-medium">
+                  Izinkan aksi tulis via bot
+                </Label>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Bila nonaktif, bot hanya mengirim notifikasi &amp; tautan — tombol Ajak
+                  Wawancara/Tolak disembunyikan.
+                </p>
+              </div>
+              <Switch
+                id="tg-write-toggle"
+                checked={writeEnabled}
+                disabled={writeSaving || !isOwner}
+                onCheckedChange={(checked) => void handleSetWrite(checked)}
+                aria-label="Izinkan aksi tulis via bot"
+              />
+            </div>
+
+            {/* Alert Telegram */}
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                Alert yang dikirim ke Telegram
+              </p>
+              {TELEGRAM_ALERT_KEYS.map((key) => (
+                <div
+                  key={key}
+                  className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                >
+                  <Label htmlFor={`tg-alert-${key}`} className="min-w-0 text-sm font-medium">
+                    {TELEGRAM_ALERT_LABELS[key]}
+                  </Label>
+                  <Switch
+                    id={`tg-alert-${key}`}
+                    checked={alerts[key]}
+                    disabled={alertSaving !== null || !isOwner}
+                    onCheckedChange={(checked) => void handleSetAlert(key, checked)}
+                    aria-label={TELEGRAM_ALERT_LABELS[key]}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {!isOwner ? (
+              <p className="text-xs text-muted-foreground">
+                Hanya pemilik situs (OWNER) yang dapat mengubah pengaturan bot.
+              </p>
+            ) : null}
+
+            {/* Footnote tautan Tinjau pada pesan bot */}
+            <p className="text-xs text-muted-foreground">
+              Tombol &quot;Tinjau&quot; pada pesan bot membuka{" "}
+              <span className="font-mono">
+                {origin ? `${origin}/?kandidat=KODE` : ".../?kandidat=KODE"}
+              </span>
+              . Saat deploy produksi, set variabel lingkungan{" "}
+              <code className="font-mono">NEXT_PUBLIC_SITE_URL</code> agar tautan memakai domain
+              publik.
+            </p>
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -1780,6 +2249,9 @@ export function SettingsTab() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Bot Telegram — bot dua arah untuk admin (kartu mandiri, simpan langsung per aksi) */}
+      <TelegramBotCard />
 
       {/* Kotak Keluar Email (arsip + kirim ulang, ketergantungan SMTP) */}
       <EmailOutboxCard />

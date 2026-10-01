@@ -27,6 +27,7 @@ import {
   REJECTION_REASONS,
   SECTION_KEYS,
   STAGE_CATEGORIES,
+  TELEGRAM_ALERT_KEYS,
   type AdminUser,
   type AiRecommendation,
   type Application,
@@ -34,6 +35,7 @@ import {
   type AssignmentInfo,
   type BenefitItem,
   type FaqItem,
+  type TelegramAlerts,
   type VideoNote,
   type Interview,
   type InterviewMode,
@@ -619,6 +621,29 @@ export function sanitizeSections(value: unknown, fallback: SectionVisibility): S
  * Field yang tidak valid/tidak ada diambil dari `fallback` — sehingga field baru
  * (teamMembers, chatbotEnabled, sections, dll) otomatis terisi dari default tanpa menimpa nilai lama.
  */
+/** Sanitasi toggle alert bot Telegram — hanya boolean yang dikenal yang diambil. */
+function sanitizeTelegramAlerts(value: unknown, fallback: TelegramAlerts): TelegramAlerts {
+  const obj = (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
+  const out: TelegramAlerts = { ...fallback };
+  for (const key of TELEGRAM_ALERT_KEYS) {
+    if (typeof obj[key] === "boolean") out[key] = obj[key];
+  }
+  return out;
+}
+
+/** Sanitasi daftar chat id Telegram: string bersih unik, maks 20 entri. */
+function sanitizeChatIdList(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return [...fallback];
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const clean = item.trim().slice(0, 60);
+    if (clean && !out.includes(clean)) out.push(clean);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
 export function sanitizeSiteContent(value: unknown, fallback: SiteContent = DEFAULT_SITE): SiteContent {
   const obj = (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
   return {
@@ -642,6 +667,10 @@ export function sanitizeSiteContent(value: unknown, fallback: SiteContent = DEFA
     discordWebhookUrl: pickString(obj, "discordWebhookUrl", fallback.discordWebhookUrl),
     telegramBotToken: pickString(obj, "telegramBotToken", fallback.telegramBotToken),
     telegramChatId: pickString(obj, "telegramChatId", fallback.telegramChatId),
+    telegramWriteEnabled: pickBoolean(obj, "telegramWriteEnabled", fallback.telegramWriteEnabled),
+    telegramAllowedChats: sanitizeChatIdList(obj.telegramAllowedChats, fallback.telegramAllowedChats),
+    telegramAlerts: sanitizeTelegramAlerts(obj.telegramAlerts, fallback.telegramAlerts),
+    telegramLastDigest: pickString(obj, "telegramLastDigest", fallback.telegramLastDigest),
     recruitmentClosed: pickBoolean(obj, "recruitmentClosed", fallback.recruitmentClosed),
     recruitmentClosedMessage: pickString(obj, "recruitmentClosedMessage", fallback.recruitmentClosedMessage),
     sections: sanitizeSections(obj.sections, fallback.sections),

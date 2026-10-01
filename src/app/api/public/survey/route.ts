@@ -5,6 +5,7 @@
 // tambahan; keterkaitan applicationId hanya untuk rekap internal).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { sendTelegramAlert } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,13 @@ export async function POST(req: NextRequest) {
       where: { token },
       data: { score, comment },
     });
+
+    // Alert bot Telegram: survei pengalaman kandidat diisi (digate toggle; fire-and-forget).
+    void sendTelegramAlert(
+      "survey",
+      `Survei Pengalaman Kandidat\nNilai: ${score}/5${comment ? `\nKomentar: ${comment.slice(0, 200)}` : ""}`,
+    );
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[POST /api/public/survey]", error);

@@ -15,6 +15,7 @@ import { db } from "@/lib/db";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { pushNotification, queueEmail, sendSystemEvent } from "@/lib/notify";
 import { ensureMonthlyReport, previousMonthKey } from "@/lib/monthly-report";
+import { runTelegramDigest } from "@/lib/telegram-bot";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
         scheduledAt: { gte: now, lte: new Date(now.getTime() + 24 * 60 * 60 * 1000) },
       },
       include: {
-        application: { select: { id: true, name: true, position: { select: { title: true } } } },
+        application: { select: { id: true, name: true, trackingCode: true, position: { select: { title: true } } } },
       },
     });
     for (const iv of upcoming) {
@@ -92,6 +93,7 @@ export async function POST(req: NextRequest) {
           detail: `${iv.application.name} — ronde ${iv.round} ${platform} pukul ${formatDateTimeId(iv.scheduledAt)}.`,
           applicationId: iv.applicationId,
           action: "INTERVIEW_REMINDER",
+          trackingCode: iv.application.trackingCode ?? undefined,
         });
         remindersHour += 1;
       } else if (minutesLeft > 60 && !iv.reminderDaySent) {
@@ -109,6 +111,7 @@ export async function POST(req: NextRequest) {
           detail: `${iv.application.name} — ronde ${iv.round} ${platform} pada ${formatDateTimeId(iv.scheduledAt)}.`,
           applicationId: iv.applicationId,
           action: "INTERVIEW_REMINDER",
+          trackingCode: iv.application.trackingCode ?? undefined,
         });
         remindersDay += 1;
       }
@@ -282,6 +285,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 8) Digest pagi bot Telegram (07.00 WIB, sekali per hari — idempoten internal;
+    //    toggle alert, whitelist chat, dan isi digest diatur dari panel admin/lib).
+    let telegramDigest = 0;
+    try {
+      const digest = await runTelegramDigest();
+      telegramDigest = digest.sent;
+    } catch {
+      // bot Telegram tidak wajib — kegagalan tidak boleh menggagalkan cron
+    }
+
     return NextResponse.json({
       ok: true,
       offerExpired,
@@ -291,6 +304,7 @@ export async function POST(req: NextRequest) {
       offerRemindersH1,
       weeklyDigest,
       monthlyReport,
+      telegramDigest,
     });
   } catch (error) {
     console.error("[POST /api/cron/reminders]", error);

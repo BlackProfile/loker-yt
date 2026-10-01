@@ -42,6 +42,42 @@ export const STAGE_CATEGORY_LABELS: Record<StageCategory, string> = {
   REJECTED: "Ditolak",
 };
 
+/* ------------------------------- Bot Telegram ------------------------------- */
+
+// Kunci toggle alert bot Telegram (pesan masuk ke chat admin yang terdaftar).
+export type TelegramAlertKey =
+  | "newApplication" // lamaran baru masuk (dengan tombol aksi)
+  | "survey" // survei pengalaman kandidat diisi
+  | "emailFailed" // email di kotak keluar gagal terkirim
+  | "system" // event sistem: wawancara, offer, NO_SHOW, rekap
+  | "digest"; // digest pagi 07:00 WIB
+
+export const TELEGRAM_ALERT_KEYS: TelegramAlertKey[] = [
+  "newApplication",
+  "survey",
+  "emailFailed",
+  "system",
+  "digest",
+];
+
+export const TELEGRAM_ALERT_LABELS: Record<TelegramAlertKey, string> = {
+  newApplication: "Lamaran baru masuk",
+  survey: "Survei kandidat diisi",
+  emailFailed: "Email gagal terkirim",
+  system: "Event sistem (wawancara, offer, rekap)",
+  digest: "Digest pagi (07.00 WIB)",
+};
+
+export type TelegramAlerts = Record<TelegramAlertKey, boolean>;
+
+export const DEFAULT_TELEGRAM_ALERTS: TelegramAlerts = {
+  newApplication: true,
+  survey: true,
+  emailFailed: true,
+  system: true,
+  digest: true,
+};
+
 export type ScreeningQuestion = { id: string; label: string; required: boolean };
 
 export type ReplyTemplates = {
@@ -93,6 +129,11 @@ export type SiteContent = {
   discordWebhookUrl: string;
   telegramBotToken: string;
   telegramChatId: string;
+  // Bot Telegram dua arah (admin): whitelist chat terdaftar + izin aksi tulis + pilihan alert
+  telegramWriteEnabled: boolean; // izinkan aksi tulis dari bot (ubah tahap, dsb.)
+  telegramAllowedChats: string[]; // daftar chat id terdaftar (hasil pairing /mulai KODE)
+  telegramAlerts: TelegramAlerts; // jenis alert yang dikirim ke Telegram
+  telegramLastDigest: string; // tanggal digest terakhir "YYYY-MM-DD" (Asia/Bangkok) — internal
   // Mode tutup rekrutmen — saat true, halaman publik menampilkan banner
   // pengumuman dan formulir lamaran tidak bisa dikirim.
   recruitmentClosed: boolean;

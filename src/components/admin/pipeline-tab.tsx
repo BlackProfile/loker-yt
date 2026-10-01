@@ -207,7 +207,17 @@ type SessionTarget =
   | { mode: "create"; ctx: InterviewCreateContext }
   | { mode: "edit"; interview: Interview };
 
-export function PipelineTab({ onNavigate }: { onNavigate?: (tab: string) => void }) {
+export function PipelineTab({
+  onNavigate,
+  deepLinkApplication,
+  onDeepLinkConsumed,
+}: {
+  onNavigate?: (tab: string) => void;
+  /** Lamaran hasil deep-link ?kandidat= (sudah dicari AdminApp; null bila tidak ada). */
+  deepLinkApplication?: Application | null;
+  /** Tandai deep-link sudah dikonsumsi agar dialog tidak terbuka ulang saat remount. */
+  onDeepLinkConsumed?: () => void;
+}) {
   const { canMutate, reportError } = useAdminSession();
 
   const [positions, setPositions] = useState<Position[]>([]);
@@ -267,6 +277,16 @@ export function PipelineTab({ onNavigate }: { onNavigate?: (tab: string) => void
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  // Deep-link bot Telegram (?kandidat=): AdminApp sudah menemukan lamarannya
+  // dan memindahkan tab ke Pipeline — buka dialog detail persis seperti klik
+  // baris kandidat, lalu tandai sudah dikonsumsi agar tidak terbuka ulang
+  // saat pengguna pindah tab dan kembali lagi.
+  useEffect(() => {
+    if (!deepLinkApplication) return;
+    setDetail(deepLinkApplication);
+    onDeepLinkConsumed?.();
+  }, [deepLinkApplication, onDeepLinkConsumed]);
 
   // Muat daftar id lamaran duplikat untuk badge peringatan.
   const loadDuplicates = useCallback(async () => {
