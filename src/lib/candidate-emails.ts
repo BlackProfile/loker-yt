@@ -185,6 +185,8 @@ export async function sendCandidateStatusEmail(params: {
   trackingCode: string | null;
   toStatus: string;
   positionTitle: string | null;
+  /** Origin permintaan admin (req.headers.origin) — dipakai untuk tautan survei. */
+  origin?: string;
 }): Promise<void> {
   try {
     const config = await getCandidateEmailConfig();
@@ -215,8 +217,9 @@ export async function sendCandidateStatusEmail(params: {
     let surveySuffix = "";
     if (config.surveyEnabled && (key === "ACCEPTED" || key === "REJECTED")) {
       try {
-        const base = (process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/+$/, "");
-        if (base) {
+        const base =
+          (params.origin ?? process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/+$/, "");
+        if (base.startsWith("http")) {
           const token = randomBytes(16).toString("hex");
           await db.candidateSurvey.create({
             data: { token, applicationId: params.applicationId, score: 0 },

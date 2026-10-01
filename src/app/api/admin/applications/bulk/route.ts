@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
           trackingCode: row.trackingCode,
           toStatus: status,
           positionTitle: row.position?.title ?? null,
+          origin: req.headers.get("origin") ?? undefined,
         });
       }
     } else if (action === "talentPool") {
@@ -170,6 +171,7 @@ export async function POST(req: NextRequest) {
             trackingCode: row.trackingCode,
             toStatus: "REJECTED",
             positionTitle: row.position?.title ?? null,
+            origin: req.headers.get("origin") ?? undefined,
           });
         }
       }

@@ -343,6 +343,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         trackingCode: existing.trackingCode,
         toStatus: updateData.status as string,
         positionTitle: updated.position?.title ?? null,
+        origin: req.headers.get("origin") ?? undefined,
       });
     }
 
