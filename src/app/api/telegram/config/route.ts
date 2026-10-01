@@ -4,6 +4,7 @@
 // menyimpan token; hanya status apakah polling boleh jalan.
 import { NextRequest, NextResponse } from "next/server";
 import { getAutomationSettings } from "@/lib/notify";
+import { markPollerSeen } from "@/lib/telegram-bridge-status";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,9 @@ export async function GET(req: NextRequest) {
   if (!secret || secret !== BRIDGE_SECRET) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  // Heartbeat: request yang sah dari poller menandai service masih hidup
+  // (dipakai panel admin untuk menampilkan status polling).
+  markPollerSeen();
   const settings = await getAutomationSettings();
   return NextResponse.json({
     enabled: Boolean(settings.telegramBotToken),

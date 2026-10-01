@@ -123,21 +123,26 @@ export async function sendDiscordNotification(
 /** Satu baris tombol inline Telegram. */
 export type TelegramButton = { text: string; url?: string; callback_data?: string };
 
+/** Hasil kirim terperinci — description berisi alasan Telegram bila gagal. */
+export type TelegramSendResult = { ok: boolean; description?: string };
+
 /**
- * Kirim pesan teks via Telegram Bot API (POST sendMessage, dukung tombol inline).
- * Return "nonaktif" bila token/chatId kosong, "ok" bila 2xx, "gagal" bila error/bukan 2xx.
+ * Kirim pesan Telegram dan laporkan ALASAN bila gagal (dipakai diagnostik & uji bot).
+ * Tidak pernah melempar error.
  */
-export async function sendTelegramNotification(
+export async function sendTelegramMessageDetailed(
   botToken: string,
   chatId: string,
   text: string,
   opts?: { buttons?: TelegramButton[][] },
-): Promise<NotifyChannelResult> {
-  if (!botToken || !chatId) return "nonaktif";
+): Promise<TelegramSendResult> {
+  if (!botToken) return { ok: false, description: "Token bot kosong" };
+  if (!chatId) return { ok: false, description: "Chat ID kosong" };
   try {
     const payload: Record<string, unknown> = {
       chat_id: chatId,
-      text: text.slice(0, 3900), // batas aman pesan Telegram 4096 karakter
+      text: text.slice(0, 3900),
+      disable_web_page_preview: true,
     };
     if (opts?.buttons && opts.buttons.length > 0) {
       payload.reply_markup = {
@@ -155,15 +160,78 @@ export async function sendTelegramNotification(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return res.ok ? "ok" : "gagal";
-  } catch {
-    return "gagal";
+    const json = (await res.json().catch(() => null)) as { ok?: boolean; description?: string } | null;
+    if (res.ok && json?.ok) return { ok: true };
+    return {
+      ok: false,
+      description: json?.description ?? (res.status === 401 ? "Unauthorized" : `HTTP ${res.status}`),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      description:
+        error instanceof Error && error.name === "AbortError"
+          ? "Timeout — tidak bisa menghubungi api.telegram.org"
+          : error instanceof Error
+            ? error.message
+            : "network error",
+    };
   }
+}
+
+/**
+ * Kirim pesan teks via Telegram Bot API (POST sendMessage, dukung tombol inline).
+ * Return "nonaktif" bila token/chatId kosong, "ok" bila 2xx, "gagal" bila error/bukan 2xx.
+ */
+export async function sendTelegramNotification(
+  botToken: string,
+  chatId: string,
+  text: string,
+  opts?: { buttons?: TelegramButton[][] },
+): Promise<NotifyChannelResult> {
+  if (!botToken || !chatId) return "nonaktif";
+  const result = await sendTelegramMessageDetailed(botToken, chatId, text, opts);
+  return result.ok ? "ok" : "gagal";
 }
 
 /** URL dasar situs untuk tautan di pesan bot (set NEXT_PUBLIC_SITE_URL saat deploy). */
 export function getSiteUrl(): string {
   return (process.env.NEXT_PUBLIC_SITE_URL ?? "").trim().replace(/\/$/, "") || "http://localhost:3000";
+}
+
+/**
+ * Validasi token bot via getMe — dipakai diagnostik panel admin.
+ * Return { ok, botUsername?, description? } tanpa pernah melempar error.
+ */
+export async function checkTelegramToken(botToken: string): Promise<TelegramSendResult & { botUsername?: string }> {
+  if (!botToken) return { ok: false, description: "Token bot kosong" };
+  try {
+    const res = await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/getMe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const json = (await res.json().catch(() => null)) as
+      | { ok?: boolean; description?: string; result?: { username?: string } }
+      | null;
+    if (res.ok && json?.ok) {
+      return { ok: true, botUsername: json.result?.username ? `@${json.result.username}` : undefined };
+    }
+    return {
+      ok: false,
+      description: json?.description ?? (res.status === 401 ? "Unauthorized" : `HTTP ${res.status}`),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      description:
+        error instanceof Error && error.name === "AbortError"
+          ? "Timeout — tidak bisa menghubungi api.telegram.org"
+          : error instanceof Error
+            ? error.message
+            : "network error",
+    };
+  }
 }
 
 /**

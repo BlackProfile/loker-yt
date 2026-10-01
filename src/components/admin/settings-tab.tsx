@@ -41,10 +41,12 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  AlertTriangle,
   Award,
   Bot,
   Calendar,
   Camera,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -73,11 +75,13 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Stethoscope,
   Trash2,
   TrendingUp,
   Users,
   Wallet,
   X,
+  XCircle,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -425,6 +429,12 @@ type TelegramPairInfo = { code: string; expiresAt: string };
 
 type TelegramAlertsUi = Record<TelegramAlertKey, boolean>;
 
+type TelegramPollerStatus = {
+  lastSeenAt: string | null;
+  secondsAgo: number | null;
+  healthy: boolean;
+};
+
 type TelegramBotState = {
   hasToken: boolean;
   legacyChatId: string;
@@ -432,7 +442,34 @@ type TelegramBotState = {
   writeEnabled: boolean;
   alerts: Partial<TelegramAlertsUi> | null;
   pair: TelegramPairInfo | null;
+  poller?: TelegramPollerStatus | null;
 };
+
+type TelegramDiagStep = {
+  key: string;
+  label: string;
+  status: "ok" | "fail" | "warn";
+  detail?: string;
+  hint?: string;
+};
+
+type TelegramDiagResponse = {
+  ok: boolean;
+  steps: TelegramDiagStep[];
+  botUsername: string | null;
+  sendResults: { chatId: string; ok: boolean; description?: string; hint?: string }[];
+  poller: TelegramPollerStatus;
+};
+
+// Detail diagnostik bisa berisi beberapa baris dipisah " | " atau newline —
+// pecah menjadi baris-baris tunggal untuk dirender sebagai <p> terpisah.
+function splitDiagDetail(detail: string | undefined): string[] {
+  if (!detail) return [];
+  return detail
+    .split(/\n|\s+\|\s+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
 
 function normalizeTelegramAlerts(value: TelegramBotState["alerts"]): TelegramAlertsUi {
   const base = {} as TelegramAlertsUi;
@@ -469,7 +506,11 @@ function TelegramBotCard() {
   const [writeEnabled, setWriteEnabled] = useState(false);
   const [alerts, setAlerts] = useState<TelegramAlertsUi>(() => normalizeTelegramAlerts(null));
   const [pair, setPair] = useState<TelegramPairInfo | null>(null);
+  const [pollerStatus, setPollerStatus] = useState<TelegramPollerStatus | null>(null);
   const [testing, setTesting] = useState(false);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagSteps, setDiagSteps] = useState<TelegramDiagStep[] | null>(null);
+  const [diagShow, setDiagShow] = useState(false);
   const [pairCreating, setPairCreating] = useState(false);
   const [pairCancelling, setPairCancelling] = useState(false);
   const [removingChat, setRemovingChat] = useState<string | null>(null);
@@ -484,6 +525,7 @@ function TelegramBotCard() {
     setWriteEnabled(Boolean(data.writeEnabled));
     setAlerts(normalizeTelegramAlerts(data.alerts));
     setPair(data.pair ?? null);
+    setPollerStatus(data.poller ?? null);
   }, []);
 
   const load = useCallback(async () => {
@@ -519,6 +561,9 @@ function TelegramBotCard() {
       try {
         const data = await apiGet<TelegramBotState>("/api/admin/telegram/bot");
         if (stopped) return;
+        // Heartbeat poller selalu diperbarui tiap GET (kode aktif pun boleh —
+        // bukan bagian dari toggle optimistik).
+        if (data.poller) setPollerStatus(data.poller);
         if (!data.pair) {
           applyState(data);
           if (!Number.isNaN(expiresMs) && Date.now() < expiresMs) {
@@ -547,23 +592,44 @@ function TelegramBotCard() {
     if (testing) return;
     setTesting(true);
     try {
-      const res = await apiPost<{ ok: boolean; results: { chatId: string; result: string }[] }>(
-        "/api/admin/telegram/bot",
-        { action: "test" }
-      );
+      const res = await apiPost<
+        { ok: boolean; results: { chatId: string; ok: boolean; description?: string; hint?: string }[] }
+      >("/api/admin/telegram/bot", { action: "test" });
       const results = Array.isArray(res.results) ? res.results : [];
       for (const item of results) {
-        if (item.result === "ok") toast.success(`Chat ${item.chatId}: ok`);
-        else if (item.result === "gagal") toast.error(`Chat ${item.chatId}: gagal`);
-        else toast.info(`Chat ${item.chatId}: nonaktif`);
-      }
-      if (results.length > 0 && results.every((item) => item.result === "ok")) {
-        toast.success("Pesan uji terkirim");
+        if (item.ok) {
+          toast.success(`Chat ${item.chatId}: terkirim`);
+        } else {
+          toast.error(`Chat ${item.chatId}: gagal — ${item.description ?? "tanpa keterangan"}`, {
+            description: item.hint,
+          });
+        }
       }
     } catch (err) {
       reportError(err);
     } finally {
       setTesting(false);
+    }
+  }
+
+  // Diagnostik bertahap: token, validitas token, poller, chat, kirim uji —
+  // hasil ditampilkan sebagai panel inline (bukan dialog).
+  async function handleDiagnose() {
+    if (diagnosing) return;
+    setDiagnosing(true);
+    setDiagSteps(null); // reset hasil lama saat dijalankan ulang
+    setDiagShow(true);
+    try {
+      const res = await apiPost<TelegramDiagResponse>("/api/admin/telegram/bot", {
+        action: "diagnose",
+      });
+      setDiagSteps(Array.isArray(res.steps) ? res.steps : []);
+      if (res.poller) setPollerStatus(res.poller);
+    } catch (err) {
+      setDiagShow(false);
+      reportError(err);
+    } finally {
+      setDiagnosing(false);
     }
   }
 
@@ -708,22 +774,130 @@ function TelegramBotCard() {
                   Belum ada chat terdaftar — buat kode pemasangan di bawah.
                 </p>
               ) : null}
+              {pollerStatus ? (
+                pollerStatus.healthy ? (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />
+                    Polling aktif
+                    {pollerStatus.secondsAgo != null
+                      ? ` · terakhir ${pollerStatus.secondsAgo} detik lalu`
+                      : ""}
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="size-2 rounded-full bg-amber-500" aria-hidden="true" />
+                    Polling tidak terdeteksi — pastikan mini-service telegram-bot berjalan
+                    (port 3004)
+                  </p>
+                )
+              ) : null}
             </div>
 
-            {/* Uji kirim pesan ke semua chat terdaftar */}
-            <Button
-              variant="outline"
-              className="h-10 w-fit"
-              onClick={() => void handleTest()}
-              disabled={testing || !isOwner}
-            >
-              {testing ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Send className="size-4" aria-hidden="true" />
-              )}
-              Uji Bot
-            </Button>
+            {/* Uji kirim pesan & diagnostik bertahap */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                className="h-10"
+                onClick={() => void handleTest()}
+                disabled={testing || !isOwner}
+              >
+                {testing ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Send className="size-4" aria-hidden="true" />
+                )}
+                Uji Bot
+              </Button>
+              <Button
+                variant="outline"
+                className="h-10"
+                onClick={() => void handleDiagnose()}
+                disabled={diagnosing || !isOwner}
+              >
+                {diagnosing ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Stethoscope className="size-4" aria-hidden="true" />
+                )}
+                Jalankan Diagnostik
+              </Button>
+            </div>
+
+            {/* Panel hasil diagnostik (inline, tanpa dialog) */}
+            {diagShow ? (
+              <div className="flex flex-col gap-3 rounded-lg border p-3" aria-live="polite">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Hasil diagnostik</p>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0"
+                    onClick={() => setDiagShow(false)}
+                    disabled={diagnosing}
+                    aria-label="Tutup hasil diagnostik"
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                  </Button>
+                </div>
+                {diagnosing && diagSteps === null ? (
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    Menjalankan diagnostik...
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-3">
+                    {(diagSteps ?? []).map((step) => {
+                      const StepIcon =
+                        step.status === "ok"
+                          ? CheckCircle2
+                          : step.status === "fail"
+                            ? XCircle
+                            : AlertTriangle;
+                      const stepIconClass =
+                        step.status === "ok"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : step.status === "fail"
+                            ? "text-rose-600 dark:text-rose-400"
+                            : "text-amber-600 dark:text-amber-500";
+                      const detailLines = splitDiagDetail(step.detail);
+                      return (
+                        <li key={step.key} className="flex items-start gap-2.5">
+                          <StepIcon
+                            className={`mt-0.5 size-4 shrink-0 ${stepIconClass}`}
+                            aria-hidden="true"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium">{step.label}</p>
+                            {detailLines.length > 0 ? (
+                              <div className="mt-0.5 flex flex-col">
+                                {detailLines.map((line, lineIndex) => (
+                                  <p
+                                    key={`${step.key}-detail-${lineIndex}`}
+                                    className="text-xs text-muted-foreground"
+                                  >
+                                    {line}
+                                  </p>
+                                ))}
+                              </div>
+                            ) : null}
+                            {step.hint ? (
+                              <p className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+                                Saran: {step.hint}
+                              </p>
+                            ) : null}
+                          </div>
+                        </li>
+                      );
+                    })}
+                    {diagSteps !== null && diagSteps.length === 0 ? (
+                      <li className="text-xs text-muted-foreground">
+                        Tidak ada langkah diagnostik yang dikembalikan.
+                      </li>
+                    ) : null}
+                  </ul>
+                )}
+              </div>
+            ) : null}
 
             {/* Panel pemasangan chat (kode sekali pakai, 15 menit) */}
             <div className="rounded-lg border p-3">
@@ -1638,14 +1812,16 @@ export function SettingsTab() {
     if (webhookTesting) return;
     setWebhookTesting(true);
     try {
-      const res = await apiPost<{ discord: string; telegram: string }>(
+      const res = await apiPost<{ discord: string; telegram: string; telegramDetail?: string | null }>(
         "/api/admin/webhook-test"
       );
       for (const [name, result] of [
         ["Discord", res.discord],
         ["Telegram", res.telegram],
       ] as const) {
-        if (result === "ok") toast.success(`${name}: ok`);
+        if (name === "Telegram" && result === "gagal") {
+          toast.error(`Telegram: gagal — ${res.telegramDetail ?? "tanpa keterangan"}`);
+        } else if (result === "ok") toast.success(`${name}: ok`);
         else if (result === "gagal") toast.error(`${name}: gagal`);
         else toast.info(`${name}: nonaktif`);
       }

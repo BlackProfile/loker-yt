@@ -1,9 +1,11 @@
 // POST /api/admin/webhook-test — uji konfigurasi notifikasi Discord & Telegram (khusus OWNER).
+// Telegram dikirim lewat helper terperinci agar ALASAN kegagalan ikut dilaporkan
+// (mis. "Unauthorized: token is invalid") sehingga admin tahu apa yang perlu diperbaiki.
 import { NextRequest, NextResponse } from "next/server";
 import {
   getAutomationSettings,
   sendDiscordNotification,
-  sendTelegramNotification,
+  sendTelegramMessageDetailed,
   type NotifyChannelResult,
 } from "@/lib/notify";
 import { getSession, requireRole } from "@/lib/server-auth";
@@ -36,16 +38,19 @@ export async function POST(_req: NextRequest) {
     }
 
     let telegram: NotifyChannelResult;
+    let telegramDetail: string | null = null;
     if (settings.telegramBotToken && settings.telegramChatId) {
-      telegram = await sendTelegramNotification(settings.telegramBotToken, settings.telegramChatId, TEST_MESSAGE);
+      const result = await sendTelegramMessageDetailed(settings.telegramBotToken, settings.telegramChatId, TEST_MESSAGE);
+      telegram = result.ok ? "ok" : "gagal";
+      if (!result.ok) telegramDetail = result.description ?? null;
     } else {
       telegram = "nonaktif";
     }
 
     // Detail hanya ke console — JANGAN pernah me-log token.
-    console.log(`[webhook-test] Discord: ${discord}; Telegram: ${telegram}`);
+    console.log(`[webhook-test] Discord: ${discord}; Telegram: ${telegram}${telegramDetail ? ` (${telegramDetail})` : ""}`);
 
-    return NextResponse.json({ discord, telegram });
+    return NextResponse.json({ discord, telegram, telegramDetail });
   } catch (error) {
     console.error("[POST /api/admin/webhook-test]", errorMessage(error));
     return NextResponse.json({ error: "Gagal menguji notifikasi. Coba lagi." }, { status: 500 });
