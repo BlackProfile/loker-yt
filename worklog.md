@@ -1702,3 +1702,27 @@ Stage Summary:
 - File baru: src/app/api/admin/reports/time-in-stage/route.ts. File diubah: src/components/admin/reports-tab.tsx (hanya tambahan: tipe, helper fmtHours/SpeedBar/StageSpeedCard, state+loader section 5, kabel refresh, JSX section 5).
 - Efek samping data (via API resmi, bukan skrip): dua lamaran demo dipindahkan tahapnya (Rizky Pratama NEW→REVIEWED, Anisa Rahma REVIEWED→INTERVIEW) demi memverifikasi rekonstruksi end-to-end; jejak ActivityLog STATUS_CHANGE yang tercipta adalah perilaku audit normal aplikasi.
 - DILARANG disentuh tetap utuh: src/lib/**, prisma/**, dashboard-tab, analytics-tab, pipeline-tab, landing/**, src/app/api/cron/**; tidak ada restart/build/db:push/git push.
+
+---
+Task ID: 10-ide (1-a..4-b + 5)
+Agent: Z.ai Code (main) + 5 subagent full-stack
+Task: Implementasi 10 ide yang disetujui user ("tambahkan semua"): email status kandidat, compose email manual, reschedule slot mandiri, lowongan serupa + waitlist, draft lintas perangkat, laporan time-in-stage, survei pengalaman kandidat, rekap bulanan PDF, sitemap/robots, OG image dinamis.
+
+Work Log:
+- [1-a] Prisma: model baru ApplicationDraft (draft lintas perangkat), CandidateSurvey (survei CX), PositionWaitlist (ingatkan saya), MonthlyReport (rekap bulanan) + relasi Position.drafts/waitlist & Application.surveys. `bun run db:push` sukses.
+- [1-b+1-c][subagent] src/app/sitemap.ts (dinamis: landing + posisi aktif), src/app/robots.ts (disallow /api/), src/app/api/og/route.tsx (kartu OG 1200x630 ImageResponse, fallback saat posisi tanpa cover), page.tsx generateMetadata memakai /api/og. robots.txt statis pub/ dihapus (konflik Next 16). Verifikasi: 200 image/png via :81.
+- [2-a] src/lib/candidate-emails.ts: konfigurasi + template per status (REVIEWED/INTERVIEW/ACCEPTED/REJECTED) di Setting "candidateEmails", variabel {nama}{posisi}{kode}{status}{tanggal}{situs}, render + sanitasi. Hook PATCH /api/admin/applications/[id] dan bulk (aksi status & reject) via sendCandidateStatusEmail (fire-and-forget, origin request untuk tautan survei). API /api/admin/candidate-emails (GET/PUT, OWNER). UI kartu "Email Kandidat" di settings-tab (master toggle + toggle survei + 4 editor template + variabel badge).
+- [2-b] API /api/admin/applications/[id]/email (kirim manual, arsip outbox + ActivityLog EMAIL). UI panel Collapsible "Email Pelamar" di application-detail-dialog (subjek, isi, sisip variabel).
+- [2-c] API /api/public/survey (GET info + POST jawaban 1-5 + komentar; token sekali isi, rate limit). View publik ?survei=<token> (src/components/landing/survey-view.tsx, bintang 1-5 + komentar, footer sticky). API /api/admin/reports/candidate-survey + section "Survei Pengalaman Kandidat" di reports-tab (rata-rata, distribusi bar, komentar terbaru).
+- [3-a][subagent] API /api/public/apply-draft (POST kirim link email 7 hari, GET restore sekali pakai) + UI wizard (tombol "Kirim tautan ke email", restore via ?draft=, autosave localStorage tetap utuh).
+- [3-b][subagent] API /api/public/waitlist (upsert email+posisi, rate limit 5/jam) + UI halaman detail posisi tertutup: waitlist row + 3 "Lowongan serupa" (departemen/tipe sama) dengan onOpenPosition.
+- [3-c][subagent] API /api/public/interview/reschedule-slot (klaim slot atomik updateMany, bebaskan slot lama, log/notif/email) + cancel-attendance; UI status-check: "Pindahkan jadwal" + "Tidak bisa hadir" per sesi mendatang.
+- [4-a][subagent] API /api/admin/reports/time-in-stage (rekonstruksi timeline dari ActivityLog STATUS_CHANGE, avg/median/ongoing per tahap, 30/90/180 hari) + section "Kecepatan Proses" di reports-tab.
+- [4-b] src/lib/monthly-report.ts (buildMonthlySnapshot: lamaran/wawancara/offer/hired/rejected/topSources/survei per bulan), cron reminders item 7 (tanggal 1 jam 07:00, idempoten + notifikasi OWNER), API /api/admin/reports/monthly (GET list + POST generate manual), section "Rekap Bulanan" + MonthlyPrintDialog (cetak PDF via #print-area + window.print()).
+- [5] Verifikasi E2E via gateway :81: sitemap/robots/OG 200; PATCH status -> email INVITE & REJECT terarsip outbox; token survei dibuat saat REJECTED (link pakai origin request); browser: isi survei 4/5 -> rekap admin akurat (sent 1, answered 1, avg 4); email manual 200; rekap bulanan tergenerate (September 2026); draft API 200 (setelah pakai posisi aktif); waitlist 200 (row test dihapus). Panel admin: kartu Email Kandidat + template editor + kedua section Laporan diverifikasi visual. Dev server sempat mati total (semua daemon) — dihidupkan ulang via start-dev-keepalive/start-realtime/start-auto-push; 4 posisi yang tertinggal nonaktif dari testing subagent dipulihkan ke aktif (5 posisi publik). `bun run lint` bersih.
+
+Stage Summary:
+- 10 ide selesai penuh: fondasi DB (4 model), 9 API baru, 4 UI admin baru, 2 view publik baru.
+- Kontrak aman: email status tidak pernah menggagalkan PATCH/bulk; token survei sekali pakai; slot reschedule atomik (409 bila rebutan); draft one-time + kedaluwarsa 7 hari; snapshot bulanan idempoten.
+- Catatan operasional: SMTP belum diset (email QUEUED/arsip saja — bisa kirim ulang dari Kotak Keluar); tautan survei memakai Origin request admin; sitemap/robots memakai NEXT_PUBLIC_SITE_URL (fallback localhost:3000) — set env ini saat deploy domain produksi.
+- Status aplikasi (Rizky Pratama) dikembalikan ke REVIEWED setelah uji; 1 baris CandidateSurvey + snapshot rekap bulanan sengaja dibiarkan sebagai data demo rekap.
