@@ -1,16 +1,16 @@
 "use client";
 
 // Halaman KONTEN posisi — sub-halaman "Satu Pintu Kelola Posisi". Hanya
-// berisi konten lowongan: Dasar, Konten Bahasa Inggris (opsional), Tampilan
-// & Konten, dan Benefit & Karya (+ switch Publikasi saat membuat posisi
-// baru). Setelan lain (Publikasi & Status, Pipeline & AI, Otomasi Pesan,
+// berisi konten lowongan: Dasar, Konten Bahasa Inggris (opsional), Cover,
+// Gaji, Badge Posisi, Benefit, Contoh Karya (+ switch Publikasi saat membuat
+// posisi baru). Setelan lain (Publikasi & Status, Pipeline & AI, Otomasi Pesan,
 // Evaluasi, Wawancara, Penawaran & Onboarding) kini ada di halaman setelan
 // per posisi (position-settings-pages.tsx).
 // Dipakai untuk EDIT (dari PositionManagePage) maupun TAMBAH posisi baru
-// (dari daftar Posisi). Layout: section fitur FLAT selebar layar (tanpa
-// accordion), dipisah garis panjang (hairline) sebagai pembatas antar fitur
-// agar mudah dipindai. Batas karakter/item dikunci via maxLength & maxItems
-// editor (selaras server).
+// (dari daftar Posisi). Layout: tiap kelompok isi menjadi KARTU SECTION
+// TERPISAH (latar sendiri) yang bisa DICIUTKAN lewat header — default
+// TERTUTUP; section dengan error validasi membuka otomatis. Batas
+// karakter/item dikunci via maxLength & maxItems editor (selaras server).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,7 @@ import {
   ArrowLeft,
   BookmarkPlus,
   Briefcase,
+  Clapperboard,
   Flame,
   Gift,
   History,
@@ -80,7 +81,6 @@ import { useAdminSession } from "./admin-context";
 import { StringListEditor } from "./position-list-editors";
 import {
   CUSTOM_DOC_MAX_LEN,
-  FormDivider,
   FormSection,
   MAX_CUSTOM_DOCS,
   isInt,
@@ -667,6 +667,13 @@ export function PositionFormPage({
     [form.stages]
   );
 
+  // Cek error validasi per section — dipakai prop hasError FormSection agar
+  // kartu yang berisi isian bermasalah membuka otomatis saat gagal simpan.
+  const sectionError = (...keywords: string[]) =>
+    validationErrors.some((e) =>
+      keywords.some((k) => e.toLowerCase().includes(k))
+    );
+
   function validate(): string[] {
     const errors: string[] = [];
     if (form.title.trim().length < 3)
@@ -1023,14 +1030,13 @@ export function PositionFormPage({
         </Card>
       ) : null}
 
-      <Card className="gap-0 rounded-2xl p-5 md:p-6">
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void handleSave();
-          }}
-        >
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void handleSave();
+        }}
+      >
             {validationErrors.length > 0 ? (
               <div
                 className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
@@ -1045,14 +1051,13 @@ export function PositionFormPage({
               </div>
             ) : null}
 
-            <div className="flex flex-col gap-5">
-              {/* Halaman KONTEN: Dasar, Konten Bahasa Inggris, Tampilan & Konten, Benefit & Karya. */}
               {/* a. Dasar */}
               <FormSection
                 id="dasar"
                 icon={Briefcase}
                 title="Dasar"
                 hint="Informasi inti lowongan yang tampil di halaman publik."
+                hasError={sectionError("judul posisi", "departemen", "deskripsi")}
               >
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="pos-title">Nama Posisi *</Label>
@@ -1138,8 +1143,6 @@ export function PositionFormPage({
                   </div>
                 </FormSection>
 
-                <FormDivider />
-
               {/* a2. Konten Bahasa Inggris (opsional) — dipakai publik saat lang "en" */}
               <FormSection
                 id="bahasa-inggris"
@@ -1184,13 +1187,12 @@ export function PositionFormPage({
                   </div>
                 </FormSection>
 
-                <FormDivider />
-              {/* c. Tampilan & Konten */}
+              {/* c1. Cover — kartu section terpisah */}
               <FormSection
-                id="tampilan"
+                id="cover"
                 icon={ImageIcon}
-                title="Tampilan & Konten"
-                hint="Cover, teks gaji, serta badge urgent & unggulan."
+                title="Cover"
+                hint="Gambar sampul posisi di kartu lowongan & pratinjau berbagi tautan."
               >
                   <div className="flex flex-col gap-2">
                     <Label>Cover Posisi</Label>
@@ -1287,7 +1289,16 @@ export function PositionFormPage({
                       PNG/JPEG/WebP maksimal 3 MB. Cover tampil di kartu posisi &amp; pratinjau berbagi tautan.
                     </p>
                   </div>
+                </FormSection>
 
+              {/* c2. Gaji — kartu section terpisah */}
+              <FormSection
+                id="gaji"
+                icon={Wallet}
+                title="Gaji"
+                hint="Teks gaji, tampilan gaji, dan rentang gaji wajar untuk peringatan offer."
+                hasError={sectionError("teks gaji")}
+              >
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5">
                       <Label htmlFor="pos-salaryText">Teks Gaji (opsional)</Label>
@@ -1346,7 +1357,15 @@ export function PositionFormPage({
                       />
                     </div>
                   </div>
+                </FormSection>
 
+              {/* c3. Badge Posisi — kartu section terpisah */}
+              <FormSection
+                id="badge"
+                icon={Flame}
+                title="Badge Posisi"
+                hint="Tanda urgent & unggulan pada kartu posisi."
+              >
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
                       <div>
@@ -1383,14 +1402,12 @@ export function PositionFormPage({
                   </div>
                 </FormSection>
 
-                <FormDivider />
-
-              {/* d. Benefit & Karya */}
+              {/* d1. Benefit — kartu section terpisah */}
               <FormSection
                 id="benefit"
                 icon={Gift}
-                title="Benefit & Karya"
-                hint="Benefit dan contoh karya yang dipajang di detail lowongan."
+                title="Benefit"
+                hint="Benefit yang dipajang di detail lowongan."
               >
                   <div className="flex flex-col gap-1.5">
                     <Label>Benefit</Label>
@@ -1404,6 +1421,16 @@ export function PositionFormPage({
                       placeholder="mis. Fasilitas peralatan lengkap"
                     />
                   </div>
+                </FormSection>
+
+              {/* d2. Contoh Karya — kartu section terpisah */}
+              <FormSection
+                id="karya"
+                icon={Clapperboard}
+                title="Contoh Karya"
+                hint="Tautan contoh karya yang dipajang di detail lowongan."
+                hasError={sectionError("contoh karya")}
+              >
                   <div className="flex flex-col gap-1.5">
                     <Label>Contoh Karya</Label>
                     <StringListEditor
@@ -1418,8 +1445,6 @@ export function PositionFormPage({
                     />
                   </div>
                 </FormSection>
-
-                <FormDivider />
 
               {editing === null ? (
                 <FormSection
@@ -1443,17 +1468,15 @@ export function PositionFormPage({
                   </div>
                 </FormSection>
               ) : (
-                <p className="text-xs text-muted-foreground">
+                <p className="rounded-2xl border bg-card p-5 text-xs text-muted-foreground md:p-6">
                   Status tayang, jadwal, kuota, dan penerimaan kini dikelola di
                   tab Penerimaan halaman Kelola.
                 </p>
               )}
-            </div>
 
             {/* Tombol submit tersembunyi agar Enter mensubmit form */}
             <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
         </form>
-      </Card>
 
       {/* Bilah aksi menempel di bawah layar — tetap terlihat di formulir panjang */}
       <div className="sticky bottom-4 z-20">

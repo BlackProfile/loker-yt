@@ -15,9 +15,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,28 +40,37 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   AlertTriangle,
   Award,
+  BellRing,
   Bot,
+  Building2,
   Calendar,
   Camera,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  CircleHelp,
   Clock,
+  Code2,
   Copy,
   Eye,
   Film,
+  Gift,
   Globe,
   GraduationCap,
   Heart,
   Inbox,
+  Info,
+  LayoutTemplate,
   Loader2,
   LogOut,
+  Mail,
   MailCheck,
   MailWarning,
   Mailbox,
   Mic,
   Monitor,
   MonitorSmartphone,
+  PanelBottom,
   PenTool,
   Plus,
   Quote,
@@ -103,6 +109,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api";
 import { copyText, formatDateTime, formatRelative, formatShortDateTime } from "./format";
 import { useAdminSession } from "./admin-context";
 import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
+import { CollapsibleCard } from "./collapsible-card";
 import { Reveal } from "./motion-primitives";
 
 // Peta ikon lucide untuk benefit (fallback Sparkles).
@@ -260,19 +267,13 @@ function EmailOutboxCard() {
   }
 
   return (
-    <Card className="gap-4 rounded-2xl p-6">
-      <CardHeader className="flex-row items-center justify-between px-0">
-        <div>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Mailbox className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-            Kotak Keluar Email
-          </CardTitle>
-          <CardDescription className="mt-1">
-            Arsip email transaksional (offer, penolakan, pengingat). Tanpa SMTP, email
-            terarsip berstatus menunggu dan bisa dikirim ulang manual.
-          </CardDescription>
-        </div>
-        <div className="flex items-center gap-2">
+    <CollapsibleCard
+      id="outbox"
+      icon={Mailbox}
+      title="Kotak Keluar Email"
+      description="Arsip email transaksional (offer, penolakan, pengingat). Tanpa SMTP, email terarsip berstatus menunggu dan bisa dikirim ulang manual."
+      actions={
+        <>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9 w-[140px]" aria-label="Filter status email">
               <SelectValue />
@@ -295,9 +296,9 @@ function EmailOutboxCard() {
           >
             <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} aria-hidden="true" />
           </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-0">
+        </>
+      }
+    >
         {!smtpConfigured ? (
           <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400">
             <MailWarning className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -418,8 +419,7 @@ function EmailOutboxCard() {
             {formatDateTime(rows[0]?.createdAt).includes("-") ? "" : ""}.
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+    </CollapsibleCard>
   );
 }
 
@@ -727,18 +727,12 @@ function TelegramBotCard() {
   const chatRows = [...allowedChats, ...extraLegacyRows];
 
   return (
-    <Card className="gap-4 rounded-2xl p-6">
-      <CardHeader className="px-0">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Send className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-          Bot Telegram
-        </CardTitle>
-        <CardDescription className="mt-1">
-          Bot dua arah untuk admin: perintah ringkasan, aksi kandidat, dan digest pagi langsung
-          dari Telegram.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-0">
+    <CollapsibleCard
+      id="bot-telegram"
+      icon={Send}
+      title="Bot Telegram"
+      description="Bot dua arah untuk admin: perintah ringkasan, aksi kandidat, dan digest pagi langsung dari Telegram."
+    >
         {loading ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-10 w-full" />
@@ -1053,8 +1047,7 @@ function TelegramBotCard() {
             </p>
           </>
         )}
-      </CardContent>
-    </Card>
+    </CollapsibleCard>
   );
 }
 
@@ -1139,18 +1132,13 @@ function ActiveSessionsCard() {
   }
 
   return (
-    <Card className="gap-4 rounded-2xl p-6">
-      <CardHeader className="flex-row items-start justify-between gap-3 px-0">
-        <div>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <MonitorSmartphone className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-            Sesi Aktif
-          </CardTitle>
-          <CardDescription className="mt-1">
-            Perangkat yang sedang login ke panel admin. Keluarkan perangkat yang tidak dikenal.
-          </CardDescription>
-        </div>
-        {isOwner && rows.filter((r) => !r.current).length > 0 ? (
+    <CollapsibleCard
+      id="sesi-aktif"
+      icon={MonitorSmartphone}
+      title="Sesi Aktif"
+      description="Perangkat yang sedang login ke panel admin. Keluarkan perangkat yang tidak dikenal."
+      actions={
+        isOwner && rows.filter((r) => !r.current).length > 0 ? (
           <Button
             variant="outline"
             className="h-10 shrink-0"
@@ -1164,9 +1152,9 @@ function ActiveSessionsCard() {
             )}
             Keluarkan Semua Perangkat Lain
           </Button>
-        ) : null}
-      </CardHeader>
-      <CardContent className="px-0">
+        ) : null
+      }
+    >
         {loading ? (
           <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -1233,7 +1221,6 @@ function ActiveSessionsCard() {
             })}
           </div>
         )}
-      </CardContent>
 
       {/* Konfirmasi keluarkan satu sesi */}
       <AlertDialog
@@ -1309,7 +1296,7 @@ function ActiveSessionsCard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </CollapsibleCard>
   );
 }
 
@@ -1365,17 +1352,12 @@ function RetentionCard() {
   }
 
   return (
-    <Card className="gap-4 rounded-2xl p-6">
-      <CardHeader className="px-0">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-          Retensi Data (Privasi)
-        </CardTitle>
-        <CardDescription className="mt-1">
-          Hapus otomatis lamaran lama agar data pelamar tidak disimpan selamanya.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-0">
+    <CollapsibleCard
+      id="retensi"
+      icon={ShieldCheck}
+      title="Retensi Data (Privasi)"
+      description="Hapus otomatis lamaran lama agar data pelamar tidak disimpan selamanya."
+    >
         {loading ? (
           <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -1436,8 +1418,7 @@ function RetentionCard() {
             </div>
           </>
         )}
-      </CardContent>
-    </Card>
+    </CollapsibleCard>
   );
 }
 
@@ -1500,18 +1481,13 @@ function CandidateEmailsCard() {
   }
 
   return (
-    <Card className="gap-4 rounded-2xl p-6">
-      <CardHeader className="flex-row items-center justify-between gap-3 px-0">
-        <div className="min-w-0">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Send className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-            Email Kandidat
-          </CardTitle>
-          <CardDescription className="mt-1">
-            Email otomatis ke pelamar saat status lamarannya berubah. Terarsip di Kotak Keluar.
-          </CardDescription>
-        </div>
-        {isOwner ? (
+    <CollapsibleCard
+      id="email-kandidat"
+      icon={Send}
+      title="Email Kandidat"
+      description="Email otomatis ke pelamar saat status lamarannya berubah. Terarsip di Kotak Keluar."
+      actions={
+        isOwner ? (
           <Button
             className="h-10 shrink-0"
             disabled={!config || loading || saving}
@@ -1524,9 +1500,9 @@ function CandidateEmailsCard() {
             )}
             Simpan
           </Button>
-        ) : null}
-      </CardHeader>
-      <CardContent className="px-0">
+        ) : null
+      }
+    >
         {loading || !config ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-10 w-full" />
@@ -1693,8 +1669,7 @@ function CandidateEmailsCard() {
             ) : null}
           </div>
         )}
-      </CardContent>
-    </Card>
+    </CollapsibleCard>
   );
 }
 
@@ -1875,15 +1850,14 @@ export function SettingsTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Identitas & Hero */}
-      <Card className="gap-4 rounded-2xl p-6">
-        <CardHeader className="px-0">
-          <CardTitle className="text-base">Identitas &amp; Hero</CardTitle>
-          <CardDescription>
-            Nama situs dan isi bagian hero halaman publik.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 px-0 md:grid-cols-2">
+      {/* Identitas Situs */}
+      <CollapsibleCard
+        id="identitas"
+        icon={Building2}
+        title="Identitas Situs"
+        description="Nama dan tagline studio di halaman publik."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
           <Field id="f-siteName" label="Nama Situs">
             <Input
               id="f-siteName"
@@ -1900,6 +1874,17 @@ export function SettingsTab() {
               className="h-10"
             />
           </Field>
+        </div>
+      </CollapsibleCard>
+
+      {/* Hero */}
+      <CollapsibleCard
+        id="hero"
+        icon={LayoutTemplate}
+        title="Hero"
+        description="Badge, deadline, judul, highlight, dan deskripsi bagian hero."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
           <Field id="f-heroBadge" label="Badge Hero">
             <Input
               id="f-heroBadge"
@@ -1942,6 +1927,17 @@ export function SettingsTab() {
               />
             </Field>
           </div>
+        </div>
+      </CollapsibleCard>
+
+      {/* Tentang Kami */}
+      <CollapsibleCard
+        id="tentang"
+        icon={Info}
+        title="Tentang Kami"
+        description="Judul dan deskripsi bagian tentang di halaman publik."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
           <Field id="f-aboutTitle" label="Judul Tentang">
             <Input
               id="f-aboutTitle"
@@ -1960,18 +1956,17 @@ export function SettingsTab() {
               />
             </Field>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleCard>
 
-      {/* Kontak & Footer */}
-      <Card className="gap-4 rounded-2xl p-6">
-        <CardHeader className="px-0">
-          <CardTitle className="text-base">Kontak &amp; Footer</CardTitle>
-          <CardDescription>
-            Informasi kontak dan teks footer halaman publik.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 px-0 md:grid-cols-2">
+      {/* Kontak */}
+      <CollapsibleCard
+        id="kontak"
+        icon={Mail}
+        title="Kontak"
+        description="Kanal kontak yang tampil di halaman publik."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
           <Field id="f-contactEmail" label="Email Kontak">
             <Input
               id="f-contactEmail"
@@ -2002,26 +1997,34 @@ export function SettingsTab() {
               className="h-10"
             />
           </Field>
-          <Field id="f-footerText" label="Teks Footer">
-            <Input
-              id="f-footerText"
-              value={site.footerText}
-              onChange={(e) => updateField("footerText", e.target.value)}
-              className="h-10"
-            />
-          </Field>
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleCard>
+
+      {/* Footer */}
+      <CollapsibleCard
+        id="footer"
+        icon={PanelBottom}
+        title="Footer"
+        description="Teks footer di bagian bawah halaman publik."
+      >
+        <Field id="f-footerText" label="Teks Footer">
+          <Input
+            id="f-footerText"
+            value={site.footerText}
+            onChange={(e) => updateField("footerText", e.target.value)}
+            className="h-10"
+          />
+        </Field>
+      </CollapsibleCard>
 
       {/* Suara Tim */}
-      <Card className="gap-4 rounded-2xl p-6">
-        <CardHeader className="px-0">
-          <CardTitle className="text-base">Suara Tim</CardTitle>
-          <CardDescription>
-            Testimoni anggota tim yang tampil di halaman publik.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 px-0">
+      <CollapsibleCard
+        id="suara-tim"
+        icon={Quote}
+        title="Suara Tim"
+        description="Testimoni anggota tim yang tampil di halaman publik."
+      >
+        <div className="flex flex-col gap-3">
           {site.teamMembers.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Belum ada testimoni tim. Tambahkan agar halaman lebih hidup.
@@ -2127,18 +2130,17 @@ export function SettingsTab() {
             <Quote className="size-4" aria-hidden="true" />
             Tambah Anggota
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleCard>
 
       {/* Benefit */}
-      <Card className="gap-4 rounded-2xl p-6">
-        <CardHeader className="px-0">
-          <CardTitle className="text-base">Benefit Halaman Publik</CardTitle>
-          <CardDescription>
-            Daftar keuntungan bergabung yang tampil di landing page.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 px-0">
+      <CollapsibleCard
+        id="benefit-publik"
+        icon={Gift}
+        title="Benefit Halaman Publik"
+        description="Daftar keuntungan bergabung yang tampil di landing page."
+      >
+        <div className="flex flex-col gap-3">
           {site.benefits.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Belum ada benefit. Tambahkan minimal satu agar bagian benefit tampil menarik.
@@ -2255,18 +2257,17 @@ export function SettingsTab() {
             <Plus className="size-4" aria-hidden="true" />
             Tambah Benefit
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleCard>
 
       {/* FAQ */}
-      <Card className="gap-4 rounded-2xl p-6">
-        <CardHeader className="px-0">
-          <CardTitle className="text-base">FAQ Halaman Publik</CardTitle>
-          <CardDescription>
-            Pertanyaan yang sering diajukan calon kreator.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 px-0">
+      <CollapsibleCard
+        id="faq-publik"
+        icon={CircleHelp}
+        title="FAQ Halaman Publik"
+        description="Pertanyaan yang sering diajukan calon kreator."
+      >
+        <div className="flex flex-col gap-3">
           {site.faqs.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Belum ada FAQ. Tambahkan pertanyaan untuk membantu calon pelamar.
@@ -2348,18 +2349,16 @@ export function SettingsTab() {
             <Plus className="size-4" aria-hidden="true" />
             Tambah FAQ
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleCard>
 
-      {/* Integrasi & Otomasi */}
-      <Card className="gap-4 rounded-2xl p-6">
-        <CardHeader className="px-0">
-          <CardTitle className="text-base">Integrasi &amp; Otomasi</CardTitle>
-          <CardDescription>
-            Chatbot publik dan notifikasi lamaran baru via Discord / Telegram.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 px-0">
+      {/* Chatbot Publik */}
+      <CollapsibleCard
+        id="chatbot"
+        icon={Bot}
+        title="Chatbot Publik"
+        description="Aktifkan chatbot Lumina Bot di halaman publik."
+      >
           <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
             <div>
               <p className="flex items-center gap-2 text-sm font-medium">
@@ -2376,7 +2375,15 @@ export function SettingsTab() {
               aria-label="Aktifkan chatbot Lumina Bot di halaman publik"
             />
           </div>
+      </CollapsibleCard>
 
+      {/* Notifikasi Lamaran */}
+      <CollapsibleCard
+        id="notifikasi"
+        icon={BellRing}
+        title="Notifikasi Lamaran"
+        description="Kirim notifikasi lamaran baru ke channel Discord dan bot Telegram."
+      >
           <Field
             id="f-discord"
             label="Discord Webhook URL"
@@ -2423,8 +2430,7 @@ export function SettingsTab() {
             )}
             Kirim Pesan Uji
           </Button>
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
       {/* Bot Telegram — bot dua arah untuk admin (kartu mandiri, simpan langsung per aksi) */}
       <TelegramBotCard />
@@ -2445,17 +2451,12 @@ export function SettingsTab() {
       <SectionVisibilityCard sections={site.sections} onChange={updateSection} />
 
       {/* Pelanggan Notifikasi */}
-      <Card className="gap-4 rounded-2xl p-6">
-        <CardHeader className="flex-row items-center justify-between px-0">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <MailCheck className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-              Pelanggan Notifikasi
-            </CardTitle>
-            <CardDescription className="mt-1">
-              {subscribers.length} email menerima info lowongan baru.
-            </CardDescription>
-          </div>
+      <CollapsibleCard
+        id="pelanggan"
+        icon={MailCheck}
+        title="Pelanggan Notifikasi"
+        description={`${subscribers.length} email menerima info lowongan baru.`}
+        actions={
           <Button
             variant="outline"
             className="h-10"
@@ -2465,8 +2466,8 @@ export function SettingsTab() {
             <Copy className="size-4" aria-hidden="true" />
             Salin Semua
           </Button>
-        </CardHeader>
-        <CardContent className="px-0">
+        }
+      >
           {subscribers.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Belum ada pelanggan notifikasi.
@@ -2482,24 +2483,21 @@ export function SettingsTab() {
               </ul>
             </div>
           )}
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
       {/* Widget Embed */}
-      <Card className="gap-4 rounded-2xl p-6">
-        <CardHeader className="flex-row items-center justify-between px-0">
-          <div>
-            <CardTitle className="text-base">Widget Embed</CardTitle>
-            <CardDescription className="mt-1">
-              Tampilkan lowongan di situs lain dengan iframe ini.
-            </CardDescription>
-          </div>
+      <CollapsibleCard
+        id="widget-embed"
+        icon={Code2}
+        title="Widget Embed"
+        description="Tampilkan lowongan di situs lain dengan iframe ini."
+        actions={
           <Button variant="outline" className="h-10" onClick={() => void handleCopyEmbed()}>
             <Copy className="size-4" aria-hidden="true" />
             Salin
           </Button>
-        </CardHeader>
-        <CardContent className="px-0">
+        }
+      >
           <Textarea
             readOnly
             value={embedSnippet}
@@ -2508,8 +2506,7 @@ export function SettingsTab() {
             rows={4}
             onFocus={(e) => e.currentTarget.select()}
           />
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
 
       {/* Bar simpan sticky (entrance halus, pola simpan tak berubah) */}
       <Reveal slideY={10} duration={0.25} className="sticky bottom-4 z-10">

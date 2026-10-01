@@ -5,6 +5,7 @@ import {
   Bot,
   Briefcase,
   CircleHelp,
+  Eye,
   FileText,
   Flag,
   Gift,
@@ -15,14 +16,8 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { CollapsibleCard } from "./collapsible-card";
 import {
   SECTION_KEYS,
   SECTION_LABELS,
@@ -76,15 +71,13 @@ export function SectionVisibilityCard({
   onChange: (key: SectionKey, value: boolean) => void;
 }) {
   return (
-    <Card className="gap-4 rounded-2xl p-6">
-      <CardHeader className="px-0">
-        <CardTitle className="text-base">Tampilan Halaman Publik</CardTitle>
-        <CardDescription>
-          Atur bagian mana yang tampil di halaman publik. Perubahan berlaku setelah
-          disimpan.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col px-0">
+    <CollapsibleCard
+      id="tampilan-publik"
+      icon={Eye}
+      title="Tampilan Halaman Publik"
+      description="Atur bagian mana yang tampil di halaman publik. Perubahan berlaku setelah disimpan."
+    >
+      <div className="flex flex-col">
         {SECTION_KEYS.map((key, index) => {
           const Icon = SECTION_ICONS[key];
           const hint = !sections[key] ? SECTION_HINTS[key] : undefined;
@@ -122,7 +115,7 @@ export function SectionVisibilityCard({
             </div>
           );
         })}
-      </CardContent>
-    </Card>
+      </div>
+    </CollapsibleCard>
   );
 }

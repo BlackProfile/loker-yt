@@ -2,17 +2,18 @@
 
 // Halaman-halaman setelan per posisi (bukan popup) — dirender inline di dalam
 // halaman Kelola. Setiap halaman mengelola SATU kelompok field milik posisi dan
-// mengirim PATCH hanya dengan kunci milik halaman itu:
-// - PositionIntakePage    -> "Penerimaan" (status & publikasi, kuota, berkas)
-// - PositionSelectionPage -> "Seleksi"    (pipeline, AI, tes, rubrik & evaluasi)
-// - PositionInterviewPage -> "Wawancara"  (bawaan, scorecard & ronde, undangan)
-// - PositionMessagesPage  -> "Pesan"      (otomasi status, penawaran & onboarding)
+// mengirim PATCH hanya dengan kunci milik halaman itu. Setiap kelompok isi
+// dirender sebagai KARTU SECTION TERPISAH (FormSection) yang bisa DICIUTKAN —
+// default TERTUTUP; section dengan error validasi membuka otomatis via hasError:
+// - PositionIntakePage    -> "Penerimaan" (status, publikasi, kuota, berkas)
+// - PositionSelectionPage -> "Seleksi"    (pipeline, auto-shortlist, AI, tes, rubrik)
+// - PositionInterviewPage -> "Wawancara"  (bawaan, scorecard, ronde, undangan)
+// - PositionMessagesPage  -> "Pesan"      (otomasi status, penawaran, onboarding)
 // State lokal diinisialisasi dari prop position via useState initializer;
 // parent me-remount via key saat posisi berganti, jadi tidak perlu sinkron.
 
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -27,17 +28,28 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
+  BadgeCheck,
+  CalendarClock,
+  ClipboardCheck,
+  ClipboardList,
   FileText,
   Inbox,
+  ListChecks,
+  ListOrdered,
   Loader2,
   MessagesSquare,
   Plus,
+  Send,
   Sparkles,
+  StickyNote,
   Trash2,
   TriangleAlert,
+  UserCheck,
+  Users,
   Video,
   Workflow,
   X,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -67,7 +79,6 @@ import { StringListEditor } from "./position-list-editors";
 import {
   CUSTOM_DOC_MAX_LEN,
   DEMO_TEMPLATES,
-  FormDivider,
   FormSection,
   MAX_CUSTOM_DOCS,
   PUB_MODE,
@@ -101,7 +112,8 @@ function SettingsPageShell({
   buildPayload: () => Record<string, unknown>;
   onBack: () => void;
   onSaved: (p: Position) => void;
-  children: ReactNode;
+  /** Bisa berupa JSX statis atau fungsi (validationErrors) => JSX untuk hasError per section. */
+  children: ReactNode | ((validationErrors: string[]) => ReactNode);
 }) {
   const { canMutate, reportError } = useAdminSession();
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -154,34 +166,32 @@ function SettingsPageShell({
         </div>
       </div>
 
-      <Card className="gap-0 rounded-2xl p-5 md:p-6">
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void handleSave();
-          }}
-        >
-          {validationErrors.length > 0 ? (
-            <div
-              className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
-              role="alert"
-            >
-              <p className="font-semibold">Periksa kembali formulir:</p>
-              <ul className="mt-1 list-inside list-disc space-y-0.5">
-                {validationErrors.map((err) => (
-                  <li key={err}>{err}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void handleSave();
+        }}
+      >
+        {validationErrors.length > 0 ? (
+          <div
+            className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
+            role="alert"
+          >
+            <p className="font-semibold">Periksa kembali formulir:</p>
+            <ul className="mt-1 list-inside list-disc space-y-0.5">
+              {validationErrors.map((err) => (
+                <li key={err}>{err}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
-          <div className="flex flex-col gap-5">{children}</div>
+        {typeof children === "function" ? children(validationErrors) : children}
 
-          {/* Tombol submit tersembunyi agar Enter mensubmit form */}
-          <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
-        </form>
-      </Card>
+        {/* Tombol submit tersembunyi agar Enter mensubmit form */}
+        <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
+      </form>
 
       {/* Bilah aksi menempel di bawah layar — tetap terlihat di formulir panjang */}
       <div className="sticky bottom-4 z-20">
@@ -346,11 +356,16 @@ export function PositionIntakePage({
         return payload;
       }}
     >
+      {(errors) => {
+        const hasErr = (...keywords: string[]) =>
+          errors.some((e) => keywords.some((k) => e.toLowerCase().includes(k)));
+        return (
+          <>
       <FormSection
         id="status"
         icon={Inbox}
-        title="Status & Publikasi"
-        hint="Status tayang, buka/tutup formulir, jadwal, dan urutan tampil."
+        title="Status Tayang"
+        hint="Aktifkan posisi dan buka/tutup formulir lamaran."
       >
         <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
           <div>
@@ -386,7 +401,15 @@ export function PositionIntakePage({
           </Badge>
           <p className="text-xs text-muted-foreground">{pubMode.hint}</p>
         </div>
+      </FormSection>
 
+      <FormSection
+        id="publikasi"
+        icon={CalendarClock}
+        title="Publikasi"
+        hint="Jadwal tayang, tanggal penutupan, dan urutan tampil."
+        hasError={hasErr("urutan")}
+      >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pos-publishAt">Jadwal Publikasi (opsional)</Label>
@@ -433,13 +456,12 @@ export function PositionIntakePage({
         </div>
       </FormSection>
 
-      <FormDivider />
-
       <FormSection
         id="kuota"
-        icon={Inbox}
-        title="Kuota & Berkas"
-        hint="Batas penerimaan dan berkas yang diminta dari pendaftar."
+        icon={Users}
+        title="Kuota Pelamar"
+        hint="Batas jumlah pelamar yang diterima posisi ini."
+        hasError={hasErr("kuota pelamar")}
       >
         <div className="flex flex-col gap-1.5 sm:max-w-56">
           <Label htmlFor="pos-maxApplicants">Kuota Pelamar (opsional)</Label>
@@ -458,7 +480,14 @@ export function PositionIntakePage({
             Posisi otomatis berhenti menerima lamaran saat kuota penuh.
           </p>
         </div>
+      </FormSection>
 
+      <FormSection
+        id="berkas"
+        icon={FileText}
+        title="Berkas Wajib"
+        hint="Berkas yang wajib diunggah pendaftar."
+      >
         {schemaActive ? (
           <p className="text-xs text-muted-foreground">
             Pengaturan CV, intro, dan portofolio dikelola di tab Formulir — bagian Berkas.
@@ -559,6 +588,9 @@ export function PositionIntakePage({
           </div>
         </div>
       </FormSection>
+          </>
+        );
+      }}
     </SettingsPageShell>
   );
 }
@@ -675,11 +707,16 @@ export function PositionSelectionPage({
         noteTemplates: form.noteTemplates.map((n) => n.trim()).filter(Boolean),
       })}
     >
+      {(errors) => {
+        const hasErr = (...keywords: string[]) =>
+          errors.some((e) => keywords.some((k) => e.toLowerCase().includes(k)));
+        return (
+          <>
       <FormSection
         id="pipeline"
         icon={Workflow}
-        title="Pipeline & Auto-Shortlist"
-        hint="Tahapan seleksi kustom, kategori fitur, dan auto-shortlist."
+        title="Pipeline Tahap"
+        hint="Tahapan seleksi kustom dan kategori fitur tahap."
       >
         <div className="flex flex-col gap-1.5">
           <Label>Pipeline Tahap Kustom</Label>
@@ -763,7 +800,15 @@ export function PositionSelectionPage({
             </div>
           </div>
         ) : null}
+      </FormSection>
 
+      <FormSection
+        id="auto-shortlist"
+        icon={Zap}
+        title="Auto-Shortlist"
+        hint="Pindahkan otomatis lamaran Baru saat skor AI mencapai ambang."
+        hasError={hasErr("auto-shortlist")}
+      >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pos-shortlistScore">Ambang Skor Auto-Shortlist (opsional)</Label>
@@ -814,11 +859,9 @@ export function PositionSelectionPage({
         </div>
       </FormSection>
 
-      <FormDivider />
-
       <FormSection
         id="ai"
-        icon={Workflow}
+        icon={Sparkles}
         title="Kriteria AI"
         hint="Kriteria tambahan untuk prompt screening AI posisi ini."
       >
@@ -838,13 +881,12 @@ export function PositionSelectionPage({
         </div>
       </FormSection>
 
-      <FormDivider />
-
       <FormSection
         id="tes"
-        icon={Workflow}
+        icon={ClipboardList}
         title="Tes untuk Pelamar"
         hint="Info tes/brief dikirim bersama pesan konfirmasi lamaran."
+        hasError={hasErr("url tes")}
       >
         <div className="rounded-lg border p-3">
           <div className="flex flex-col gap-3">
@@ -885,13 +927,11 @@ export function PositionSelectionPage({
         </div>
       </FormSection>
 
-      <FormDivider />
-
       <FormSection
         id="rubrik"
-        icon={Workflow}
-        title="Rubrik & Evaluasi"
-        hint="Rubrik penilaian, checklist, dan catatan cepat tim."
+        icon={ClipboardCheck}
+        title="Rubrik Penilaian"
+        hint="Kriteria untuk menilai kualitas lamaran."
       >
         <div className="flex flex-col gap-1.5">
           <Label>Kriteria Rubrik Penilaian</Label>
@@ -905,6 +945,14 @@ export function PositionSelectionPage({
             placeholder="mis. Kualitas storytelling"
           />
         </div>
+      </FormSection>
+
+      <FormSection
+        id="checklist"
+        icon={ListChecks}
+        title="Template Checklist"
+        hint="Checklist cepat saat meninjau lamaran."
+      >
         <div className="flex flex-col gap-1.5">
           <Label>Template Checklist</Label>
           <StringListEditor
@@ -917,6 +965,14 @@ export function PositionSelectionPage({
             placeholder="mis. Cek reel di Instagram kandidat"
           />
         </div>
+      </FormSection>
+
+      <FormSection
+        id="catatan"
+        icon={StickyNote}
+        title="Template Catatan Cepat"
+        hint="Catatan satu klik saat menulis evaluasi lamaran."
+      >
         <div className="flex flex-col gap-1.5">
           <Label>Template Catatan Cepat</Label>
           <StringListEditor
@@ -931,6 +987,9 @@ export function PositionSelectionPage({
           />
         </div>
       </FormSection>
+          </>
+        );
+      }}
     </SettingsPageShell>
   );
 }
@@ -1020,11 +1079,17 @@ export function PositionInterviewPage({
         interviewInviteTemplate: form.interviewInviteTemplate.trim() || null,
       })}
     >
+      {(errors) => {
+        const hasErr = (...keywords: string[]) =>
+          errors.some((e) => keywords.some((k) => e.toLowerCase().includes(k)));
+        return (
+          <>
       <FormSection
         id="bawaan"
         icon={Video}
         title="Bawaan Wawancara"
         hint="Mode, platform, dan durasi default saat menjadwalkan wawancara."
+        hasError={hasErr("durasi wawancara")}
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
@@ -1084,13 +1149,11 @@ export function PositionInterviewPage({
         </div>
       </FormSection>
 
-      <FormDivider />
-
       <FormSection
         id="scorecard"
-        icon={Video}
-        title="Scorecard & Ronde"
-        hint="Kriteria penilaian wawancara dan rencana ronde."
+        icon={ClipboardCheck}
+        title="Kriteria Scorecard"
+        hint="Kriteria penilaian wawancara."
       >
         <div className="flex flex-col gap-1.5">
           <Label>Kriteria Scorecard</Label>
@@ -1105,7 +1168,14 @@ export function PositionInterviewPage({
             hint="Kosongkan untuk memakai kriteria bawaan (Komunikasi, Portofolio, dll.)"
           />
         </div>
+      </FormSection>
 
+      <FormSection
+        id="ronde"
+        icon={ListOrdered}
+        title="Rencana Ronde"
+        hint='Rencana ronde untuk fitur "Jadwalkan Ronde Berikutnya" di dialog wawancara.'
+      >
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <Label>Rencana Ronde Wawancara (opsional)</Label>
@@ -1207,11 +1277,9 @@ export function PositionInterviewPage({
         </div>
       </FormSection>
 
-      <FormDivider />
-
       <FormSection
         id="undangan"
-        icon={Video}
+        icon={Send}
         title="Template Undangan"
         hint="Pesan undangan yang dikirim saat wawancara dijadwalkan."
       >
@@ -1230,6 +1298,9 @@ export function PositionInterviewPage({
           </p>
         </div>
       </FormSection>
+          </>
+        );
+      }}
     </SettingsPageShell>
   );
 }
@@ -1321,11 +1392,16 @@ export function PositionMessagesPage({
         autoCloseOnHired: form.autoCloseOnHired,
       })}
     >
+      {(errors) => {
+        const hasErr = (...keywords: string[]) =>
+          errors.some((e) => keywords.some((k) => e.toLowerCase().includes(k)));
+        return (
+          <>
       <FormSection
         id="otomasi"
         icon={MessagesSquare}
         title="Otomasi Status Lamaran"
-        hint="Pesan otomatis saat pelamar mendaftar, diterima, atau ditolak."
+        hint="Pesan otomatis saat pelamar mendaftar, diterima, atau ditolak, plus jeda lamar ulang."
       >
         <p className="text-xs text-muted-foreground">
           Variabel yang tersedia:{" "}
@@ -1375,15 +1451,31 @@ export function PositionMessagesPage({
             <p className="text-xs text-muted-foreground">{hint}</p>
           </div>
         ))}
-      </FormSection>
 
-      <FormDivider />
+        <div className="flex flex-col gap-1.5 sm:max-w-56">
+          <Label htmlFor="pos-reapplyCooldown">Jeda Lamar Ulang (hari)</Label>
+          <Input
+            id="pos-reapplyCooldown"
+            type="number"
+            min={0}
+            max={365}
+            step={1}
+            value={form.reapplyCooldownDays}
+            onChange={(e) => set("reapplyCooldownDays", e.target.value)}
+            placeholder="0"
+            className="h-10"
+          />
+          <p className="text-xs text-muted-foreground">
+            Pelamar yang ditolak bisa melamar lagi setelah jeda ini. 0 = bebas.
+          </p>
+        </div>
+      </FormSection>
 
       <FormSection
         id="penawaran"
-        icon={MessagesSquare}
-        title="Penawaran & Onboarding"
-        hint="Template penawaran & sambutan, masa percobaan, dokumen onboarding, dan jeda lamar ulang."
+        icon={BadgeCheck}
+        title="Penawaran"
+        hint="Pesan penawaran untuk kandidat lolos dan tindak lanjutnya."
       >
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="pos-offerTemplate">Template Pesan Penawaran</Label>
@@ -1400,6 +1492,28 @@ export function PositionMessagesPage({
           </p>
         </div>
 
+        <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+          <div>
+            <p className="text-sm font-medium">Tutup otomatis saat diterima</p>
+            <p className="text-xs text-muted-foreground">
+              Lowongan berhenti menerima lamaran begitu ada kandidat menerima penawaran
+            </p>
+          </div>
+          <Switch
+            checked={form.autoCloseOnHired}
+            onCheckedChange={(checked) => set("autoCloseOnHired", checked)}
+            aria-label="Tutup lowongan otomatis saat ada kandidat diterima"
+          />
+        </div>
+      </FormSection>
+
+      <FormSection
+        id="onboarding"
+        icon={UserCheck}
+        title="Onboarding"
+        hint="Sambutan kandidat baru, masa percobaan, dan dokumen onboarding."
+        hasError={hasErr("masa percobaan")}
+      >
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="pos-welcomeTemplate">Template Pesan Sambutan</Label>
           <Textarea
@@ -1415,41 +1529,22 @@ export function PositionMessagesPage({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="pos-probationMonths">Masa Percobaan (bulan)</Label>
-            <Input
-              id="pos-probationMonths"
-              type="number"
-              min={0}
-              max={12}
-              step={1}
-              value={form.probationMonths}
-              onChange={(e) => set("probationMonths", e.target.value)}
-              placeholder="0"
-              className="h-10"
-            />
-            <p className="text-xs text-muted-foreground">
-              Batas akhir masa percobaan dihitung dari tanggal diterima (0-12).
-            </p>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="pos-reapplyCooldown">Jeda Lamar Ulang (hari)</Label>
-            <Input
-              id="pos-reapplyCooldown"
-              type="number"
-              min={0}
-              max={365}
-              step={1}
-              value={form.reapplyCooldownDays}
-              onChange={(e) => set("reapplyCooldownDays", e.target.value)}
-              placeholder="0"
-              className="h-10"
-            />
-            <p className="text-xs text-muted-foreground">
-              Pelamar yang ditolak bisa melamar lagi setelah jeda ini. 0 = bebas.
-            </p>
-          </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="pos-probationMonths">Masa Percobaan (bulan)</Label>
+          <Input
+            id="pos-probationMonths"
+            type="number"
+            min={0}
+            max={12}
+            step={1}
+            value={form.probationMonths}
+            onChange={(e) => set("probationMonths", e.target.value)}
+            placeholder="0"
+            className="h-10"
+          />
+          <p className="text-xs text-muted-foreground">
+            Batas akhir masa percobaan dihitung dari tanggal diterima (0-12).
+          </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -1465,21 +1560,10 @@ export function PositionMessagesPage({
             hint="Daftar ini otomatis jadi checklist dokumen saat pelamar diterima"
           />
         </div>
-
-        <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
-          <div>
-            <p className="text-sm font-medium">Tutup otomatis saat diterima</p>
-            <p className="text-xs text-muted-foreground">
-              Lowongan berhenti menerima lamaran begitu ada kandidat menerima penawaran
-            </p>
-          </div>
-          <Switch
-            checked={form.autoCloseOnHired}
-            onCheckedChange={(checked) => set("autoCloseOnHired", checked)}
-            aria-label="Tutup lowongan otomatis saat ada kandidat diterima"
-          />
-        </div>
       </FormSection>
+          </>
+        );
+      }}
     </SettingsPageShell>
   );
 }

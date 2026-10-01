@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CollapsibleCard } from "./collapsible-card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -193,6 +194,8 @@ function toImportRows(records: string[][]): CsvRow[] {
 
 /* --------------------------- Kartu (pattern UI) --------------------------- */
 
+// Kartu Data kini bisa DICIUTKAN (dropdown) — default tertutup — lewat
+// CollapsibleCard; latar kartu tetap terpisah per section.
 function DataCard({
   icon: Icon,
   title,
@@ -204,19 +207,14 @@ function DataCard({
   description: string;
   children: React.ReactNode;
 }) {
+  const id = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2.5 text-base">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
-            <Icon className="size-4" aria-hidden="true" />
-          </span>
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">{children}</CardContent>
-    </Card>
+    <CollapsibleCard id={id} icon={Icon} title={title} description={description}>
+      {children}
+    </CollapsibleCard>
   );
 }
 
@@ -1178,103 +1176,120 @@ export function DataTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* ------------------------- Backup & Restore ------------------------- */}
+      {/* ------------------------- Backup Database ------------------------- */}
       <DataCard
         icon={DatabaseBackup}
-        title="Backup & Restore Database"
-        description="Unduh salinan file database SQLite, atau pulihkan isi database dari file backup."
+        title="Backup Database"
+        description="Unduh salinan file database SQLite untuk disimpan di tempat aman."
       >
         {isOwner ? (
-          <>
-            <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-4 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">Backup Database</p>
-                <p className="text-xs text-muted-foreground">
-                  File SQLite utuh (db/custom.db) diunduh sebagai{" "}
-                  <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[11px] dark:bg-zinc-800">
-                    lumina-backup-TANGGAL.db
-                  </code>
-                  . Simpan di tempat aman.
-                </p>
-              </div>
-              <Button
-                onClick={() => void handleBackup()}
-                disabled={backingUp || restoring}
-                className="h-11 shrink-0 active:scale-[0.99] sm:h-9"
-              >
-                {backingUp ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Download className="size-4" aria-hidden="true" />
-                )}
-                Unduh Backup Database
-              </Button>
+          <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-4 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Backup Database</p>
+              <p className="text-xs text-muted-foreground">
+                File SQLite utuh (db/custom.db) diunduh sebagai{" "}
+                <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[11px] dark:bg-zinc-800">
+                  lumina-backup-TANGGAL.db
+                </code>
+                . Simpan di tempat aman.
+              </p>
             </div>
+            <Button
+              onClick={() => void handleBackup()}
+              disabled={backingUp || restoring}
+              className="h-11 shrink-0 active:scale-[0.99] sm:h-9"
+            >
+              {backingUp ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Download className="size-4" aria-hidden="true" />
+              )}
+              Unduh Backup Database
+            </Button>
+          </div>
+        ) : (
+          <div
+            className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+            role="note"
+          >
+            <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>
+              Backup dan restore database hanya dapat dilakukan oleh pemilik studio (OWNER).
+            </span>
+          </div>
+        )}
+      </DataCard>
 
-            <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-4 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">Pulihkan dari Backup</p>
-                <p className="text-xs text-muted-foreground">
-                  Unggah file .db dari backup sebelumnya. Seluruh data saat ini akan
-                  diganti dengan isi file (proses dalam satu transaksi — bila gagal,
-                  tidak ada perubahan yang disimpan).
+      {/* ------------------------- Restore Database ------------------------- */}
+      <DataCard
+        icon={Upload}
+        title="Restore Database"
+        description="Pulihkan isi database dari file backup .db sebelumnya."
+      >
+        {isOwner ? (
+          <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-4 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Pulihkan dari Backup</p>
+              <p className="text-xs text-muted-foreground">
+                Unggah file .db dari backup sebelumnya. Seluruh data saat ini akan
+                diganti dengan isi file (proses dalam satu transaksi — bila gagal,
+                tidak ada perubahan yang disimpan).
+              </p>
+              {restoreFile ? (
+                <p className="mt-1 truncate text-xs font-medium text-rose-600 dark:text-rose-400">
+                  File dipilih: {restoreFile.name} ({Math.max(1, Math.round(restoreFile.size / 1024))} KB)
                 </p>
-                {restoreFile ? (
-                  <p className="mt-1 truncate text-xs font-medium text-rose-600 dark:text-rose-400">
-                    File dipilih: {restoreFile.name} ({Math.max(1, Math.round(restoreFile.size / 1024))} KB)
+              ) : null}
+              {restoredCounts ? (
+                <div className="mt-2 flex flex-col gap-1 rounded-md border border-emerald-200 bg-emerald-50/70 p-2 text-xs dark:border-emerald-900 dark:bg-emerald-950/40">
+                  <p className="flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-400">
+                    <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                    Restore terakhir berhasil:
                   </p>
-                ) : null}
-                {restoredCounts ? (
-                  <div className="mt-2 flex flex-col gap-1 rounded-md border border-emerald-200 bg-emerald-50/70 p-2 text-xs dark:border-emerald-900 dark:bg-emerald-950/40">
-                    <p className="flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-400">
-                      <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                      Restore terakhir berhasil:
-                    </p>
-                    <p className="text-emerald-700/80 dark:text-emerald-400/80">
-                      {Object.entries(restoredCounts)
-                        .map(([table, count]) => `${table}: ${count}`)
-                        .join(", ")}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 flex-col gap-2">
-                <Button
-                  variant="outline"
-                  className="h-11 active:scale-[0.99] sm:h-9"
-                  disabled={backingUp || restoring}
-                  onClick={() => {
-                    // File sudah dipilih -> tampilkan konfirmasi lagi; belum -> buka pemilih file.
-                    if (restoreFile) setRestoreConfirmOpen(true);
-                    else restoreInputRef.current?.click();
-                  }}
-                >
-                  {restoring ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  ) : restoreFile ? (
-                    <TriangleAlert className="size-4" aria-hidden="true" />
-                  ) : (
-                    <Upload className="size-4" aria-hidden="true" />
-                  )}
-                  {restoreFile ? "Konfirmasi Pulihkan" : "Pilih File Backup (.db)"}
-                </Button>
-                <input
-                  ref={restoreInputRef}
-                  type="file"
-                  accept=".db,application/octet-stream"
-                  className="hidden"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null;
-                    setRestoreFile(file);
-                    e.target.value = "";
-                    if (file) setRestoreConfirmOpen(true);
-                  }}
-                />
-              </div>
+                  <p className="text-emerald-700/80 dark:text-emerald-400/80">
+                    {Object.entries(restoredCounts)
+                      .map(([table, count]) => `${table}: ${count}`)
+                      .join(", ")}
+                  </p>
+                </div>
+              ) : null}
             </div>
-          </>
+            <div className="flex shrink-0 flex-col gap-2">
+              <Button
+                variant="outline"
+                className="h-11 active:scale-[0.99] sm:h-9"
+                disabled={backingUp || restoring}
+                onClick={() => {
+                  // File sudah dipilih -> tampilkan konfirmasi lagi; belum -> buka pemilih file.
+                  if (restoreFile) setRestoreConfirmOpen(true);
+                  else restoreInputRef.current?.click();
+                }}
+              >
+                {restoring ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : restoreFile ? (
+                  <TriangleAlert className="size-4" aria-hidden="true" />
+                ) : (
+                  <Upload className="size-4" aria-hidden="true" />
+                )}
+                {restoreFile ? "Konfirmasi Pulihkan" : "Pilih File Backup (.db)"}
+              </Button>
+              <input
+                ref={restoreInputRef}
+                type="file"
+                accept=".db,application/octet-stream"
+                className="hidden"
+                aria-hidden="true"
+                tabIndex={-1}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setRestoreFile(file);
+                  e.target.value = "";
+                  if (file) setRestoreConfirmOpen(true);
+                }}
+              />
+            </div>
+          </div>
         ) : (
           <div
             className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
