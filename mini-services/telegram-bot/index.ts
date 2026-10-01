@@ -1,15 +1,23 @@
 // Telegram bot poller — jembatan antara Telegram Bot API dan aplikasi Next.js.
 // Port tetap 3004 (health check). Prinsip: proses ini HANYA memindahkan update
-// Telegram -> Next.js (/api/telegram/update) — tanpa token bot, tanpa akses DB.
-// Token tetap milik aplikasi Next.js (Setting "site"); polling hanya dijalankan
-// bila /api/telegram/config melaporkan enabled=true (token terisi).
+// Telegram -> Next.js (/api/telegram/update) — tanpa DB, tanpa logika bisnis.
+// Token bot diperoleh dari /api/telegram/config (dilindungi bridge secret, trafik
+// localhost saja) dan dipakai untuk long-polling getUpdates:
+//   https://api.telegram.org/bot<TOKEN>/getUpdates
+// Token TIDAK boleh di-hardcode di sini; tanpa token Telegram menjawab 404
+// "Not Found" dan bot tidak pernah menerima pesan masuk.
 //
 // Alur:
-//   1. Ambil konfigurasi tiap 60 detik dari APP_URL/api/telegram/config (secret header).
+//   1. Ambil konfigurasi (enabled + token) tiap 60 detik dari APP_URL/api/telegram/config.
 //   2. Bila enabled: pastikan webhook dihapus (getUpdates hanya jalan tanpa webhook),
 //      sinkron offset ke update terakhir (backlog dilewati), lalu long-poll getUpdates.
-//   3. Setiap update di-forward ke APP_URL/api/telegram/update (secret header).
-//   4. Error jaringan -> backoff 5 detik; 409 (webhook aktif) -> deleteWebhook sekali lagi.
+//   3. Setiap update di-forward ke APP_URL/api/telegram/update (secret header);
+//      forward gagal dicoba ulang (maks 3x) agar update tidak hilang, lalu dilewati
+//      agar satu update rusak tidak menyumbat antrean.
+//   4. Error jaringan -> backoff 5 detik; 409 (webhook aktif) -> deleteWebhook;
+//      401 (token dicabut/diganti) -> refresh config segera.
+//   5. Guard hot-reload (bun --hot): loop generasi lama dihentikan saat file diubah,
+//      sehingga tidak menumpuk loop getUpdates ganda.
 //
 // Digest pagi TIDAK dijalankan dari sini — cron reminders di Next.js yang memicunya
 // (tiap menit, idempoten internal), jadi tidak ada logika bisnis di service ini.
@@ -21,11 +29,30 @@ const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
 const SECRET = process.env.TELEGRAM_BRIDGE_SECRET ?? "lumina-telegram-secret";
 const CONFIG_REFRESH_MS = 60_000;
 const ERROR_BACKOFF_MS = 5_000;
+const FORWARD_RETRY_MAX = 3;
+
+interface LoopHandle {
+  stop: boolean;
+}
+
+// Guard hot-reload: bun --hot mengeksekusi ulang file ini tanpa mematikan loop lama.
+// Daftar loop hidup disimpan di globalThis; setiap eksekusi baru menghentikan semua
+// loop generasi sebelumnya sehingga selalu ada TEPAT satu loop polling per proses.
+const GLOBAL_STATE = globalThis as typeof globalThis & {
+  __tgPollerLoops?: Set<LoopHandle>;
+  __tgPollerTimers?: ReturnType<typeof setInterval>[];
+};
+const liveLoops: Set<LoopHandle> = (GLOBAL_STATE.__tgPollerLoops ??= new Set());
+const liveTimers: ReturnType<typeof setInterval>[] = (GLOBAL_STATE.__tgPollerTimers ??= []);
+for (const loop of liveLoops) loop.stop = true;
+liveLoops.clear();
+for (const timer of liveTimers) clearInterval(timer);
+liveTimers.length = 0;
 
 let enabled = false;
+let token = "";
 let pollSeconds = 25;
 let offset = 0;
-let running = false;
 
 function log(message: string): void {
   console.log(`[telegram-bot] ${new Date().toISOString()} ${message}`);
@@ -47,12 +74,16 @@ async function appFetch(path: string, init?: RequestInit): Promise<Response> {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function tgApi(method: string, payload?: Record<string, unknown>): Promise<{ ok: boolean; result?: unknown; error_code?: number; description?: string }> {
+async function tgApi(
+  method: string,
+  payload?: Record<string, unknown>
+): Promise<{ ok: boolean; result?: unknown; error_code?: number; description?: string }> {
+  if (!token) return { ok: false, description: "token belum tersedia" };
   const controller = new AbortController();
   // Long polling: beri waktu ekstra di atas timeout Telegram.
   const timer = setTimeout(() => controller.abort(), (pollSeconds + 10) * 1000);
   try {
-    const res = await fetch(`https://api.telegram.org/${method}`, {
+    const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload ?? {}),
@@ -65,7 +96,11 @@ async function tgApi(method: string, payload?: Record<string, unknown>): Promise
       description?: string;
     } | null;
     if (!json || json.ok !== true) {
-      return { ok: false, error_code: json?.error_code, description: json?.description ?? `HTTP ${res.status}` };
+      return {
+        ok: false,
+        error_code: json?.error_code,
+        description: json?.description ?? `HTTP ${res.status}`,
+      };
     }
     return { ok: true, result: json.result };
   } catch (error) {
@@ -79,8 +114,15 @@ async function refreshConfig(): Promise<void> {
   try {
     const res = await appFetch("/api/telegram/config");
     if (res.ok) {
-      const json = (await res.json()) as { enabled?: boolean; pollSeconds?: number };
-      const nextEnabled = json.enabled === true;
+      const json = (await res.json()) as { enabled?: boolean; pollSeconds?: number; token?: string };
+      const nextEnabled = json.enabled === true && typeof json.token === "string" && json.token.length > 0;
+      const nextToken = nextEnabled ? (json.token as string).trim() : "";
+      if (nextToken !== token) {
+        if (token) log("token berubah — sinkron ulang offset untuk bot baru");
+        token = nextToken;
+        offset = 0; // bot berbeda punya ruang update_id sendiri; sync ulang di bawah
+        await syncOffset();
+      }
       if (nextEnabled !== enabled) {
         log(nextEnabled ? "polling AKTIF (token terisi)" : "polling nonaktif (token kosong)");
       }
@@ -96,26 +138,9 @@ async function refreshConfig(): Promise<void> {
   }
 }
 
-async function forwardUpdate(update: unknown): Promise<boolean> {
-  try {
-    const res = await appFetch("/api/telegram/update", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(update),
-    });
-    if (!res.ok) {
-      log(`forward gagal: HTTP ${res.status}`);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    log(`forward error: ${error instanceof Error ? error.message : error}`);
-    return false;
-  }
-}
-
-async function pollLoop(): Promise<void> {
-  // Sinkron offset: lewati backlog lama saat pertama aktif (offset -1 = update terakhir saja).
+// Sinkron offset: lewati backlog lama saat pertama aktif / token berganti
+// (offset -1 = ambil update terakhir saja, jadikan patokan offset berikutnya).
+async function syncOffset(): Promise<void> {
   try {
     const sync = await tgApi("getUpdates", { offset: -1, timeout: 0, allowed_updates: ["message", "callback_query"] });
     if (sync.ok && Array.isArray(sync.result) && sync.result.length > 0) {
@@ -126,11 +151,31 @@ async function pollLoop(): Promise<void> {
       }
     }
   } catch {
-    // sinkronisasi gagal — poller tetap berjalan dengan offset 0
+    // sinkronisasi gagal — poller tetap berjalan dengan offset saat ini
   }
+}
 
-  while (running) {
-    if (!enabled) {
+async function forwardUpdate(update: unknown): Promise<boolean> {
+  for (let attempt = 1; attempt <= FORWARD_RETRY_MAX; attempt++) {
+    try {
+      const res = await appFetch("/api/telegram/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+      if (res.ok) return true;
+      log(`forward gagal (percobaan ${attempt}/${FORWARD_RETRY_MAX}): HTTP ${res.status}`);
+    } catch (error) {
+      log(`forward error (percobaan ${attempt}/${FORWARD_RETRY_MAX}): ${error instanceof Error ? error.message : error}`);
+    }
+    if (attempt < FORWARD_RETRY_MAX) await sleep(ERROR_BACKOFF_MS);
+  }
+  return false; // pemanggil memutuskan: lewati agar antrean tidak macet
+}
+
+async function pollLoop(handle: LoopHandle): Promise<void> {
+  while (!handle.stop) {
+    if (!enabled || !token) {
       await sleep(3000);
       continue;
     }
@@ -139,10 +184,18 @@ async function pollLoop(): Promise<void> {
       timeout: pollSeconds,
       allowed_updates: ["message", "callback_query"],
     });
+    if (handle.stop) break;
     if (!res.ok) {
       if (res.error_code === 409) {
         log("webhook aktif terdeteksi — hapus webhook");
         await tgApi("deleteWebhook", { drop_pending_updates: false });
+        await sleep(1000);
+        continue;
+      }
+      if (res.error_code === 401) {
+        // Token dicabut/diganti — tarik config baru segera (jangan tunggu 60 detik).
+        log("token ditolak Telegram (401) — refresh config");
+        await refreshConfig();
         await sleep(1000);
         continue;
       }
@@ -153,7 +206,12 @@ async function pollLoop(): Promise<void> {
     const updates = Array.isArray(res.result) ? (res.result as { update_id?: number }[]) : [];
     for (const update of updates) {
       if (typeof update.update_id !== "number") continue;
-      await forwardUpdate(update);
+      const delivered = await forwardUpdate(update);
+      if (handle.stop) break;
+      if (!delivered) {
+        // Update rusak/antrean macet — lewati agar bot tetap responsif.
+        log(`update ${update.update_id} dilewati setelah ${FORWARD_RETRY_MAX} percobaan`);
+      }
       offset = update.update_id + 1;
     }
   }
@@ -174,20 +232,22 @@ httpServer.listen(PORT, () => {
   log(`health endpoint di port ${PORT}`);
 });
 
-running = true;
 log(`poller mulai — APP_URL=${APP_URL}`);
 void refreshConfig();
-setInterval(() => void refreshConfig(), CONFIG_REFRESH_MS);
-void pollLoop();
+liveTimers.push(setInterval(() => void refreshConfig(), CONFIG_REFRESH_MS));
+
+const handle: LoopHandle = { stop: false };
+liveLoops.add(handle);
+void pollLoop(handle);
 
 // Tutup rapi saat dimatikan.
 process.on("SIGINT", () => {
-  running = false;
+  handle.stop = true;
   httpServer.close();
   process.exit(0);
 });
 process.on("SIGTERM", () => {
-  running = false;
+  handle.stop = true;
   httpServer.close();
   process.exit(0);
 });

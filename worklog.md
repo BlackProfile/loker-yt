@@ -1822,3 +1822,23 @@ Stage Summary:
 - Admin kini punya 3 lapis petunjuk kesalahan bot Telegram: (1) status heartbeat polling permanen di kartu, (2) tombol Diagnostik 5 langkah dengan saran perbaikan spesifik per kegagalan, (3) alasan mentah Telegram pada setiap pesan uji (kartu Bot & webhook-test).
 - Setup bot user terverifikasi SEHAT end-to-end: token @lok3rbot valid, polling hidup, chat -5203902428 terdaftar dan menerima pesan.
 - Artefak: src/lib/telegram-bridge-status.ts; perubahan notify.ts, /api/telegram/config, /api/admin/telegram/bot, /api/admin/webhook-test, settings-tab.tsx (komponen TelegramBotCard).
+
+---
+Task ID: fix-bot-telegram-tidak-menjawab
+Agent: Z.ai Code (main)
+Task: Perbaikan bug "bot Telegramnya ga jawab & gabisa digunakan" — bot tidak pernah merespons perintah apa pun.
+
+Work Log:
+- Diagnosa: mini-service poller (port 3004) hidup & config enabled, tapi log /tmp/telegram-bot.log dipenuhi "getUpdates gagal: Not Found" (404) terus-menerus (~2x/detik). Token tersimpan valid (getMe ok, @lok3rbot) — 404 BUKAN karena token.
+- AKAR MASALAH: mini-services/telegram-bot/index.ts memanggil `https://api.telegram.org/${method}` TANPA path `/bot<TOKEN>/` (dirancang "tanpa token" padahal getUpdates wajib token). Akibatnya polling selalu 404, tidak ada update yang pernah diterima — bot bisa MENGIRIM (notifikasi, pesan uji) tapi tidak pernah MENERIMA, jadi semua perintah (/ringkasan dll) tidak pernah dijawab. Uji E2E sebelumnya memakai update sintetis langsung ke /api/telegram/update sehingga cacat ini lolos.
+- Fix 1 (src/app/api/telegram/config/route.ts): response kini menyertakan `token` (bila terisi) untuk pemegang bridge secret — trafik localhost saja; komentar keamanan diperbarui.
+- Fix 2 (mini-services/telegram-bot/index.ts ditulis ulang): tgApi memakai `bot${token}/${method}`; token ditarik dari config; offset di-reset + sync ulang saat token berganti; guard hot-reload bun --hot via daftar loop di globalThis (loop generasi lama dihentikan — sebelumnya loop menumpuk tiap reload sehingga request masuk berlipat); forward update retry 3x lalu lewati (anti poison-pill); 401 → refresh config segera; 409 → deleteWebhook.
+- Fix 3 (src/lib/telegram-bridge-status.ts): heartbeat poller dipindah ke globalThis — sebelumnya module-local sehingga hot-reload route membuat dua instance state (yang ditulis config route vs yang dibaca admin route) dan status "Polling aktif" jadi stale palsu.
+- Opsional baru: scripts/telegram-keepalive.sh + start-telegram.sh (pola realtime-keepalive; pidfile /tmp/lumina-telegram.pid; log /home/z/my-project/telegram-bot.log) — poller sekarang auto-restart bila mati; proses lama dimatikan dan kepemilikan diserahkan ke keepalive.
+- Verifikasi: getUpdates senyap total > 8 menit (sebelumnya spam 404 tiap detik) = long-poll benar terhubung; diagnose admin API 5/5 OK (token valid @lok3rbot, polling aktif "terakhir 50 detik lalu", 1 chat terdaftar, kirim ke -5203902428 ok); update sintetis chat asing 777001 → hint pairing (whitelist bekerja), route balas {ok,replies}; browser :81 login owner → kartu Bot Telegram "Polling aktif · terakhir 18 detik lalu" (dot hijau hidup), panel Hasil Diagnostik 5 langkah OK; lint 0 error; tsc bersih; console browser & dev.log tanpa error.
+- Catatan: perintah lama user yang terkirim saat poller mati TIDAK akan dijawab (sengaja dilewati oleh sinkron offset backlog saat start) — kirim perintah baru mulai sekarang.
+
+Stage Summary:
+- Bot Telegram kini benar-benar dua arah: jalur TERIMA diperbaiki (getUpdates dengan token via bridge secret), jalur KIRIM tidak berubah. Keepalive baru menjamin poller selalu menyala.
+- File berubah: src/app/api/telegram/config/route.ts, mini-services/telegram-bot/index.ts, src/lib/telegram-bridge-status.ts, scripts/telegram-keepalive.sh (baru), scripts/start-telegram.sh (baru).
+- Status setup user: token @lok3rbot valid, chat -5203902428 terdaftar (legacy), aksi tulis aktif, semua alert aktif — bot siap dipakai; cukup kirim perintah ke bot dari Telegram.
