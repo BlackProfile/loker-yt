@@ -85,6 +85,7 @@ model Position {
   // Pipeline & otomasi per lowongan
   stages               String  @default("[]") // JSON string[]; [] = pipeline default (5 status bawaan)
   stageCategories      String  @default("{}") // JSON {"tahap kustom": "REVIEW"|"INTERVIEW"|"ACCEPTED"|"REJECTED"}
+  stageNotes           String? // JSON {"tahap": "penjelasan untuk pelamar di halaman status"} — override teks bawaan
   aiCriteria           String? // kriteria AI khusus posisi (pelengkap prompt screening)
   autoShortlistScore   Int? // skor AI minimal untuk auto-shortlist
   autoShortlistStage   String? // tahap tujuan auto-shortlist (harus ada di stages posisi)
@@ -235,6 +236,14 @@ model Application {
   snoozeUntil DateTime? // bila diisi, bot mengingatkan admin pada waktu ini lalu membersihkannya
   botFiles    String    @default("[]") // JSON {fileId,filename,mimeType,size,sentAt}[] lampiran yang dikirim admin via bot Telegram
 
+  // NR-15 — transparansi & keterlibatan pelamar di halaman Cek Status
+  stageHistory       String    @default("[]") // JSON {status,at}[] — riwayat tahap yang dilewati (urut waktu)
+  candidateSeenAt    DateTime? // read receipt: terakhir pelamar membuka status lamaran ini
+  candidateSeenCount Int       @default(0)  // berapa kali halaman status lamaran ini dibuka
+  startConfirmedAt   DateTime? // pelamar mengonfirmasi tanggal mulai (setelah offer diterima)
+  startProposedAt    DateTime? // usulan tanggal mulai baru dari pelamar
+  startProposedNote  String?   // catatan singkat dari pelamar pada usulan tanggal
+
   // Task 30 — jawaban Form Builder per posisi (kunci fieldId stabil); null = lamaran mode klasik
   formAnswers    String?
 
@@ -243,6 +252,7 @@ model Application {
   emailOut    EmailOutbox[]
   slotBooking InterviewSlot[] @relation("slotBooking")
   surveys     CandidateSurvey[] @relation("surveys")
+  questions   ApplicationQuestion[]
 
   interviews       Interview[]
   createdAt        DateTime   @default(now())
@@ -321,6 +331,22 @@ model Comment {
   authorRole    String      @default("HR") // OWNER | HR | VIEWER
   body          String
   mentions      String      @default("[]") // JSON string[] nama yang di-@mention
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId])
+}
+
+// Pertanyaan pelamar dari halaman Cek Status ke tim rekrutmen (thread singkat).
+// Pelamar bertanya (maks 500 karakter), admin menjawab; jawaban tampil di halaman status.
+model ApplicationQuestion {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  question      String
+  answer        String? // null = belum dijawab
+  askedBy       String      @default("Pelamar") // nama pelamar pengirim
+  answeredBy    String? // nama admin penjawab
+  answeredAt    DateTime?
   createdAt     DateTime    @default(now())
 
   @@index([applicationId])

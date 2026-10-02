@@ -18,6 +18,8 @@ import type { TelegramButton } from "@/lib/notify";
 import { ensureMonthlyReport, previousMonthKey } from "@/lib/monthly-report";
 import {
   runTelegramActivityWatch,
+  runTelegramCandidateInterviewReminders,
+  runTelegramCandidateOfferReminders,
   runTelegramDigest,
   runTelegramDigestEvening,
   runTelegramDigestWeekly,
@@ -449,6 +451,93 @@ export async function POST(req: NextRequest) {
       // diam
     }
 
+    // 20) NR-15 — alert "offer belum dilihat pelamar": offer PENDING dikirim >48 jam
+    //     lalu tetap belum dibuka di halaman status (read receipt). Notifikasi in-app
+    //     untuk admin, dedupe via site.offerUnseenNotified ({appId: iso}), cap 200.
+    let offerUnseenAlert = 0;
+    try {
+      const unseenCutoff = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+      const unseenApps = await db.application.findMany({
+        where: {
+          offerStatus: "PENDING",
+          offerSentAt: { lt: unseenCutoff },
+          deletedAt: null,
+          OR: [{ candidateSeenAt: null }, { candidateSeenAt: { lt: unseenCutoff } }],
+        },
+        select: {
+          id: true,
+          name: true,
+          trackingCode: true,
+          offerSentAt: true,
+          position: { select: { title: true } },
+        },
+        take: 20,
+      });
+      if (unseenApps.length > 0) {
+        const siteSetting = await db.setting.findUnique({ where: { key: "site" } });
+        let siteObj: Record<string, unknown> = {};
+        if (siteSetting) {
+          try {
+            const parsed: unknown = JSON.parse(siteSetting.value);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              siteObj = { ...(parsed as Record<string, unknown>) };
+            }
+          } catch {
+            siteObj = {};
+          }
+        }
+        const notifiedRaw = siteObj.offerUnseenNotified;
+        const notified =
+          notifiedRaw && typeof notifiedRaw === "object" && !Array.isArray(notifiedRaw)
+            ? { ...(notifiedRaw as Record<string, string>) }
+            : {};
+        for (const app of unseenApps) {
+          if (notified[app.id]) continue; // sudah pernah diberi tahu untuk offer ini
+          notified[app.id] = now.toISOString();
+          const sentLabel = app.offerSentAt
+            ? app.offerSentAt.toLocaleDateString("id-ID", { dateStyle: "long" })
+            : "-";
+          await pushNotification({
+            title: `Offer belum dilihat pelamar — ${app.name}`,
+            body: `${app.position?.title ?? "-"} · dikirim ${sentLabel} · kode ${app.trackingCode ?? "-"}`,
+            category: "OFFER",
+            applicationId: app.id,
+          });
+          offerUnseenAlert += 1;
+        }
+        // Cap 200 entri (buang yang terlama) agar blob tidak membesar tanpa batas.
+        let notifyEntries = Object.entries(notified);
+        if (notifyEntries.length > 200) {
+          notifyEntries.sort((a, b) => (a[1] < b[1] ? -1 : 1));
+          notifyEntries = notifyEntries.slice(notifyEntries.length - 200);
+        }
+        siteObj.offerUnseenNotified = Object.fromEntries(notifyEntries);
+        await db.setting.upsert({
+          where: { key: "site" },
+          update: { value: JSON.stringify(siteObj) },
+          create: { key: "site", value: JSON.stringify(siteObj) },
+        });
+      }
+    } catch {
+      // diam — alert kesehatan tidak boleh menggagalkan cron
+    }
+
+    // 21) NR-15 — pengingat wawancara ke KANDIDAT pelanggan Telegram (H-2 hari/H-2 jam).
+    let telegramCandInterview = 0;
+    try {
+      telegramCandInterview = await runTelegramCandidateInterviewReminders();
+    } catch {
+      // diam
+    }
+
+    // 22) NR-15 — pengingat offer ke KANDIDAT pelanggan Telegram (deadline <24 jam).
+    let telegramCandOffer = 0;
+    try {
+      telegramCandOffer = await runTelegramCandidateOfferReminders();
+    } catch {
+      // diam
+    }
+
     return NextResponse.json({
       ok: true,
       offerExpired,
@@ -470,6 +559,9 @@ export async function POST(req: NextRequest) {
       telegramJobs,
       telegramStageWatch,
       telegramActivity,
+      offerUnseenAlert,
+      telegramCandInterview,
+      telegramCandOffer,
     });
   } catch (error) {
     console.error("[POST /api/cron/reminders]", error);

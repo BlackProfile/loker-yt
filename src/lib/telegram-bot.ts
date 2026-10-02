@@ -52,6 +52,7 @@ import {
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
+import { appendStageHistory } from "@/lib/stage-history";
 
 const execFileAsync = promisify(execFile);
 
@@ -2483,6 +2484,7 @@ async function performStageChange(
       name: true,
       email: true,
       status: true,
+      stageHistory: true,
       trackingCode: true,
       offerStatus: true,
       deletedAt: true,
@@ -2500,9 +2502,11 @@ async function performStageChange(
   }
 
   const labelOf = (status: string): string => (isBuiltInStage(status) ? STATUS_LABELS[status as ApplicationStatus] : status);
-  const updateData: { status: string; stageUpdatedAt: Date; offerStatus?: string | null } = {
+  const updateData: { status: string; stageUpdatedAt: Date; stageHistory: string; offerStatus?: string | null } = {
     status: toStatus,
     stageUpdatedAt: new Date(),
+    // Riwayat tahap (NR-15): perpindahan via bot juga tercatat di timeline pelamar.
+    stageHistory: appendStageHistory(existing.stageHistory, toStatus, existing.status),
   };
   // Sama seperti PATCH admin: tolak kandidat -> penawaran aktif otomatis dibatalkan.
   if (toStatus === "REJECTED" && existing.offerStatus === "PENDING") {
@@ -3503,6 +3507,205 @@ export async function runTelegramActivityWatch(): Promise<number> {
     }
     site.telegramActivityWatchSince = nowIso;
     await writeSiteObj(site);
+    return sent;
+  } catch {
+    return 0;
+  }
+}
+
+/* ==================== Reminder kandidat via langganan (NR-15) ==================== */
+
+// Pengingat KANDIDAT dikirim ke chat pribadi yang berlangganan kode lamaran
+// (site.telegramSubs.track = {kode: chatId[]}) — jalur publik, berbeda dari
+// reminder admin (Interview.reminderDaySent/HourSent milik alur admin).
+// Tidak ada callback data khusus status — tombol memakai URL halaman #status.
+
+type CandidateReminderFlags = { day?: boolean; hour?: boolean };
+
+/** Batas entri dedupe pengingat kandidat agar blob Setting tidak membesar tanpa batas. */
+const CANDIDATE_REMINDER_CAP = 200;
+
+/**
+ * Pengingat wawancara untuk kandidat pelanggan (NR-15, idea 7): sesi
+ * SCHEDULED/CONFIRMED pada jendela H-2 hari (46-50 jam) atau H-2 jam (1,5-2,5 jam)
+ * dikirim ke chat yang berlangganan kode lamaran terkait. Dedupe per sesi per
+ * jendela via site.telegramCandReminderSent ({interviewId: {day, hour}}).
+ */
+export async function runTelegramCandidateInterviewReminders(): Promise<number> {
+  try {
+    const settings = await getAutomationSettings();
+    if (!settings.telegramBotToken) return 0;
+    const site = await readSiteObj();
+    const subs = siteField<{ track?: Record<string, string[]> }>(site, "telegramSubs", {});
+    const track = subs.track && typeof subs.track === "object" ? subs.track : {};
+    if (Object.keys(track).length === 0) return 0;
+
+    const now = Date.now();
+    const windows = [
+      { kind: "day" as const, from: now + 46 * 3600_000, to: now + 50 * 3600_000, label: "H-2 hari" },
+      { kind: "hour" as const, from: now + 1.5 * 3600_000, to: now + 2.5 * 3600_000, label: "H-2 jam" },
+    ];
+
+    const sentMap = siteField<Record<string, CandidateReminderFlags>>(site, "telegramCandReminderSent", {});
+    let changed = false;
+    let sent = 0;
+    const activeIds = new Set<string>();
+
+    for (const win of windows) {
+      const interviews = await db.interview.findMany({
+        where: {
+          status: { in: ["SCHEDULED", "CONFIRMED"] },
+          scheduledAt: { gte: new Date(win.from), lte: new Date(win.to) },
+        },
+        include: {
+          application: {
+            select: {
+              id: true,
+              name: true,
+              trackingCode: true,
+              position: { select: { title: true, address: true } },
+            },
+          },
+        },
+      });
+      for (const iv of interviews) {
+        activeIds.add(iv.id);
+        const flags = sentMap[iv.id] ?? {};
+        if (flags[win.kind]) continue;
+        const code = (iv.application.trackingCode ?? "").toUpperCase();
+        const chats = (track[code] ?? []).slice(0, 10);
+        if (chats.length === 0) continue;
+        // Tandai lebih dulu (pola sama dengan reminder admin) agar chat yang
+        // memblokir bot tidak memicu kirim ulang tiap menit.
+        sentMap[iv.id] = { ...flags, [win.kind]: true };
+        changed = true;
+        const platformLabel =
+          iv.mode === "ONSITE"
+            ? `di lokasi (${iv.address ?? iv.application.position?.address ?? "-"})`
+            : `via ${iv.platform.replaceAll("_", " ").toLowerCase()}`;
+        const text = [
+          `Halo ${iv.application.name}, pengingat wawancara kamu untuk posisi ${iv.application.position?.title ?? "-"}.`,
+          "",
+          `Ronde ${iv.round} — ${win.label}`,
+          `Waktu: ${fmtDT(iv.scheduledAt)} (durasi ±${iv.durationMin} menit)`,
+          `Tempat: ${platformLabel}`,
+          iv.meetingLink ? `Tautan: ${iv.meetingLink}` : "",
+          "",
+          "Jangan lupa konfirmasi kehadiranmu di halaman status lamaran, ya!",
+        ]
+          .filter(Boolean)
+          .join("\n");
+        const buttons: TelegramButton[][] = [
+          [{ text: "Buka Status Lamaran", url: `${getSiteUrl()}/#status` }],
+        ];
+        for (const chat of chats) {
+          const ok = await tgSendMessage(settings.telegramBotToken, chat, text, { buttons });
+          if (ok) sent += 1;
+        }
+      }
+    }
+
+    // Bersihkan entri sesi yang sudah lewat/dibatalkan + cap jumlah entri.
+    for (const id of Object.keys(sentMap)) {
+      if (!activeIds.has(id)) {
+        delete sentMap[id];
+        changed = true;
+      }
+    }
+    let entries = Object.entries(sentMap);
+    if (entries.length > CANDIDATE_REMINDER_CAP) {
+      entries = entries.slice(entries.length - CANDIDATE_REMINDER_CAP);
+      site.telegramCandReminderSent = Object.fromEntries(entries);
+      changed = true;
+    }
+    if (changed) {
+      site.telegramCandReminderSent = sentMap;
+      await writeSiteObj(site);
+    }
+    return sent;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Pengingat penawaran untuk kandidat pelanggan (NR-15, idea 7): offer PENDING
+ * dengan batas jawaban dalam 24 jam ke depan dikirim ke chat yang berlangganan
+ * kode lamaran. Dedupe per lamaran via site.telegramOfferRemindSent ({appId: iso}).
+ */
+export async function runTelegramCandidateOfferReminders(): Promise<number> {
+  try {
+    const settings = await getAutomationSettings();
+    if (!settings.telegramBotToken) return 0;
+    const site = await readSiteObj();
+    const subs = siteField<{ track?: Record<string, string[]> }>(site, "telegramSubs", {});
+    const track = subs.track && typeof subs.track === "object" ? subs.track : {};
+    const watchedCodes = Object.keys(track).filter(
+      (code) => Array.isArray(track[code]) && track[code]!.length > 0,
+    );
+    if (watchedCodes.length === 0) return 0;
+
+    const now = new Date();
+    const in24h = new Date(now.getTime() + 24 * 3600_000);
+    const apps = await db.application.findMany({
+      where: {
+        offerStatus: "PENDING",
+        offerDeadline: { gte: now, lte: in24h },
+        deletedAt: null,
+        trackingCode: { in: watchedCodes },
+      },
+      include: { position: { select: { title: true } } },
+      take: 50,
+      orderBy: { offerDeadline: "asc" },
+    });
+
+    const sentMap = siteField<Record<string, string>>(site, "telegramOfferRemindSent", {});
+    let changed = false;
+    let sent = 0;
+    const activeIds = new Set<string>();
+
+    for (const app of apps) {
+      activeIds.add(app.id);
+      if (sentMap[app.id]) continue;
+      const code = (app.trackingCode ?? "").toUpperCase();
+      const chats = (track[code] ?? []).slice(0, 10);
+      if (chats.length === 0) continue;
+      sentMap[app.id] = new Date().toISOString();
+      changed = true;
+      const deadlineLabel = app.offerDeadline
+        ? app.offerDeadline.toLocaleDateString("id-ID", { dateStyle: "long" })
+        : "-";
+      const text = [
+        `Pengingat: penawaran untuk posisi ${app.position?.title ?? "-"} menunggu jawabanmu sampai ${deadlineLabel}.`,
+        "",
+        "Buka halaman status lamaran untuk menerima atau menolak penawaran ini.",
+      ].join("\n");
+      const buttons: TelegramButton[][] = [
+        [{ text: "Buka Status Lamaran", url: `${getSiteUrl()}/#status` }],
+      ];
+      for (const chat of chats) {
+        const ok = await tgSendMessage(settings.telegramBotToken, chat, text, { buttons });
+        if (ok) sent += 1;
+      }
+    }
+
+    // Bersihkan entri lamaran yang tidak lagi dalam jendela 24 jam + cap entri.
+    for (const id of Object.keys(sentMap)) {
+      if (!activeIds.has(id)) {
+        delete sentMap[id];
+        changed = true;
+      }
+    }
+    let offerEntries = Object.entries(sentMap);
+    if (offerEntries.length > CANDIDATE_REMINDER_CAP) {
+      offerEntries = offerEntries.slice(offerEntries.length - CANDIDATE_REMINDER_CAP);
+      site.telegramOfferRemindSent = Object.fromEntries(offerEntries);
+      changed = true;
+    }
+    if (changed) {
+      site.telegramOfferRemindSent = sentMap;
+      await writeSiteObj(site);
+    }
     return sent;
   } catch {
     return 0;

@@ -15,6 +15,7 @@ import { REJECTION_REASON_LABELS, type RejectionReason } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
+import { appendStageHistory } from "@/lib/stage-history";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,8 @@ export async function POST(req: NextRequest) {
           name: true,
           email: true,
           trackingCode: true,
+          status: true,
+          stageHistory: true,
           position: { select: { title: true } },
         },
       });
@@ -95,6 +98,17 @@ export async function POST(req: NextRequest) {
         data: { status, ...(status === "REJECTED" ? { offerStatus: null } : {}) },
       });
       affected = result.count;
+      // Riwayat tahap (NR-15): catat perpindahan per lamaran yang benar-benar pindah.
+      if (changedRows.length > 0) {
+        await db.$transaction(
+          changedRows.map((row) =>
+            db.application.update({
+              where: { id: row.id },
+              data: { stageHistory: appendStageHistory(row.stageHistory, status, row.status) },
+            }),
+          ),
+        );
+      }
       const label = stageLabel(status);
       logAction = "BULK_STATUS";
       logDetail = `${affected} lamaran diubah status menjadi ${label}`;
@@ -136,6 +150,8 @@ export async function POST(req: NextRequest) {
           name: true,
           email: true,
           trackingCode: true,
+          status: true,
+          stageHistory: true,
           position: { select: { title: true } },
         },
       });
@@ -148,6 +164,8 @@ export async function POST(req: NextRequest) {
               rejectionReason: reason,
               rejectionNote: note,
               rejectedAt: now,
+              stageUpdatedAt: now,
+              stageHistory: appendStageHistory(row.stageHistory, "REJECTED", row.status),
               offerStatus: null, // penawaran aktif dibatalkan saat lamaran ditolak
             },
           }),

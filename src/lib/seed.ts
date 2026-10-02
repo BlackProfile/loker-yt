@@ -7,6 +7,7 @@ import type {
   AdminUser as AdminUserRecordModel,
 } from "@prisma/client";
 import { db } from "@/lib/db";
+import { parsePositionStageNotes } from "@/lib/stage-notes";
 import {
   DEFAULT_ADMIN_PASSWORD,
   DEFAULT_POSITIONS,
@@ -372,6 +373,8 @@ export function serializePosition(record: PositionRecordModel): Position {
 
     stages: parseRequirements(record.stages),
     stageCategories: parseStageCategories(record.stageCategories),
+    // NR-15 — override penjelasan tahap untuk halaman Cek Status
+    stageNotes: parsePositionStageNotes(record.stageNotes),
     aiCriteria: record.aiCriteria,
     autoShortlistScore: record.autoShortlistScore,
     autoShortlistStage: record.autoShortlistStage,
@@ -532,6 +535,13 @@ export function serializeApplication(record: ApplicationRecord): Application {
     deletedAt: record.deletedAt ? record.deletedAt.toISOString() : null,
     videoNotes: parseVideoNotes(record.videoNotes),
     consentAt: record.consentAt ? record.consentAt.toISOString() : null,
+
+    // NR-15 — read receipt & konfirmasi tanggal mulai (halaman Cek Status)
+    candidateSeenAt: record.candidateSeenAt ? record.candidateSeenAt.toISOString() : null,
+    candidateSeenCount: record.candidateSeenCount,
+    startConfirmedAt: record.startConfirmedAt ? record.startConfirmedAt.toISOString() : null,
+    startProposedAt: record.startProposedAt ? record.startProposedAt.toISOString() : null,
+    startProposedNote: record.startProposedNote ?? null,
 
     createdAt: record.createdAt.toISOString(),
   };

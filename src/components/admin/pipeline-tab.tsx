@@ -1313,6 +1313,56 @@ function CandidateHead({ app }: { app: Application }) {
   );
 }
 
+/* ----------------- Chip tertahan (NR-15, idea 15) — tahap non-final ----------------- */
+
+// Chip peringatan keterlambatan pada kartu pipeline (Ditinjau/Wawancara saja —
+// tahap final tidak memerlukannya). Dihitung inline saat render; operasinya murah
+// (beberapa pembacaan field + satu pembagian), tanpa state/effect.
+function StallChips({ app, className }: { app: Application; className?: string }) {
+  const now = Date.now();
+  const chips: ReactNode[] = [];
+
+  // Amber: pelamar belum melihat kondisi terbaru tahap ini lebih dari 24 jam.
+  // "Belum melihat" = candidateSeenAt kosong ATAU lebih tua dari perubahan tahap terakhir.
+  const seenAtMs = app.candidateSeenAt ? new Date(app.candidateSeenAt).getTime() : null;
+  const stageUpdatedAtMs = app.stageUpdatedAt ? new Date(app.stageUpdatedAt).getTime() : null;
+  const notSeenLatest = seenAtMs == null || (stageUpdatedAtMs != null && seenAtMs < stageUpdatedAtMs);
+  const stageAnchorMs = stageUpdatedAtMs ?? (app.createdAt ? new Date(app.createdAt).getTime() : null);
+  if (notSeenLatest && stageAnchorMs != null) {
+    const hours = Math.floor((now - stageAnchorMs) / 3_600_000);
+    if (hours > 24) {
+      chips.push(
+        <Badge
+          key="unseen"
+          variant="outline"
+          className="rounded-full border-amber-200 text-[11px] font-medium text-amber-700 dark:border-amber-900 dark:text-amber-400"
+        >
+          belum dilihat {hours < 48 ? `${hours} jam` : `${Math.floor(hours / 24)} hari`}
+        </Badge>
+      );
+    }
+  }
+
+  // Rose: offer PENDING lebih dari 2 hari tanpa respons pelamar.
+  if (app.offerStatus === "PENDING" && app.offerSentAt && !app.offerRespondedAt) {
+    const days = Math.floor((now - new Date(app.offerSentAt).getTime()) / 86_400_000);
+    if (days > 2) {
+      chips.push(
+        <Badge
+          key="offer"
+          variant="outline"
+          className="rounded-full border-rose-200 text-[11px] font-medium text-rose-700 dark:border-rose-900 dark:text-rose-400"
+        >
+          offer tak respons {days} hari
+        </Badge>
+      );
+    }
+  }
+
+  if (chips.length === 0) return null;
+  return className ? <div className={className}>{chips}</div> : <>{chips}</>;
+}
+
 /* -------------------------------- Kartu Ditinjau ------------------------------ */
 
 function ReviewCard({
@@ -1420,6 +1470,7 @@ function ReviewCard({
               Talent Pool
             </Badge>
           ) : null}
+          <StallChips app={app} />
         </div>
         {app.aiSummary ? (
           <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{app.aiSummary}</p>
@@ -1494,6 +1545,7 @@ function InterviewCard({
     >
       <div className="min-w-0 flex-1">
         <CandidateHead app={app} />
+        <StallChips app={app} className="mt-2 flex flex-wrap items-center gap-1.5" />
         {nextSession ? (
           <button
             type="button"

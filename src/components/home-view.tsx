@@ -22,6 +22,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 type View = "landing" | "detail" | "admin" | "embed" | "survei" | "status" | "mini";
 
+// Hasil pembacaan URL: view aktif + slug posisi (jika ada) + kode pelacakan
+// dari hash "#status?code=XXX" (tautan "salin tautan status" halaman Cek Status).
+type LocationInfo = { view: View; slug: string | null; statusCode: string | null };
+
 // ---------------------------------------------------------------------------
 // Sumber data publik bersama (realtime + anti-flicker).
 // Satu sumber untuk semua view — pindah landing <-> detail TIDAK memuat ulang,
@@ -84,23 +88,31 @@ class ViewErrorBoundary extends Component<
 // URL <-> view sync
 // ---------------------------------------------------------------------------
 
-function readLocation(): { view: View; slug: string | null } {
+function readLocation(): LocationInfo {
   const params = new URLSearchParams(window.location.search);
   // "#admin" dan sub-halamannya (mis. "#admin/posisi/<id>") masuk ke panel admin.
-  if (window.location.hash.startsWith("#admin")) return { view: "admin", slug: null };
+  if (window.location.hash.startsWith("#admin")) return { view: "admin", slug: null, statusCode: null };
   // "#status" — halaman Cek Status pelamar (login email + kode pelacakan).
-  if (window.location.hash === "#status" || window.location.hash.startsWith("#status/")) {
-    return { view: "status", slug: null };
+  // Hash bisa membawa query: "#status?code=LM-XXXXXX" (tautan berbagi) —
+  // kode dipakai untuk prefill form login bila belum ada sesi tersimpan.
+  if (window.location.hash.startsWith("#status")) {
+    const hashQuery = window.location.hash.slice("#status".length);
+    let statusCode: string | null = null;
+    if (hashQuery.startsWith("?")) {
+      const raw = new URLSearchParams(hashQuery.slice(1)).get("code");
+      if (raw && raw.trim()) statusCode = raw.trim().toUpperCase().slice(0, 24);
+    }
+    return { view: "status", slug: null, statusCode };
   }
   // Mini App Telegram (?mini=1) — panel versi ringkas di webview bot.
-  if (params.get("mini") === "1") return { view: "mini", slug: null };
-  if (params.get("embed") === "1") return { view: "embed", slug: null };
+  if (params.get("mini") === "1") return { view: "mini", slug: null, statusCode: null };
+  if (params.get("embed") === "1") return { view: "embed", slug: null, statusCode: null };
   // Survei pengalaman kandidat (?survei=token) — dikirim via email status final.
   const surveiToken = params.get("survei");
-  if (surveiToken) return { view: "survei", slug: surveiToken.slice(0, 64) };
+  if (surveiToken) return { view: "survei", slug: surveiToken.slice(0, 64), statusCode: null };
   const slug = params.get("posisi");
-  if (slug) return { view: "detail", slug: slug.slice(0, 80) };
-  return { view: "landing", slug: null };
+  if (slug) return { view: "detail", slug: slug.slice(0, 80), statusCode: null };
+  return { view: "landing", slug: null, statusCode: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +156,8 @@ function EmbedView({ data }: { data: PublicContentResponse }) {
 export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | null }) {
   const [view, setView] = useState<View>("landing");
   const [slug, setSlug] = useState<string | null>(initialPosisiSlug);
+  // Kode pelacakan dari "#status?code=XXX" — prefill form login Cek Status.
+  const [statusCode, setStatusCode] = useState<string | null>(null);
 
   const { data, error, loading, refreshing, refresh } = usePublicContent();
   const realtimeUp = useRealtimeConnected();
@@ -153,6 +167,7 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
       const next = readLocation();
       setView(next.view);
       setSlug(next.slug);
+      setStatusCode(next.statusCode);
     };
     sync();
     window.addEventListener("hashchange", sync);
@@ -200,6 +215,7 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
     }
     setView("landing");
     setSlug(null);
+    setStatusCode(null);
   }, []);
 
   // View Mini App Telegram: mandiri (tanpa konten publik, tanpa header/footer
@@ -267,7 +283,7 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
       {view === "admin" ? (
         <AdminApp onExit={exitAdmin} />
       ) : view === "status" ? (
-        <StatusPageView onExit={exitStatus} />
+        <StatusPageView onExit={exitStatus} initialCode={statusCode} />
       ) : view === "embed" ? (
         <EmbedView data={data} />
       ) : view === "survei" && slug ? (

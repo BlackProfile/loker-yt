@@ -46,6 +46,7 @@ import {
   ClipboardList,
   Clock,
   Copy,
+  Eye,
   FileDown,
   FileText,
   Globe,
@@ -53,8 +54,10 @@ import {
   Link2,
   ListChecks,
   Loader2,
+  MailPlus,
   MapPin,
   Megaphone,
+  MessageCircle,
   MessageSquareText,
   Send,
   Share2,
@@ -91,13 +94,14 @@ import {
 } from "@/lib/form-schema";
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
-import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import {
   actionLabel,
   actorBadgeClass,
   copyText,
   formatDate,
   formatDateTime,
+  formatRelative,
   formatShortDateTime,
   localInputToIso,
   normalizeUrl,
@@ -421,6 +425,174 @@ function TeamDiscussion({
   );
 }
 
+/* ------------------- Pertanyaan pelamar (NR-15, idea 10) ------------------- */
+
+type CandidateQuestion = {
+  id: string;
+  question: string;
+  answer: string | null;
+  askedBy: string;
+  answeredBy: string | null;
+  answeredAt: string | null;
+  createdAt: string;
+};
+
+// Thread tanya-jawab pelamar dari halaman Cek Status. Dipasang dengan key={applicationId}
+// agar data di-refetch saat kandidat berganti / dialog dibuka ulang.
+function CandidateQuestions({
+  applicationId,
+  canMutate,
+}: {
+  applicationId: string;
+  canMutate: boolean;
+}) {
+  const [questions, setQuestions] = useState<CandidateQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [sendingId, setSendingId] = useState<string | null>(null);
+
+  const loadQuestions = useCallback(async () => {
+    try {
+      const res = await apiGet<{ ok: boolean; questions: CandidateQuestion[] }>(
+        `/api/admin/applications/${applicationId}/questions`,
+      );
+      setQuestions(res.questions ?? []);
+    } catch {
+      // Panel pelengkap; biarkan kosong tanpa toast saat gagal.
+    } finally {
+      setLoading(false);
+    }
+  }, [applicationId]);
+
+  // Muat sekali saat dialog dibuka / kandidat berganti.
+  useEffect(() => {
+    setLoading(true);
+    void loadQuestions();
+  }, [loadQuestions]);
+
+  async function handleAnswer(q: CandidateQuestion) {
+    const answer = (drafts[q.id] ?? "").trim();
+    if (!answer || sendingId) return;
+    setSendingId(q.id);
+    try {
+      await apiPost(`/api/admin/questions/${q.id}/answer`, { answer });
+      toast.success("Jawaban terkirim");
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[q.id];
+        return next;
+      });
+      await loadQuestions();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        toast.error("Hanya Owner/HR dapat menjawab");
+      } else {
+        toast.error(err instanceof Error ? err.message : "Gagal mengirim jawaban. Coba lagi.");
+      }
+    } finally {
+      setSendingId(null);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <MessageCircle className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+        <p className="text-sm font-semibold">Pertanyaan Pelamar</p>
+        <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-secondary-foreground">
+          {questions.length}
+        </span>
+      </div>
+      {loading ? (
+        <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Memuat pertanyaan...
+        </p>
+      ) : questions.length === 0 ? (
+        <p className="py-1 text-sm text-muted-foreground">
+          Belum ada pertanyaan dari pelamar.
+        </p>
+      ) : (
+        <div className="flex max-h-96 flex-col gap-3 overflow-y-auto pr-1 nice-scrollbar">
+          {questions.map((q) => {
+            const sending = sendingId === q.id;
+            return (
+              <div key={q.id} className="flex flex-col gap-2 rounded-lg bg-muted/50 p-2.5">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-semibold">{q.askedBy}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {formatShortDateTime(q.createdAt)}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-sm whitespace-pre-wrap">{q.question}</p>
+                </div>
+                {q.answer ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-2.5 dark:border-emerald-900 dark:bg-emerald-950/20">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CheckCircle2
+                        className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                        aria-hidden="true"
+                      />
+                      <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                        {q.answeredBy ?? "Admin"}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {q.answeredAt ? formatShortDateTime(q.answeredAt) : ""}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm whitespace-pre-wrap">{q.answer}</p>
+                  </div>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="w-fit border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+                  >
+                    <Clock className="size-3" aria-hidden="true" />
+                    Menunggu jawaban
+                  </Badge>
+                )}
+                {canMutate && !q.answer ? (
+                  <div className="flex flex-col gap-1.5">
+                    <Textarea
+                      value={drafts[q.id] ?? ""}
+                      onChange={(e) => setDrafts((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                      placeholder="Tulis jawaban untuk pelamar..."
+                      rows={2}
+                      maxLength={1500}
+                      disabled={sending}
+                      aria-label={`Jawab pertanyaan dari ${q.askedBy}`}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-9 w-fit active:scale-[0.99]"
+                      onClick={() => void handleAnswer(q)}
+                      disabled={sending || !(drafts[q.id] ?? "").trim()}
+                    >
+                      {sending ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Send className="size-4" aria-hidden="true" />
+                      )}
+                      Kirim Jawaban
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {!canMutate && questions.some((q) => !q.answer) ? (
+        <p className="text-xs text-muted-foreground">
+          Hanya Owner/HR yang dapat menjawab pertanyaan pelamar.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function ApplicationDetailDialog({
   application,
   onOpenChange,
@@ -474,6 +646,9 @@ export function ApplicationDetailDialog({
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [emailSending, setEmailSending] = useState(false);
+
+  // Email pengingat offer PENDING (NR-15, idea 6).
+  const [remindSending, setRemindSending] = useState(false);
 
   // Panel Penawaran (form & edit inline memakai state yang sama).
   const [offerForm, setOfferForm] = useState<{
@@ -531,6 +706,7 @@ export function ApplicationDetailDialog({
     setOfferWorking(false);
     setOfferCancelOpen(false);
     setOfferMessage(null);
+    setRemindSending(false);
     setOnboardingSaving(false);
     setDocInput("");
     setVideoNoteSec("");
@@ -913,6 +1089,20 @@ export function ApplicationDetailDialog({
       reportError(err);
     } finally {
       setOfferWorking(false);
+    }
+  }
+
+  // Email pengingat untuk offer PENDING yang belum dijawab (sekali klik, server dedupe).
+  async function handleRemindOffer() {
+    if (remindSending || offerWorking) return;
+    setRemindSending(true);
+    try {
+      await apiPost<{ ok: boolean }>(`/api/admin/applications/${app.id}/remind`);
+      toast.success(`Email pengingat dikirim ke ${app.email}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mengirim pengingat. Coba lagi.");
+    } finally {
+      setRemindSending(false);
     }
   }
 
@@ -1325,6 +1515,26 @@ export function ApplicationDetailDialog({
                   <span className="text-muted-foreground">-</span>
                 )}
               </InfoItem>
+            </div>
+
+            {/* NR-15: read receipt — kapan terakhir pelamar membuka halaman status */}
+            <div className="flex items-center gap-2 text-xs">
+              <Eye className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              {app.candidateSeenAt ? (
+                <span className="text-muted-foreground">
+                  Dilihat pelamar{" "}
+                  <span className="font-medium text-foreground">
+                    {formatRelative(app.candidateSeenAt)}
+                  </span>
+                  {typeof app.candidateSeenCount === "number" && app.candidateSeenCount > 0
+                    ? ` (${app.candidateSeenCount}x)`
+                    : ""}
+                </span>
+              ) : (
+                <span className="italic text-muted-foreground">
+                  Belum pernah dilihat pelamar
+                </span>
+              )}
             </div>
 
             {/* Cetak dokumen (Task 27-e): profil pelamar & surat penawaran */}
@@ -2343,6 +2553,21 @@ export function ApplicationDetailDialog({
                         >
                           Ubah / Perpanjang
                         </Button>
+                        {/* NR-15 idea 6: email pengingat untuk offer yang belum dijawab */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-11 sm:h-9"
+                          onClick={() => void handleRemindOffer()}
+                          disabled={remindSending || offerWorking}
+                        >
+                          {remindSending ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <MailPlus className="size-4" aria-hidden="true" />
+                          )}
+                          Kirim Email Pengingat
+                        </Button>
                         <AlertDialog open={offerCancelOpen} onOpenChange={setOfferCancelOpen}>
                           <Button
                             variant="outline"
@@ -2468,6 +2693,11 @@ export function ApplicationDetailDialog({
 
             {/* Diskusi tim (Task 20-a) */}
             <TeamDiscussion key={app.id} applicationId={app.id} canMutate={canMutate} />
+
+            {/* Pertanyaan pelamar dari halaman Cek Status (NR-15, idea 10).
+                Key dibedakan dari TeamDiscussion (sibling) agar React tidak
+                menyangka ada dua anak dengan key sama. */}
+            <CandidateQuestions key={`q-${app.id}`} applicationId={app.id} canMutate={canMutate} />
 
             <Separator />
 

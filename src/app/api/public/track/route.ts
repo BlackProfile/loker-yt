@@ -6,10 +6,17 @@
 //     dan onboarding (checklist dokumen) agar pelamar bisa bertindak dari halaman status.
 // v5: sertakan slot jadwal self-service (bila tahap belum final) + rencana onboarding.
 // v6: wajib email cocok + throttle per IP + lockout gagal login (status-gate).
+// v7 (NR-15): read receipt (candidateSeenAt/Count) + statistik harian, riwayat tahap
+//     bertanggal (stageHistory), penjelasan tahap (stageNote), estimasi waktu adaptif
+//     (stageEstimates), thread tanya-jawab (questions), nama CV (cvFileName), token
+//     survei (surveyToken), dan konfirmasi tanggal mulai (candidateStart).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parseRequirements } from "@/lib/seed";
 import { isBuiltInStage } from "@/lib/stages";
+import { appendStageHistory, parseStageHistory } from "@/lib/stage-history";
+import { buildStageNotes, parsePositionStageNotes } from "@/lib/stage-notes";
+import { bumpStatusCheckStats } from "@/lib/status-stats";
 import {
   clientIp,
   isLockedOut,
@@ -29,6 +36,7 @@ import {
   type InterviewStatus,
   type OfferStatus,
   type RejectionReason,
+  type StageHistoryItem,
   type StageKey,
   type TrackResponse,
   type TrackSlotInfo,
@@ -81,6 +89,61 @@ function parseOnboardingPlan(raw: string): TrackResponse["onboardingPlan"] {
   }
 }
 
+/** Median dari daftar angka (rata-rata dua nilai tengah bila jumlah genap). */
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? (sorted[mid] ?? null) : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+/**
+ * Estimasi waktu adaptif per tahap (median hari) dari maks 300 lamaran terbaru:
+ * - tahap aktif: now - (stageUpdatedAt ?? createdAt)
+ * - REJECTED: rejectedAt - stageUpdatedAt; ACCEPTED: hiredAt - stageUpdatedAt
+ *   (lewati sampel null/negatif). Status dengan < 3 sampel tidak dilaporkan.
+ */
+async function computeStageEstimates(): Promise<Record<string, number>> {
+  const now = Date.now();
+  const rows = await db.application.findMany({
+    where: { deletedAt: null },
+    select: {
+      status: true,
+      stageUpdatedAt: true,
+      createdAt: true,
+      hiredAt: true,
+      rejectedAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 300,
+  });
+  const samples = new Map<string, number[]>();
+  for (const row of rows) {
+    const status = row.status.trim() || "NEW";
+    const base = (row.stageUpdatedAt ?? row.createdAt).getTime();
+    let durationMs: number | null = null;
+    if (status === "REJECTED") {
+      if (row.rejectedAt && row.stageUpdatedAt) durationMs = row.rejectedAt.getTime() - row.stageUpdatedAt.getTime();
+    } else if (status === "ACCEPTED") {
+      if (row.hiredAt && row.stageUpdatedAt) durationMs = row.hiredAt.getTime() - row.stageUpdatedAt.getTime();
+    } else {
+      durationMs = now - base;
+    }
+    if (durationMs === null || durationMs < 0) continue;
+    const list = samples.get(status) ?? [];
+    list.push(durationMs);
+    samples.set(status, list);
+  }
+  const estimates: Record<string, number> = {};
+  for (const [status, list] of samples) {
+    if (list.length < 3) continue;
+    const med = median(list);
+    if (med === null) continue;
+    estimates[status] = Math.round((med / (24 * 60 * 60 * 1000)) * 10) / 10;
+  }
+  return estimates;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const ip = clientIp(req);
@@ -121,6 +184,7 @@ export async function POST(req: NextRequest) {
             title: true,
             slug: true,
             stages: true,
+            stageNotes: true,
             assignmentTitle: true,
             assignmentUrl: true,
             assignmentNote: true,
@@ -128,6 +192,9 @@ export async function POST(req: NextRequest) {
           },
         },
         interviews: { orderBy: { round: "asc" } },
+        // Thread tanya-jawab (NR-15): terbaru dulu, maks 20 untuk halaman status.
+        questions: { orderBy: { createdAt: "desc" }, take: 20 },
+        cvFile: { select: { filename: true } },
       },
     });
 
@@ -140,6 +207,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(notFound);
     }
     clearAuthFails(ip);
+
+    // Read receipt (NR-15, idea 5): catat bahwa pelamar membuka status lamaran ini
+    // + statistik harian. Fire-and-forget — tidak pernah memblokir/menggagalkan respons.
+    void db.application
+      .update({
+        where: { id: application.id },
+        data: { candidateSeenAt: new Date(), candidateSeenCount: { increment: 1 } },
+      })
+      .catch(() => undefined);
+    void bumpStatusCheckStats("checks");
 
     // Lazy expiry: offer PENDING yang lewat deadline otomatis ditandai kedaluwarsa.
     const rawStatus = application.status.trim() || "NEW";
@@ -199,13 +276,33 @@ export async function POST(req: NextRequest) {
       const currentIndex = stages.indexOf(rawStatus);
       for (let i = 0; i < stages.length; i++) {
         steps.push({
-          key: stages[i],
-          label: stages[i],
+          key: stages[i]!,
+          label: stages[i]!,
           done: isTerminal || (currentIndex >= 0 && currentIndex >= i),
           at: null,
         });
       }
     }
+
+    // Riwayat tahap bertanggal (NR-15, idea 1): parse field stageHistory;
+    // lamaran lama tanpa riwayat disintesis minimal (tahap sekarang + waktu).
+    const historyRaw = parseStageHistory(application.stageHistory);
+    const stageHistory: StageHistoryItem[] = (
+      historyRaw.length > 0
+        ? historyRaw
+        : [{ status: rawStatus, at: (application.stageUpdatedAt ?? application.createdAt).toISOString() }]
+    ).map((entry) => ({
+      key: entry.status,
+      label: isBuiltInStage(entry.status) ? STATUS_LABELS[entry.status as ApplicationStatus] : entry.status,
+      at: entry.at,
+    }));
+
+    // Penjelasan tahap (NR-15, idea 2): override posisi > teks bawaan > teks generik.
+    const stageNotesOverride = parsePositionStageNotes(application.position?.stageNotes);
+    const stageNote = buildStageNotes(
+      steps.map((step) => step.key),
+      stageNotesOverride,
+    );
 
     const assignmentInfo = application.position
       ? {
@@ -249,10 +346,6 @@ export async function POST(req: NextRequest) {
       const deadlineStr = application.offerDeadline
         ? application.offerDeadline.toLocaleDateString("id-ID", { dateStyle: "long" })
         : "-";
-      const baseMessage = application.position
-        ? null
-        : null;
-      void baseMessage;
       const message = [
         `Kami menawarkanmu posisi ${positionTitle}${application.offerType ? ` (${application.offerType})` : ""} di Lumina Studio.`,
         application.offerSalary ? `Kompensasi: ${application.offerSalary}.` : null,
@@ -327,8 +420,41 @@ export async function POST(req: NextRequest) {
       rejectionReason: application.rejectionReason ?? null,
       onboarding,
       onboardingPlan: parseOnboardingPlan(application.onboardingPlan),
+      stageHistory,
+      stageNote,
+      questions: application.questions.map((q) => ({
+        id: q.id,
+        question: q.question,
+        answer: q.answer,
+        askedAt: q.createdAt.toISOString(),
+        answeredAt: q.answeredAt ? q.answeredAt.toISOString() : null,
+      })),
+      cvFileName: application.cvFile?.filename ?? null,
     };
     void INTERVIEW_PLATFORM_LABELS;
+
+    // Konfirmasi tanggal mulai (NR-15, idea 13) — hanya relevan setelah diterima.
+    if (application.hiredAt) {
+      result.candidateStart = {
+        startDate: application.offerStartDate ? application.offerStartDate.toISOString() : null,
+        confirmedAt: application.startConfirmedAt ? application.startConfirmedAt.toISOString() : null,
+        proposedAt: application.startProposedAt ? application.startProposedAt.toISOString() : null,
+        note: application.startProposedNote ?? null,
+      };
+    }
+
+    // Token survei pengalaman kandidat (NR-15, idea 17) — status final & belum diisi.
+    if (isTerminal) {
+      try {
+        const survey = await db.candidateSurvey.findFirst({
+          where: { applicationId: application.id, score: 0 },
+          select: { token: true },
+        });
+        if (survey) result.surveyToken = survey.token;
+      } catch {
+        // survei kosmetik — abaikan kegagalan
+      }
+    }
 
     // Slot self-service: hanya bila tahap belum final dan lamaran punya posisi.
     if (!isTerminal && application.positionId) {
@@ -356,6 +482,14 @@ export async function POST(req: NextRequest) {
       if (slots.length > 0) {
         result.slots = slots;
       }
+    }
+
+    // Estimasi waktu adaptif (NR-15, idea 3) — dihitung dari data historis; kegagalan
+    // tidak boleh menggagalkan respons track.
+    try {
+      result.stageEstimates = await computeStageEstimates();
+    } catch {
+      result.stageEstimates = null;
     }
 
     return NextResponse.json(result);

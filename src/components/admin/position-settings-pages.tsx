@@ -648,6 +648,7 @@ export function PositionIntakePage({
 type SelectionState = {
   stages: string[];
   stageCategories: Record<string, StageCategory>;
+  stageNotes: Record<string, string>; // NR-15: penjelasan per tahap untuk halaman status pelamar
   aiCriteria: string;
   autoShortlistScore: string;
   autoShortlistStage: string; // "" = nonaktif
@@ -663,6 +664,7 @@ function buildSelectionState(p: Position): SelectionState {
   return {
     stages: [...p.stages],
     stageCategories: { ...p.stageCategories },
+    stageNotes: p.stageNotes ? { ...p.stageNotes } : {},
     aiCriteria: p.aiCriteria ?? "",
     autoShortlistScore: p.autoShortlistScore == null ? "" : String(p.autoShortlistScore),
     autoShortlistStage: p.autoShortlistStage ?? "",
@@ -702,6 +704,21 @@ export function PositionSelectionPage({
     [cleanedStages]
   );
 
+  // Daftar tahap efektif (bawaan bila pipeline kustom kosong) — dipakai editor
+  // penjelasan tahap untuk halaman status pelamar.
+  const effectiveStages = useMemo(() => stagesForPosition(cleanedStages), [cleanedStages]);
+
+  // Catatan tahap yang dikirim ke server: hanya tahap aktif + teks non-kosong
+  // (catatan tahap yang dihapus dari pipeline ikut terbersihkan otomatis).
+  const cleanStageNotes = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const stage of effectiveStages) {
+      const note = (form.stageNotes[stage] ?? "").trim();
+      if (note) out[stage] = note;
+    }
+    return out;
+  }, [effectiveStages, form.stageNotes]);
+
   // Lamaran pada tahap di luar daftar pipeline tersimpan (dari stats funnel).
   const outOfStageApps = useMemo(() => {
     if (!statsRow) return 0;
@@ -740,6 +757,7 @@ export function PositionSelectionPage({
       buildPayload={() => ({
         stages: cleanedStages,
         stageCategories: form.stageCategories,
+        stageNotes: cleanStageNotes,
         aiCriteria: form.aiCriteria.trim() || null,
         autoShortlistScore:
           form.autoShortlistScore.trim() === "" ? null : Number(form.autoShortlistScore),
@@ -798,6 +816,41 @@ export function PositionSelectionPage({
             placeholder="mis. Tes Menulis"
             hint="Kosong = pipeline bawaan (Baru/Ditinjau/Wawancara/Diterima/Ditolak)"
           />
+        </div>
+
+        {/* NR-15 idea 2: penjelasan per tahap yang tampil di halaman Cek Status pelamar */}
+        <div className="flex flex-col gap-1.5">
+          <Label>Penjelasan Tahap untuk Pelamar (opsional)</Label>
+          <p className="text-xs text-muted-foreground">
+            Teks ini tampil pada halaman Cek Status pelamar saat lamaran berada di tahap
+            terkait. Kosongkan untuk memakai penjelasan bawaan.
+          </p>
+          <div className="flex flex-col gap-2">
+            {effectiveStages.map((stage, i) => (
+              <div key={stage} className="flex flex-col gap-1 sm:flex-row sm:items-center">
+                <span
+                  className="w-44 shrink-0 truncate rounded-lg border bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900"
+                  title={stage}
+                >
+                  {stageLabel(stage)}
+                </span>
+                <Input
+                  id={`pos-stageNote-${i}`}
+                  value={form.stageNotes[stage] ?? ""}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      stageNotes: { ...f.stageNotes, [stage]: e.target.value },
+                    }))
+                  }
+                  placeholder={`Penjelasan untuk pelamar pada tahap ${stageLabel(stage)}`}
+                  className="h-10"
+                  maxLength={400}
+                  aria-label={`Penjelasan tahap ${stageLabel(stage)} untuk pelamar`}
+                />
+              </div>
+            ))}
+          </div>
         </div>
 
         {customStages.length > 0 ? (

@@ -17,6 +17,7 @@ import { STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
+import { appendStageHistory } from "@/lib/stage-history";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       checklistState?: string;
       videoNotes?: string | null;
       stageUpdatedAt?: Date;
+      stageHistory?: string;
     } = {};
 
     if (data.status !== undefined) {
@@ -227,9 +229,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const stageChanged =
       updateData.status !== undefined && updateData.status !== existing.status;
-    if (stageChanged) {
+    if (stageChanged && updateData.status) {
       // SLA per tahap: reset penanda waktu setiap kali tahap pipeline berubah.
       updateData.stageUpdatedAt = new Date();
+      // Riwayat tahap (NR-15): catat perpindahan untuk timeline bertanggal pelamar.
+      updateData.stageHistory = appendStageHistory(existing.stageHistory, updateData.status, existing.status);
     }
 
     // Tahap berubah ke Ditolak -> penawaran aktif otomatis dibatalkan agar halaman

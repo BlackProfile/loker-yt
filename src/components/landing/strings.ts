@@ -492,6 +492,74 @@ const id = {
       lostCodeEmail: "Cek email konfirmasi lamaran — kode dikirim ke email yang kamu gunakan saat melamar.",
       lostCodeWa: "Hubungi tim kami via WhatsApp untuk bantuan verifikasi kepemilikan.",
       browseJobs: "Lihat Lowongan Terbuka",
+      // NR-15-c — transparansi timeline
+      estimateChip: "±{n} hari di tahap ini (estimasi)",
+      stageNoteHint: "Apa yang terjadi di tahap ini?",
+      // NR-15-c — ringkasan "Apa yang berubah"
+      changesTitle: "Apa yang berubah sejak kunjungan terakhir",
+      changesMarkRead: "Tandai sudah dibaca",
+      relNow: "baru saja",
+      relMin: "{n} menit lalu",
+      relHour: "{n} jam lalu",
+      relDay: "{n} hari lalu",
+      // NR-15-c — salin tautan status
+      copyLink: "Salin tautan status",
+      copyLinkAria: "Salin tautan halaman status lamaran ini",
+      copyLinkToast: "Tautan status disalin",
+      // NR-15-c — tanya tim rekrutmen
+      qaTitle: "Tanya Tim Rekrutmen",
+      qaDesc: "Ada yang ingin ditanyakan soal lamaran atau tahap seleksimu? Kirim lewat sini — jawaban tim muncul di halaman ini.",
+      qaFormLabel: "Tulis pertanyaan baru",
+      qaPh: "Contoh: Apakah tahap wawancara bisa dijadwalkan sore hari?",
+      qaSend: "Kirim Pertanyaan",
+      qaSending: "Mengirim...",
+      qaToast: "Pertanyaan terkirim",
+      qaYou: "Kamu",
+      qaTeam: "Jawaban tim",
+      qaPending: "Menunggu jawaban tim",
+      qaEmpty: "Belum ada pertanyaan. Ajukan satu di bawah — tim membalas lewat halaman ini juga.",
+      qaCounter: "{used}/{max}",
+      // NR-15-c — perbarui CV
+      cvTitle: "Perbarui CV",
+      cvCurrent: "CV saat ini: {name}",
+      cvNone: "Belum ada CV terunggah.",
+      cvAria: "Pilih berkas CV baru (PDF, maks 10 MB)",
+      cvUpload: "Unggah CV Baru",
+      cvUploading: "Mengunggah...",
+      cvToast: "CV berhasil diperbarui",
+      cvInvalidType: "Berkas harus berformat PDF.",
+      cvTooBig: "Ukuran berkas maksimal 10 MB.",
+      cvFinal: "Lamaran sudah final — CV tidak bisa diganti lagi.",
+      // NR-15-c — surat offer
+      letterDownload: "Unduh Surat Offer",
+      letterTitle: "Surat Penawaran Kerja",
+      letterTo: "Kepada {email}",
+      letterPrint: "Cetak / Simpan PDF",
+      letterClose: "Tutup",
+      letterPrintedOn: "Dicetak pada {date}",
+      letterSignName: "Tim Rekrutmen Lumina Studio",
+      // NR-15-c — konfirmasi tanggal mulai
+      startDateTitle: "Tanggal Mulai",
+      startDateLabel: "Tanggal mulai",
+      startDateConfirmed: "Kamu konfirmasi mulai {date}",
+      startDateProposed: "Usulan {date} menunggu konfirmasi tim",
+      startDateConfirmBtn: "Konfirmasi Tanggal Mulai",
+      startDateConfirmToast: "Tanggal mulai dikonfirmasi",
+      startDateProposeToggle: "Usul tanggal lain",
+      startDateProposeDateLabel: "Usulan tanggal mulai",
+      startDateProposeNoteLabel: "Catatan untuk tim (opsional)",
+      startDateProposeNotePh: "Misal: siap mulai lebih cepat bila diperlukan...",
+      startDateProposeSend: "Kirim Usulan",
+      startDateProposeToast: "Usulan tanggal mulai terkirim",
+      // NR-15-c — feedback pengalaman
+      fbTitle: "Bagaimana pengalamanmu?",
+      fbDesc: "Proses seleksimu sudah selesai. Ceritakan pengalamanmu selama direkrut — bantu kami jadi lebih baik.",
+      fbButton: "Beri Ulasan",
+      // NR-15-c — kirim ulang kode
+      resendBtn: "Kirim kode ke email saya",
+      resendSending: "Mengirim...",
+      resendOk: "Bila email terdaftar, tautan/kode telah dikirim. Cek kotak masuk.",
+      resendFail: "Gagal mengirim. Periksa koneksi internetmu lalu coba lagi.",
     },
   },
   voices: {
@@ -1036,6 +1104,74 @@ type idDictShape = {
       lostCodeEmail: string;
       lostCodeWa: string;
       browseJobs: string;
+      // NR-15-c — transparansi timeline
+      estimateChip: string;
+      stageNoteHint: string;
+      // NR-15-c — ringkasan "Apa yang berubah"
+      changesTitle: string;
+      changesMarkRead: string;
+      relNow: string;
+      relMin: string;
+      relHour: string;
+      relDay: string;
+      // NR-15-c — salin tautan status
+      copyLink: string;
+      copyLinkAria: string;
+      copyLinkToast: string;
+      // NR-15-c — tanya tim rekrutmen
+      qaTitle: string;
+      qaDesc: string;
+      qaFormLabel: string;
+      qaPh: string;
+      qaSend: string;
+      qaSending: string;
+      qaToast: string;
+      qaYou: string;
+      qaTeam: string;
+      qaPending: string;
+      qaEmpty: string;
+      qaCounter: string;
+      // NR-15-c — perbarui CV
+      cvTitle: string;
+      cvCurrent: string;
+      cvNone: string;
+      cvAria: string;
+      cvUpload: string;
+      cvUploading: string;
+      cvToast: string;
+      cvInvalidType: string;
+      cvTooBig: string;
+      cvFinal: string;
+      // NR-15-c — surat offer
+      letterDownload: string;
+      letterTitle: string;
+      letterTo: string;
+      letterPrint: string;
+      letterClose: string;
+      letterPrintedOn: string;
+      letterSignName: string;
+      // NR-15-c — konfirmasi tanggal mulai
+      startDateTitle: string;
+      startDateLabel: string;
+      startDateConfirmed: string;
+      startDateProposed: string;
+      startDateConfirmBtn: string;
+      startDateConfirmToast: string;
+      startDateProposeToggle: string;
+      startDateProposeDateLabel: string;
+      startDateProposeNoteLabel: string;
+      startDateProposeNotePh: string;
+      startDateProposeSend: string;
+      startDateProposeToast: string;
+      // NR-15-c — feedback pengalaman
+      fbTitle: string;
+      fbDesc: string;
+      fbButton: string;
+      // NR-15-c — kirim ulang kode
+      resendBtn: string;
+      resendSending: string;
+      resendOk: string;
+      resendFail: string;
     };
   };
   voices: { badge: string; title: string; desc: string };
@@ -1624,6 +1760,74 @@ const en: Dict = {
       lostCodeEmail: "Check your application confirmation email — the code was sent to the address you applied with.",
       lostCodeWa: "Contact our team via WhatsApp for ownership verification help.",
       browseJobs: "Browse Open Positions",
+      // NR-15-c — timeline transparency
+      estimateChip: "±{n} days at this stage (estimate)",
+      stageNoteHint: "What happens at this stage?",
+      // NR-15-c — "What changed" summary
+      changesTitle: "What changed since your last visit",
+      changesMarkRead: "Mark as read",
+      relNow: "just now",
+      relMin: "{n} minutes ago",
+      relHour: "{n} hours ago",
+      relDay: "{n} days ago",
+      // NR-15-c — copy status link
+      copyLink: "Copy status link",
+      copyLinkAria: "Copy the link to this application's status page",
+      copyLinkToast: "Status link copied",
+      // NR-15-c — ask the recruitment team
+      qaTitle: "Ask the Recruitment Team",
+      qaDesc: "Something you'd like to ask about your application or the current stage? Send it here — the team's reply shows up on this page.",
+      qaFormLabel: "Write a new question",
+      qaPh: "e.g. Could the interview be scheduled in the afternoon?",
+      qaSend: "Send Question",
+      qaSending: "Sending...",
+      qaToast: "Question sent",
+      qaYou: "You",
+      qaTeam: "Team's answer",
+      qaPending: "Waiting for the team's reply",
+      qaEmpty: "No questions yet. Ask one below — the team replies on this page too.",
+      qaCounter: "{used}/{max}",
+      // NR-15-c — update CV
+      cvTitle: "Update CV",
+      cvCurrent: "Current CV: {name}",
+      cvNone: "No CV uploaded yet.",
+      cvAria: "Choose a new CV file (PDF, max 10 MB)",
+      cvUpload: "Upload New CV",
+      cvUploading: "Uploading...",
+      cvToast: "CV updated successfully",
+      cvInvalidType: "The file must be a PDF.",
+      cvTooBig: "The file must be at most 10 MB.",
+      cvFinal: "This application is final — the CV can no longer be replaced.",
+      // NR-15-c — offer letter
+      letterDownload: "Download Offer Letter",
+      letterTitle: "Job Offer Letter",
+      letterTo: "To {email}",
+      letterPrint: "Print / Save as PDF",
+      letterClose: "Close",
+      letterPrintedOn: "Printed on {date}",
+      letterSignName: "Lumina Studio Recruitment Team",
+      // NR-15-c — start date confirmation
+      startDateTitle: "Start Date",
+      startDateLabel: "Start date",
+      startDateConfirmed: "You confirmed starting on {date}",
+      startDateProposed: "Proposed {date} — waiting for the team's confirmation",
+      startDateConfirmBtn: "Confirm Start Date",
+      startDateConfirmToast: "Start date confirmed",
+      startDateProposeToggle: "Propose another date",
+      startDateProposeDateLabel: "Proposed start date",
+      startDateProposeNoteLabel: "Note for the team (optional)",
+      startDateProposeNotePh: "e.g. ready to start earlier if needed...",
+      startDateProposeSend: "Send Proposal",
+      startDateProposeToast: "Start date proposal sent",
+      // NR-15-c — experience feedback
+      fbTitle: "How was your experience?",
+      fbDesc: "Your selection journey is complete. Tell us about it — help us do better.",
+      fbButton: "Leave a Review",
+      // NR-15-c — resend code
+      resendBtn: "Email me the code",
+      resendSending: "Sending...",
+      resendOk: "If the email is registered, the link/code has been sent. Check your inbox.",
+      resendFail: "Failed to send. Check your internet connection and try again.",
     },
   },
   voices: {

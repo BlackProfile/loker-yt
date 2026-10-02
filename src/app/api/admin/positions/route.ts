@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
         publishAt: f.publishAt ?? null,
 
         stages: f.stages ?? "[]",
+        stageNotes: f.stageNotes ?? null,
         aiCriteria: f.aiCriteria ?? null,
         autoShortlistScore: f.autoShortlistScore ?? null,
         autoShortlistStage: f.autoShortlistStage ?? null,

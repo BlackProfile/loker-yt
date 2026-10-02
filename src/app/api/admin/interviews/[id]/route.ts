@@ -16,6 +16,7 @@ import {
   serializeInterview,
 } from "@/lib/seed";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { appendStageHistory } from "@/lib/stage-history";
 
 export const dynamic = "force-dynamic";
 
@@ -305,6 +306,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Rekomendasi menggerakkan pipeline
     const recommendation = updateData.recommendation ?? null;
     if (recommendation === "TOLAK") {
+      // Riwayat tahap (NR-15): baca riwayat lama sebelum menulis perpindahan.
+      const appBefore = await db.application.findUnique({
+        where: { id: existing.applicationId },
+        select: { status: true, stageHistory: true },
+      });
       const app = await db.application.update({
         where: { id: existing.applicationId },
         data: {
@@ -313,6 +319,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           rejectionNote:
             (updateData.notes ?? existing.notes)?.trim().slice(0, 1000) || null,
           rejectedAt: new Date(),
+          ...(appBefore
+            ? { stageHistory: appendStageHistory(appBefore.stageHistory, "REJECTED", appBefore.status) }
+            : {}),
         },
         include: APPLICATION_INCLUDE,
       });

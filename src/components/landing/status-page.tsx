@@ -13,7 +13,7 @@
 //    tidak hadir), penawaran (terima/tolak), dan unggah dokumen onboarding.
 // 5. Realtime: perubahan di admin memicu recheck senyap tanpa reload (anti-flicker).
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   BadgeCheck,
   BadgeX,
+  CalendarCheck,
   CalendarClock,
   CalendarPlus,
   CheckCircle2,
@@ -32,14 +33,21 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  FileUp,
   HelpCircle,
   KeyRound,
+  Link2,
   Loader2,
   LogOut,
-  MapPin,
   Mail,
+  MapPin,
+  MessageCircle,
+  Printer,
   RefreshCw,
+  Send,
   Sparkles,
+  Star,
+  Upload,
   Video,
   X,
   XCircle,
@@ -52,6 +60,7 @@ import {
   type InterviewStatus,
   type StageKey,
   type TrackAuthResponse,
+  type TrackChangeInfo,
   type TrackResponse,
   type TrackSlotInfo,
   type TrackSummary,
@@ -95,6 +104,7 @@ import {
   formatDateId,
   safeExternalUrl,
 } from "@/components/landing/landing-utils";
+import type { Dict, Lang } from "@/components/landing/strings";
 import { useLiveEvent } from "@/lib/live-client";
 
 // Debounce recheck realtime — endpoint track punya throttle (min. ~0,4 detik).
@@ -103,6 +113,94 @@ const LIVE_RECHECK_DEBOUNCE_MS = 1000;
 const ACTION_RECHECK_DELAY_MS = 1100;
 
 const DAY_MS = 86_400_000;
+
+// Batas ukuran unggah CV (PDF) — sama dengan validasi server /api/public/cv/update.
+const CV_MAX_BYTES = 10 * 1024 * 1024;
+// Batas panjang teks pertanyaan pelamar — sama dengan /api/public/question.
+const QUESTION_MAX_LENGTH = 500;
+
+/**
+ * Peta "terakhir dilihat" lengkap dari localStorage — key sama dengan SEEN_KEY
+ * di src/lib/status-session.ts (file lib tidak diubah, hanya nilainya dibaca).
+ * Dipakai untuk header "x-lumina-seen" saat login track-auth: server menghitung
+ * "Apa yang Berubah" per kode sejak epoch ms yang dikirim (kode tanpa nilai / 0
+ * diabaikan server, jadi aman mengirim seluruh peta yang tersimpan).
+ */
+const SEEN_STORAGE_KEY = "lumina.status.seen";
+function readAllSeen(): Record<string, number> {
+  try {
+    const raw = window.localStorage.getItem(SEEN_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) out[key] = value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+// Format tanggal ringkas timeline (NR-15 idea 1): "12 Mei" / "12 May",
+// versi berjam untuk kejadian dalam 24 jam terakhir.
+const SHORT_DATE_FMT: Record<Lang, Intl.DateTimeFormat> = {
+  id: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short" }),
+  en: new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short" }),
+};
+const SHORT_DATETIME_FMT: Record<Lang, Intl.DateTimeFormat> = {
+  id: new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }),
+  en: new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }),
+};
+
+/** Tanggal ringkas; menyertakan jam bila kejadiannya dalam 24 jam terakhir. */
+function formatShortDate(iso: string, lang: Lang, nowMs: number): string {
+  const ms = new Date(iso).getTime();
+  if (Number.isNaN(ms)) return iso;
+  const age = nowMs - ms;
+  const fmt = age >= 0 && age < DAY_MS ? SHORT_DATETIME_FMT[lang] : SHORT_DATE_FMT[lang];
+  return fmt.format(new Date(iso));
+}
+
+/** Tanggal panjang mengikuti bahasa aktif (kartu tanggal mulai & surat offer). */
+function formatLongDate(iso: string, lang: Lang): string {
+  try {
+    return new Intl.DateTimeFormat(lang === "en" ? "en-US" : "id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+/** Waktu relatif ringkas untuk daftar "Apa yang Berubah". */
+function relativeTime(iso: string, nowMs: number, page: Dict["status"]["page"]): string {
+  const ms = new Date(iso).getTime();
+  if (Number.isNaN(ms)) return "";
+  const diff = Math.max(0, nowMs - ms);
+  if (diff < 60_000) return page.relNow;
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 60) return fillTemplate(page.relMin, { n: minutes });
+  const hours = Math.floor(diff / 3_600_000);
+  if (hours < 24) return fillTemplate(page.relHour, { n: hours });
+  return fillTemplate(page.relDay, { n: Math.floor(diff / DAY_MS) });
+}
+
+/** Palet confetti perayaan diterima (NR-15 idea 16) — tanpa biru/ungu, tanpa emoji. */
+const CONFETTI_COLORS = ["#f43f5e", "#fbbf24", "#10b981", "#18181b"];
 
 type StepView = { key: string; label: string; done: boolean; at: string | null };
 
@@ -176,16 +274,28 @@ function isFinalStatus(status?: StageKey): boolean {
   return status === "ACCEPTED" || status === "REJECTED";
 }
 
-export function StatusPageView({ onExit }: { onExit: () => void }) {
+export function StatusPageView({
+  onExit,
+  initialCode,
+}: {
+  onExit: () => void;
+  initialCode?: string | null;
+}) {
   return (
     <LangProvider>
-      <StatusPageInner onExit={onExit} />
+      <StatusPageInner onExit={onExit} initialCode={initialCode ?? null} />
     </LangProvider>
   );
 }
 
-function StatusPageInner({ onExit }: { onExit: () => void }) {
-  const { t } = useLang();
+function StatusPageInner({
+  onExit,
+  initialCode,
+}: {
+  onExit: () => void;
+  initialCode: string | null;
+}) {
+  const { t, lang } = useLang();
   const p = t.status.page;
 
   // ---------- Sesi & boot ----------
@@ -194,7 +304,11 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
 
   // ---------- Form login ----------
   const [loginEmail, setLoginEmail] = useState("");
-  const [loginCode, setLoginCode] = useState("");
+  // Prefill kode dari tautan berbagi "#status?code=XXX" (hanya relevan bila belum ada sesi —
+  // form login memang hanya tampil saat tidak ada sesi).
+  const [loginCode, setLoginCode] = useState(initialCode ? initialCode.toUpperCase() : "");
+  const initialCodeRef = useRef(initialCode);
+  initialCodeRef.current = initialCode;
   const [showCode, setShowCode] = useState(false);
   const [remember, setRemember] = useState(true);
   const [loginBusy, setLoginBusy] = useState(false);
@@ -205,6 +319,38 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [detail, setDetail] = useState<TrackResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  // ---------- NR-15-c: "Apa yang Berubah" sejak kunjungan terakhir ----------
+  const [recentChanges, setRecentChanges] = useState<TrackChangeInfo[]>([]);
+
+  // ---------- NR-15-c: catatan tahap timeline (satu terbuka pada satu waktu) ----------
+  const [openNoteKey, setOpenNoteKey] = useState<string | null>(null);
+
+  // ---------- NR-15-c: tanya tim rekrutmen ----------
+  const [qaText, setQaText] = useState("");
+  const [qaBusy, setQaBusy] = useState(false);
+
+  // ---------- NR-15-c: perbarui CV ----------
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [cvUploading, setCvUploading] = useState(false);
+
+  // ---------- NR-15-c: overlay cetak surat offer ----------
+  const [letterOpen, setLetterOpen] = useState(false);
+
+  // ---------- NR-15-c: konfirmasi tanggal mulai ----------
+  const [startBusy, setStartBusy] = useState<"confirm" | "propose" | null>(null);
+  const [startProposeOpen, setStartProposeOpen] = useState(false);
+  const [startDateValue, setStartDateValue] = useState("");
+  const [startNoteValue, setStartNoteValue] = useState("");
+
+  // ---------- NR-15-c: perayaan diterima (confetti sekali per kode per sesi) ----------
+  const [celebrate, setCelebrate] = useState(false);
+  const celebratedCodesRef = useRef<Set<string>>(new Set());
+
+  // ---------- NR-15-c: kirim ulang kode (form bantuan login) ----------
+  const [resendEmail, setResendEmail] = useState("");
+  const [resendBusy, setResendBusy] = useState(false);
+  const [resendMsg, setResendMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   // ---------- Tarik lamaran ----------
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -247,8 +393,17 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
     setSelectedCode(null);
     setDetail(null);
     setLoginEmail("");
-    setLoginCode("");
+    setLoginCode(initialCodeRef.current ? initialCodeRef.current.toUpperCase() : "");
     setLoginError(null);
+    setRecentChanges([]);
+    setOpenNoteKey(null);
+    setQaText("");
+    setCvFile(null);
+    setLetterOpen(false);
+    setStartProposeOpen(false);
+    setStartDateValue("");
+    setStartNoteValue("");
+    setResendMsg(null);
   }, []);
 
   /** Muat detail satu lamaran (email + kode wajib cocok di server). */
@@ -278,6 +433,14 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
         }
         setDetail(data);
         markSeen(code);
+        // NR-15 (idea 16): confetti perayaan saat pelamar melihat status Diterima
+        // untuk pertama kalinya (sekali per kode per sesi — recheck senyap tidak
+        // melewati loadDetail, jadi tidak memicu ulang).
+        if (data.status === "ACCEPTED" && !celebratedCodesRef.current.has(code)) {
+          celebratedCodesRef.current.add(code);
+          setCelebrate(true);
+          window.setTimeout(() => setCelebrate(false), 2600);
+        }
       } catch {
         toast.error(t.apply.errors.submitFailed);
       } finally {
@@ -287,13 +450,27 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
     [p.authFailed, resetToLogin, t.apply.errors.submitFailed, t.status.rateLimited],
   );
 
-  /** Login / verifikasi sesi: cocokkan email+kode, ambil daftar lamaran email tsb. */
+  /**
+   * Login / verifikasi sesi: cocokkan email+kode, ambil daftar lamaran email tsb.
+   * NR-15 (idea 4): kirim header "x-lumina-seen" berisi peta terakhir-dilihat
+   * agar respons menyertakan ringkasan "Apa yang Berubah" per kode sejak
+   * kunjungan terakhir pelamar.
+   */
   const authenticate = useCallback(
-    async (email: string, code: string): Promise<TrackSummary[] | null> => {
+    async (
+      email: string,
+      code: string,
+    ): Promise<{
+      apps: TrackSummary[];
+      changes: Record<string, TrackChangeInfo[]>;
+    } | null> => {
       try {
         const res = await fetch("/api/public/track-auth", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-lumina-seen": JSON.stringify(readAllSeen()),
+          },
           body: JSON.stringify({ email, code }),
         });
         const data = (await res.json().catch(() => null)) as TrackAuthResponse | null;
@@ -312,7 +489,10 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
           return null;
         }
         setLoginError(null);
-        return data.applications.filter((app) => app.trackingCode);
+        return {
+          apps: data.applications.filter((app) => app.trackingCode),
+          changes: data.changes ?? {},
+        };
       } catch {
         setLoginError(t.status.actionFailed);
         return null;
@@ -320,6 +500,30 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
     },
     [p.authFailed, p.locked, p.tooFast, t.status.actionFailed],
   );
+
+  /**
+   * Susun daftar perubahan lintas lamaran (terbaru di atas) untuk panel
+   * "Apa yang Berubah" — hanya kode dengan perubahan non-kosong.
+   */
+  function collectChanges(
+    list: TrackSummary[],
+    changes: Record<string, TrackChangeInfo[]>,
+  ): TrackChangeInfo[] {
+    const items: TrackChangeInfo[] = [];
+    for (const app of list) {
+      const perCode = changes[app.trackingCode];
+      if (Array.isArray(perCode)) items.push(...perCode);
+    }
+    items.sort((a, b) => b.at.localeCompare(a.at));
+    return items;
+  }
+
+  /** Tutup panel "Apa yang Berubah" + tandai semua lamaran sudah dilihat. */
+  function dismissChanges() {
+    setRecentChanges([]);
+    for (const app of apps) markSeen(app.trackingCode);
+    if (selectedCode) markSeen(selectedCode);
+  }
 
   /** Pilih lamaran aktif dari daftar + muat detailnya. */
   const selectApp = useCallback(
@@ -332,6 +536,13 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
       setCancelOpenFor(null);
       setDeclineOpen(false);
       setWithdrawOpen(false);
+      // Reset panel NR-15-c agar keadaan tidak bocor antar lamaran.
+      setOpenNoteKey(null);
+      setQaText("");
+      setCvFile(null);
+      setStartProposeOpen(false);
+      setStartDateValue("");
+      setStartNoteValue("");
       const current = sessionRef.current;
       if (!current) return;
       await loadDetail(current.email, code);
@@ -348,24 +559,26 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
         setBooting(false);
         return;
       }
-      const list = await authenticate(stored.email, stored.code);
+      const auth = await authenticate(stored.email, stored.code);
       if (cancelled) return;
-      if (!list || list.length === 0) {
+      if (!auth || auth.apps.length === 0) {
         clearSession();
         setBooting(false);
         return;
       }
       setSession({ email: stored.email, code: stored.code });
-      setApps(list);
+      setApps(auth.apps);
+      // NR-15 (idea 4): ringkasan "Apa yang Berubah" sejak kunjungan terakhir.
+      setRecentChanges(collectChanges(auth.apps, auth.changes));
       // Badge pembaruan sejak kunjungan terakhir (sebelum seen diperbarui).
-      const hasUpdate = list.some(
+      const hasUpdate = auth.apps.some(
         (app) => new Date(app.statusUpdatedAt).getTime() > loadSeenAt(app.trackingCode),
       );
       if (hasUpdate) toast.info(p.updatedBadge);
       setBooting(false);
       const preferred =
-        list.find((app) => app.trackingCode === stored.code)?.trackingCode ??
-        list[0]?.trackingCode ??
+        auth.apps.find((app) => app.trackingCode === stored.code)?.trackingCode ??
+        auth.apps[0]?.trackingCode ??
         null;
       if (preferred) {
         setSelectedCode(preferred);
@@ -446,15 +659,16 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
     const code = loginCode.trim().toUpperCase();
     if (!email || !code || loginBusy) return;
     setLoginBusy(true);
-    const list = await authenticate(email, code);
+    const auth = await authenticate(email, code);
     setLoginBusy(false);
-    if (!list || list.length === 0) return;
+    if (!auth || auth.apps.length === 0) return;
     saveSession({ email, code }, remember);
     setSession({ email, code });
-    setApps(list);
+    setApps(auth.apps);
+    setRecentChanges(collectChanges(auth.apps, auth.changes));
     const preferred =
-      list.find((app) => app.trackingCode === code)?.trackingCode ??
-      list[0]?.trackingCode ??
+      auth.apps.find((app) => app.trackingCode === code)?.trackingCode ??
+      auth.apps[0]?.trackingCode ??
       null;
     if (preferred) {
       setSelectedCode(preferred);
@@ -485,6 +699,164 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
       toast.success(p.copiedToast);
     } catch {
       toast.error(t.positions.salinGagal);
+    }
+  }
+
+  /**
+   * Salin tautan halaman status lamaran aktif (NR-15 idea 9) — dibuka di perangkat
+   * lain, form login terisi kode otomatis lewat "#status?code=XXX".
+   */
+  async function copyStatusLink() {
+    if (!selectedCode) return;
+    try {
+      await navigator.clipboard.writeText(
+        `${window.location.origin}/#status?code=${encodeURIComponent(selectedCode)}`,
+      );
+      toast.success(p.copyLinkToast);
+    } catch {
+      toast.error(t.positions.salinGagal);
+    }
+  }
+
+  /** Kirim pertanyaan pelamar ke tim rekrutmen (NR-15 idea 10). */
+  async function submitQuestion() {
+    const text = qaText.trim();
+    if (!session || !selectedCode || !text || qaBusy) return;
+    setQaBusy(true);
+    const out = await postAction("/api/public/question", {
+      code: selectedCode,
+      email: session.email,
+      text,
+    });
+    setQaBusy(false);
+    if (!out.ok) {
+      toast.error(out.error);
+      return;
+    }
+    toast.success(p.qaToast);
+    setQaText("");
+    scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
+  }
+
+  /** Pilih berkas CV baru (validasi klien: PDF, maks 10 MB). */
+  function selectCvFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = ""; // reset agar file yang sama bisa dipilih ulang
+    if (!file) return;
+    const isPdf =
+      file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      toast.error(p.cvInvalidType);
+      return;
+    }
+    if (file.size > CV_MAX_BYTES) {
+      toast.error(p.cvTooBig);
+      return;
+    }
+    setCvFile(file);
+  }
+
+  /** Unggah CV baru (NR-15 idea 11) — server menolak bila lamaran sudah final (409). */
+  async function submitCvUpdate() {
+    const file = cvFile;
+    if (!session || !selectedCode || !file || cvUploading) return;
+    setCvUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("code", selectedCode);
+      fd.append("email", session.email);
+      fd.append("file", file);
+      const res = await fetch("/api/public/cv/update", {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: unknown; error?: unknown; fileName?: unknown }
+        | null;
+      if (res.status === 429) {
+        toast.error(t.status.rateLimited);
+        return;
+      }
+      if (res.status === 409) {
+        toast.error(p.cvFinal);
+        return;
+      }
+      if (!res.ok || !data || data.ok !== true) {
+        const serverError =
+          typeof data?.error === "string" && data.error ? data.error : null;
+        toast.error(serverError ?? t.status.actionFailed);
+        return;
+      }
+      toast.success(p.cvToast);
+      setCvFile(null);
+      scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
+    } catch {
+      toast.error(t.status.actionFailed);
+    } finally {
+      setCvUploading(false);
+    }
+  }
+
+  /** Konfirmasi / usul ulang tanggal mulai kerja (NR-15 idea 13). */
+  async function submitStartDate(action: "confirm" | "propose") {
+    if (!session || !selectedCode || startBusy) return;
+    if (action === "propose") {
+      const parsed = startDateValue ? new Date(`${startDateValue}T00:00:00`) : null;
+      if (!parsed || Number.isNaN(parsed.getTime())) {
+        toast.error(t.status.interview.proposedRequired);
+        return;
+      }
+    }
+    setStartBusy(action);
+    const out = await postAction("/api/public/start-date", {
+      code: selectedCode,
+      email: session.email,
+      action,
+      ...(action === "propose"
+        ? {
+            date: new Date(`${startDateValue}T00:00:00`).toISOString(),
+            ...(startNoteValue.trim() ? { note: startNoteValue.trim().slice(0, 300) } : {}),
+          }
+        : {}),
+    });
+    setStartBusy(null);
+    if (!out.ok) {
+      toast.error(out.error);
+      return;
+    }
+    if (action === "confirm") {
+      toast.success(p.startDateConfirmToast);
+    } else {
+      toast.success(p.startDateProposeToast);
+      setStartProposeOpen(false);
+      setStartDateValue("");
+      setStartNoteValue("");
+    }
+    scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
+  }
+
+  /**
+   * Kirim ulang kode pelacakan ke email (NR-15 idea 8). Respons endpoint selalu
+   * generik ({ok:true}) — pesan sukses selalu sama tanpa membocorkan keberadaan
+   * email; hanya kegagalan jaringan yang ditampilkan sebagai error.
+   */
+  async function submitResendCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const email = resendEmail.trim().toLowerCase();
+    if (!email || resendBusy) return;
+    setResendBusy(true);
+    setResendMsg(null);
+    try {
+      await fetch("/api/public/resend-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      setResendMsg({ type: "ok", text: p.resendOk });
+    } catch {
+      setResendMsg({ type: "err", text: p.resendFail });
+    } finally {
+      setResendBusy(false);
     }
   }
 
@@ -519,8 +891,8 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
       setWithdrawOpen(false);
       setWithdrawReason("");
       // Segarkan daftar lamaran (status berubah) + detail via recheck senyap.
-      const list = await authenticate(session.email, session.code);
-      if (list) setApps(list);
+      const auth = await authenticate(session.email, session.code);
+      if (auth) setApps(auth.apps);
       scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
     } catch {
       toast.error(t.status.actionFailed);
@@ -786,6 +1158,7 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
   }
 
   // ---------- Turunan untuk tampilan detail ----------
+  const nowMs = Date.now();
   const steps: StepView[] = detail
     ? (detail.steps ??
       STATUS_FLOW.map((key) => ({
@@ -797,6 +1170,37 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
     : [];
   const finalStatus = isFinalStatus(detail?.status) ? detail?.status : undefined;
   const currentKey = !finalStatus ? detail?.status : undefined;
+  // NR-15 (idea 1): peta tahap → tanggal dari stageHistory (match by key).
+  const stageHistoryAt: Record<string, string> = {};
+  for (const item of detail?.stageHistory ?? []) {
+    if (item?.key && item.at) stageHistoryAt[item.key] = item.at;
+  }
+  // NR-15 (idea 10): pertanyaan pelamar — terbaru di atas.
+  const questions = [...(detail?.questions ?? [])].sort((a, b) =>
+    b.askedAt.localeCompare(a.askedAt),
+  );
+  // NR-15 (idea 13): tanggal mulai kerja (ada bila status diterima).
+  const candidateStart = detail?.candidateStart ?? null;
+  // NR-15 (idea 3): estimasi hari di tahap aktif (median historis).
+  const currentEstimateRaw =
+    currentKey && detail?.stageEstimates ? detail.stageEstimates[currentKey] : undefined;
+  const currentEstimateDays =
+    typeof currentEstimateRaw === "number" && Number.isFinite(currentEstimateRaw)
+      ? Math.max(1, Math.round(currentEstimateRaw))
+      : null;
+  // NR-15 (idea 16): partikel confetti stabil selama animasi (useMemo per burst).
+  const confettiParticles = useMemo(() => {
+    if (!celebrate) return [];
+    return Array.from({ length: 24 }, (_, i) => ({
+      id: i,
+      left: `${Math.round(((i * 97) % 100) + Math.random() * 4)}%`,
+      size: 6 + Math.random() * 7,
+      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      delay: Math.round(Math.random() * 40) / 100,
+      spin: 360 + Math.round(Math.random() * 360),
+      drift: Math.round((Math.random() - 0.5) * 120),
+    }));
+  }, [celebrate]);
 
   /**
    * Chip status untuk hero & daftar lamaran: warna per kelompok tahap
@@ -871,7 +1275,8 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
 
   // ---------- Render ----------
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <>
+    <div className="flex min-h-screen flex-col bg-background print:hidden">
       {/* Bilah atas: kembali ke beranda + sesi */}
       <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur">
         <Container className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
@@ -1025,6 +1430,54 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
                       <li>{p.lostCodeEmail}</li>
                       <li>{p.lostCodeWa}</li>
                     </ul>
+                    {/* NR-15 (idea 8): kirim ulang kode ke email */}
+                    <form
+                      className="mt-3 border-t pt-3"
+                      onSubmit={submitResendCode}
+                    >
+                      <Label htmlFor="resend-email" className="text-sm font-medium">
+                        {p.emailLabel}
+                      </Label>
+                      <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+                        <Input
+                          id="resend-email"
+                          type="email"
+                          inputMode="email"
+                          autoComplete="email"
+                          value={resendEmail}
+                          onChange={(e) => setResendEmail(e.target.value)}
+                          placeholder={p.emailPh}
+                          className="h-11 flex-1"
+                          maxLength={120}
+                          required
+                        />
+                        <Button
+                          type="submit"
+                          variant="outline"
+                          className="h-11 shrink-0 gap-2"
+                          disabled={resendBusy || !resendEmail.trim()}
+                        >
+                          {resendBusy ? (
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Mail className="h-4 w-4" aria-hidden="true" />
+                          )}
+                          {resendBusy ? p.resendSending : p.resendBtn}
+                        </Button>
+                      </div>
+                      {resendMsg ? (
+                        <div
+                          role={resendMsg.type === "err" ? "alert" : "status"}
+                          className={`mt-2 rounded-lg border px-3 py-2 text-xs leading-relaxed ${
+                            resendMsg.type === "ok"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                              : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
+                          }`}
+                        >
+                          {resendMsg.text}
+                        </div>
+                      ) : null}
+                    </form>
                     <Button
                       variant="outline"
                       className="mt-3 h-11 w-full gap-2"
@@ -1039,6 +1492,42 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
             </FadeInSlide>
           ) : (
             <div className="flex flex-col gap-6">
+              {/* ---------- NR-15 (idea 4): panel "Apa yang Berubah" sejak kunjungan terakhir ---------- */}
+              {recentChanges.length > 0 ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/40">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                      <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      {p.changesTitle}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-11 border-amber-300 bg-transparent text-amber-800 hover:bg-amber-100 hover:text-amber-900 sm:h-9 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+                      onClick={dismissChanges}
+                    >
+                      <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                      {p.changesMarkRead}
+                    </Button>
+                  </div>
+                  <ul className="mt-3 flex flex-col gap-2">
+                    {recentChanges.slice(0, 10).map((change, index) => (
+                      <li
+                        key={`${change.at}-${index}`}
+                        className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-lg border border-amber-200/70 bg-background/60 px-3 py-2 dark:border-amber-500/20"
+                      >
+                        <span className="text-sm text-amber-900 dark:text-amber-100">
+                          {change.text}
+                        </span>
+                        <span className="shrink-0 text-xs text-amber-700/80 dark:text-amber-300/70">
+                          {relativeTime(change.at, nowMs, p)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
               {/* ---------- Daftar multi-lamaran (bila lebih dari satu) ---------- */}
               {apps.length > 1 ? (
                 <Card className="rounded-2xl p-4 text-left md:p-5">
@@ -1109,8 +1598,34 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
                   className="flex flex-col gap-5"
                   role="status"
                 >
-                  {/* HERO status berwarna */}
-                  <Card className="rounded-2xl p-5 md:p-6">
+                  {/* HERO status berwarna (+ confetti perayaan diterima, NR-15 idea 16) */}
+                  <Card className="relative overflow-hidden rounded-2xl p-5 md:p-6">
+                    {celebrate && confettiParticles.length > 0 ? (
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+                      >
+                        {confettiParticles.map((particle) => (
+                          <motion.span
+                            key={particle.id}
+                            className="absolute top-0 block rounded-[2px]"
+                            style={{
+                              left: particle.left,
+                              width: particle.size,
+                              height: particle.size * 0.6,
+                              backgroundColor: particle.color,
+                            }}
+                            initial={{ y: -24, x: 0, rotate: 0, opacity: 1 }}
+                            animate={{ y: 360, x: particle.drift, rotate: particle.spin, opacity: 0 }}
+                            transition={{
+                              duration: 2.2,
+                              delay: particle.delay,
+                              ease: "easeIn",
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
                     <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                       {p.currentStatus}
                     </p>
@@ -1139,16 +1654,27 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
                         </p>
                       ) : null}
                       {selectedCode ? (
-                        <button
-                          type="button"
-                          onClick={() => void copyCode()}
-                          className="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 font-mono text-xs font-medium hover:bg-muted"
-                          aria-label={p.copyCodeAria}
-                          title={p.copyCode}
-                        >
-                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                          {selectedCode}
-                        </button>
+                        <div className="inline-flex items-center">
+                          <button
+                            type="button"
+                            onClick={() => void copyCode()}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-l-md border px-2.5 font-mono text-xs font-medium hover:bg-muted"
+                            aria-label={p.copyCodeAria}
+                            title={p.copyCode}
+                          >
+                            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                            {selectedCode}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void copyStatusLink()}
+                            className="inline-flex h-8 items-center rounded-r-md border border-l-0 px-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            aria-label={p.copyLinkAria}
+                            title={p.copyLink}
+                          >
+                            <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
                       ) : null}
                     </div>
 
@@ -1224,6 +1750,11 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
                       {steps.map((step, index) => {
                         const isLast = index === steps.length - 1;
                         const isCurrent = step.key === currentKey && !step.done;
+                        // NR-15 (idea 1): tanggal tahap dari stageHistory (match by key).
+                        const stepDateIso = stageHistoryAt[step.key] ?? step.at ?? null;
+                        // NR-15 (idea 2): penjelasan tahap (default collapsed, satu terbuka).
+                        const noteText = detail?.stageNote?.[step.key] ?? null;
+                        const noteOpen = openNoteKey === step.key;
                         return (
                           <li key={`${step.key}-${index}`} className="flex gap-3">
                             <div className="flex flex-col items-center">
@@ -1278,11 +1809,46 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
                                     {p.currentStepBadge}
                                   </Badge>
                                 ) : null}
+                                {/* NR-15 (idea 3): estimasi hari di tahap aktif (hanya current step) */}
+                                {isCurrent && currentEstimateDays !== null ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                                    <Clock className="h-3 w-3" aria-hidden="true" />
+                                    {fillTemplate(p.estimateChip, { n: currentEstimateDays })}
+                                  </span>
+                                ) : null}
                               </div>
-                              {step.at ? (
-                                <p className="text-xs text-muted-foreground">
-                                  {formatDateTimeId(step.at)}
+                              {step.done && stepDateIso ? (
+                                <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                                  {formatShortDate(stepDateIso, lang, nowMs)}
                                 </p>
+                              ) : stepDateIso && isCurrent ? (
+                                <p className="text-xs text-muted-foreground">
+                                  {formatDateTimeId(stepDateIso)}
+                                </p>
+                              ) : null}
+                              {/* NR-15 (idea 2): tombol expandable "Apa yang terjadi di tahap ini?" */}
+                              {noteText ? (
+                                <div className="mt-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenNoteKey(noteOpen ? null : step.key)}
+                                    aria-expanded={noteOpen}
+                                    className="group inline-flex min-h-11 items-center gap-1 rounded text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:min-h-0"
+                                  >
+                                    <ChevronDown
+                                      className={`h-3.5 w-3.5 transition-transform ${
+                                        noteOpen ? "rotate-180" : ""
+                                      }`}
+                                      aria-hidden="true"
+                                    />
+                                    {p.stageNoteHint}
+                                  </button>
+                                  {noteOpen ? (
+                                    <p className="mt-1.5 max-w-md rounded-lg border bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
+                                      {noteText}
+                                    </p>
+                                  ) : null}
+                                </div>
                               ) : null}
                             </div>
                           </li>
@@ -2099,6 +2665,19 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
                               </div>
                             </div>
                           ) : null}
+
+                          {/* NR-15 (idea 12): unduh / cetak surat offer */}
+                          <div className="mt-3 border-t border-emerald-200/70 pt-3 dark:border-emerald-500/20">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-11 sm:h-9"
+                              onClick={() => setLetterOpen(true)}
+                            >
+                              <Download className="h-4 w-4" aria-hidden="true" />
+                              {p.letterDownload}
+                            </Button>
+                          </div>
                         </div>
                       ) : offer.status === "ACCEPTED" ? (
                         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm dark:border-emerald-500/30 dark:bg-emerald-500/10">
@@ -2116,6 +2695,17 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
                               })}
                             </p>
                           ) : null}
+                          <div className="mt-3 pl-8">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-11 sm:h-9"
+                              onClick={() => setLetterOpen(true)}
+                            >
+                              <Download className="h-4 w-4" aria-hidden="true" />
+                              {p.letterDownload}
+                            </Button>
+                          </div>
                         </div>
                       ) : offer.status === "DECLINED" ? (
                         <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-500/30 dark:bg-zinc-500/10">
@@ -2139,6 +2729,281 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
                         </div>
                       ) : null}
                     </div>
+                  ) : null}
+
+                  {/* NR-15 (idea 13): kartu Tanggal Mulai — hanya bila status diterima */}
+                  {candidateStart ? (
+                    <Card className="rounded-2xl p-5 md:p-6">
+                      <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                        <CalendarCheck className="h-4 w-4" aria-hidden="true" />
+                        {p.startDateTitle}
+                      </p>
+                      {candidateStart.startDate ? (
+                        <p className="mt-2 text-sm">
+                          <span className="text-muted-foreground">{p.startDateLabel}: </span>
+                          <span className="font-medium">
+                            {formatLongDate(candidateStart.startDate, lang)}
+                          </span>
+                        </p>
+                      ) : null}
+                      {candidateStart.confirmedAt ? (
+                        <p className="mt-3">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                            {fillTemplate(p.startDateConfirmed, {
+                              date: formatLongDate(candidateStart.startDate ?? candidateStart.confirmedAt, lang),
+                            })}
+                          </span>
+                        </p>
+                      ) : candidateStart.proposedAt ? (
+                        <div className="mt-3 flex flex-col gap-1.5">
+                          <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                            <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                            {fillTemplate(p.startDateProposed, {
+                              date: formatLongDate(candidateStart.proposedAt, lang),
+                            })}
+                          </span>
+                          {candidateStart.note ? (
+                            <p className="whitespace-pre-line text-xs text-muted-foreground">
+                              {candidateStart.note}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              className="h-11 bg-emerald-600 text-white hover:bg-emerald-700 sm:h-9"
+                              disabled={startBusy !== null}
+                              onClick={() => void submitStartDate("confirm")}
+                            >
+                              {startBusy === "confirm" ? (
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <CalendarCheck className="h-4 w-4" aria-hidden="true" />
+                              )}
+                              {p.startDateConfirmBtn}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-11 sm:h-9"
+                              disabled={startBusy !== null}
+                              onClick={() => setStartProposeOpen((prev) => !prev)}
+                              aria-expanded={startProposeOpen}
+                            >
+                              <CalendarClock className="h-4 w-4" aria-hidden="true" />
+                              {p.startDateProposeToggle}
+                            </Button>
+                          </div>
+                          {startProposeOpen ? (
+                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+                              <Label
+                                htmlFor="start-propose-date"
+                                className="text-xs font-medium text-amber-800 dark:text-amber-300"
+                              >
+                                {p.startDateProposeDateLabel}
+                              </Label>
+                              <Input
+                                id="start-propose-date"
+                                type="date"
+                                value={startDateValue}
+                                onChange={(e) => setStartDateValue(e.target.value)}
+                                className="mt-1 h-11 bg-background sm:h-9"
+                              />
+                              <Label
+                                htmlFor="start-propose-note"
+                                className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-300"
+                              >
+                                {p.startDateProposeNoteLabel}
+                              </Label>
+                              <Textarea
+                                id="start-propose-note"
+                                rows={2}
+                                value={startNoteValue}
+                                onChange={(e) => setStartNoteValue(e.target.value)}
+                                placeholder={p.startDateProposeNotePh}
+                                maxLength={300}
+                                className="mt-1 bg-background text-sm"
+                              />
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  className="h-11 sm:h-9"
+                                  disabled={startBusy !== null || !startDateValue}
+                                  onClick={() => void submitStartDate("propose")}
+                                >
+                                  {startBusy === "propose" ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                  ) : (
+                                    <Send className="h-4 w-4" aria-hidden="true" />
+                                  )}
+                                  {p.startDateProposeSend}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-11 sm:h-9"
+                                  disabled={startBusy !== null}
+                                  onClick={() => setStartProposeOpen(false)}
+                                >
+                                  {t.status.formCancel}
+                                </Button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </>
+                      )}
+                    </Card>
+                  ) : null}
+
+                  {/* NR-15 (idea 11): panel Perbarui CV — tersembunyi bila lamaran final */}
+                  {detail && !finalStatus ? (
+                    <Card className="rounded-2xl p-5 md:p-6">
+                      <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                        <FileUp className="h-4 w-4" aria-hidden="true" />
+                        {p.cvTitle}
+                      </p>
+                      {detail.cvFileName ? (
+                        <p className="mt-2 text-sm">
+                          <span className="text-muted-foreground">
+                            {fillTemplate(p.cvCurrent, { name: detail.cvFileName })}
+                          </span>
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-sm text-muted-foreground">{p.cvNone}</p>
+                      )}
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <Input
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          aria-label={p.cvAria}
+                          disabled={cvUploading}
+                          className="h-11 w-full text-xs sm:max-w-xs"
+                          onChange={selectCvFile}
+                        />
+                        <Button
+                          size="sm"
+                          className="h-11 sm:h-9"
+                          disabled={!cvFile || cvUploading}
+                          onClick={() => void submitCvUpdate()}
+                        >
+                          {cvUploading ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                              {p.cvUploading}
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="h-4 w-4" aria-hidden="true" />
+                              {p.cvUpload}
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      {cvFile ? (
+                        <p className="mt-2 text-xs text-muted-foreground">{cvFile.name}</p>
+                      ) : null}
+                    </Card>
+                  ) : null}
+
+                  {/* NR-15 (idea 10): panel Tanya Tim Rekrutmen — disembunyikan bila final ditolak/ditarik */}
+                  {detail && finalStatus !== "REJECTED" ? (
+                    <Card className="rounded-2xl p-5 md:p-6">
+                      <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                        <MessageCircle className="h-4 w-4" aria-hidden="true" />
+                        {p.qaTitle}
+                      </p>
+                      <p className="mt-2 text-sm text-muted-foreground">{p.qaDesc}</p>
+
+                      {/* Thread pertanyaan-jawaban (terbaru di atas) */}
+                      {questions.length > 0 ? (
+                        <ul className="nice-scrollbar mt-4 flex max-h-96 flex-col gap-3 overflow-y-auto pr-1">
+                          {questions.map((item) => (
+                            <li
+                              key={item.id}
+                              className="rounded-xl border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-500/30 dark:bg-zinc-500/5"
+                            >
+                              <p className="text-xs font-medium text-muted-foreground">
+                                {p.qaYou} · {formatDateTimeId(item.askedAt)}
+                              </p>
+                              <p className="mt-1 whitespace-pre-line text-sm leading-relaxed">
+                                {item.question}
+                              </p>
+                              {item.answer ? (
+                                <div className="mt-2.5 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+                                  <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                                    {p.qaTeam}
+                                    {item.answeredAt
+                                      ? ` · ${formatDateTimeId(item.answeredAt)}`
+                                      : ""}
+                                  </p>
+                                  <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-emerald-900 dark:text-emerald-200">
+                                    {item.answer}
+                                  </p>
+                                </div>
+                              ) : (
+                                <span className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                                  <Clock className="h-3 w-3" aria-hidden="true" />
+                                  {p.qaPending}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-3 text-sm text-muted-foreground">{p.qaEmpty}</p>
+                      )}
+
+                      {/* Form pertanyaan baru */}
+                      <form
+                        className="mt-4 border-t pt-4"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void submitQuestion();
+                        }}
+                      >
+                        <Label htmlFor="qa-new-question" className="text-sm font-medium">
+                          {p.qaFormLabel}
+                        </Label>
+                        <Textarea
+                          id="qa-new-question"
+                          rows={3}
+                          value={qaText}
+                          onChange={(e) => setQaText(e.target.value)}
+                          placeholder={p.qaPh}
+                          maxLength={QUESTION_MAX_LENGTH}
+                          className="mt-1.5"
+                        />
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {fillTemplate(p.qaCounter, {
+                              used: qaText.length,
+                              max: QUESTION_MAX_LENGTH,
+                            })}
+                          </span>
+                          <Button
+                            type="submit"
+                            size="sm"
+                            className="h-11 sm:h-9"
+                            disabled={qaBusy || !qaText.trim()}
+                          >
+                            {qaBusy ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                {p.qaSending}
+                              </>
+                            ) : (
+                              <>
+                                <Send className="h-4 w-4" aria-hidden="true" />
+                                {p.qaSend}
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </form>
+                    </Card>
                   ) : null}
 
                   {/* Onboarding — dokumen & info bergabung (tidak tampil bila sudah ditolak) */}
@@ -2294,6 +3159,32 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
                       </div>
                     </div>
                   ) : null}
+
+                  {/* NR-15 (idea 17): kartu feedback pengalaman — bila ada token survei */}
+                  {detail.surveyToken ? (
+                    <Card className="rounded-2xl p-5 md:p-6">
+                      <p className="flex items-center gap-2 text-sm font-semibold">
+                        <Star className="h-4 w-4 text-amber-500" aria-hidden="true" />
+                        {p.fbTitle}
+                      </p>
+                      <p className="mt-1.5 text-sm text-muted-foreground">{p.fbDesc}</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-3 h-11 sm:h-9"
+                        onClick={() =>
+                          window.open(
+                            `/?survei=${encodeURIComponent(detail.surveyToken ?? "")}`,
+                            "_blank",
+                            "noopener,noreferrer",
+                          )
+                        }
+                      >
+                        <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                        {p.fbButton}
+                      </Button>
+                    </Card>
+                  ) : null}
                 </motion.div>
               ) : detail && !detail.found ? (
                 /* Pasangan sesi tidak valid lagi (lamaran dihapus dsb.) — minta login ulang */
@@ -2309,6 +3200,85 @@ function StatusPageInner({ onExit }: { onExit: () => void }) {
         </Container>
       </main>
     </div>
+
+    {/* NR-15 (idea 12): overlay cetak surat offer — sengaja di luar wrapper utama
+        yang print:hidden, sehingga saat mencetak hanya surat yang tampil di kertas. */}
+    {letterOpen && offer ? (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={p.letterTitle}
+        className="fixed inset-0 z-[60] overflow-y-auto bg-zinc-950/60 p-4 backdrop-blur-sm print:static print:overflow-visible print:bg-transparent print:p-0 print:backdrop-blur-none"
+      >
+        <div className="mx-auto my-6 w-full max-w-2xl print:my-0">
+          <div className="rounded-2xl border bg-white p-6 text-zinc-900 shadow-xl sm:p-8 print:rounded-none print:border-0 print:shadow-none">
+            <p className="text-center text-2xl font-bold tracking-tight">Lumina Studio</p>
+            <hr className="my-5 border-zinc-300" />
+            <p className="text-sm">
+              {fillTemplate(p.letterTo, { email: session?.email ?? "-" })}
+            </p>
+            <h2 className="mt-4 text-lg font-bold">{p.letterTitle}</h2>
+            <div className="mt-3 grid gap-1.5 text-sm">
+              {detail?.positionTitle ? (
+                <p>
+                  <span className="text-muted-foreground">{t.status.positionLabel}: </span>
+                  <span className="font-medium">{detail.positionTitle}</span>
+                </p>
+              ) : null}
+              {offer.salary ? (
+                <p>
+                  <span className="text-muted-foreground">{t.status.offer.salary}: </span>
+                  <span className="font-medium">{offer.salary}</span>
+                </p>
+              ) : null}
+              {offer.type ? (
+                <p>
+                  <span className="text-muted-foreground">{t.status.offer.type}: </span>
+                  <span className="font-medium">{offer.type}</span>
+                </p>
+              ) : null}
+              {offer.startDate ? (
+                <p>
+                  <span className="text-muted-foreground">{t.status.offer.start}: </span>
+                  <span className="font-medium">{formatLongDate(offer.startDate, lang)}</span>
+                </p>
+              ) : null}
+              {offer.deadline ? (
+                <p>
+                  <span className="text-muted-foreground">{t.status.offer.deadlineLabel}: </span>
+                  <span className="font-medium">{formatDateId(offer.deadline)}</span>
+                </p>
+              ) : null}
+            </div>
+            {offer.message ? (
+              <p className="mt-4 whitespace-pre-line text-sm leading-relaxed text-zinc-700">
+                {offer.message}
+              </p>
+            ) : null}
+            <p className="mt-6 text-xs text-zinc-500">
+              {fillTemplate(p.letterPrintedOn, {
+                date: formatLongDate(new Date().toISOString(), lang),
+              })}
+            </p>
+            <div className="mt-10 max-w-60">
+              <div className="h-14 border-b border-zinc-400" aria-hidden="true" />
+              <p className="mt-2 text-sm font-medium">{p.letterSignName}</p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap justify-center gap-2 print:hidden">
+            <Button className="h-11 gap-2" onClick={() => window.print()}>
+              <Printer className="h-4 w-4" aria-hidden="true" />
+              {p.letterPrint}
+            </Button>
+            <Button variant="outline" className="h-11 gap-2" onClick={() => setLetterOpen(false)}>
+              <X className="h-4 w-4" aria-hidden="true" />
+              {p.letterClose}
+            </Button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
 

@@ -46,9 +46,12 @@ import {
   CheckCircle2,
   ClipboardCheck,
   ClipboardList,
+  Clock,
   Eye,
   Handshake,
+  Hourglass,
   Inbox,
+  LogIn,
   MailCheck,
   Megaphone,
   Pin,
@@ -187,6 +190,51 @@ function CompareTooltip({
 function shortTitle(title: string): string {
   const clean = title.trim();
   return clean.length > 10 ? `${clean.slice(0, 10).trimEnd()}…` : clean;
+}
+
+/* ------------- Kartu Kesehatan Halaman Status (NR-15, idea 14) ------------- */
+
+// Bangun 4 metrik kesehatan halaman Cek Status untuk kartu dashboard.
+// Dipanggil hanya saat overview.statusHealth tersedia.
+function statusHealthMetrics(
+  health: NonNullable<AdminOverviewResponse["statusHealth"]>
+): { icon: LucideIcon; label: string; value: string; iconWrap: string }[] {
+  const avgDelay =
+    health.avgViewDelayHours != null
+      ? health.avgViewDelayHours < 1
+        ? "<1 jam"
+        : `${Math.round(health.avgViewDelayHours)} jam`
+      : "—";
+  const stalled =
+    health.mostStalledStage != null
+      ? `${health.mostStalledStage.label} · ±${health.mostStalledStage.medianDays} hari`
+      : "—";
+  return [
+    {
+      icon: Eye,
+      label: "Dilihat Hari Ini",
+      value: String(health.checksToday),
+      iconWrap: "bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400",
+    },
+    {
+      icon: LogIn,
+      label: "Login Pelamar Hari Ini",
+      value: String(health.loginsToday),
+      iconWrap: "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
+    },
+    {
+      icon: Clock,
+      label: "Rata-rata Jeda Lihat",
+      value: avgDelay,
+      iconWrap: "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400",
+    },
+    {
+      icon: Hourglass,
+      label: "Tahap Paling Lama Tertahan",
+      value: stalled,
+      iconWrap: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+    },
+  ];
 }
 
 export function DashboardTab() {
@@ -578,6 +626,50 @@ export function DashboardTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* Kartu Kesehatan Halaman Status (NR-15, idea 14) — sembunyi otomatis bila
+          backend belum menyediakan statusHealth (kompatibilitas mundur) */}
+      {overview?.statusHealth ? (
+        <Card className="gap-0 rounded-2xl py-6">
+          <CardHeader className="px-6">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Eye className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+              Kesehatan Halaman Status
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Seberapa cepat pelamar melihat perkembangan lamaran lewat halaman Cek Status.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-6">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {statusHealthMetrics(overview.statusHealth).map((m) => {
+                const Icon = m.icon;
+                return (
+                  <div key={m.label} className="flex items-start gap-3 rounded-xl border p-4">
+                    <span
+                      className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${m.iconWrap}`}
+                    >
+                      <Icon className="size-4" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <p
+                        className={cn(
+                          "font-bold tabular-nums",
+                          m.value.length > 8 ? "truncate text-base" : "text-xl"
+                        )}
+                        title={m.value}
+                      >
+                        {loading ? "—" : m.value}
+                      </p>
+                      <p className="mt-0.5 text-xs font-medium text-muted-foreground">{m.label}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Kartu statistik: 6 status + rata-rata skor AI + pelanggan */}
       <motion.div

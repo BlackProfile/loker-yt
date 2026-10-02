@@ -7,6 +7,7 @@ import { APPLICATION_INCLUDE, serializeApplication } from "@/lib/seed";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 import { sendSystemEvent } from "@/lib/notify";
+import { appendStageHistory } from "@/lib/stage-history";
 
 export const dynamic = "force-dynamic";
 
@@ -156,6 +157,8 @@ export async function POST(req: NextRequest) {
         offerStatus: "ACCEPTED",
         offerRespondedAt: nowDate,
         status: "ACCEPTED",
+        // Riwayat tahap (NR-15): penerimaan offer tercatat sebagai perpindahan tahap.
+        stageHistory: appendStageHistory(application.stageHistory, "ACCEPTED", application.status),
         hiredAt: nowDate,
         probationEnd,
         onboardingDocs: onboardingDocsJson,

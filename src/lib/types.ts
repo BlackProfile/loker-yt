@@ -288,6 +288,7 @@ export type Position = {
   // Pipeline & otomasi
   stages: string[]; // [] = pipeline bawaan (5 status)
   stageCategories: Record<string, StageCategory>; // kategori tahap kustom: {"Tahap": "REVIEW" | ...}
+  stageNotes: Record<string, string> | null; // NR-15 override penjelasan tahap di halaman status
   aiCriteria: string | null;
   autoShortlistScore: number | null;
   autoShortlistStage: string | null;
@@ -449,6 +450,13 @@ export type Application = {
   videoNotes?: VideoNote[]; // catatan bertimestamp video intro
   consentAt?: string | null; // persetujuan privasi pelamar
 
+  // NR-15 — read receipt & konfirmasi tanggal mulai (halaman Cek Status)
+  candidateSeenAt?: string | null; // terakhir pelamar membuka status lamaran ini
+  candidateSeenCount?: number; // berapa kali halaman status dibuka
+  startConfirmedAt?: string | null; // pelamar konfirmasi tanggal mulai
+  startProposedAt?: string | null; // usulan tanggal mulai baru dari pelamar
+  startProposedNote?: string | null; // catatan singkat dari pelamar
+
   createdAt: string;
 };
 
@@ -536,10 +544,33 @@ export type AdminOverviewResponse = {
   stale: Application[]; // lamaran NEW/REVIEWED tanpa perubahan > 7 hari (maks 5)
   subscriberCount: number;
   avgAiScore: number | null;
+
+  // NR-15 — kesehatan halaman Cek Status (dasbor admin)
+  statusHealth?: {
+    checksToday: number; // total bukaan halaman status hari ini (semua lamaran)
+    loginsToday: number; // login track-auth sukses hari ini
+    avgViewDelayHours: number | null; // rata-rata jeda "tahap berubah -> dilihat pelamar" (7 hari terakhir)
+    mostStalledStage: { label: string; medianDays: number } | null; // tahap dengan waktu tunggu terlama (lamaran aktif)
+  };
 };
 
 // POST /api/public/track -> { code, email } — email WAJIB cocok dengan lamaran
 // (login ganda: kode pelacakan bertindak sebagai kata sandi).
+// Pertanyaan pelamar dari halaman status (thread tanya-jawab dengan tim rekrutmen).
+export type TrackQuestionInfo = {
+  id: string;
+  question: string;
+  answer: string | null; // null = menunggu jawaban admin
+  askedAt: string;
+  answeredAt: string | null;
+};
+
+// Item riwayat tahap yang sudah dilewati (timeline bertanggal).
+export type StageHistoryItem = { key: string; label: string; at: string };
+
+// Satu perubahan sejak kunjungan terakhir pelamar (ringkasan "Apa yang Berubah").
+export type TrackChangeInfo = { at: string; text: string };
+
 export type TrackResponse = {
   found: boolean;
   status?: StageKey; // tahap pipeline (bawaan atau kustom per posisi)
@@ -560,6 +591,20 @@ export type TrackResponse = {
   slots?: TrackSlotInfo[];
   // Rencana onboarding dari admin (agenda hari pertama; tampil terpisah dari checklist dokumen)
   onboardingPlan?: OnboardingPlanItem[] | null;
+
+  // NR-15 — transparansi & keterlibatan
+  stageHistory?: StageHistoryItem[] | null; // tahap yang sudah dilewati + tanggal
+  stageNote?: Record<string, string> | null; // penjelasan per tahap (override posisi > default)
+  stageEstimates?: Record<string, number> | null; // tahap -> estimasi hari (median historis)
+  questions?: TrackQuestionInfo[] | null; // thread tanya-jawab pelamar
+  cvFileName?: string | null; // nama CV saat ini (panel perbarui CV)
+  surveyToken?: string | null; // token survei bila status final & belum diisi (tombol Beri Ulasan)
+  candidateStart?: {
+    startDate: string | null; // tanggal mulai dari offer
+    confirmedAt: string | null; // saat pelamar konfirmasi
+    proposedAt: string | null; // saat pelamar mengusul ulang
+    note: string | null; // catatan usulan pelamar
+  } | null;
 };
 
 // Ringkasan satu lamaran milik satu email (untuk daftar multi-lamaran di halaman status).
@@ -578,6 +623,10 @@ export type TrackAuthResponse = {
   ok: boolean;
   applications?: TrackSummary[];
   lockedForSec?: number; // sisa detik kunci lockout (bila ok=false karena lockout)
+  // NR-15 — "Apa yang Berubah" sejak kunjungan terakhir, dipetakan per kode lamaran.
+  // Klien mengirim header "x-lumina-seen" berisi JSON {kode: epochMs}; server menyertakan
+  // daftar perubahan (tahap pindah, jadwal dibuat, offer dikirim, dll) untuk tiap kode.
+  changes?: Record<string, TrackChangeInfo[]>;
 };
 
 // GET /api/admin/analytics — data tab analitik

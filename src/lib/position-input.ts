@@ -80,6 +80,7 @@ export type PositionFields = {
   publishAt?: Date | null;
   stages?: string; // JSON string[]; "[]" = pakai pipeline bawaan
   stageCategories?: string; // JSON Record<tahap kustom, StageCategory>; "{}" = pakai heuristik bawaan
+  stageNotes?: string; // JSON Record<tahap, teks penjelasan untuk pelamar>; "{}" = tanpa override
   aiCriteria?: string | null;
   autoShortlistScore?: number | null;
   autoShortlistStage?: string | null;
@@ -304,6 +305,27 @@ function sanitizeStageCategories(
       return err(`Kategori tahap "${stage}" tidak valid.`);
     }
     out[stage] = raw as StageCategory;
+  }
+  return ok(JSON.stringify(out));
+}
+
+/** Catatan penjelasan tahap untuk halaman status (NR-15): objek {tahap: teks} -> JSON. */
+function sanitizeStageNotes(value: unknown): Sanitized<string | undefined> {
+  if (value === undefined) return ok(undefined);
+  if (value === null) return ok("{}");
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return err("Catatan tahap harus berupa objek {tahap: teks}.");
+  }
+  const out: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const stage = typeof key === "string" ? key.trim().slice(0, 40) : "";
+    if (!stage) continue;
+    const note = typeof raw === "string" ? raw.trim().slice(0, 400) : "";
+    if (!note) continue; // teks kosong = tanpa override
+    out[stage] = note;
+  }
+  if (Object.keys(out).length > 24) {
+    return err("Catatan tahap maksimal 24 tahap.");
   }
   return ok(JSON.stringify(out));
 }
@@ -572,6 +594,10 @@ export async function sanitizePositionInput(
   if (!stageCategories.ok) return stageCategories;
   if (stageCategories.value !== undefined) f.stageCategories = stageCategories.value;
 
+  const stageNotes = sanitizeStageNotes(data.stageNotes);
+  if (!stageNotes.ok) return stageNotes;
+  if (stageNotes.value !== undefined) f.stageNotes = stageNotes.value;
+
   const aiCriteria = sanitizeNullableText(data.aiCriteria, "Kriteria AI", 600);
   if (!aiCriteria.ok) return aiCriteria;
   if (aiCriteria.value !== undefined) f.aiCriteria = aiCriteria.value;
@@ -822,6 +848,7 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.publishAt !== undefined) out.publishAt = f.publishAt;
   if (f.stages !== undefined) out.stages = f.stages;
   if (f.stageCategories !== undefined) out.stageCategories = f.stageCategories;
+  if (f.stageNotes !== undefined) out.stageNotes = f.stageNotes;
   if (f.aiCriteria !== undefined) out.aiCriteria = f.aiCriteria;
   if (f.autoShortlistScore !== undefined) out.autoShortlistScore = f.autoShortlistScore;
   if (f.autoShortlistStage !== undefined) out.autoShortlistStage = f.autoShortlistStage;

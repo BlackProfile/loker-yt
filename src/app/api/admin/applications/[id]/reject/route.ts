@@ -12,6 +12,7 @@ import {
 import { REJECTION_REASON_LABELS } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { sendSystemEvent } from "@/lib/notify";
+import { appendStageHistory } from "@/lib/stage-history";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         rejectionReason: reason,
         rejectionNote: feedback ? note : note, // catatan selalu tersimpan internal; tampil publik hanya bila feedback
         rejectedAt: now,
+        // Riwayat tahap (NR-15): penolakan tercatat di timeline bertanggal pelamar.
+        stageHistory: appendStageHistory(existing.stageHistory, "REJECTED", existing.status),
         ...(offerWasPending ? { offerStatus: null } : {}),
       },
       include: APPLICATION_INCLUDE,

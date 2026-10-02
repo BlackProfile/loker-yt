@@ -16,6 +16,7 @@ import {
   lockRemainingSec,
   recordAuthFail,
 } from "@/lib/status-gate";
+import { appendStageHistory } from "@/lib/stage-history";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,7 @@ export async function POST(req: NextRequest) {
         name: true,
         email: true,
         status: true,
+        stageHistory: true,
         deletedAt: true,
         position: { select: { title: true } },
       },
@@ -95,6 +97,8 @@ export async function POST(req: NextRequest) {
         rejectionReason: "MENARIK_DIRI",
         rejectedAt: now,
         stageUpdatedAt: now,
+        // Riwayat tahap (NR-15): tarik lamaran tercatat sebagai perpindahan tahap.
+        stageHistory: appendStageHistory(application.stageHistory, "REJECTED", status),
         // Sisa offer PENDING (bila ada) dibatalkan senyap agar tidak tampil lagi.
         offerStatus: null,
       },
