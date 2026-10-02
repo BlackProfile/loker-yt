@@ -2324,3 +2324,22 @@ Work Log:
 Stage Summary:
 - Verifikasi E2E via gateway :81 + agent-browser: dropdown terbuka di header desktop (aktif = ID, radio dot), klik English → seluruh halaman berubah ke EN dan trigger menampilkan "EN"; uji viewport mobile 390px → dropdown berfungsi di dalam Sheet; kembalikan ke ID sukses
 - bun run lint bersih, dev.log tanpa error; watcher akan auto-push
+
+---
+Task ID: NR-17
+Agent: Z.ai Code (main)
+Task: Lanjutkan status proyek + sinkronisasi seluruh kode ke GitHub
+
+Work Log:
+- Cek git status: 17 file modified (mayoritas hanya mode change 100644→100755), 1 file DELETED (src/app/api/public/onboarding/upload/route.ts), branch ahead 20 commit dari origin/main, proses auto-push watcher TIDAK berjalan (ps kosong, auto-push.log hilang)
+- Baca worklog: NR-15 (17 ide Cek Status) ternyata SUDAH selesai 100% oleh subagent NR-15-a/b/c/d/e di sesi sebelumnya — termasuk verifikasi E2E; ringkasan konteks lama ("belum mulai coding") sudah usang
+- Temukan regresi: status-page.tsx:1134 masih memanggil /api/public/onboarding/upload (fitur unggah dokumen onboarding) padahal route-nya dihapus di working tree → git checkout -- restore route (penghapusan dibatalkan sebelum commit)
+- Restart watcher: bash scripts/start-auto-push.sh (pid 1598, idempoten via /tmp/lumina-autopush.pid)
+- Siklus pertama watcher: commit 5724aa5 "auto-sync" + push OK (3eddaf1..5724aa5 main -> main) — seluruh 21 commit kini di GitHub
+- Verifikasi route hidup: POST /api/public/onboarding/upload tanpa payload → 400 (validasi, bukan 404) — kompilasi baik
+- Smoke test browser via :81: buka /#status?code=LM-Q8BGKK → kode ter-prefill dari hash (fitur salin tautan NR-15 #9), panel "Kehilangan kode pelacakan?" (kirim ulang kode #8) tampil, tanpa error console
+
+Stage Summary:
+- GitHub tersinkron penuh: main == origin/main di github.com/BlackProfile/loker-yt, watcher auto-push aktif kembali (interval 60s, satu-satunya proses yang boleh push)
+- NR-15 dikonfirmasi selesai 17/17 + NR-16 (dropdown bahasa) selesai; tidak ada pekerjaan setengah jadi tersisa di working tree
+- Watcher akan otomatis commit+push semua perubahan berikutnya; jangan push manual
