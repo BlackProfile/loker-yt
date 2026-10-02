@@ -41,6 +41,7 @@ import {
   Inbox,
   LayoutGrid,
   Loader2,
+  MapPin,
   RotateCcw,
   Search,
   Sparkles,
@@ -55,6 +56,7 @@ import {
   REJECTION_REASONS,
   REJECTION_REASON_LABELS,
   type Application,
+  type KomuterPlan,
   type Position,
   type RejectionReason,
   type StageKey,
@@ -88,6 +90,13 @@ const SORT_OPTIONS = [
   { value: "aiScore", label: "Skor AI" },
 ] as const;
 
+// Opsi filter rencana komuter (info kehadiran posisi on-site/hybrid).
+const KOMUTER_FILTER_OPTIONS: { value: KomuterPlan; label: string }[] = [
+  { value: "SIAP_KOMUTER", label: "Siap komuter" },
+  { value: "PERLU_RELOKASI", label: "Perlu relokasi" },
+  { value: "TIDAK", label: "Belum bisa" },
+];
+
 type ViewMode = "table" | "kanban";
 
 // Hasil pencarian semantik AI (POST /api/admin/applications/semantic-search).
@@ -112,6 +121,10 @@ export function ApplicationsTab() {
   const [hasInterview, setHasInterview] = useState(false);
   // Filter arsip (client-side memakai field archivedAt): Semua / Aktif / Diarsip.
   const [archiveFilter, setArchiveFilter] = useState<string>("ACTIVE");
+  // Filter info kehadiran (client-side, posisi on-site/hybrid): rencana komuter
+  // + pencarian domisili (case-insensitive contains).
+  const [komuterFilter, setKomuterFilter] = useState<string>(ALL);
+  const [domisiliFilter, setDomisiliFilter] = useState<string>("");
 
   const [allTags, setAllTags] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>("table");
@@ -209,7 +222,9 @@ export function ApplicationsTab() {
     tag !== ALL ||
     talentPool ||
     hasInterview ||
-    archiveFilter !== "ACTIVE";
+    archiveFilter !== "ACTIVE" ||
+    komuterFilter !== ALL ||
+    domisiliFilter.trim() !== "";
 
   const loadPositions = useCallback(async () => {
     try {
@@ -338,6 +353,8 @@ export function ApplicationsTab() {
     setTalentPool(false);
     setHasInterview(false);
     setArchiveFilter("ACTIVE");
+    setKomuterFilter(ALL);
+    setDomisiliFilter("");
   }
 
   function toggleSelect(id: string, checked: boolean) {
@@ -363,8 +380,16 @@ export function ApplicationsTab() {
     if (isOtherStageFilter) {
       list = list.filter((a) => !isBuiltInStage(a.status));
     }
+    // Filter info kehadiran (on-site/hybrid): rencana komuter + domisili.
+    if (komuterFilter !== ALL) {
+      list = list.filter((a) => a.komuterPlan === komuterFilter);
+    }
+    const domisiliQuery = domisiliFilter.trim().toLowerCase();
+    if (domisiliQuery) {
+      list = list.filter((a) => (a.domisili ?? "").toLowerCase().includes(domisiliQuery));
+    }
     return list;
-  }, [applications, archiveFilter, isOtherStageFilter]);
+  }, [applications, archiveFilter, isOtherStageFilter, komuterFilter, domisiliFilter]);
 
   // Jumlah lamaran terarsip (untuk keterangan kecil pada baris filter).
   const archivedCount = useMemo(
@@ -653,7 +678,7 @@ export function ApplicationsTab() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Filter tahap">
               <SelectValue placeholder="Semua Tahap" />
@@ -753,6 +778,38 @@ export function ApplicationsTab() {
               <SelectItem value="ALL">Semua</SelectItem>
             </SelectContent>
           </Select>
+
+          <Select value={komuterFilter} onValueChange={setKomuterFilter}>
+            <SelectTrigger
+              className={FILTER_TRIGGER_CLASS}
+              aria-label="Filter rencana komuter"
+            >
+              <SelectValue placeholder="Semua Komuter" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Semua Komuter</SelectItem>
+              {KOMUTER_FILTER_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="relative">
+            <MapPin
+              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              value={domisiliFilter}
+              onChange={(e) => setDomisiliFilter(e.target.value)}
+              placeholder="Filter domisili..."
+              aria-label="Filter domisili pelamar"
+              maxLength={80}
+              className={cn(FILTER_TRIGGER_CLASS, "pl-9")}
+            />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
@@ -803,7 +860,7 @@ export function ApplicationsTab() {
             <Skeleton key={i} className="h-14 w-full rounded-xl" />
           ))}
         </div>
-      ) : applications.length === 0 ? (
+      ) : displayedApplications.length === 0 ? (
         <Card className="rounded-2xl">
           <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
             <Inbox className="size-10 text-muted-foreground/50" aria-hidden="true" />

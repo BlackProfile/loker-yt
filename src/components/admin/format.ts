@@ -130,6 +130,7 @@ export const ACTION_LABELS: Record<string, string> = {
   WEBHOOK: "Notifikasi",
   APPLICATION_SUBMITTED: "Lamaran Masuk",
   INTERVIEW_SCHEDULED: "Jadwal Wawancara",
+  CHECKIN: "Tandai Hadir",
   RATING: "Rating",
   TAGS: "Tags",
   TALENT_POOL: "Talent Pool",

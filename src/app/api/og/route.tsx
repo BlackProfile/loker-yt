@@ -157,7 +157,7 @@ function DefaultCard() {
           Tim Kreatif Konten Digital
         </div>
       </div>
-      <Footer label="Posisi terbuka & pendaftaran remote" />
+      <Footer label="Posisi terbuka & pendaftaran online" />
     </div>
   );
 }

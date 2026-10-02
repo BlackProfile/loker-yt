@@ -30,6 +30,7 @@ import {
   ArrowLeft,
   BadgeCheck,
   CalendarClock,
+  Check,
   ClipboardCheck,
   ClipboardList,
   FileText,
@@ -57,6 +58,7 @@ import {
   INTERVIEW_MODES,
   INTERVIEW_PLATFORM_LABELS,
   INTERVIEW_PLATFORMS,
+  ONSITE_DOC_PRESETS,
   STAGE_CATEGORIES,
   STAGE_CATEGORY_LABELS,
   type InterviewMode,
@@ -585,6 +587,50 @@ export function PositionIntakePage({
               <Plus className="size-4" aria-hidden="true" />
               Tambah
             </Button>
+          </div>
+
+          {/* Preset cepat dokumen wajib posisi on-site (KTP/SKCK/Surat Sehat) —
+              sekali klik menambahkan ke daftar tanpa duplikat. */}
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs text-muted-foreground">
+              Preset cepat untuk posisi on-site
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {ONSITE_DOC_PRESETS.map((preset) => {
+                const exists = customDocs.some(
+                  (d) => d.toLowerCase() === preset.toLowerCase()
+                );
+                const full = customDocs.length >= MAX_CUSTOM_DOCS;
+                return (
+                  <Button
+                    key={preset}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-11 active:scale-[0.99] sm:h-9"
+                    onClick={() => {
+                      if (exists || full) return;
+                      setCustomDocs((prev) =>
+                        prev.some((d) => d.toLowerCase() === preset.toLowerCase())
+                          ? prev
+                          : [...prev, preset]
+                      );
+                    }}
+                    disabled={exists || full}
+                    aria-label={
+                      exists ? `${preset} sudah ada dalam daftar` : `Tambahkan ${preset}`
+                    }
+                  >
+                    {exists ? (
+                      <Check className="size-4" aria-hidden="true" />
+                    ) : (
+                      <Plus className="size-4" aria-hidden="true" />
+                    )}
+                    {preset}
+                  </Button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </FormSection>

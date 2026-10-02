@@ -29,7 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiPost } from "./api";
 import { formatRelative, initialsOf } from "./format";
-import { AiScoreBadge } from "./status-badge";
+import { AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 import { cn } from "@/lib/utils";
 
@@ -152,6 +152,7 @@ function KanbanCard({
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <AiScoreBadge score={app.aiScore} />
+        <DomisiliChip domisili={app.domisili} komuterPlan={app.komuterPlan} />
         {duplicate ? (
           <Tooltip>
             <TooltipTrigger asChild>

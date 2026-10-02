@@ -103,7 +103,10 @@ export async function POST(req: NextRequest) {
     if (!positionId) {
       return NextResponse.json({ error: "Posisi wajib dipilih." }, { status: 400 });
     }
-    const position = await db.position.findUnique({ where: { id: positionId }, select: { id: true } });
+    const position = await db.position.findUnique({
+      where: { id: positionId },
+      select: { id: true, dailySlotQuota: true },
+    });
     if (!position) {
       return NextResponse.json({ error: "Posisi tidak ditemukan." }, { status: 404 });
     }
@@ -139,6 +142,40 @@ export async function POST(req: NextRequest) {
     }
     if (mode === "ONSITE" && !address) {
       return NextResponse.json({ error: "Alamat wajib diisi untuk slot onsite." }, { status: 400 });
+    }
+
+    // Kuota slot on-site per hari (NR-5): bila posisi menetapkan dailySlotQuota,
+    // hitung slot on-site eksisting posisi tersebut pada hari kalender yang sama
+    // dan tolak pembuatan bila kuota sudah penuh.
+    if (mode === "ONSITE" && position.dailySlotQuota != null) {
+      const dayStart = new Date(
+        scheduledAt.getFullYear(),
+        scheduledAt.getMonth(),
+        scheduledAt.getDate()
+      );
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      const used = await db.interviewSlot.count({
+        where: {
+          positionId,
+          mode: "ONSITE",
+          scheduledAt: { gte: dayStart, lt: dayEnd },
+        },
+      });
+      if (used >= position.dailySlotQuota) {
+        const tanggal = scheduledAt.toLocaleDateString("id-ID", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        });
+        return NextResponse.json(
+          {
+            error: `Kuota slot on-site posisi ini maksimal ${position.dailySlotQuota} per hari untuk ${tanggal}.`,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const interviewers = Array.isArray(data.interviewers)

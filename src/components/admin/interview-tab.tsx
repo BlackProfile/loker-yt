@@ -45,6 +45,8 @@ import {
   Inbox,
   MapPin,
   Trash2,
+  UserCheck,
+  UserX,
   Video,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -148,8 +150,14 @@ export function InterviewTab() {
   }
 
   function updateInterviewInList(updated: Interview) {
-    setInterviews((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
-    setDetail((prev) => (prev && prev.id === updated.id ? updated : prev));
+    // Gabungkan dengan item lama agar konteks daftar (nama pelamar, posisi, kode
+    // tracking) tidak hilang — respons PATCH hanya berisi kolom inti.
+    setInterviews((prev) =>
+      prev.map((i) => (i.id === updated.id ? { ...i, ...updated } : i))
+    );
+    setDetail((prev) =>
+      prev && prev.id === updated.id ? { ...prev, ...updated } : prev
+    );
   }
 
   function removeInterviewFromList(id: string) {
@@ -172,6 +180,24 @@ export function InterviewTab() {
         body
       );
       toast.success(successMessage);
+      updateInterviewInList(res.interview);
+    } catch (err) {
+      reportError(err);
+    }
+  }
+
+  // Check-in kehadiran (NR-5): tandai kandidat hadir datang ke kantor (on-site).
+  async function handleCheckIn(session: Interview) {
+    if (!canMutate) {
+      toast.error("Anda tidak memiliki akses untuk aksi ini.");
+      return;
+    }
+    try {
+      const res = await apiPatch<{ interview: Interview }>(
+        `/api/admin/interviews/${session.id}`,
+        { checkIn: true }
+      );
+      toast.success("Kandidat ditandai hadir di kantor");
       updateInterviewInList(res.interview);
     } catch (err) {
       reportError(err);
@@ -336,6 +362,12 @@ export function InterviewTab() {
                           </span>
                         </p>
                         <InterviewStatusChip status={i.status} className="mt-1.5" />
+                        {i.checkedInAt ? (
+                          <span className="mt-1.5 inline-flex w-fit items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400">
+                            <UserCheck className="size-3" aria-hidden="true" />
+                            Hadir · {formatTime(i.checkedInAt)}
+                          </span>
+                        ) : null}
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1.5">
                         <Button
@@ -358,6 +390,39 @@ export function InterviewTab() {
                               Gabung
                             </a>
                           </Button>
+                        ) : null}
+                        {i.mode === "ONSITE" &&
+                        (i.status === "SCHEDULED" || i.status === "CONFIRMED") ? (
+                          canMutate && !i.checkedInAt ? (
+                            <div className="flex gap-1.5">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-11 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 sm:h-8 dark:border-emerald-900 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                                onClick={() => void handleCheckIn(i)}
+                                aria-label={`Tandai hadir ${i.applicationName ?? ""}`}
+                              >
+                                <UserCheck className="size-4" aria-hidden="true" />
+                                Tandai Hadir
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-11 sm:h-8"
+                                onClick={() =>
+                                  void handleReschedulePatch(
+                                    i,
+                                    { status: "NO_SHOW" },
+                                    "Ditandai tidak hadir"
+                                  )
+                                }
+                                aria-label={`Tandai tidak hadir ${i.applicationName ?? ""}`}
+                              >
+                                <UserX className="size-4" aria-hidden="true" />
+                                Tidak Hadir
+                              </Button>
+                            </div>
+                          ) : null
                         ) : null}
                       </div>
                     </div>
@@ -472,6 +537,49 @@ function SlotManagerPanel({ positions }: { positions: Position[] }) {
     (s) => !s.bookedByApplicationId && new Date(s.scheduledAt).getTime() > Date.now()
   ).length;
 
+  // Posisi terpilih untuk slot pintar (NR-5): default mode on-site,
+  // isi-otomatis alamat kantor, dan hitungan kuota slot per hari.
+  const selectedPosition = positions.find((p) => p.id === positionId) ?? null;
+  const isOnsitePosition =
+    selectedPosition?.workMode === "ONSITE" || selectedPosition?.workMode === "HYBRID";
+
+  // Ganti posisi: non-remote memakai mode on-site bawaan (dan alamat kantor bila
+  // kosong); kembali ke remote mengembalikan mode online bila masih on-site.
+  useEffect(() => {
+    if (!selectedPosition) return;
+    if (isOnsitePosition) {
+      setMode("ONSITE");
+      setAddress((prev) => (prev.trim() ? prev : selectedPosition.address ?? ""));
+    } else {
+      setMode((prev) => (prev === "ONSITE" ? "ONLINE" : prev));
+    }
+    // Dep sengaja hanya positionId: mode/alamat hanya perlu di-default ulang saat
+    // posisi berganti, bukan saat daftar posisi dimuat ulang di latar belakang.
+  }, [positionId]);
+
+  // Mode on-site dipilih manual & alamat masih kosong -> isi dari alamat kantor posisi.
+  function handleModeChange(v: InterviewMode) {
+    setMode(v);
+    if (v === "ONSITE" && !address.trim() && selectedPosition?.address) {
+      setAddress(selectedPosition.address);
+    }
+  }
+
+  // Kuota slot on-site per hari: sisa untuk tanggal yang dipilih pada form.
+  const dailyQuota = selectedPosition?.dailySlotQuota ?? null;
+  const chosenDay = scheduledAtLocal ? new Date(scheduledAtLocal) : null;
+  const chosenDayValid = chosenDay !== null && !Number.isNaN(chosenDay.getTime());
+  const usedOnsiteSlots =
+    dailyQuota != null && mode === "ONSITE" && chosenDayValid && selectedPosition
+      ? slots.filter(
+          (s) =>
+            s.positionId === selectedPosition.id &&
+            s.mode === "ONSITE" &&
+            isSameDay(new Date(s.scheduledAt), chosenDay as Date)
+        ).length
+      : 0;
+  const remainingQuota = dailyQuota != null ? Math.max(0, dailyQuota - usedOnsiteSlots) : null;
+
   async function handleCreateSlot(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (creating || !canMutate) {
@@ -498,6 +606,17 @@ function SlotManagerPanel({ positions }: { positions: Position[] }) {
     }
     if (mode === "ONSITE" && !address.trim()) {
       toast.error("Alamat wajib diisi untuk slot onsite.");
+      return;
+    }
+    // Blokir pembuatan bila kuota slot on-site posisi sudah penuh untuk tanggal ini.
+    if (mode === "ONSITE" && dailyQuota != null && remainingQuota != null && remainingQuota <= 0) {
+      toast.error(
+        `Kuota slot on-site posisi ini maksimal ${dailyQuota} per hari untuk ${format(
+          chosenDay as Date,
+          "d MMMM yyyy",
+          { locale: localeId }
+        )}.`
+      );
       return;
     }
     const interviewers = interviewersText
@@ -710,7 +829,7 @@ function SlotManagerPanel({ positions }: { positions: Position[] }) {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1.5">
                       <Label>Mode</Label>
-                      <Select value={mode} onValueChange={(v) => setMode(v as InterviewMode)}>
+                      <Select value={mode} onValueChange={(v) => handleModeChange(v as InterviewMode)}>
                         <SelectTrigger className="h-11 w-full sm:h-10" aria-label="Mode slot">
                           <SelectValue />
                         </SelectTrigger>
@@ -722,6 +841,11 @@ function SlotManagerPanel({ positions }: { positions: Position[] }) {
                           ))}
                         </SelectContent>
                       </Select>
+                      {isOnsitePosition ? (
+                        <p className="text-xs text-muted-foreground">
+                          Posisi ini dikerjakan di kantor — slot on-site direkomendasikan.
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label>Platform</Label>
@@ -761,6 +885,38 @@ function SlotManagerPanel({ positions }: { positions: Position[] }) {
                         placeholder="mis. Jl. Sudirman No. 10, Jakarta"
                         className="h-11 sm:h-10"
                       />
+                      {selectedPosition?.address ? (
+                        <p className="text-xs text-muted-foreground">
+                          Alamat kantor posisi ini: {selectedPosition.address}
+                          {selectedPosition.mapsUrl && /^https?:\/\//i.test(selectedPosition.mapsUrl) ? (
+                            <>
+                              {" \u00b7 "}
+                              <a
+                                href={selectedPosition.mapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium text-foreground underline underline-offset-2 hover:text-rose-600 dark:hover:text-rose-400"
+                              >
+                                Lihat peta
+                              </a>
+                            </>
+                          ) : null}
+                        </p>
+                      ) : null}
+                      {dailyQuota != null ? (
+                        <p
+                          className={cn(
+                            "text-xs",
+                            remainingQuota != null && remainingQuota <= 0
+                              ? "font-medium text-amber-600 dark:text-amber-400"
+                              : "text-muted-foreground"
+                          )}
+                        >
+                          {chosenDayValid
+                            ? `${remainingQuota} dari ${dailyQuota} slot tersisa pada ${format(chosenDay as Date, "d MMMM yyyy", { locale: localeId })}.`
+                            : `Kuota slot on-site posisi ini: ${dailyQuota} per hari.`}
+                        </p>
+                      ) : null}
                     </div>
                   )}
                   <div className="flex flex-col gap-1.5">

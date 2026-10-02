@@ -43,16 +43,20 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   ArrowLeft,
+  Blend,
   BookmarkPlus,
   Briefcase,
+  Building2,
   Clapperboard,
   Flame,
   Gift,
+  Globe,
   History,
   Image as ImageIcon,
   Languages,
   LayoutTemplate,
   Loader2,
+  MapPin,
   Pin,
   Send,
   Trash2,
@@ -65,7 +69,11 @@ import {
   INTERVIEW_MODES,
   INTERVIEW_PLATFORMS,
   POSITION_TYPES,
+  SHIFT_SYSTEMS,
+  SHIFT_SYSTEM_LABELS,
   STAGE_CATEGORIES,
+  WORK_MODES,
+  WORK_MODE_LABELS,
   type AiCoverResponse,
   type AdminUploadResponse,
   type InterviewMode,
@@ -73,8 +81,11 @@ import {
   type Position,
   type PositionStatsRow,
   type ScreeningQuestion,
+  type ShiftSystem,
   type StageCategory,
+  type WorkMode,
 } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { apiFetch, apiGet, apiPatch, apiPost } from "./api";
 import { formatDateTime, isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
@@ -91,6 +102,16 @@ type FormState = {
   department: string;
   type: string;
   location: string;
+  // Mode kerja & lokasi terstruktur (fitur non-remote). dailySlotQuota
+  // disimpan sebagai string di form; "" berarti tanpa batas (null).
+  workMode: WorkMode;
+  city: string;
+  address: string;
+  mapsUrl: string;
+  workHours: string;
+  shiftSystem: ShiftSystem;
+  facilities: string[];
+  dailySlotQuota: string;
   description: string;
   requirements: string[];
   // Konten dua bahasa (opsional) — fallback versi Indonesia bila kosong.
@@ -151,6 +172,14 @@ const EMPTY_FORM: FormState = {
   department: "",
   type: "Full-time",
   location: "Remote",
+  workMode: "REMOTE",
+  city: "",
+  address: "",
+  mapsUrl: "",
+  workHours: "",
+  shiftSystem: "NONE",
+  facilities: [],
+  dailySlotQuota: "",
   description: "",
   requirements: [],
   titleEn: "",
@@ -211,6 +240,18 @@ function buildFormState(p: Position): FormState {
       ? p.type
       : POSITION_TYPES[0],
     location: p.location || "Remote",
+    workMode: (WORK_MODES as readonly string[]).includes(p.workMode)
+      ? p.workMode
+      : "REMOTE",
+    city: p.city ?? "",
+    address: p.address ?? "",
+    mapsUrl: p.mapsUrl ?? "",
+    workHours: p.workHours ?? "",
+    shiftSystem: (SHIFT_SYSTEMS as readonly string[]).includes(p.shiftSystem)
+      ? p.shiftSystem
+      : "NONE",
+    facilities: [...(p.facilities ?? [])],
+    dailySlotQuota: p.dailySlotQuota != null ? String(p.dailySlotQuota) : "",
     description: p.description,
     requirements: [...p.requirements],
     titleEn: p.titleEn ?? "",
@@ -392,6 +433,22 @@ function formDataFromUnknown(raw: unknown): {
           ? d.type
           : "Full-time",
       location: draftString(d.location, 120, "Remote"),
+      workMode:
+        typeof d.workMode === "string" &&
+        (WORK_MODES as readonly string[]).includes(d.workMode)
+          ? (d.workMode as WorkMode)
+          : "REMOTE",
+      city: draftStringOrNull(d.city, 80),
+      address: draftStringOrNull(d.address, 200),
+      mapsUrl: draftStringOrNull(d.mapsUrl, 300),
+      workHours: draftStringOrNull(d.workHours, 120),
+      shiftSystem:
+        typeof d.shiftSystem === "string" &&
+        (SHIFT_SYSTEMS as readonly string[]).includes(d.shiftSystem)
+          ? (d.shiftSystem as ShiftSystem)
+          : "NONE",
+      facilities: draftStringArray(d.facilities, 8, 80, []),
+      dailySlotQuota: draftNumberString(d.dailySlotQuota, ""),
       description: draftString(d.description, 20000, ""),
       requirements: draftStringArray(d.requirements, 20, 200, []),
       titleEn: draftStringOrNull(d.titleEn, 120),
@@ -674,6 +731,15 @@ export function PositionFormPage({
       keywords.some((k) => e.toLowerCase().includes(k))
     );
 
+  // Error inline per field lokasi (mode kerja on-site/hybrid) — pesan dari
+  // validate() dicocokkan lewat kata kunci, pola sama dengan sectionError.
+  const cityError = validationErrors.some((e) =>
+    e.toLowerCase().includes("kota wajib")
+  );
+  const addressError = validationErrors.some((e) =>
+    e.toLowerCase().includes("alamat kantor wajib")
+  );
+
   function validate(): string[] {
     const errors: string[] = [];
     if (form.title.trim().length < 3)
@@ -683,6 +749,29 @@ export function PositionFormPage({
       errors.push("Deskripsi minimal 10 karakter.");
     if (form.salaryText.trim().length > 80)
       errors.push("Teks gaji maksimal 80 karakter.");
+    // Mode kerja & lokasi terstruktur (fitur non-remote): kota + alamat wajib
+    // untuk posisi on-site/hybrid, peta & kuota slot divalidasi bila diisi.
+    if (form.workMode !== "REMOTE") {
+      if (!form.city.trim())
+        errors.push("Kota wajib diisi untuk posisi on-site/hybrid.");
+      if (!form.address.trim())
+        errors.push("Alamat kantor wajib diisi untuk posisi on-site/hybrid.");
+    }
+    if (
+      form.mapsUrl.trim().length > 0 &&
+      !/^https?:\/\//i.test(form.mapsUrl.trim())
+    )
+      errors.push("Tautan Google Maps harus diawali http:// atau https://.");
+    if (form.dailySlotQuota.trim() !== "") {
+      if (
+        !isInt(form.dailySlotQuota) ||
+        Number(form.dailySlotQuota) < 1 ||
+        Number(form.dailySlotQuota) > 100
+      )
+        errors.push(
+          "Kuota slot wawancara per hari harus angka bulat 1-100, atau dikosongkan."
+        );
+    }
     if (
       form.examples.some(
         (url) => url.trim().length > 0 && !/^https?:\/\//i.test(url.trim())
@@ -743,6 +832,25 @@ export function PositionFormPage({
       department: form.department.trim(),
       type: form.type,
       location: form.location.trim() || "Remote",
+      // Mode kerja & lokasi terstruktur (fitur non-remote). Saat REMOTE semua
+      // field lokasi disembunyikan di form, jadi dikirim null/kosong agar data
+      // lama tidak tertinggal di database.
+      workMode: form.workMode,
+      city: form.workMode === "REMOTE" ? null : form.city.trim() || null,
+      address: form.workMode === "REMOTE" ? null : form.address.trim() || null,
+      mapsUrl:
+        form.workMode === "REMOTE" ? null : form.mapsUrl.trim() || null,
+      workHours:
+        form.workMode === "REMOTE" ? null : form.workHours.trim() || null,
+      shiftSystem: form.workMode === "REMOTE" ? "NONE" : form.shiftSystem,
+      facilities:
+        form.workMode === "REMOTE"
+          ? []
+          : form.facilities.map((f) => f.trim()).filter(Boolean),
+      dailySlotQuota:
+        form.workMode === "REMOTE" || form.dailySlotQuota.trim() === ""
+          ? null
+          : Number(form.dailySlotQuota),
       description: form.description.trim(),
       requirements: form.requirements.map((r) => r.trim()).filter(Boolean),
       // Konten dua bahasa — kosong berarti fallback ke versi Indonesia (null).
@@ -1141,6 +1249,185 @@ export function PositionFormPage({
                       placeholder="mis. Menguasai editing video"
                     />
                   </div>
+                </FormSection>
+
+              {/* a1. Mode Kerja & Lokasi — kartu section terpisah (fitur non-remote).
+                  REMOTE menyembunyikan field lokasi; ONSITE/HYBRID menampilkannya. */}
+              <FormSection
+                id="mode-kerja-lokasi"
+                icon={MapPin}
+                title="Mode Kerja & Lokasi"
+                hint="Tempat, jam kerja, dan fasilitas untuk posisi ini."
+                hasError={sectionError(
+                  "kota wajib",
+                  "alamat kantor wajib",
+                  "tautan google maps",
+                  "kuota slot"
+                )}
+              >
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Mode Kerja</Label>
+                    <div
+                      className="grid grid-cols-3 gap-1 rounded-lg border p-1"
+                      role="group"
+                      aria-label="Mode kerja posisi"
+                    >
+                      {WORK_MODES.map((mode) => {
+                        const ModeIcon =
+                          mode === "REMOTE"
+                            ? Globe
+                            : mode === "ONSITE"
+                              ? Building2
+                              : Blend;
+                        const selected = form.workMode === mode;
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => set("workMode", mode)}
+                            aria-pressed={selected}
+                            className={cn(
+                              "flex h-11 items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9",
+                              selected
+                                ? "bg-primary text-primary-foreground shadow-sm"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                            )}
+                          >
+                            <ModeIcon className="size-4" aria-hidden="true" />
+                            {WORK_MODE_LABELS[mode]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {form.workMode === "REMOTE" ? (
+                      <p className="text-xs text-muted-foreground">
+                        Posisi ini bisa dikerjakan dari mana saja.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {form.workMode !== "REMOTE" ? (
+                    <div className="flex flex-col gap-4 rounded-lg border p-3">
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="pos-city">Kota *</Label>
+                        <Input
+                          id="pos-city"
+                          value={form.city}
+                          onChange={(e) => set("city", e.target.value)}
+                          placeholder="mis. Jakarta"
+                          className="h-10"
+                          maxLength={80}
+                          aria-invalid={cityError || undefined}
+                        />
+                        {cityError ? (
+                          <p className="text-xs text-rose-600 dark:text-rose-400">
+                            Kota wajib diisi untuk posisi on-site/hybrid.
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="pos-address">Alamat Kantor *</Label>
+                        <Textarea
+                          id="pos-address"
+                          value={form.address}
+                          onChange={(e) => set("address", e.target.value)}
+                          placeholder="mis. Jl. Cikini Raya No. 42, Menteng, Jakarta Pusat"
+                          rows={2}
+                          maxLength={200}
+                          aria-invalid={addressError || undefined}
+                        />
+                        {addressError ? (
+                          <p className="text-xs text-rose-600 dark:text-rose-400">
+                            Alamat kantor wajib diisi untuk posisi on-site/hybrid.
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="pos-mapsUrl">Tautan Google Maps</Label>
+                        <Input
+                          id="pos-mapsUrl"
+                          value={form.mapsUrl}
+                          onChange={(e) => set("mapsUrl", e.target.value)}
+                          placeholder="https://maps.google.com/..."
+                          className="h-10"
+                          maxLength={300}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="pos-workHours">Jam Kerja</Label>
+                          <Input
+                            id="pos-workHours"
+                            value={form.workHours}
+                            onChange={(e) => set("workHours", e.target.value)}
+                            placeholder="mis. Senin-Jumat, 09.00-17.00 WIB"
+                            className="h-10"
+                            maxLength={120}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="pos-shiftSystem">Sistem Shift</Label>
+                          <Select
+                            value={form.shiftSystem}
+                            onValueChange={(v) => set("shiftSystem", v as ShiftSystem)}
+                          >
+                            <SelectTrigger
+                              id="pos-shiftSystem"
+                              className="h-10 w-full"
+                              aria-label="Sistem shift"
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {SHIFT_SYSTEMS.map((s) => (
+                                <SelectItem key={s} value={s}>
+                                  {SHIFT_SYSTEM_LABELS[s]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5 sm:max-w-56">
+                        <Label htmlFor="pos-dailySlotQuota">
+                          Kuota Slot Wawancara per Hari
+                        </Label>
+                        <Input
+                          id="pos-dailySlotQuota"
+                          type="number"
+                          min={1}
+                          max={100}
+                          step={1}
+                          value={form.dailySlotQuota}
+                          onChange={(e) => set("dailySlotQuota", e.target.value)}
+                          placeholder="Tanpa batas"
+                          className="h-10"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Batas jadwal wawancara di kantor per hari. Kosongkan bila
+                          tanpa batas.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <Label>Fasilitas Kantor</Label>
+                        <StringListEditor
+                          name="Fasilitas kantor"
+                          items={form.facilities}
+                          onChange={(items) => set("facilities", items)}
+                          maxItems={8}
+                          maxLength={80}
+                          addLabel="Tambah fasilitas"
+                          placeholder="mis. Meja dual monitor"
+                          hint="khusus posisi on-site/hybrid"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </FormSection>
 
               {/* a2. Konten Bahasa Inggris (opsional) — dipakai publik saat lang "en" */}

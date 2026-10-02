@@ -28,6 +28,8 @@ const id = {
     statsOpen: "Posisi Terbuka",
     statsApps: "Pelamar Masuk",
     statsRemote: "Tim Remote",
+    statsMode: "Mode Kerja",
+    statsMixed: "{remote} Remote · {onsite} Di Kantor",
     deadlinePrefix: "Pendaftaran ditutup:",
     countdown: {
       days: "Hari",
@@ -53,8 +55,12 @@ const id = {
   positions: {
     badge: "Lowongan",
     title: "Posisi yang Dibutuhkan",
-    desc: "Semua peran bersifat remote dan fleksibel. Temukan yang paling sesuai dengan keahlianmu.",
+    desc: "Ada peran remote, on-site, dan hybrid. Temukan yang paling sesuai dengan keahlianmu.",
     all: "Semua",
+    modeLabel: "Filter mode kerja",
+    cityLabel: "Filter kota",
+    allCities: "Semua kota",
+    resetFilter: "Hapus semua filter",
     deptLabel: "Filter departemen",
     typeLabel: "Filter jenis pekerjaan",
     requirementsCount: "persyaratan",
@@ -484,8 +490,16 @@ const id = {
     sectionDesc: "Deskripsi Posisi",
     sectionReq: "Persyaratan",
     sectionTerms: "Ketentuan Lamaran",
+    sectionLocation: "Lokasi & Operasional",
     sectionBenefit: "Benefit",
     sectionWorks: "Contoh Karya",
+    locationAddress: "Alamat",
+    locationAddressNone: "Alamat kantor menyusul.",
+    openMap: "Buka di Peta",
+    locationHours: "Jam kerja",
+    locationShift: "Sistem shift",
+    locationFacilities: "Fasilitas",
+    remoteAnywhere: "Posisi ini bisa dikerjakan dari mana saja.",
     termsFiles: "Berkas wajib",
     termsFilesCv: "CV (PDF)",
     termsFilesIntro: "Audio/video perkenalan",
@@ -545,6 +559,8 @@ type idDictShape = {
     statsOpen: string;
     statsApps: string;
     statsRemote: string;
+    statsMode: string;
+    statsMixed: string;
     deadlinePrefix: string;
     countdown: {
       days: string;
@@ -572,6 +588,10 @@ type idDictShape = {
     title: string;
     desc: string;
     all: string;
+    modeLabel: string;
+    cityLabel: string;
+    allCities: string;
+    resetFilter: string;
     deptLabel: string;
     typeLabel: string;
     requirementsCount: string;
@@ -927,8 +947,16 @@ type idDictShape = {
     sectionDesc: string;
     sectionReq: string;
     sectionTerms: string;
+    sectionLocation: string;
     sectionBenefit: string;
     sectionWorks: string;
+    locationAddress: string;
+    locationAddressNone: string;
+    openMap: string;
+    locationHours: string;
+    locationShift: string;
+    locationFacilities: string;
+    remoteAnywhere: string;
     termsFiles: string;
     termsFilesCv: string;
     termsFilesIntro: string;
@@ -990,6 +1018,8 @@ const en: Dict = {
     statsOpen: "Open Roles",
     statsApps: "Applications",
     statsRemote: "Remote Team",
+    statsMode: "Work Modes",
+    statsMixed: "{remote} Remote · {onsite} On-site",
     deadlinePrefix: "Applications close:",
     countdown: {
       days: "Days",
@@ -1015,8 +1045,12 @@ const en: Dict = {
   positions: {
     badge: "Openings",
     title: "Positions We Need",
-    desc: "All roles are remote and flexible. Find the one that fits your skills best.",
+    desc: "Remote, on-site, and hybrid roles are open. Find the one that fits your skills best.",
     all: "All",
+    modeLabel: "Filter by work mode",
+    cityLabel: "Filter by city",
+    allCities: "All cities",
+    resetFilter: "Clear all filters",
     deptLabel: "Filter by department",
     typeLabel: "Filter by job type",
     requirementsCount: "requirements",
@@ -1446,8 +1480,16 @@ const en: Dict = {
     sectionDesc: "About the Role",
     sectionReq: "Requirements",
     sectionTerms: "Terms & Conditions",
+    sectionLocation: "Location & Operations",
     sectionBenefit: "Benefits",
     sectionWorks: "Sample Works",
+    locationAddress: "Address",
+    locationAddressNone: "Office address to follow.",
+    openMap: "Open in Maps",
+    locationHours: "Working hours",
+    locationShift: "Shift system",
+    locationFacilities: "Facilities",
+    remoteAnywhere: "This role can be done from anywhere.",
     termsFiles: "Required documents",
     termsFilesCv: "CV (PDF)",
     termsFilesIntro: "Intro audio/video",

@@ -13,6 +13,7 @@ import {
   FileText,
   Info,
   Loader2,
+  MapPin,
   MessageSquareText,
   Mic,
   PauseCircle,
@@ -27,8 +28,14 @@ import {
   APPLICATION_SOURCES,
   CV_MAX_BYTES,
   INTRO_MAX_BYTES,
+  KOMUTER_PLANS,
+  KOMUTER_PLAN_LABELS,
+  SHIFT_PREFS,
+  SHIFT_PREF_LABELS,
   type ApplySuccessResponse,
+  type KomuterPlan,
   type Position,
+  type ShiftPref,
 } from "@/lib/types";
 import {
   FORM_LIMITS,
@@ -84,6 +91,25 @@ const AUTOSAVE_DELAY_MS = 500;
 const MIN_TEXT_LENGTH = 10;
 const SCREENING_MAX = 500; // batas karakter tiap jawaban screening (sinkron dengan server)
 const SCREENING_KEY_PREFIX = "screening:";
+
+// NR-4 — Info Kehadiran (posisi ONSITE/HYBRID): batas karakter disinkronkan
+// dengan sanitizer di /api/applications.
+const DOMISILI_MAX = 80;
+const START_DATE_MAX = 60;
+
+// Label EN untuk opsi komuter & shift (label ID berasal dari types.ts — pola
+// bilingual wizard memakai lang === "en" inline; strings.ts tidak diubah).
+const KOMUTER_PLAN_LABELS_EN: Record<KomuterPlan, string> = {
+  SIAP_KOMUTER: "Ready to commute daily",
+  PERLU_RELOKASI: "Need relocation",
+  TIDAK: "Not yet",
+};
+const SHIFT_PREF_LABELS_EN: Record<ShiftPref, string> = {
+  PAGI: "Morning shift",
+  SIANG: "Day shift",
+  MALAM: "Night shift",
+  APA_SAJA: "Any shift",
+};
 
 // Form Builder per posisi (mode skema aktif).
 const FORM_KEY_PREFIX = "form:"; // kunci error jawaban: "form:"+fieldId
@@ -738,6 +764,12 @@ type FormValues = {
   socialLinks: string;
   experience: string;
   motivation: string;
+  // NR-4 — Info Kehadiran (posisi ONSITE/HYBRID): domisili, rencana komuter,
+  // preferensi shift, perkiraan mulai kerja. Iaikut autosave draft.
+  domisili: string;
+  komuterPlan: string; // salah satu KOMUTER_PLANS atau "" (belum dipilih)
+  shiftPref: string; // salah satu SHIFT_PREFS atau "" (belum dipilih)
+  startDatePref: string;
 };
 
 type FieldKey = keyof FormValues | "positionId" | `screening:${string}`;
@@ -751,6 +783,10 @@ const INITIAL_VALUES: FormValues = {
   socialLinks: "",
   experience: "",
   motivation: "",
+  domisili: "",
+  komuterPlan: "",
+  shiftPref: "",
+  startDatePref: "",
 };
 
 const VALUE_KEYS: (keyof FormValues)[] = [
@@ -761,6 +797,10 @@ const VALUE_KEYS: (keyof FormValues)[] = [
   "socialLinks",
   "experience",
   "motivation",
+  "domisili",
+  "komuterPlan",
+  "shiftPref",
+  "startDatePref",
 ];
 
 type StoredDraft = {
@@ -839,6 +879,44 @@ export function ApplyWizard({
   const screeningQuestions = selectedPosition?.screeningQuestions ?? [];
   const customDocs = selectedPosition?.customDocs ?? [];
 
+  // NR-4 — langkah Info Kehadiran hanya untuk posisi non-remote (ONSITE/HYBRID).
+  // Posisi REMOTE tidak mendapat langkah/field tambahan apa pun.
+  const onsiteActive =
+    selectedPosition?.workMode === "ONSITE" || selectedPosition?.workMode === "HYBRID";
+
+  // NR-4 — label & pertanyaan terlokalisasi langkah Info Kehadiran (pola
+  // bilingual inline lang === "en"). Shift hanya ditanya saat shiftSystem
+  // posisi bukan NONE.
+  const attendanceCity = selectedPosition?.city?.trim() ?? "";
+  const attendanceShiftAsked =
+    onsiteActive && (selectedPosition?.shiftSystem ?? "NONE") !== "NONE";
+  const attendanceTitle = lang === "en" ? "On-site Work Info" : "Info Kehadiran di Kantor";
+  const attendanceDesc = lang === "en"
+    ? "This position works from the office. Tell us a few quick things about being able to work on-site."
+    : "Posisi ini bekerja dari kantor. Ceritakan beberapa hal singkat soal kesiapanmu hadir di kantor.";
+  const attendanceDomisiliLabel = lang === "en"
+    ? "What city do you live in?"
+    : "Kota domisili kamu?";
+  const attendanceKomuterQuestion = onsiteActive
+    ? lang === "en"
+      ? attendanceCity
+        ? `Are you willing to commute to ${attendanceCity}?`
+        : "Are you willing to commute to our office location?"
+      : attendanceCity
+        ? `Apakah kamu bersedia komuter ke ${attendanceCity}?`
+        : "Apakah kamu bersedia komuter ke lokasi kantor kami?"
+    : "";
+  const attendanceShiftQuestion = lang === "en"
+    ? "Which shift do you prefer?"
+    : "Shift mana yang kamu inginkan?";
+  const attendanceStartDateLabel = lang === "en"
+    ? "When can you start working?"
+    : "Kapan kamu bisa mulai bekerja?";
+  const komuterPlanLabel = (plan: KomuterPlan) =>
+    lang === "en" ? KOMUTER_PLAN_LABELS_EN[plan] : KOMUTER_PLAN_LABELS[plan];
+  const shiftPrefLabel = (pref: ShiftPref) =>
+    lang === "en" ? SHIFT_PREF_LABELS_EN[pref] : SHIFT_PREF_LABELS[pref];
+
   // Form Builder per posisi (skema v2): seluruh bagian (Data Diri, Pengalaman,
   // Berkas, dan bagian tambahan) hidup di skema dan urutan wizard mengikuti
   // urutan sections. API publik selalu mengirim skema TERNORMALISASI v2 atau
@@ -857,10 +935,40 @@ export function ApplyWizard({
       nextStepIndex += 1;
     }
   }
+
+  // NR-4 — sisipkan langkah Info Kehadiran: mode klasik setelah Pengalaman
+  // (langkah 2, sebelum Berkas); mode skema tepat setelah bagian Data Diri
+  // (fallback: sebelum bagian Berkas; fallback terakhir: di akhir). Langkah
+  // sesudah titik sisip digeser +1 agar indeks tetap rapat.
+  let attendanceStepIndex = -1;
+  if (onsiteActive) {
+    if (schema) {
+      const biodataIdx = sectionSteps.findIndex((entry) => entry.section.kind === "biodata");
+      const filesIdx = sectionSteps.findIndex((entry) => entry.section.kind === "files");
+      const insertAt =
+        biodataIdx >= 0
+          ? sectionSteps[biodataIdx].stepIndex + 1
+          : filesIdx >= 0
+            ? sectionSteps[filesIdx].stepIndex
+            : sectionSteps.length;
+      for (const entry of sectionSteps) {
+        if (entry.stepIndex >= insertAt) entry.stepIndex += 1;
+      }
+      attendanceStepIndex = insertAt;
+    } else {
+      attendanceStepIndex = 2;
+    }
+  }
+
   // Mode skema: langkah 0..sectionSteps.length-1 adalah section, pratinjau di akhir.
-  // Mode klasik: tetap 4 langkah (Data Diri → Pengalaman → Berkas → Pratinjau).
-  const previewStep = schema ? sectionSteps.length : 3;
-  const filesStep = 2; // langkah Berkas — hanya mode klasik
+  // Mode klasik: 4 langkah lama (Data Diri → Pengalaman → Berkas → Pratinjau),
+  // atau 5 langkah saat posisi ONSITE/HYBRID (Info Kehadiran sebelum Berkas).
+  const previewStep = schema
+    ? sectionSteps.length + (attendanceStepIndex >= 0 ? 1 : 0)
+    : attendanceStepIndex >= 0
+      ? 4
+      : 3;
+  const filesStep = attendanceStepIndex >= 0 ? 3 : 2; // langkah Berkas — hanya mode klasik
 
   // Entri langkah per bagian bawaan (mode skema) — dipakai render & validasi.
   const biodataEntry =
@@ -913,6 +1021,15 @@ export function ApplyWizard({
     setScreeningAnswers({});
     setExtraFiles({});
     setExtraErrors({});
+    // NR-4 — posisi lama ONSITE/HYBRID → baru REMOTE: langkah Info Kehadiran
+    // hilang dari urutan. Pengguna yang berada pada/melampauinya digeser balik
+    // satu langkah agar validasi Berkas wajib tidak pernah terlewati.
+    const prevPosition = positions.find((p) => p.id === lastPositionId);
+    const prevOnsite =
+      prevPosition?.workMode === "ONSITE" || prevPosition?.workMode === "HYBRID";
+    if (prevOnsite && !onsiteActive && step >= 2) {
+      setStep(step - 1);
+    }
     // Posisi berbeda = skema formulir berbeda — jawaban & error form direset,
     // KECUALI sedang memulihkan draf posisi yang sama (antrean pemulihan).
     if (draftRestoreAnswersRef.current) {
@@ -1191,6 +1308,32 @@ export function ApplyWizard({
     return next;
   }
 
+  /**
+   * Validasi langkah Info Kehadiran (NR-4) — hanya untuk posisi ONSITE/HYBRID.
+   * Domisili & rencana komuter wajib; shift wajib hanya saat shiftSystem
+   * posisi bukan NONE; perkiraan mulai kerja opsional.
+   */
+  function validateAttendance(): FormErrors {
+    const next: FormErrors = {};
+    if (attendanceStepIndex < 0) return next;
+    if (!values.domisili.trim()) {
+      next.domisili = lang === "en"
+        ? "City of residence is required."
+        : "Kota domisili wajib diisi.";
+    }
+    if (!values.komuterPlan) {
+      next.komuterPlan = lang === "en"
+        ? "Please choose your commuting plan."
+        : "Pilih rencana komutermu.";
+    }
+    if (attendanceShiftAsked && !values.shiftPref) {
+      next.shiftPref = lang === "en"
+        ? "Please choose your preferred shift."
+        : "Pilih shift yang kamu inginkan.";
+    }
+    return next;
+  }
+
   function scrollToScreening(questionId: string) {
     document
       .getElementById(`apply-screening-${questionId}`)
@@ -1412,6 +1555,16 @@ export function ApplyWizard({
   }
 
   function goNext() {
+    // NR-4 — langkah Info Kehadiran: validasi sebelum maju (berlaku mode
+    // klasik maupun mode skema — langkah ini bukan bagian skema).
+    if (step === attendanceStepIndex) {
+      const next = validateAttendance();
+      setErrors((prev) => ({ ...prev, ...next }));
+      if (Object.values(next).some(Boolean)) return;
+      goToStep(step + 1);
+      trackStep("advance", step + 1);
+      return;
+    }
     if (schema) {
       // Mode skema: langkah saat ini adalah satu bagian skema — validasi
       // menyesuaikan jenis bagian + pertanyaan kustom miliknya.
@@ -1497,11 +1650,20 @@ export function ApplyWizard({
         toastStepCheckFirstError(bad.check, true);
         return false;
       }
+      // NR-4 — langkah Info Kehadiran ikut divalidasi (bukan bagian skema).
+      const attendanceErrors = validateAttendance();
+      if (Object.values(attendanceErrors).some(Boolean)) {
+        setErrors((prev) => ({ ...prev, ...attendanceErrors }));
+        goToStep(attendanceStepIndex);
+        return false;
+      }
       return true;
     }
-    // Mode klasik — tanpa perubahan.
+    // Mode klasik.
     const e1 = validateStep1(true);
     const e2 = validateStep2({ experienceEnabled: true, motivationEnabled: true });
+    // NR-4 — langkah Info Kehadiran (posisi ONSITE/HYBRID) ikut divalidasi.
+    const ea = validateAttendance();
     // Langkah section Form Builder ikut divalidasi (mode skema aktif).
     const formByStep = sectionSteps.map((entry) => ({
       stepIndex: entry.stepIndex,
@@ -1509,7 +1671,7 @@ export function ApplyWizard({
     }));
     const allFormErrors: Record<string, string> = {};
     for (const entry of formByStep) Object.assign(allFormErrors, entry.errors);
-    setErrors((prev) => ({ ...prev, ...e1, ...e2 }));
+    setErrors((prev) => ({ ...prev, ...e1, ...e2, ...ea }));
     setFormErrors((prev) => ({ ...prev, ...allFormErrors }));
     if (e1.name || e1.email || e1.phone || e1.positionId) {
       goToStep(0);
@@ -1524,6 +1686,10 @@ export function ApplyWizard({
         window.setTimeout(() => scrollToScreening(screeningError.id), 400);
         toast.error(screeningError.message);
       }
+      return false;
+    }
+    if (Object.values(ea).some(Boolean)) {
+      goToStep(attendanceStepIndex);
       return false;
     }
     const badSection = formByStep.find((entry) => Object.values(entry.errors).some(Boolean));
@@ -1997,6 +2163,19 @@ export function ApplyWizard({
         "motivation",
         schema && !motivationOn ? "" : values.motivation.trim(),
       );
+      // NR-4 — Info Kehadiran: hanya dikirim untuk posisi ONSITE/HYBRID
+      // (langkah ditampilkan). Posisi REMOTE tidak mengirim field ini sama
+      // sekali; shiftPref hanya saat pertanyaan shift ditampilkan.
+      if (onsiteActive) {
+        fd.append("domisili", values.domisili.trim());
+        if (values.komuterPlan) fd.append("komuterPlan", values.komuterPlan);
+        if (attendanceShiftAsked && values.shiftPref) {
+          fd.append("shiftPref", values.shiftPref);
+        }
+        if (values.startDatePref.trim()) {
+          fd.append("startDatePref", values.startDatePref.trim());
+        }
+      }
       // Anti-spam (Task 27): honeypot + waktu buka formulir — diverifikasi server.
       fd.append("website", websiteRef.current?.value ?? "");
       fd.append("formStartedAt", String(formStartedAtRef.current));
@@ -2417,13 +2596,17 @@ export function ApplyWizard({
 
   // Stepper dinamis (mode skema): judul langkah = judul bagian skema
   // (section.title / titleEn) SESUAI URUTAN di skema + Pratinjau terakhir.
-  // Mode klasik tetap 4 langkah lama.
+  // Mode klasik tetap 4 langkah lama. NR-4: judul "Info Kehadiran di Kantor"
+  // disisipkan pada posisi langkahnya (mode klasik & skema).
+  const sectionLabels = sectionSteps.map((entry) => formSectionTitle(entry.section, lang));
+  if (attendanceStepIndex >= 0) {
+    sectionLabels.splice(attendanceStepIndex, 0, attendanceTitle);
+  }
   const stepLabels: string[] = schema
-    ? [
-        ...sectionSteps.map((entry) => formSectionTitle(entry.section, lang)),
-        t.apply.steps[3],
-      ]
-    : t.apply.steps;
+    ? [...sectionLabels, t.apply.steps[3]]
+    : attendanceStepIndex >= 0
+      ? [t.apply.steps[0], t.apply.steps[1], attendanceTitle, t.apply.steps[2], t.apply.steps[3]]
+      : t.apply.steps;
 
   // Nomor WhatsApp wajib? Mode klasik selalu wajib; mode skema mengikuti flag
   // waRequired bagian biodata (opsional tetap divalidasi ≥8 digit bila diisi).
@@ -3005,6 +3188,129 @@ export function ApplyWizard({
           </div>
         )}
 
+        {/* LANGKAH INFO KEHADIRAN (NR-4) — hanya posisi ONSITE/HYBRID, mode
+            klasik maupun skema: kota domisili, rencana komuter, preferensi
+            shift (bila shiftSystem bukan NONE), perkiraan mulai kerja. */}
+        {step === attendanceStepIndex && onsiteActive ? (
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-0.5">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <MapPin
+                  className="h-4 w-4 text-rose-600 dark:text-rose-400"
+                  aria-hidden="true"
+                />
+                {attendanceTitle}
+              </p>
+              <p className="text-xs text-muted-foreground">{attendanceDesc}</p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="apply-domisili">
+                {attendanceDomisiliLabel} <span className="text-rose-600">*</span>
+              </Label>
+              <Input
+                id="apply-domisili"
+                name="domisili"
+                value={values.domisili}
+                onChange={(e) => setField("domisili", e.target.value)}
+                maxLength={DOMISILI_MAX}
+                placeholder={lang === "en" ? "e.g. Jakarta" : "mis. Jakarta"}
+                autoComplete="address-level2"
+                className="h-11"
+                aria-invalid={errors.domisili ? true : undefined}
+                aria-describedby={errors.domisili ? "apply-domisili-error" : undefined}
+              />
+              {errors.domisili ? (
+                <p id="apply-domisili-error" className="text-sm text-rose-600">
+                  {errors.domisili}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="apply-komuter">
+                {attendanceKomuterQuestion} <span className="text-rose-600">*</span>
+              </Label>
+              <Select
+                value={values.komuterPlan || undefined}
+                onValueChange={(value) => setField("komuterPlan", value)}
+              >
+                <SelectTrigger
+                  id="apply-komuter"
+                  className="h-11 w-full"
+                  aria-invalid={errors.komuterPlan ? true : undefined}
+                  aria-describedby={errors.komuterPlan ? "apply-komuter-error" : undefined}
+                >
+                  <SelectValue placeholder={t.apply.formSection.chooseOption} />
+                </SelectTrigger>
+                <SelectContent>
+                  {KOMUTER_PLANS.map((plan) => (
+                    <SelectItem key={plan} value={plan}>
+                      {komuterPlanLabel(plan)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.komuterPlan ? (
+                <p id="apply-komuter-error" className="text-sm text-rose-600">
+                  {errors.komuterPlan}
+                </p>
+              ) : null}
+            </div>
+
+            {attendanceShiftAsked ? (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="apply-shift">
+                  {attendanceShiftQuestion} <span className="text-rose-600">*</span>
+                </Label>
+                <Select
+                  value={values.shiftPref || undefined}
+                  onValueChange={(value) => setField("shiftPref", value)}
+                >
+                  <SelectTrigger
+                    id="apply-shift"
+                    className="h-11 w-full"
+                    aria-invalid={errors.shiftPref ? true : undefined}
+                    aria-describedby={errors.shiftPref ? "apply-shift-error" : undefined}
+                  >
+                    <SelectValue placeholder={t.apply.formSection.chooseOption} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SHIFT_PREFS.map((pref) => (
+                      <SelectItem key={pref} value={pref}>
+                        {shiftPrefLabel(pref)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.shiftPref ? (
+                  <p id="apply-shift-error" className="text-sm text-rose-600">
+                    {errors.shiftPref}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="apply-startdate" className="gap-2">
+                {attendanceStartDateLabel}
+                <span className="text-xs font-normal text-muted-foreground">
+                  ({t.apply.uploads.optional})
+                </span>
+              </Label>
+              <Input
+                id="apply-startdate"
+                name="startDatePref"
+                value={values.startDatePref}
+                onChange={(e) => setField("startDatePref", e.target.value)}
+                maxLength={START_DATE_MAX}
+                placeholder={lang === "en" ? "e.g. 1 July 2026" : "mis. 1 Juli 2026"}
+                className="h-11"
+              />
+            </div>
+          </div>
+        ) : null}
+
         {/* LANGKAH DINAMIS (mode skema): bagian kustom — judul & deskripsi
             bagian lalu FormFieldRenderer untuk tiap pertanyaannya. Bagian
             bawaan (biodata/pengalaman/berkas) dirender oleh blok khususnya
@@ -3316,6 +3622,39 @@ export function ApplyWizard({
             {schema
               ? sectionSteps.map((entry) => renderSchemaPreviewSection(entry))
               : null}
+
+            {/* Info Kehadiran (NR-4) — kartu pratinjau untuk posisi
+                ONSITE/HYBRID, mode klasik maupun skema */}
+            {onsiteActive ? (
+              <PreviewSection
+                title={attendanceTitle}
+                editLabel={t.apply.preview.edit}
+                onEdit={() => goToStep(attendanceStepIndex)}
+              >
+                <PreviewRow
+                  label={attendanceDomisiliLabel}
+                  value={values.domisili}
+                  fallback={t.apply.preview.notFilled}
+                />
+                <PreviewRow
+                  label={attendanceKomuterQuestion}
+                  value={values.komuterPlan ? komuterPlanLabel(values.komuterPlan as KomuterPlan) : ""}
+                  fallback={t.apply.preview.notAnswered}
+                />
+                {attendanceShiftAsked ? (
+                  <PreviewRow
+                    label={attendanceShiftQuestion}
+                    value={values.shiftPref ? shiftPrefLabel(values.shiftPref as ShiftPref) : ""}
+                    fallback={t.apply.preview.notAnswered}
+                  />
+                ) : null}
+                <PreviewRow
+                  label={attendanceStartDateLabel}
+                  value={values.startDatePref}
+                  fallback={t.apply.preview.notFilled}
+                />
+              </PreviewSection>
+            ) : null}
 
             {/* Jawaban screening posisi — hanya bila posisi punya pertanyaan (mode klasik) */}
             {!schema && screeningQuestions.length > 0 ? (

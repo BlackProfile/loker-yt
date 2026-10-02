@@ -79,6 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       notes?: string | null;
       recordingUrl?: string | null;
       completedAt?: Date | null;
+      checkedInAt?: Date | null;
       rescheduleReason?: string | null;
       rescheduleProposedAt?: Date | null;
       reminderDaySent?: boolean;
@@ -140,6 +141,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         .filter((item) => item.length > 0)
         .slice(0, 6);
       updateData.interviewers = JSON.stringify(names);
+    }
+
+    // Check-in kehadiran (NR-5): kandidat hadir datang ke kantor.
+    // Hanya sesi on-site yang masih aktif (Terjadwal/Dikonfirmasi) yang boleh di-check-in.
+    if (data.checkIn !== undefined) {
+      if (data.checkIn !== true) {
+        return NextResponse.json({ error: "Permintaan check-in tidak valid." }, { status: 400 });
+      }
+      if (existing.mode !== "ONSITE") {
+        return NextResponse.json(
+          { error: "Check-in hanya tersedia untuk wawancara on-site." },
+          { status: 400 }
+        );
+      }
+      if (existing.status !== "SCHEDULED" && existing.status !== "CONFIRMED") {
+        return NextResponse.json(
+          { error: "Check-in hanya untuk sesi berstatus Terjadwal atau Dikonfirmasi." },
+          { status: 400 }
+        );
+      }
+      updateData.checkedInAt = new Date();
     }
 
     // Status: transisi eksplisit (CONFIRMED/NO_SHOW/CANCELLED dari admin; COMPLETED via complete).
@@ -268,6 +290,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (updateData.status === "CONFIRMED" && existing.status !== "CONFIRMED") {
       logs.push({ actor: session.name, action: "INTERVIEW_CONFIRMED", detail: `Kehadiran ronde ${updated.round} dikonfirmasi admin` });
+    }
+    if (updateData.checkedInAt) {
+      logs.push({
+        actor: session.name,
+        action: "CHECKIN",
+        detail: "Kandidat ditandai hadir di kantor",
+      });
     }
     if (logs.length > 0) {
       await db.activityLog.createMany({ data: logs.map((l) => ({ ...l, applicationId: existing.applicationId })) });

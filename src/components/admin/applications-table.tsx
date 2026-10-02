@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import type { Application } from "@/lib/types";
 import { apiGet } from "./api";
 import { formatDate, initialsOf } from "./format";
-import { StatusBadge, AiScoreBadge } from "./status-badge";
+import { StatusBadge, AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 
 // Baris template dari /api/admin/templates (dipakai untuk pesan WhatsApp).
@@ -206,6 +206,14 @@ export function ApplicationsTable({
                           {app.email}
                           {app.phone ? ` · ${app.phone}` : ""}
                         </p>
+                        {app.domisili?.trim() || app.komuterPlan ? (
+                          <div className="mt-1">
+                            <DomisiliChip
+                              domisili={app.domisili}
+                              komuterPlan={app.komuterPlan}
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </TableCell>
@@ -348,6 +356,14 @@ export function ApplicationsTable({
                         <Share2 className="size-3 shrink-0" aria-hidden="true" />
                         <span className="truncate">{app.source}</span>
                       </p>
+                    ) : null}
+                    {app.domisili?.trim() || app.komuterPlan ? (
+                      <div className="mt-1.5">
+                        <DomisiliChip
+                          domisili={app.domisili}
+                          komuterPlan={app.komuterPlan}
+                        />
+                      </div>
                     ) : null}
                   </div>
                   <StatusBadge status={app.status} />

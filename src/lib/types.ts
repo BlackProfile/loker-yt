@@ -205,6 +205,17 @@ export type Position = {
   department: string;
   type: string;
   location: string;
+
+  // Mode kerja & lokasi terstruktur (fitur non-remote)
+  workMode: WorkMode; // REMOTE | ONSITE | HYBRID
+  city: string | null; // kota kerja (ONSITE/HYBRID)
+  address: string | null; // alamat kantor lengkap
+  mapsUrl: string | null; // tautan Google Maps
+  workHours: string | null; // mis. "Senin-Jumat, 09.00-18.00 WIB"
+  shiftSystem: ShiftSystem; // NONE | FIXED | ROTATING
+  facilities: string[]; // fasilitas untuk yang bekerja di kantor
+  dailySlotQuota: number | null; // kuota slot wawancara on-site per hari
+
   description: string;
   requirements: string[];
   isActive: boolean;
@@ -351,6 +362,13 @@ export type Application = {
   utmMedium: string | null;
   utmCampaign: string | null;
   screeningAnswers: Record<string, string> | null; // {questionId: jawaban}
+
+  // Info kehadiran untuk posisi non-remote (on-site/hybrid) — diisi dari wizard
+  domisili?: string | null; // kota domisili pelamar
+  komuterPlan?: KomuterPlan | null; // SIAP_KOMUTER | PERLU_RELOKASI | TIDAK
+  shiftPref?: ShiftPref | null; // PAGI | SIANG | MALAM | APA_SAJA
+  startDatePref?: string | null; // perkiraan kapan bisa mulai kerja
+
   formAnswers?: Record<string, FormAnswerValue> | null; // Task 30 — jawaban Form Builder {fieldId: nilai}
   rubricScores: Record<string, number> | null; // {kriteria: 1-5}
   checklistState: string[]; // item checklist yang dicentang
@@ -659,6 +677,7 @@ export type Interview = {
   notes: string | null;
   recordingUrl: string | null;
   completedAt: string | null;
+  checkedInAt?: string | null; // saat kandidat ditandai hadir datang ke kantor (on-site)
   rescheduleReason: string | null;
   rescheduleProposedAt: string | null;
   createdAt: string;
@@ -829,6 +848,46 @@ export const BENEFIT_ICONS = [
 
 // Jenis pekerjaan untuk posisi lowongan
 export const POSITION_TYPES = ["Full-time", "Part-time", "Freelance", "Kontrak"] as const;
+
+// Mode kerja posisi: penuh remote, penuh di kantor, atau campuran (fitur non-remote)
+export const WORK_MODES = ["REMOTE", "ONSITE", "HYBRID"] as const;
+export type WorkMode = (typeof WORK_MODES)[number];
+export const WORK_MODE_LABELS: Record<WorkMode, string> = {
+  REMOTE: "Remote",
+  ONSITE: "On-site",
+  HYBRID: "Hybrid",
+};
+
+// Sistem shift untuk posisi yang dikerjakan di kantor
+export const SHIFT_SYSTEMS = ["NONE", "FIXED", "ROTATING"] as const;
+export type ShiftSystem = (typeof SHIFT_SYSTEMS)[number];
+export const SHIFT_SYSTEM_LABELS: Record<ShiftSystem, string> = {
+  NONE: "Tanpa shift",
+  FIXED: "Shift tetap",
+  ROTATING: "Shift bergilir",
+};
+
+// Kesiapan shift pelamar (pertanyaan wizard untuk posisi on-site/hybrid)
+export const SHIFT_PREFS = ["PAGI", "SIANG", "MALAM", "APA_SAJA"] as const;
+export type ShiftPref = (typeof SHIFT_PREFS)[number];
+export const SHIFT_PREF_LABELS: Record<ShiftPref, string> = {
+  PAGI: "Shift pagi",
+  SIANG: "Shift siang",
+  MALAM: "Shift malam",
+  APA_SAJA: "Apa saja",
+};
+
+// Rencana komuter pelamar (pertanyaan wizard untuk posisi on-site/hybrid)
+export const KOMUTER_PLANS = ["SIAP_KOMUTER", "PERLU_RELOKASI", "TIDAK"] as const;
+export type KomuterPlan = (typeof KOMUTER_PLANS)[number];
+export const KOMUTER_PLAN_LABELS: Record<KomuterPlan, string> = {
+  SIAP_KOMUTER: "Siap komuter setiap hari",
+  PERLU_RELOKASI: "Perlu relokasi",
+  TIDAK: "Belum bisa",
+};
+
+// Preset dokumen wajib yang umum untuk posisi on-site (tombol cepat di form posisi)
+export const ONSITE_DOC_PRESETS = ["KTP", "SKCK", "Surat Keterangan Sehat"] as const;
 
 // Batas unggahan
 export const CV_MAX_BYTES = 5 * 1024 * 1024; // 5 MB, PDF saja

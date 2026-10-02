@@ -19,11 +19,13 @@ import {
   ClipboardCheck,
   Handshake,
   Inbox,
+  MapPin,
   RefreshCw,
   Share2,
   Timer,
   TrendingDown,
   TrendingUp,
+  UserCheck,
   Users,
   XCircle,
   type LucideIcon,
@@ -75,6 +77,26 @@ type ChannelRow = {
 
 type ChannelsResponse = { days: number; channels: ChannelRow[] };
 
+// Statistik tambahan fitur non-remote — field additive pada respons
+// GET /api/admin/analytics (respons lama tetap kompatibel).
+type OnsiteAttendanceStats = {
+  total: number; // sesi mode ONSITE tanpa yang dibatalkan
+  attended: number; // kandidat check-in (checkedInAt terisi)
+  noShow: number; // berstatus NO_SHOW
+  noShowRate: number; // persen tidak hadir (0 bila total 0)
+};
+
+type ApplicantOriginsStats = {
+  total: number; // lamaran posisi on-site/hybrid dengan domisili terisi
+  outOfCityRate: number | null; // persen domisili != kota posisi
+  cities: { city: string; count: number; isPositionCity: boolean }[]; // top 5
+};
+
+type AnalyticsResponseExtended = AnalyticsResponse & {
+  onsiteAttendance?: OnsiteAttendanceStats;
+  applicantOrigins?: ApplicantOriginsStats;
+};
+
 type MetricCard = {
   key: string;
   label: string;
@@ -87,6 +109,33 @@ type MetricCard = {
 function funnelLabel(stage: string): string {
   if (stage === "CUSTOM") return "Tahap Kustom";
   return STATUS_LABELS[stage as ApplicationStatus] ?? stage;
+}
+
+// Ubin kecil statistik di kartu Kehadiran Wawancara On-site
+// (gaya InfoItem: kartu border lembut + angka tabular).
+function AttendanceTile({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "emerald" | "rose";
+}) {
+  return (
+    <div className="rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+      <p
+        className={cn(
+          "text-lg font-bold tabular-nums sm:text-xl",
+          tone === "emerald" && "text-emerald-600 dark:text-emerald-400",
+          tone === "rose" && "text-rose-600 dark:text-rose-400"
+        )}
+      >
+        {value}
+      </p>
+      <p className="mt-0.5 text-xs font-medium text-muted-foreground">{label}</p>
+    </div>
+  );
 }
 
 // Tooltip generik untuk bar chart (judul + baris nilai).
@@ -120,7 +169,7 @@ function ChartTooltip({
 
 export function AnalyticsTab() {
   const { reportError } = useAdminSession();
-  const [data, setData] = useState<AnalyticsResponse | null>(null);
+  const [data, setData] = useState<AnalyticsResponseExtended | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Drop-off formulir (GET /api/admin/dropoff).
@@ -134,7 +183,7 @@ export function AnalyticsTab() {
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        const res = await apiGet<AnalyticsResponse>("/api/admin/analytics");
+        const res = await apiGet<AnalyticsResponseExtended>("/api/admin/analytics");
         setData(res);
       } catch (err) {
         reportError(err);
@@ -212,6 +261,14 @@ export function AnalyticsTab() {
   const maxInterviewerLoad = Math.max(
     1,
     ...(data?.interviewerLoad ?? []).map((i) => i.count)
+  );
+
+  // Statistik tambahan fitur non-remote (defensif bila respons lama tanpa field baru).
+  const onsiteAttendance = data?.onsiteAttendance;
+  const applicantOrigins = data?.applicantOrigins;
+  const maxOriginCount = Math.max(
+    1,
+    ...(applicantOrigins?.cities ?? []).map((c) => c.count)
   );
 
   function metric(label: string, icon: LucideIcon, iconWrap: string, strip: string, value: string): MetricCard {
@@ -567,6 +624,163 @@ export function AnalyticsTab() {
               )}
             </CardContent>
           </Card>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* Kehadiran wawancara on-site (fitur non-remote) */}
+            <Card className="gap-0 rounded-2xl py-6">
+              <CardHeader className="px-6">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <UserCheck
+                    className="size-4 text-emerald-600 dark:text-emerald-400"
+                    aria-hidden="true"
+                  />
+                  Kehadiran Wawancara On-site
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  Rekap kehadiran kandidat pada sesi wawancara di kantor (sesi
+                  dibatalkan dikecualikan).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-6">
+                {loading && !data ? (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                    ))}
+                  </div>
+                ) : !onsiteAttendance || onsiteAttendance.total === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Belum ada wawancara on-site. Statistik terisi otomatis setelah
+                    ada sesi wawancara di kantor.
+                  </p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <AttendanceTile
+                        label="Total Sesi"
+                        value={String(onsiteAttendance.total)}
+                      />
+                      <AttendanceTile
+                        label="Hadir (check-in)"
+                        value={String(onsiteAttendance.attended)}
+                        tone="emerald"
+                      />
+                      <AttendanceTile
+                        label="Tidak Hadir"
+                        value={String(onsiteAttendance.noShow)}
+                        tone={onsiteAttendance.noShow > 0 ? "rose" : undefined}
+                      />
+                      <AttendanceTile
+                        label="Tingkat No-show"
+                        value={`${onsiteAttendance.noShowRate}%`}
+                        tone={
+                          onsiteAttendance.noShowRate > 0
+                            ? "rose"
+                            : "emerald"
+                        }
+                      />
+                    </div>
+                    <div className="mt-4">
+                      <div
+                        className="h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+                        role="img"
+                        aria-label={`Hadir ${onsiteAttendance.attended} dari ${onsiteAttendance.total} sesi on-site`}
+                      >
+                        <div
+                          className="h-full rounded-full bg-emerald-500"
+                          style={{
+                            width: `${Math.round(
+                              (onsiteAttendance.attended / onsiteAttendance.total) * 100
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        {onsiteAttendance.attended} dari {onsiteAttendance.total} sesi
+                        melakukan check-in di kantor.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Asal pelamar posisi on-site/hybrid (fitur non-remote) */}
+            <Card className="gap-0 rounded-2xl py-6">
+              <CardHeader className="px-6">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <MapPin
+                    className="size-4 text-amber-600 dark:text-amber-400"
+                    aria-hidden="true"
+                  />
+                  Asal Pelamar (On-site/Hybrid)
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  Kota domisili pelamar untuk posisi on-site dan hybrid.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-6">
+                {loading && !data ? (
+                  <div className="flex flex-col gap-3">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} className="h-10 w-full rounded-lg" />
+                    ))}
+                  </div>
+                ) : !applicantOrigins || applicantOrigins.cities.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Belum ada data domisili pelamar.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-3">
+                      {applicantOrigins.cities.map((row) => (
+                        <div key={row.city} className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="truncate font-medium">{row.city}</span>
+                              {row.isPositionCity ? (
+                                <span className="shrink-0 text-[11px] italic text-muted-foreground">
+                                  kota posisi
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                              {row.count} pelamar
+                            </span>
+                          </div>
+                          <div
+                            className="h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+                            role="img"
+                            aria-label={`Domisili ${row.city}: ${row.count} pelamar`}
+                          >
+                            <div
+                              className="h-full rounded-full bg-amber-400"
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  Math.max(
+                                    Math.round((row.count / maxOriginCount) * 100),
+                                    2
+                                  )
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {applicantOrigins.outOfCityRate != null ? (
+                      <p className="mt-4 text-xs text-muted-foreground">
+                        <span className="font-semibold text-foreground">
+                          {applicantOrigins.outOfCityRate}%
+                        </span>{" "}
+                        dari luar kota posisi
+                      </p>
+                    ) : null}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* Drop-off formulir lamaran (bar CSS sederhana, tanpa library chart) */}
             <Card className="gap-0 rounded-2xl py-6">

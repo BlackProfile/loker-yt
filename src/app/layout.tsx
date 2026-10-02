@@ -17,14 +17,14 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Lumina Studio — Rekrutmen Tim Kreatif",
   description:
-    "Halaman rekrutmen resmi Lumina Studio. Bergabunglah dengan tim kreatif konten digital: video editor, desainer thumbnail, penulis naskah, dan lainnya. Remote dan fleksibel.",
-  keywords: ["rekrutmen", "lowongan kerja", "konten kreator", "tim kreatif", "video editor", "remote"],
+    "Halaman rekrutmen resmi Lumina Studio. Bergabunglah dengan tim kreatif konten digital: video editor, desainer thumbnail, penulis naskah, dan lainnya. Remote, on-site, dan hybrid — fleksibel.",
+  keywords: ["rekrutmen", "lowongan kerja", "konten kreator", "tim kreatif", "video editor", "remote", "on-site", "hybrid"],
   icons: {
     icon: "/logo.svg",
   },
   openGraph: {
     title: "Rekrutmen Tim Kreatif — Lumina Studio",
-    description: "Bergabung dengan tim kreatif konten digital. Remote, fleksibel, penuh peluang bertumbuh.",
+    description: "Bergabung dengan tim kreatif konten digital. Remote, on-site, dan hybrid — fleksibel, penuh peluang bertumbuh.",
     siteName: "Lumina Studio",
     type: "website",
   },

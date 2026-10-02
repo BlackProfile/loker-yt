@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { LangProvider, useLang } from "@/components/landing/lang-context";
 import { BrandMark, HoverLift, ROSE_BADGE } from "@/components/landing/primitives";
 import { buildPositionUrl } from "@/components/landing/landing-utils";
+import { WorkModeBadge } from "@/components/landing/positions-section";
 
 // Langganan statis untuk useSyncExternalStore (nilai tidak pernah berubah).
 const emptySubscribe = () => () => {};
@@ -69,6 +70,7 @@ function EmbedJobsInner({
                       <Badge variant="outline" className={ROSE_BADGE}>
                         {position.department}
                       </Badge>
+                      <WorkModeBadge position={position} />
                       <Badge variant="secondary">{position.type}</Badge>
                       <Badge variant="secondary" className="gap-1">
                         <MapPin className="h-3 w-3" aria-hidden="true" />

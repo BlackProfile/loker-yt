@@ -44,6 +44,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   ClipboardList,
+  Clock,
   Copy,
   FileDown,
   FileText,
@@ -67,10 +68,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  KOMUTER_PLAN_LABELS,
   POSITION_TYPES,
   REJECTION_REASONS,
   REJECTION_REASON_LABELS,
   ROLE_LABELS,
+  SHIFT_PREF_LABELS,
   type Application,
   type Interview,
   type Position,
@@ -665,6 +668,17 @@ export function ApplicationDetailDialog({
     app.utmCampaign ? { icon: Megaphone, label: "UTM Campaign", value: app.utmCampaign } : null,
   ].filter((r): r is { icon: typeof Globe; label: string; value: string } => r !== null);
   const showSourceBlock = Boolean(app.source) || utmRows.length > 0;
+
+  // Info kehadiran (posisi on-site/hybrid): blok tampil hanya bila pelamar
+  // mengisi minimal satu data domisili/komuter/shift/tanggal mulai —
+  // lamaran era remote (semua null) tetap tampil tanpa blok ini.
+  const attendanceDomisili = app.domisili?.trim() ?? "";
+  const attendanceStartDate = app.startDatePref?.trim() ?? "";
+  const showAttendanceInfo =
+    attendanceDomisili !== "" ||
+    app.komuterPlan != null ||
+    app.shiftPref != null ||
+    attendanceStartDate !== "";
 
   async function patch(
     body: Record<string, unknown>,
@@ -1344,6 +1358,43 @@ export function ApplicationDetailDialog({
                 {utmRows.map((row) => (
                   <SourceRow key={row.label} icon={row.icon} label={row.label} value={row.value} />
                 ))}
+              </div>
+            ) : null}
+
+            {/* Info kehadiran (posisi on-site/hybrid) — hanya bila ada datanya */}
+            {showAttendanceInfo ? (
+              <div className="flex flex-col gap-1.5 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <MapPin
+                    className="size-4 text-amber-600 dark:text-amber-400"
+                    aria-hidden="true"
+                  />
+                  <p className="text-sm font-semibold">Info Kehadiran</p>
+                </div>
+                {attendanceDomisili ? (
+                  <SourceRow icon={MapPin} label="Domisili" value={attendanceDomisili} />
+                ) : null}
+                {app.komuterPlan ? (
+                  <SourceRow
+                    icon={Users}
+                    label="Rencana komuter"
+                    value={KOMUTER_PLAN_LABELS[app.komuterPlan]}
+                  />
+                ) : null}
+                {app.shiftPref ? (
+                  <SourceRow
+                    icon={Clock}
+                    label="Shift diinginkan"
+                    value={SHIFT_PREF_LABELS[app.shiftPref]}
+                  />
+                ) : null}
+                {attendanceStartDate ? (
+                  <SourceRow
+                    icon={CalendarPlus}
+                    label="Bisa mulai"
+                    value={attendanceStartDate}
+                  />
+                ) : null}
               </div>
             ) : null}
 

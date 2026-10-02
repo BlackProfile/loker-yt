@@ -20,10 +20,13 @@ import {
   Check,
   Circle,
   ClipboardList,
+  Clock,
   Copy,
+  ExternalLink,
   FileText,
   Flame,
   Gift,
+  Globe,
   Link2,
   ListChecks,
   Loader2,
@@ -44,6 +47,7 @@ import type {
   PositionPublicStats,
   SiteContent,
 } from "@/lib/types";
+import { SHIFT_SYSTEM_LABELS } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -71,6 +75,7 @@ import {
   youtubeEmbedId,
 } from "@/components/landing/landing-utils";
 import { DeadlineCountdown } from "@/components/landing/deadline-countdown";
+import { WorkModeBadge } from "@/components/landing/positions-section";
 import { ApplyWizard } from "@/components/landing/apply-wizard";
 import {
   isCvEnabled,
@@ -792,6 +797,14 @@ function PositionDetailViewInner({
     content.sections.applyForm && !quotaFull && !positionFormClosed && !deadlinePassed;
   const stages = stagesForPosition(position.stages);
 
+  // Lokasi & operasional (fitur non-remote): baris "Kota — Alamat" + tautan peta
+  // yang hanya dirender bila protokolnya aman (http/https).
+  const locationLine =
+    [position.city?.trim(), position.address?.trim()]
+      .filter((part): part is string => Boolean(part))
+      .join(" — ") || null;
+  const mapHref = position.mapsUrl ? safeExternalUrl(position.mapsUrl) : null;
+
   const requiredFiles = [
     position.requireCv ? t.detail.termsFilesCv : null,
     position.requireIntro ? t.detail.termsFilesIntro : null,
@@ -878,6 +891,8 @@ function PositionDetailViewInner({
               <Badge variant="outline" className={ROSE_BADGE}>
                 {t.detail.badge}
               </Badge>
+              {/* Mode kerja + kota (fitur non-remote) — selalu tampil di header. */}
+              <WorkModeBadge position={position} />
               {position.featured ? (
                 <Badge variant="outline" className="border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
                   <Pin className="size-3" aria-hidden="true" />
@@ -932,6 +947,17 @@ function PositionDetailViewInner({
                 {t.detail.posted} {formatDateTimeId(position.createdAt)}
               </span>
             </div>
+
+            {/* Posisi remote: satu baris tenang (fitur non-remote). */}
+            {position.workMode !== "ONSITE" && position.workMode !== "HYBRID" ? (
+              <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Globe
+                  className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                  aria-hidden="true"
+                />
+                {t.detail.remoteAnywhere}
+              </p>
+            ) : null}
 
             {/* Aksi: bagikan + salin tautan khusus lowongan */}
             <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -1081,6 +1107,74 @@ function PositionDetailViewInner({
                   ) : null}
                 </Card>
               </FadeIn>
+
+              {/* Lokasi & operasional — khusus posisi on-site/hybrid (fitur non-remote).
+                  Informasi pelengkap: tidak masuk daftar gerbang baca. */}
+              {position.workMode === "ONSITE" || position.workMode === "HYBRID" ? (
+                <FadeIn id="sec-lokasi" className="scroll-mt-24">
+                  <SectionTitle icon={MapPin}>
+                    {t.detail.sectionLocation}
+                  </SectionTitle>
+                  <Card className="mt-3 divide-y rounded-2xl p-2 md:p-3">
+                    <TermRow icon={MapPin} label={t.detail.locationAddress}>
+                      <span className="flex flex-col gap-1.5">
+                        {locationLine ? (
+                          <span>{locationLine}</span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {t.detail.locationAddressNone}
+                          </span>
+                        )}
+                        {mapHref ? (
+                          <a
+                            href={mapHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex w-fit items-center gap-1.5 font-medium text-rose-600 underline-offset-2 transition-colors hover:text-rose-700 hover:underline dark:text-rose-400 dark:hover:text-rose-300"
+                          >
+                            <ExternalLink
+                              className="size-3.5 shrink-0"
+                              aria-hidden="true"
+                            />
+                            {t.detail.openMap}
+                          </a>
+                        ) : null}
+                      </span>
+                    </TermRow>
+                    {position.workHours ? (
+                      <TermRow icon={Clock} label={t.detail.locationHours}>
+                        <span>{position.workHours}</span>
+                      </TermRow>
+                    ) : null}
+                    {position.shiftSystem !== "NONE" ? (
+                      <TermRow icon={CalendarClock} label={t.detail.locationShift}>
+                        <span>
+                          {SHIFT_SYSTEM_LABELS[position.shiftSystem] ??
+                            position.shiftSystem}
+                        </span>
+                      </TermRow>
+                    ) : null}
+                    {position.facilities.length > 0 ? (
+                      <TermRow icon={Sparkles} label={t.detail.locationFacilities}>
+                        <span className="flex flex-wrap gap-1.5">
+                          {position.facilities.map((facility) => (
+                            <span
+                              key={facility}
+                              className="flex items-center gap-1 rounded-md bg-zinc-100 px-2 py-0.5 text-xs font-medium dark:bg-zinc-800"
+                            >
+                              <Check
+                                className="size-3 text-emerald-600 dark:text-emerald-400"
+                                aria-hidden="true"
+                              />
+                              {facility}
+                            </span>
+                          ))}
+                        </span>
+                      </TermRow>
+                    ) : null}
+                  </Card>
+                </FadeIn>
+              ) : null}
 
               {position.benefits.length > 0 ? (
                 <FadeIn id="sec-benefit" className="scroll-mt-24">

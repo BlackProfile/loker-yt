@@ -35,7 +35,7 @@ export const DEFAULT_SITE: SiteContent = {
   heroTitle: "Bergabung dengan Tim",
   heroHighlight: "Kreatif Kami",
   heroDescription:
-    "Kami mencari talenta digital yang siap menciptakan konten menghibur untuk jutaan penonton. Bekerja remote dengan jam fleksibel, dan tumbuh bersama kreator yang sudah dipercaya lebih dari 2 juta pengikut.",
+    "Kami mencari talenta digital yang siap menciptakan konten menghibur untuk jutaan penonton. Ada posisi remote, on-site di studio, dan hybrid — semua dengan jam fleksibel di tim kreator yang sudah dipercaya lebih dari 2 juta pengikut.",
   deadline: "30 September 2025",
   aboutTitle: "Tentang Lumina Studio",
   aboutDescription:
@@ -82,7 +82,7 @@ export const DEFAULT_SITE: SiteContent = {
     {
       question: "Apakah semua posisi bisa dikerjakan remote?",
       answer:
-        "Ya. Saat ini semua posisi kami dirancang untuk dikerjakan remote. Kegiatan tim seperti rapat mingguan dan sesi syuting khusus tetap dilakukan secara online, jadi kamu bisa berada di mana saja.",
+        "Tidak semua. Sebagian posisi dikerjakan penuh remote, sebagian on-site di studio kami, dan ada juga yang hybrid. Mode kerja tertera jelas di setiap lowongan — cek badge Remote/On-site/Hybrid di kartu posisi, lengkap dengan alamat kantor bila perlu datang.",
     },
     {
       question: "Bagaimana proses seleksinya?",
@@ -159,6 +159,14 @@ export type DefaultPositionSeed = {
   department: string;
   type: string;
   location: string;
+  // Mode kerja & lokasi terstruktur (fitur non-remote)
+  workMode?: "REMOTE" | "ONSITE" | "HYBRID";
+  city?: string;
+  address?: string;
+  mapsUrl?: string;
+  workHours?: string;
+  shiftSystem?: "NONE" | "FIXED" | "ROTATING";
+  facilities?: string[];
   description: string;
   requirements: string[];
   order: number;
@@ -309,7 +317,19 @@ export const DEFAULT_POSITIONS: DefaultPositionSeed[] = [
     title: "Social Media Officer",
     department: "Social Media",
     type: "Full-time",
-    location: "Remote",
+    location: "Jakarta (hybrid — 2 hari remote/minggu)",
+    workMode: "HYBRID",
+    city: "Jakarta",
+    address: "Gedung Kreatif Lumina, Jl. Cikini Raya No. 45, Menteng, Jakarta Pusat",
+    mapsUrl: "https://maps.google.com/?q=Jl.+Cikini+Raya+No.+45,+Menteng,+Jakarta+Pusat",
+    workHours: "Senin-Jumat, 10.00-18.00 WIB (Senin & Rabu remote)",
+    shiftSystem: "NONE",
+    facilities: [
+      "Parkir motor & mobil",
+      "Makan siang gratis",
+      "Uang transport",
+      "Ruang kolaborasi & studio mini",
+    ],
     order: 4,
     description:
       "Mengelola kalender konten, caption, dan interaksi komunitas di semua platform kami. Kamu menjadi jembatan antara kreator dan penonton serta memastikan setiap unggahan berperforma optimal.",
@@ -338,7 +358,19 @@ export const DEFAULT_POSITIONS: DefaultPositionSeed[] = [
     title: "Content Strategist",
     department: "Perencanaan Konten",
     type: "Full-time",
-    location: "Remote",
+    location: "Jakarta (on-site)",
+    workMode: "ONSITE",
+    city: "Jakarta",
+    address: "Gedung Kreatif Lumina, Jl. Cikini Raya No. 45, Menteng, Jakarta Pusat",
+    mapsUrl: "https://maps.google.com/?q=Jl.+Cikini+Raya+No.+45,+Menteng,+Jakarta+Pusat",
+    workHours: "Senin-Jumat, 09.00-17.00 WIB",
+    shiftSystem: "NONE",
+    facilities: [
+      "Parkir motor & mobil",
+      "Makan siang gratis",
+      "Uang transport",
+      "Asuransi kesehatan",
+    ],
     order: 5,
     description:
       "Merencanakan arah konten bulanan berdasarkan data performa dan riset audiens. Kamu akan memimpin brainstorming mingguan dan memastikan setiap video punya tujuan yang jelas.",

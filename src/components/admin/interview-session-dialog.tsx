@@ -61,6 +61,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  UserCheck,
   Users,
   Video,
   X,
@@ -84,7 +85,7 @@ import {
   type RoundPlanTemplate,
 } from "@/lib/types";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
-import { copyText, formatDateTime, isoToLocalInput, localInputToIso } from "./format";
+import { copyText, formatDateTime, formatTime, isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
 import { cn } from "@/lib/utils";
 
@@ -296,6 +297,14 @@ function InterviewSessionDialogInner({
   const showLinkField = mode === "ONLINE";
   const showAddressField = mode === "ONSITE";
 
+  // Isi otomatis alamat kantor dari posisi saat mode on-site dipakai dan alamat
+  // masih kosong (tetap bisa diedit manual). Berlaku untuk sesi baru maupun edit.
+  useEffect(() => {
+    if (mode === "ONSITE" && !address.trim() && pos?.address) {
+      setAddress(pos.address);
+    }
+  }, [mode, address, pos]);
+
   /* ----------------- Efek: rencana ronde & transkrip tersimpan ----------------- */
 
   // Muat rencana ronde posisi (untuk tombol "Jadwalkan Ronde Berikutnya").
@@ -377,7 +386,7 @@ function InterviewSessionDialogInner({
     const jam = d
       ? d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
       : "(jam belum diisi)";
-    return fillTemplateManual(template, {
+    let text = fillTemplateManual(template, {
       nama: applicantName,
       posisi: positionTitle ?? "-",
       tanggal,
@@ -385,6 +394,19 @@ function InterviewSessionDialogInner({
       link: showLinkField ? meetingLink.trim() || "(link belum diisi)" : "(tatap muka)",
       mode: INTERVIEW_MODE_LABELS[mode],
     });
+    // Sesi on-site (NR-5): pastikan pesan undangan memuat alamat kantor dan
+    // tautan peta — dilewati bila template sudah memuatnya sendiri.
+    if (mode === "ONSITE") {
+      const onsiteAddress = address.trim() || pos?.address || "";
+      const mapsUrl = pos?.mapsUrl ?? "";
+      if (onsiteAddress && !text.includes("Datang ke")) {
+        text += `\nDatang ke: ${onsiteAddress}`;
+      }
+      if (mapsUrl && !text.includes("Peta:") && !text.includes(mapsUrl)) {
+        text += `\nPeta: ${mapsUrl}`;
+      }
+    }
+    return text;
   })();
 
   /* ------------------------------- Pewawancara ------------------------------- */
@@ -763,6 +785,12 @@ function InterviewSessionDialogInner({
                 {interview.mode === "ONSITE" && interview.address ? (
                   <p className="text-sm text-muted-foreground">
                     Alamat: <span className="text-foreground">{interview.address}</span>
+                  </p>
+                ) : null}
+                {interview.checkedInAt ? (
+                  <p className="inline-flex w-fit items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400">
+                    <UserCheck className="size-3" aria-hidden="true" />
+                    Hadir · {formatTime(interview.checkedInAt)}
                   </p>
                 ) : null}
                 {interview.interviewers.length > 0 ? (
@@ -1342,6 +1370,22 @@ function InterviewSessionDialogInner({
 
                 {/* Aksi status & hapus */}
                 <div className="flex flex-wrap items-center gap-2">
+                  {interview.mode === "ONSITE" &&
+                  (interview.status === "SCHEDULED" || interview.status === "CONFIRMED") &&
+                  !interview.checkedInAt ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-11 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 sm:h-9 dark:border-emerald-900 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                      onClick={() =>
+                        void handlePatch({ checkIn: true }, "Kandidat ditandai hadir di kantor")
+                      }
+                      disabled={statusWorking || saving || savingResult || deleting}
+                    >
+                      <UserCheck className="size-4" aria-hidden="true" />
+                      Tandai Hadir
+                    </Button>
+                  ) : null}
                   {interview.status !== "CONFIRMED" &&
                   interview.status !== "COMPLETED" &&
                   interview.status !== "CANCELLED" &&

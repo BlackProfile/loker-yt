@@ -54,6 +54,14 @@ import {
   type SiteContent,
   type TeamMember,
   type ExtraDoc,
+  WORK_MODES,
+  SHIFT_SYSTEMS,
+  KOMUTER_PLANS,
+  SHIFT_PREFS,
+  type WorkMode,
+  type ShiftSystem,
+  type KomuterPlan,
+  type ShiftPref,
 } from "@/lib/types";
 
 /* ---------------------------------- Serialisasi ---------------------------------- */
@@ -258,6 +266,34 @@ export function parseStageCategories(raw: string | null | undefined): Record<str
 export function sanitizeInterviewMode(value: unknown): InterviewMode {
   return value === "ONSITE" ? "ONSITE" : "ONLINE";
 }
+
+/** Sanitasi mode kerja posisi (REMOTE | ONSITE | HYBRID). */
+export function sanitizeWorkMode(value: unknown): WorkMode {
+  return (WORK_MODES as readonly string[]).includes(String(value))
+    ? (value as WorkMode)
+    : "REMOTE";
+}
+
+/** Sanitasi sistem shift posisi (NONE | FIXED | ROTATING). */
+export function sanitizeShiftSystem(value: unknown): ShiftSystem {
+  return (SHIFT_SYSTEMS as readonly string[]).includes(String(value))
+    ? (value as ShiftSystem)
+    : "NONE";
+}
+
+/** Sanitasi rencana komuter pelamar (SIAP_KOMUTER | PERLU_RELOKASI | TIDAK). */
+export function sanitizeKomuterPlan(value: unknown): KomuterPlan | null {
+  return (KOMUTER_PLANS as readonly string[]).includes(String(value))
+    ? (value as KomuterPlan)
+    : null;
+}
+
+/** Sanitasi pilihan shift pelamar (PAGI | SIANG | MALAM | APA_SAJA). */
+export function sanitizeShiftPref(value: unknown): ShiftPref | null {
+  return (SHIFT_PREFS as readonly string[]).includes(String(value))
+    ? (value as ShiftPref)
+    : null;
+}
 export function sanitizeInterviewPlatform(value: unknown): InterviewPlatform {
   return (INTERVIEW_PLATFORMS as string[]).includes(String(value))
     ? (value as InterviewPlatform)
@@ -291,6 +327,17 @@ export function serializePosition(record: PositionRecordModel): Position {
     department: record.department,
     type: record.type,
     location: record.location,
+
+    // Mode kerja & lokasi terstruktur (fitur non-remote)
+    workMode: sanitizeWorkMode(record.workMode),
+    city: record.city,
+    address: record.address,
+    mapsUrl: record.mapsUrl,
+    workHours: record.workHours,
+    shiftSystem: sanitizeShiftSystem(record.shiftSystem),
+    facilities: parseRequirements(record.facilities),
+    dailySlotQuota: record.dailySlotQuota,
+
     description: record.description,
     requirements: parseRequirements(record.requirements),
     isActive: record.isActive,
@@ -445,6 +492,13 @@ export function serializeApplication(record: ApplicationRecord): Application {
     utmCampaign: record.utmCampaign,
     screeningAnswers: parseStringRecord(record.screeningAnswers),
     formAnswers: parseFormAnswers(record.formAnswers),
+
+    // Info kehadiran posisi non-remote (on-site/hybrid)
+    domisili: record.domisili ?? null,
+    komuterPlan: sanitizeKomuterPlan(record.komuterPlan),
+    shiftPref: sanitizeShiftPref(record.shiftPref),
+    startDatePref: record.startDatePref ?? null,
+
     rubricScores: parseScoreRecord(record.rubricScores),
     checklistState: parseRequirements(record.checklistState),
     cvFileId: record.cvFileId,
@@ -502,6 +556,7 @@ export function serializeInterview(record: InterviewRecordModel): Interview {
     notes: record.notes,
     recordingUrl: record.recordingUrl,
     completedAt: record.completedAt ? record.completedAt.toISOString() : null,
+    checkedInAt: record.checkedInAt ? record.checkedInAt.toISOString() : null,
     rescheduleReason: record.rescheduleReason,
     rescheduleProposedAt: record.rescheduleProposedAt
       ? record.rescheduleProposedAt.toISOString()
@@ -972,6 +1027,16 @@ async function runSeed(): Promise<void> {
           department: position.department,
           type: position.type,
           location: position.location,
+
+          // Mode kerja & lokasi terstruktur (fitur non-remote)
+          workMode: position.workMode ?? "REMOTE",
+          city: position.city ?? null,
+          address: position.address ?? null,
+          mapsUrl: position.mapsUrl ?? null,
+          workHours: position.workHours ?? null,
+          shiftSystem: position.shiftSystem ?? "NONE",
+          facilities: JSON.stringify(position.facilities ?? []),
+
           description: position.description,
           requirements: JSON.stringify(position.requirements),
           isActive: true,

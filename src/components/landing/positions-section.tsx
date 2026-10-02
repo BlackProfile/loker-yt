@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Position, PositionPublicStats } from "@/lib/types";
+import { WORK_MODES, WORK_MODE_LABELS, type WorkMode } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -169,6 +170,39 @@ function SalaryBadge({ position }: { position: Position }) {
   );
 }
 
+/** Badge mode kerja (fitur non-remote): emerald=Remote, amber=On-site, rose=Hybrid. */
+const WORK_MODE_BADGE: Record<WorkMode, string> = {
+  REMOTE:
+    "border-transparent bg-emerald-500/10 text-emerald-600 ring-1 ring-inset ring-emerald-500/20 dark:text-emerald-400",
+  ONSITE:
+    "border-transparent bg-amber-500/10 text-amber-700 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400",
+  HYBRID:
+    "border-transparent bg-rose-500/10 text-rose-700 ring-1 ring-inset ring-rose-500/20 dark:text-rose-400",
+};
+
+/** Badge mode kerja + kota (mis. "On-site · Jakarta") — dipakai kartu posisi, embed, & header detail. */
+export function WorkModeBadge({
+  position,
+  className,
+}: {
+  position: Position;
+  className?: string;
+}) {
+  const mode = position.workMode;
+  if (!mode || !(mode in WORK_MODE_LABELS)) return null;
+  const city = position.city?.trim() || null;
+  return (
+    <Badge
+      variant="outline"
+      className={cn("gap-1", WORK_MODE_BADGE[mode], className)}
+      title={city ? `${WORK_MODE_LABELS[mode]} · ${city}` : WORK_MODE_LABELS[mode]}
+    >
+      {WORK_MODE_LABELS[mode]}
+      {city ? <span className="opacity-70">· {city}</span> : null}
+    </Badge>
+  );
+}
+
 function PositionCard({
   position,
   stats,
@@ -234,6 +268,7 @@ function PositionCard({
           <h3 className="mt-3 text-lg font-semibold">{displayTitle}</h3>
           <PositionBadges position={position} stats={stats} className="mt-2" />
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            <WorkModeBadge position={position} />
             <Badge variant="secondary">{position.type}</Badge>
             <Badge variant="secondary" className="gap-1">
               <MapPin className="h-3 w-3" aria-hidden="true" />
@@ -383,6 +418,8 @@ export function PositionsSection({
   const { t } = useLang();
   const [department, setDepartment] = useState<string | null>(null);
   const [jobType, setJobType] = useState<string | null>(null);
+  const [workMode, setWorkMode] = useState<WorkMode | null>(null);
+  const [city, setCity] = useState<string | null>(null);
 
   // Featured lebih dulu, lalu urutan existing (Array.sort stabil).
   const sortedPositions = useMemo(
@@ -399,10 +436,43 @@ export function PositionsSection({
     [sortedPositions],
   );
 
+  // Filter mode kerja (fitur non-remote): chip per mode + jumlah posisi.
+  const modeChips = useMemo(
+    () =>
+      WORK_MODES.map((mode) => ({
+        mode,
+        count: sortedPositions.filter((p) => p.workMode === mode).length,
+      })).filter((chip) => chip.count > 0),
+    [sortedPositions],
+  );
+  // Kota kandidat filter: hanya posisi non-remote yang mencantumkan kota.
+  const cities = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sortedPositions.flatMap((p) =>
+            p.workMode !== "REMOTE" && p.city?.trim() ? [p.city.trim()] : [],
+          ),
+        ),
+      ).sort(),
+    [sortedPositions],
+  );
+
+  const hasActiveFilters =
+    department !== null || jobType !== null || workMode !== null || city !== null;
+  const resetFilters = () => {
+    setDepartment(null);
+    setJobType(null);
+    setWorkMode(null);
+    setCity(null);
+  };
+
   const filtered = sortedPositions.filter(
     (p) =>
       (department === null || p.department === department) &&
-      (jobType === null || p.type === jobType),
+      (jobType === null || p.type === jobType) &&
+      (workMode === null || p.workMode === workMode) &&
+      (city === null || (p.workMode !== "REMOTE" && p.city?.trim() === city)),
   );
 
   return (
@@ -473,6 +543,61 @@ export function PositionsSection({
                   </FilterChip>
                 ))}
               </div>
+              {/* Filter mode kerja + kota (fitur non-remote) — digabung AND dengan filter departemen/tipe. */}
+              {modeChips.length > 0 ? (
+                <div
+                  role="group"
+                  aria-label={t.positions.modeLabel}
+                  className="flex flex-wrap items-center gap-2"
+                >
+                  <FilterChip
+                    active={workMode === null}
+                    onClick={() => setWorkMode(null)}
+                    ariaLabel={`${t.positions.modeLabel}: ${t.positions.all}`}
+                  >
+                    {t.positions.all}
+                  </FilterChip>
+                  {modeChips.map(({ mode, count }) => (
+                    <FilterChip
+                      key={mode}
+                      active={workMode === mode}
+                      onClick={() => setWorkMode(workMode === mode ? null : mode)}
+                      ariaLabel={`${t.positions.modeLabel}: ${WORK_MODE_LABELS[mode]}`}
+                    >
+                      {WORK_MODE_LABELS[mode]}
+                      <span className="ml-1 text-xs tabular-nums opacity-60">
+                        {count}
+                      </span>
+                    </FilterChip>
+                  ))}
+                </div>
+              ) : null}
+              {cities.length > 0 ? (
+                <div
+                  role="group"
+                  aria-label={t.positions.cityLabel}
+                  className="flex flex-wrap items-center gap-2"
+                >
+                  <FilterChip
+                    active={city === null}
+                    onClick={() => setCity(null)}
+                    ariaLabel={`${t.positions.cityLabel}: ${t.positions.allCities}`}
+                  >
+                    {t.positions.allCities}
+                  </FilterChip>
+                  {cities.map((c) => (
+                    <FilterChip
+                      key={c}
+                      active={city === c}
+                      onClick={() => setCity(city === c ? null : c)}
+                      ariaLabel={`${t.positions.cityLabel}: ${c}`}
+                    >
+                      <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                      {c}
+                    </FilterChip>
+                  ))}
+                </div>
+              ) : null}
             </FadeIn>
 
             {filtered.length === 0 ? (
@@ -485,6 +610,11 @@ export function PositionsSection({
                   <p className="text-sm text-muted-foreground">
                     {t.positions.filterEmptyBody}
                   </p>
+                  {hasActiveFilters ? (
+                    <Button variant="outline" size="sm" onClick={resetFilters}>
+                      {t.positions.resetFilter}
+                    </Button>
+                  ) : null}
                 </Card>
               </FadeIn>
             ) : (

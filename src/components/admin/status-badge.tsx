@@ -1,6 +1,7 @@
 "use client";
 
-import type { ApplicationStatus, StageKey } from "@/lib/types";
+import { MapPin } from "lucide-react";
+import { KOMUTER_PLAN_LABELS, type ApplicationStatus, type KomuterPlan, type StageKey } from "@/lib/types";
 import { stageBadgeClass, stageLabel, stageMeta } from "@/lib/stages";
 import { cn } from "@/lib/utils";
 
@@ -80,6 +81,54 @@ export function AiScoreBadge({
       )}
     >
       {score == null ? "Belum" : score}
+    </span>
+  );
+}
+
+// Warna chip domisili mengikuti rencana komuter pelamar:
+// perlu relokasi = amber (perlu perhatian HR), siap komuter = emerald (aman),
+// selain itu netral zinc.
+const DOMISILI_CHIP_STYLES = {
+  amber: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-900",
+  emerald:
+    "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-900",
+  zinc: "bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700",
+} as const;
+
+/**
+ * Chip kecil domisili pelamar untuk baris/kartu kandidat — hanya tampil bila
+ * pelamar mengisi domisili atau rencana komuter (posisi on-site/hybrid).
+ * Warna chip mencerminkan rencana komuter; detail lengkap ada di title.
+ */
+export function DomisiliChip({
+  domisili,
+  komuterPlan,
+  className,
+}: {
+  domisili?: string | null;
+  komuterPlan?: KomuterPlan | null;
+  className?: string;
+}) {
+  const city = domisili?.trim() ?? "";
+  if (!city && !komuterPlan) return null;
+  const komuterLabel = komuterPlan ? KOMUTER_PLAN_LABELS[komuterPlan] : null;
+  const tone =
+    komuterPlan === "PERLU_RELOKASI"
+      ? DOMISILI_CHIP_STYLES.amber
+      : komuterPlan === "SIAP_KOMUTER"
+        ? DOMISILI_CHIP_STYLES.emerald
+        : DOMISILI_CHIP_STYLES.zinc;
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap",
+        tone,
+        className
+      )}
+      title={komuterLabel ? `Rencana komuter: ${komuterLabel}` : undefined}
+    >
+      <MapPin className="size-3 shrink-0" aria-hidden="true" />
+      {city ? `Domisili: ${city}` : komuterLabel}
     </span>
   );
 }

@@ -11,6 +11,21 @@ export const dynamic = "force-dynamic";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Statistik kehadiran wawancara on-site (fitur non-remote).
+type OnsiteAttendanceStats = {
+  total: number; // sesi mode ONSITE tanpa yang dibatalkan
+  attended: number; // kandidat check-in (checkedInAt terisi)
+  noShow: number; // berstatus NO_SHOW
+  noShowRate: number; // persen tidak hadir dari total (0 bila total 0)
+};
+
+// Asal kota pelamar untuk posisi on-site/hybrid (fitur non-remote).
+type ApplicantOriginsStats = {
+  total: number; // lamaran posisi on-site/hybrid dengan domisili terisi
+  outOfCityRate: number | null; // persen domisili != kota posisi (null bila tanpa data)
+  cities: { city: string; count: number; isPositionCity: boolean }[]; // top 5
+};
+
 export async function GET() {
   try {
     const session = await getSession();
@@ -18,7 +33,7 @@ export async function GET() {
       return NextResponse.json({ error: "Silakan login terlebih dahulu." }, { status: 401 });
     }
 
-    const [applications, interviews] = await Promise.all([
+    const [applications, interviews, positions] = await Promise.all([
       db.application.findMany({
         select: {
           status: true,
@@ -27,6 +42,9 @@ export async function GET() {
           hiredAt: true,
           offerStatus: true,
           createdAt: true,
+          // Info kehadiran (fitur non-remote)
+          positionId: true,
+          domisili: true,
         },
       }),
       db.interview.findMany({
@@ -35,7 +53,13 @@ export async function GET() {
           scores: true,
           recommendation: true,
           interviewers: true,
+          // Kehadiran on-site (fitur non-remote)
+          mode: true,
+          checkedInAt: true,
         },
+      }),
+      db.position.findMany({
+        select: { id: true, workMode: true, city: true },
       }),
     ]);
 
@@ -106,6 +130,71 @@ export async function GET() {
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
+    // Kehadiran wawancara on-site: sesi mode ONSITE, tanpa yang dibatalkan.
+    const onsiteInterviews = interviews.filter(
+      (i) => i.mode === "ONSITE" && i.status !== "CANCELLED"
+    );
+    const onsiteTotal = onsiteInterviews.length;
+    const onsiteAttended = onsiteInterviews.filter((i) => i.checkedInAt != null).length;
+    const onsiteNoShow = onsiteInterviews.filter((i) => i.status === "NO_SHOW").length;
+    const onsiteAttendance: OnsiteAttendanceStats = {
+      total: onsiteTotal,
+      attended: onsiteAttended,
+      noShow: onsiteNoShow,
+      noShowRate: onsiteTotal > 0 ? Math.round((onsiteNoShow / onsiteTotal) * 100) : 0,
+    };
+
+    // Asal pelamar (on-site/hybrid): lamaran berdomisili untuk posisi non-remote.
+    const positionById = new Map(positions.map((p) => [p.id, p]));
+    // Kota posisi on-site/hybrid (untuk penanda "kota posisi" & rasio luar kota).
+    const onsitePositionCities = new Set<string>();
+    for (const p of positions) {
+      if (
+        (p.workMode === "ONSITE" || p.workMode === "HYBRID") &&
+        p.city &&
+        p.city.trim() !== ""
+      ) {
+        onsitePositionCities.add(p.city.trim().toLowerCase());
+      }
+    }
+    type OriginApp = { domisili: string; positionCity: string | null };
+    const originApps: OriginApp[] = [];
+    for (const a of applications) {
+      const domisili = a.domisili?.trim() ?? "";
+      if (domisili === "" || !a.positionId) continue;
+      const position = positionById.get(a.positionId);
+      if (!position) continue;
+      if (position.workMode !== "ONSITE" && position.workMode !== "HYBRID") continue;
+      originApps.push({ domisili, positionCity: position.city?.trim() ?? null });
+    }
+    // Agregasi kota case-insensitive (label memakai ejaan pertama yang muncul).
+    const cityAgg = new Map<string, { label: string; count: number }>();
+    let outOfCityCount = 0;
+    for (const o of originApps) {
+      const key = o.domisili.toLowerCase();
+      const agg = cityAgg.get(key);
+      if (agg) agg.count += 1;
+      else cityAgg.set(key, { label: o.domisili, count: 1 });
+      if (o.positionCity == null || o.positionCity.toLowerCase() !== key) {
+        outOfCityCount += 1;
+      }
+    }
+    const applicantOrigins: ApplicantOriginsStats = {
+      total: originApps.length,
+      outOfCityRate:
+        originApps.length > 0
+          ? Math.round((outOfCityCount / originApps.length) * 100)
+          : null,
+      cities: Array.from(cityAgg.values())
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "id"))
+        .slice(0, 5)
+        .map((c) => ({
+          city: c.label,
+          count: c.count,
+          isPositionCity: onsitePositionCities.has(c.label.toLowerCase()),
+        })),
+    };
+
     // 6 bulan terakhir: applications & hires
     const monthly: { month: string; applications: number; hires: number }[] = [];
     const monthKeys: string[] = [];
@@ -131,7 +220,10 @@ export async function GET() {
       }
     }
 
-    const body: AnalyticsResponse = {
+    const body: AnalyticsResponse & {
+      onsiteAttendance: OnsiteAttendanceStats;
+      applicantOrigins: ApplicantOriginsStats;
+    } = {
       totals: {
         applications: applications.length,
         rejected: applications.filter((a) => a.status === "REJECTED").length,
@@ -153,6 +245,9 @@ export async function GET() {
           : null,
       interviewerLoad,
       monthly,
+      // Field tambahan fitur non-remote (additive — respons lama tetap kompatibel)
+      onsiteAttendance,
+      applicantOrigins,
     };
     void now;
     return NextResponse.json(body);

@@ -50,6 +50,7 @@ import {
 import {
   buildPositionUrl,
   employmentTypeOf,
+  fillTemplate,
   instagramHref,
   whatsappHref,
 } from "@/components/landing/landing-utils";
@@ -277,16 +278,26 @@ function Navbar({
 
 function Hero({
   content,
+  positions,
   stats,
   sections,
   recruitmentClosed,
 }: {
   content: SiteContent;
+  positions: Position[];
   stats: LandingPageProps["stats"];
   sections: SectionVisibility;
   recruitmentClosed: boolean;
 }) {
   const { t } = useLang();
+
+  // Stat mode kerja count-aware (fitur non-remote): bila semua posisi remote,
+  // tetap "100% Tim Remote"; bila campuran, tampilkan "X Remote · Y Di Kantor".
+  const remoteCount = positions.filter(
+    (position) => (position.workMode ?? "REMOTE") === "REMOTE",
+  ).length;
+  const officeCount = positions.length - remoteCount;
+  const allRemote = officeCount === 0;
 
   return (
     <section className="relative overflow-hidden bg-zinc-950 text-zinc-50">
@@ -379,12 +390,28 @@ function Hero({
                 </p>
               </div>
               <div className="min-w-0 pl-3 sm:pl-10">
-                <p className="text-xl font-bold tabular-nums sm:text-2xl md:text-3xl">
-                  <AnimatedNumber value={100} suffix="%" />
-                </p>
-                <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
-                  {t.hero.statsRemote}
-                </p>
+                {allRemote ? (
+                  <>
+                    <p className="text-xl font-bold tabular-nums sm:text-2xl md:text-3xl">
+                      <AnimatedNumber value={100} suffix="%" />
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+                      {t.hero.statsRemote}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xl font-bold sm:text-2xl md:text-3xl">
+                      {fillTemplate(t.hero.statsMixed, {
+                        remote: remoteCount,
+                        onsite: officeCount,
+                      })}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-400 sm:text-sm">
+                      {t.hero.statsMode}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </StaggerItem>
@@ -840,7 +867,15 @@ function useJobPostingJsonLd(
             title: focused.title,
             description: focused.description.trim().slice(0, 300),
             hiringOrganization: { "@type": "Organization", name: siteName },
-            jobLocationType: "TELECOMMUTE",
+            ...(focused.workMode === "REMOTE" ? { jobLocationType: "TELECOMMUTE" } : {}),
+            ...(focused.city
+              ? {
+                  jobLocation: {
+                    "@type": "Place",
+                    address: { "@type": "PostalAddress", addressLocality: focused.city, addressCountry: "ID" },
+                  },
+                }
+              : {}),
             employmentType: employmentTypeOf(focused.type),
             datePosted: focused.createdAt,
             ...(focused.closesAt ? { validThrough: focused.closesAt } : {}),
@@ -853,7 +888,15 @@ function useJobPostingJsonLd(
           title: position.title,
           description: position.description,
           hiringOrganization: { "@type": "Organization", name: siteName },
-          jobLocationType: "TELECOMMUTE",
+          ...(position.workMode === "REMOTE" ? { jobLocationType: "TELECOMMUTE" } : {}),
+          ...(position.city
+            ? {
+                jobLocation: {
+                  "@type": "Place",
+                  address: { "@type": "PostalAddress", addressLocality: position.city, addressCountry: "ID" },
+                },
+              }
+            : {}),
           employmentType: employmentTypeOf(position.type),
           datePosted: position.createdAt,
           ...(position.closesAt ? { validThrough: position.closesAt } : {}),
@@ -925,6 +968,7 @@ function LandingShell({
           {sections.hero ? (
             <Hero
               content={content}
+              positions={positions}
               stats={stats}
               sections={sections}
               recruitmentClosed={recruitment.recruitmentClosed}

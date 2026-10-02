@@ -18,6 +18,8 @@ import {
   INTERVIEW_PLATFORMS,
   POSITION_TYPES,
   STAGE_CATEGORIES,
+  WORK_MODES,
+  SHIFT_SYSTEMS,
   type StageCategory,
   type StageKey,
 } from "@/lib/types";
@@ -44,6 +46,17 @@ export type PositionFields = {
   department?: string;
   type?: string;
   location?: string;
+
+  // Mode kerja & lokasi terstruktur (fitur non-remote)
+  workMode?: string; // REMOTE | ONSITE | HYBRID
+  city?: string | null; // kota kerja (ONSITE/HYBRID)
+  address?: string | null; // alamat kantor lengkap
+  mapsUrl?: string | null; // tautan Google Maps
+  workHours?: string | null; // mis. "Senin-Jumat, 09.00-18.00 WIB"
+  shiftSystem?: string; // NONE | FIXED | ROTATING
+  facilities?: string[]; // fasilitas kantor
+  dailySlotQuota?: number | null; // kuota slot wawancara on-site per hari
+
   description?: string;
   requirements?: string[];
   isActive?: boolean;
@@ -409,6 +422,53 @@ export async function sanitizePositionInput(
   if (!type.ok) return type;
   if (type.value !== undefined) f.type = type.value;
 
+  // Mode kerja & lokasi terstruktur (fitur non-remote)
+  if (data.workMode !== undefined) {
+    const mode = typeof data.workMode === "string" ? data.workMode.trim() : "";
+    if (!(WORK_MODES as readonly string[]).includes(mode)) {
+      return err("Mode kerja tidak valid.");
+    }
+    f.workMode = mode;
+  } else if (create) {
+    f.workMode = "REMOTE";
+  }
+
+  const city = sanitizeNullableText(data.city, "Kota", 80);
+  if (!city.ok) return city;
+  if (city.value !== undefined) f.city = city.value;
+
+  const address = sanitizeNullableText(data.address, "Alamat kantor", 200);
+  if (!address.ok) return address;
+  if (address.value !== undefined) f.address = address.value;
+
+  const mapsUrl = sanitizeNullableUrl(data.mapsUrl, "Tautan peta", 300);
+  if (!mapsUrl.ok) return mapsUrl;
+  if (mapsUrl.value !== undefined) f.mapsUrl = mapsUrl.value;
+
+  const workHours = sanitizeNullableText(data.workHours, "Jam kerja", 120);
+  if (!workHours.ok) return workHours;
+  if (workHours.value !== undefined) f.workHours = workHours.value;
+
+  if (data.shiftSystem !== undefined) {
+    const system = typeof data.shiftSystem === "string" ? data.shiftSystem.trim() : "";
+    if (!(SHIFT_SYSTEMS as readonly string[]).includes(system)) {
+      return err("Sistem shift tidak valid.");
+    }
+    f.shiftSystem = system;
+  }
+
+  const facilities = sanitizeStringList(data.facilities, {
+    name: "Fasilitas", maxItems: 8, minLen: 1, maxLen: 80,
+  });
+  if (!facilities.ok) return facilities;
+  if (facilities.value !== undefined) f.facilities = facilities.value;
+
+  const dailySlotQuota = sanitizeNullableInt(
+    data.dailySlotQuota, "Kuota slot wawancara per hari", 1, 100,
+  );
+  if (!dailySlotQuota.ok) return dailySlotQuota;
+  if (dailySlotQuota.value !== undefined) f.dailySlotQuota = dailySlotQuota.value;
+
   const requirements = sanitizeRequirements(data.requirements);
   if (!requirements.ok) return requirements;
   if (requirements.value !== undefined) f.requirements = requirements.value;
@@ -731,6 +791,15 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.department !== undefined) out.department = f.department;
   if (f.type !== undefined) out.type = f.type;
   if (f.location !== undefined) out.location = f.location;
+  // Mode kerja & lokasi terstruktur (fitur non-remote)
+  if (f.workMode !== undefined) out.workMode = f.workMode;
+  if (f.city !== undefined) out.city = f.city;
+  if (f.address !== undefined) out.address = f.address;
+  if (f.mapsUrl !== undefined) out.mapsUrl = f.mapsUrl;
+  if (f.workHours !== undefined) out.workHours = f.workHours;
+  if (f.shiftSystem !== undefined) out.shiftSystem = f.shiftSystem;
+  if (f.facilities !== undefined) out.facilities = JSON.stringify(f.facilities);
+  if (f.dailySlotQuota !== undefined) out.dailySlotQuota = f.dailySlotQuota;
   if (f.description !== undefined) out.description = f.description;
   if (f.requirements !== undefined) out.requirements = JSON.stringify(f.requirements);
   if (f.isActive !== undefined) out.isActive = f.isActive;

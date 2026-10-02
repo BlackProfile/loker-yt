@@ -70,6 +70,17 @@ export async function POST(req: NextRequest) {
         department: f.department ?? "Umum",
         type: f.type ?? "Full-time",
         location: f.location ?? "Remote",
+
+        // Mode kerja & lokasi terstruktur (fitur non-remote)
+        workMode: f.workMode ?? "REMOTE",
+        city: f.city ?? null,
+        address: f.address ?? null,
+        mapsUrl: f.mapsUrl ?? null,
+        workHours: f.workHours ?? null,
+        shiftSystem: f.shiftSystem ?? "NONE",
+        facilities: JSON.stringify(f.facilities ?? []),
+        dailySlotQuota: f.dailySlotQuota ?? null,
+
         description: f.description ?? "",
         requirements: JSON.stringify(f.requirements ?? []),
         isActive: f.isActive ?? true,

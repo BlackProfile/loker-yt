@@ -21,7 +21,7 @@ import {
   validateFormAnswers,
   type FormAnswerValue,
 } from "@/lib/form-schema";
-import { CV_MAX_BYTES, INTRO_MAX_BYTES, type ApplySuccessResponse } from "@/lib/types";
+import { CV_MAX_BYTES, INTRO_MAX_BYTES, KOMUTER_PLANS, SHIFT_PREFS, type ApplySuccessResponse } from "@/lib/types";
 import { startBackgroundProcessing } from "@/lib/processing";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
@@ -49,6 +49,13 @@ const AUDIO_EXT_MIME: Record<string, string> = {
 };
 
 const SCREENING_ANSWER_MAX = 500; // batas karakter tiap jawaban screening
+
+// NR-4 — Info Kehadiran posisi non-remote: batas karakter pilihan teks
+// (disinkronkan dengan maxLength di wizard) + nilai enum yang sah.
+const DOMISILI_MAX = 80;
+const START_DATE_MAX = 60;
+const KOMUTER_PLAN_VALUES: readonly string[] = KOMUTER_PLANS;
+const SHIFT_PREF_VALUES: readonly string[] = SHIFT_PREFS;
 
 // Anti-spam (Task 27): rate limit submit per IP — maks 5 lamaran per jam.
 // In-memory (pola rateMap di /api/public/slots): cukup untuk menahan spam
@@ -275,6 +282,28 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       );
     }
+
+    // NR-4 — Info Kehadiran (hanya posisi ONSITE/HYBRID): domisili, rencana
+    // komuter, preferensi shift, perkiraan mulai kerja. Untuk posisi REMOTE
+    // atau posisi tidak dikenal, keempat field ini DIABAIKAN sepenuhnya.
+    const isOnsitePosition =
+      position.workMode === "ONSITE" || position.workMode === "HYBRID";
+    const domisili = isOnsitePosition
+      ? (asOptionalString(fields.domisili)?.slice(0, DOMISILI_MAX) ?? null)
+      : null;
+    const komuterPlanRaw = asTrimmedString(fields.komuterPlan);
+    const komuterPlan =
+      isOnsitePosition && KOMUTER_PLAN_VALUES.includes(komuterPlanRaw)
+        ? komuterPlanRaw
+        : null;
+    const shiftPrefRaw = asTrimmedString(fields.shiftPref);
+    const shiftPref =
+      isOnsitePosition && SHIFT_PREF_VALUES.includes(shiftPrefRaw)
+        ? shiftPrefRaw
+        : null;
+    const startDatePref = isOnsitePosition
+      ? (asOptionalString(fields.startDatePref)?.slice(0, START_DATE_MAX) ?? null)
+      : null;
 
     // Skema formulir v2 (Form Builder): sumber kebenaran seluruh bagian.
     // Skema lama (v1) dinormalisasi; konfigurasi berkas mengikuti kolom posisi.
@@ -542,6 +571,11 @@ export async function POST(req: NextRequest) {
         referrer,
         screeningAnswers: screeningAnswersJson,
         formAnswers: formAnswersJson,
+        // NR-4 — Info Kehadiran (null untuk posisi REMOTE / tidak diisi).
+        domisili,
+        komuterPlan,
+        shiftPref,
+        startDatePref,
         // Task 27: pencatatan persetujuan privasi + penanda perubahan tahap awal.
         consentAt: consent ? now : null,
         stageUpdatedAt: now,

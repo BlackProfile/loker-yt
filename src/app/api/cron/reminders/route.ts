@@ -27,6 +27,19 @@ function formatDateTimeId(value: Date): string {
   return value.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
 }
 
+// Parse kolom JSON string[] (mis. Position.customDocs) dari record Prisma mentah.
+function parseStringArray(raw: unknown): string[] {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const secret = req.headers.get("x-realtime-secret");
@@ -73,12 +86,35 @@ export async function POST(req: NextRequest) {
         scheduledAt: { gte: now, lte: new Date(now.getTime() + 24 * 60 * 60 * 1000) },
       },
       include: {
-        application: { select: { id: true, name: true, trackingCode: true, position: { select: { title: true } } } },
+        application: {
+          select: {
+            id: true,
+            name: true,
+            trackingCode: true,
+            position: {
+              select: { title: true, address: true, mapsUrl: true, customDocs: true },
+            },
+          },
+        },
       },
     });
     for (const iv of upcoming) {
       const minutesLeft = (iv.scheduledAt.getTime() - now.getTime()) / 60000;
-      const platform = iv.mode === "ONSITE" ? `di lokasi (${iv.address ?? "-"})` : `via ${iv.platform.replaceAll("_", " ").toLowerCase()}`;
+      const platform = iv.mode === "ONSITE" ? `di lokasi (${iv.address ?? iv.application.position?.address ?? "-"})` : `via ${iv.platform.replaceAll("_", " ").toLowerCase()}`;
+
+      // Sesi on-site (NR-5): pengingat menyuruh kandidat datang ke kantor —
+      // sertakan alamat, tautan peta, dan daftar dokumen wajib posisi.
+      const onsiteLines: string[] = [];
+      if (iv.mode === "ONSITE") {
+        const pos = iv.application.position;
+        const address = iv.address ?? pos?.address ?? null;
+        if (address) onsiteLines.push(`Datang ke ${address}`);
+        if (pos?.mapsUrl) onsiteLines.push(`Peta: ${pos.mapsUrl}`);
+        const docs = parseStringArray(pos?.customDocs);
+        if (docs.length > 0) onsiteLines.push(`Bawa dokumen: ${docs.join(", ")}`);
+      }
+      const onsiteSuffix = onsiteLines.length > 0 ? `\n${onsiteLines.join("\n")}` : "";
+
       if (minutesLeft <= 60 && !iv.reminderHourSent) {
         await db.interview.update({ where: { id: iv.id }, data: { reminderHourSent: true } });
         await db.activityLog.create({
@@ -91,7 +127,7 @@ export async function POST(req: NextRequest) {
         });
         void sendSystemEvent({
           title: "Wawancara 1 Jam Lagi",
-          detail: `${iv.application.name} — ronde ${iv.round} ${platform} pukul ${formatDateTimeId(iv.scheduledAt)}.`,
+          detail: `${iv.application.name} — ronde ${iv.round} ${platform} pukul ${formatDateTimeId(iv.scheduledAt)}.${onsiteSuffix}`,
           applicationId: iv.applicationId,
           action: "INTERVIEW_REMINDER",
           trackingCode: iv.application.trackingCode ?? undefined,
@@ -115,7 +151,7 @@ export async function POST(req: NextRequest) {
         });
         void sendSystemEvent({
           title: "Pengingat Wawancara Besok",
-          detail: `${iv.application.name} — ronde ${iv.round} ${platform} pada ${formatDateTimeId(iv.scheduledAt)}.`,
+          detail: `${iv.application.name} — ronde ${iv.round} ${platform} pada ${formatDateTimeId(iv.scheduledAt)}.${onsiteSuffix}`,
           applicationId: iv.applicationId,
           action: "INTERVIEW_REMINDER",
           trackingCode: iv.application.trackingCode ?? undefined,

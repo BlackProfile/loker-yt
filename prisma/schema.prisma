@@ -41,6 +41,16 @@ model Position {
   type         String        @default("Remote")
   location     String        @default("Remote")
   description  String
+
+  // Mode kerja & lokasi terstruktur (fitur non-remote)
+  workMode       String  @default("REMOTE") // REMOTE | ONSITE | HYBRID
+  city           String? // kota kerja (untuk ONSITE/HYBRID)
+  address        String? // alamat kantor lengkap (ONSITE/HYBRID)
+  mapsUrl        String? // tautan Google Maps lokasi kantor
+  workHours      String? // mis. "Senin-Jumat, 09.00-18.00 WIB"
+  shiftSystem    String  @default("NONE") // NONE | FIXED | ROTATING
+  facilities     String  @default("[]") // JSON string[] fasilitas (parkir, makan, transport)
+  dailySlotQuota Int? // kuota slot wawancara on-site per hari (null = tanpa batas)
   requirements String        @default("[]") // JSON string[]
   isActive     Boolean       @default(true)
   closesAt     DateTime? // auto-tutup setelah tanggal ini (opsional)
@@ -215,6 +225,12 @@ model Application {
   videoNotes     String?   // JSON {t:detik,note:string}[] catatan bertimestamp saat review video intro
   consentAt      DateTime? // saat pelamar menyetujui pernyataan privasi di formulir
 
+  // Info kehadiran untuk posisi non-remote (on-site/hybrid)
+  domisili      String? // kota domisili pelamar
+  komuterPlan   String? // SIAP_KOMUTER | PERLU_RELOKASI | TIDAK
+  shiftPref     String? // PAGI | SIANG | MALAM | APA_SAJA
+  startDatePref String? // perkiraan kapan bisa mulai kerja
+
   // Bot Telegram — snooze & lampiran
   snoozeUntil DateTime? // bila diisi, bot mengingatkan admin pada waktu ini lalu membersihkannya
   botFiles    String    @default("[]") // JSON {fileId,filename,mimeType,size,sentAt}[] lampiran yang dikirim admin via bot Telegram
@@ -255,6 +271,7 @@ model Interview {
   notes          String?
   recordingUrl   String? // link rekaman Zoom/Meet (opsional)
   completedAt    DateTime?
+  checkedInAt    DateTime? // saat kandidat ditandai hadir datang ke kantor (wawancara on-site)
 
   // Permintaan ubah jadwal dari pelamar
   rescheduleReason     String?
