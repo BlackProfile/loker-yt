@@ -2030,3 +2030,22 @@ Stage Summary:
 - Seluruh 12 ide non-remote (mode kerja, lokasi terstruktur+peta, filter, info operasional, copy dinamis, SEO, wizard kondisional, shift, preset dokumen, slot pintar, check-in, ringkasan domisili) selesai & terverifikasi lewat browser via gateway :81.
 - Catatan: klik "Kirim Lamaran" membuka dialog konfirmasi "Ya, Kirim Lamaran" (perilaku lama, bukan bug).
 - Auto-push watcher mengambil commit.
+
+---
+Task ID: NR-8
+Agent: orchestrator (Z.ai Code)
+Task: Restyling panel filter lowongan (career) — 4 baris chip bertumpuk jadi panel 2 lapis ringkas (user: "ini bagusnya dibuat kayak mana biar enak dilihat")
+
+Work Log:
+- Identifikasi masalah UI filter di src/components/landing/positions-section.tsx: 4 baris chip bertumpuk (kategori/jenis/mode/kota), tiga pill "Semua" rose identik, ikon tak konsisten, makan ruang vertikal.
+- strings.ts (+tipe idDictShape): kunci baru positions.filterTypeLabel/filterModeLabel/filterCityLabel, allTypes/allModes, resultCount "{n} lowongan", clearFilters "Hapus" (+ versi EN).
+- positions-section.tsx: komponen baru FilterDropdown (trigger ikon+label pill, berubah nilai aktif rose saat terpilih; menu satu-pilih dengan Check + hitungan posisi per opsi; item "Semua …" di atas).
+- Struktur baru panel filter: rounded-2xl border bg-muted/40 — baris 1 chip kategori (tetap chip, dimensi utama), baris 2 toolbar ringkas [Jenis][Mode Kerja][Kota] + kanan: hitungan hasil "N lowongan" (aria-live, hidden di xs) + tombol "Hapus" (X) saat ada filter aktif.
+- Opsi dropdown pakai memo typeOptions/modeDropdownOptions/cityOptions dengan count; mode/kota hanya tampil bila ada posisi non-remote/kota tercantum (logika lama dipertahankan).
+- Fix tipe: onSelect mode kerja dibungkus cast `value as WorkMode`.
+- Lint bersih; verifikasi E2E via :81 (agent-browser): desktop light — menu dropdown tampil hitungan (Remote 3/On-site 1/Hybrid 1, Jakarta 2); pilih On-site → trigger rose "On-site", hasil "1 lowongan", tombol Hapus muncul, kartu tersaring benar; Hapus → kembali 5 lowongan. Mobile 390px — chip wrap rapi, toolbar tetap 1 grup. Dark mode — panel, trigger, dan menu konsisten. EN — All/Type/Work Mode/City/"5 openings".
+- dev.log bersih (hanya query normal, semua 200), tanpa error browser.
+
+Stage Summary:
+- Panel filter kini 2 baris (dari 4): hemat ruang vertikal, hierarki jelas (kategori=chip, sisanya dropdown), tanpa duplikasi pill "Semua", hitungan pindah ke dalam menu, feedback hasil + reset selalu terlihat.
+- File berubah: src/components/landing/positions-section.tsx, src/components/landing/strings.ts.

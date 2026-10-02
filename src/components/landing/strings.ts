@@ -63,6 +63,13 @@ const id = {
     resetFilter: "Hapus semua filter",
     deptLabel: "Filter departemen",
     typeLabel: "Filter jenis pekerjaan",
+    filterTypeLabel: "Jenis",
+    filterModeLabel: "Mode Kerja",
+    filterCityLabel: "Kota",
+    allTypes: "Semua jenis",
+    allModes: "Semua mode",
+    resultCount: "{n} lowongan",
+    clearFilters: "Hapus",
     requirementsCount: "persyaratan",
     detail: "Detail",
     detailAria: "Lihat detail & lamar",
@@ -594,6 +601,13 @@ type idDictShape = {
     resetFilter: string;
     deptLabel: string;
     typeLabel: string;
+    filterTypeLabel: string;
+    filterModeLabel: string;
+    filterCityLabel: string;
+    allTypes: string;
+    allModes: string;
+    resultCount: string;
+    clearFilters: string;
     requirementsCount: string;
     detail: string;
     detailAria: string;
@@ -1053,6 +1067,13 @@ const en: Dict = {
     resetFilter: "Clear all filters",
     deptLabel: "Filter by department",
     typeLabel: "Filter by job type",
+    filterTypeLabel: "Type",
+    filterModeLabel: "Work Mode",
+    filterCityLabel: "City",
+    allTypes: "All types",
+    allModes: "All modes",
+    resultCount: "{n} openings",
+    clearFilters: "Clear",
     requirementsCount: "requirements",
     detail: "Details",
     detailAria: "View details & apply",

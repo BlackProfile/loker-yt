@@ -5,9 +5,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Briefcase,
   Check,
+  ChevronDown,
   Eye,
   Flame,
   FolderOpen,
+  Laptop,
   MapPin,
   Pin,
   SearchX,
@@ -15,6 +17,7 @@ import {
   Timer,
   Users,
   Wallet,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import type { Position, PositionPublicStats } from "@/lib/types";
@@ -22,6 +25,12 @@ import { WORK_MODES, WORK_MODE_LABELS, type WorkMode } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useLang } from "@/components/landing/lang-context";
 import {
   HoverLift,
@@ -399,6 +408,100 @@ function FilterChip({
   );
 }
 
+type DropdownOption = {
+  value: string;
+  label: string;
+  count: number | null;
+};
+
+/**
+ * Dropdown filter ringkas: trigger ikon + label (berubah jadi nilai aktif
+ * berwarna rose saat terpilih), menu satu-pilih dengan hitungan posisi.
+ * Menggantikan baris chip "Semua + opsi" agar panel filter tetap 1 baris.
+ */
+function FilterDropdown({
+  icon: Icon,
+  placeholder,
+  allLabel,
+  options,
+  activeValue,
+  onClear,
+  onSelect,
+  triggerAria,
+}: {
+  icon: LucideIcon;
+  /** Label netral saat belum ada pilihan (mis. "Jenis"). */
+  placeholder: string;
+  /** Opsi pertama menu (mis. "Semua jenis"). */
+  allLabel: string;
+  options: DropdownOption[];
+  activeValue: string | null;
+  onClear: () => void;
+  onSelect: (value: string) => void;
+  triggerAria: string;
+}) {
+  const activeOption =
+    options.find((option) => option.value === activeValue) ?? null;
+  const active = activeOption !== null;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={triggerAria}
+          className={cn(
+            "inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            active
+              ? "border-rose-600/40 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20"
+              : "border-zinc-200 bg-background text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-background dark:text-zinc-300 dark:hover:bg-zinc-800",
+          )}
+        >
+          <Icon className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+          {active ? activeOption.label : placeholder}
+          <ChevronDown className="h-3.5 w-3.5 opacity-50" aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-44 rounded-xl">
+        <DropdownMenuItem className="gap-2" onSelect={onClear}>
+          <Check
+            className={cn(
+              "h-4 w-4 text-rose-600 dark:text-rose-400",
+              !active && "opacity-0",
+            )}
+            aria-hidden="true"
+          />
+          <span>{allLabel}</span>
+        </DropdownMenuItem>
+        {options.map((option) => {
+          const isActive = option.value === activeValue;
+          return (
+            <DropdownMenuItem
+              key={option.value}
+              className="gap-2"
+              onSelect={() => onSelect(option.value)}
+            >
+              <Check
+                className={cn(
+                  "h-4 w-4 text-rose-600 dark:text-rose-400",
+                  !isActive && "opacity-0",
+                )}
+                aria-hidden="true"
+              />
+              <span className="flex-1">{option.label}</span>
+              {option.count !== null ? (
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {option.count}
+                </span>
+              ) : null}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function PositionsSection({
   positions,
   onOpenPosition,
@@ -436,8 +539,8 @@ export function PositionsSection({
     [sortedPositions],
   );
 
-  // Filter mode kerja (fitur non-remote): chip per mode + jumlah posisi.
-  const modeChips = useMemo(
+  // Filter mode kerja (fitur non-remote): opsi dropdown + jumlah posisi.
+  const modeOptions = useMemo(
     () =>
       WORK_MODES.map((mode) => ({
         mode,
@@ -456,6 +559,37 @@ export function PositionsSection({
         ),
       ).sort(),
     [sortedPositions],
+  );
+
+  // Opsi dropdown (nilai + label + hitungan) untuk toolbar filter.
+  const typeOptions = useMemo(
+    () =>
+      jobTypes.map((type) => ({
+        value: type,
+        label: type,
+        count: sortedPositions.filter((p) => p.type === type).length,
+      })),
+    [jobTypes, sortedPositions],
+  );
+  const modeDropdownOptions = useMemo(
+    () =>
+      modeOptions.map(({ mode, count }) => ({
+        value: mode,
+        label: WORK_MODE_LABELS[mode],
+        count,
+      })),
+    [modeOptions],
+  );
+  const cityOptions = useMemo(
+    () =>
+      cities.map((c) => ({
+        value: c,
+        label: c,
+        count: sortedPositions.filter(
+          (p) => p.workMode !== "REMOTE" && p.city?.trim() === c,
+        ).length,
+      })),
+    [cities, sortedPositions],
   );
 
   const hasActiveFilters =
@@ -502,102 +636,89 @@ export function PositionsSection({
           </FadeIn>
         ) : (
           <>
-            <FadeIn className="mt-8 space-y-3">
-              <div
-                role="group"
-                aria-label={t.positions.deptLabel}
-                className="flex flex-wrap items-center gap-2"
-              >
-                <FilterChip
-                  active={department === null}
-                  onClick={() => setDepartment(null)}
-                  ariaLabel={`${t.positions.deptLabel}: ${t.positions.all}`}
-                >
-                  {t.positions.all}
-                </FilterChip>
-                {departments.map((dept) => (
-                  <FilterChip
-                    key={dept}
-                    active={department === dept}
-                    onClick={() => setDepartment(department === dept ? null : dept)}
-                    ariaLabel={`${t.positions.deptLabel}: ${dept}`}
-                  >
-                    {dept}
-                  </FilterChip>
-                ))}
-              </div>
-              <div
-                role="group"
-                aria-label={t.positions.typeLabel}
-                className="flex flex-wrap items-center gap-2"
-              >
-                {jobTypes.map((type) => (
-                  <FilterChip
-                    key={type}
-                    active={jobType === type}
-                    onClick={() => setJobType(jobType === type ? null : type)}
-                    ariaLabel={`${t.positions.typeLabel}: ${type}`}
-                  >
-                    <Briefcase className="h-3.5 w-3.5" aria-hidden="true" />
-                    {type}
-                  </FilterChip>
-                ))}
-              </div>
-              {/* Filter mode kerja + kota (fitur non-remote) — digabung AND dengan filter departemen/tipe. */}
-              {modeChips.length > 0 ? (
+            <FadeIn className="mt-8">
+              {/* Panel filter dua lapis: baris 1 kategori (chip), baris 2 toolbar
+                  ringkas (dropdown Jenis/Mode/Kota + hitungan hasil + reset). */}
+              <div className="space-y-3 rounded-2xl border bg-muted/40 p-3 md:p-4">
                 <div
                   role="group"
-                  aria-label={t.positions.modeLabel}
+                  aria-label={t.positions.deptLabel}
                   className="flex flex-wrap items-center gap-2"
                 >
                   <FilterChip
-                    active={workMode === null}
-                    onClick={() => setWorkMode(null)}
-                    ariaLabel={`${t.positions.modeLabel}: ${t.positions.all}`}
+                    active={department === null}
+                    onClick={() => setDepartment(null)}
+                    ariaLabel={`${t.positions.deptLabel}: ${t.positions.all}`}
                   >
                     {t.positions.all}
                   </FilterChip>
-                  {modeChips.map(({ mode, count }) => (
+                  {departments.map((dept) => (
                     <FilterChip
-                      key={mode}
-                      active={workMode === mode}
-                      onClick={() => setWorkMode(workMode === mode ? null : mode)}
-                      ariaLabel={`${t.positions.modeLabel}: ${WORK_MODE_LABELS[mode]}`}
+                      key={dept}
+                      active={department === dept}
+                      onClick={() => setDepartment(department === dept ? null : dept)}
+                      ariaLabel={`${t.positions.deptLabel}: ${dept}`}
                     >
-                      {WORK_MODE_LABELS[mode]}
-                      <span className="ml-1 text-xs tabular-nums opacity-60">
-                        {count}
-                      </span>
+                      {dept}
                     </FilterChip>
                   ))}
                 </div>
-              ) : null}
-              {cities.length > 0 ? (
-                <div
-                  role="group"
-                  aria-label={t.positions.cityLabel}
-                  className="flex flex-wrap items-center gap-2"
-                >
-                  <FilterChip
-                    active={city === null}
-                    onClick={() => setCity(null)}
-                    ariaLabel={`${t.positions.cityLabel}: ${t.positions.allCities}`}
-                  >
-                    {t.positions.allCities}
-                  </FilterChip>
-                  {cities.map((c) => (
-                    <FilterChip
-                      key={c}
-                      active={city === c}
-                      onClick={() => setCity(city === c ? null : c)}
-                      ariaLabel={`${t.positions.cityLabel}: ${c}`}
+                <div className="flex flex-wrap items-center gap-2">
+                  <FilterDropdown
+                    icon={Briefcase}
+                    placeholder={t.positions.filterTypeLabel}
+                    allLabel={t.positions.allTypes}
+                    options={typeOptions}
+                    activeValue={jobType}
+                    onClear={() => setJobType(null)}
+                    onSelect={setJobType}
+                    triggerAria={t.positions.typeLabel}
+                  />
+                  {modeDropdownOptions.length > 0 ? (
+                    <FilterDropdown
+                      icon={Laptop}
+                      placeholder={t.positions.filterModeLabel}
+                      allLabel={t.positions.allModes}
+                      options={modeDropdownOptions}
+                      activeValue={workMode}
+                      onClear={() => setWorkMode(null)}
+                      onSelect={(value) => setWorkMode(value as WorkMode)}
+                      triggerAria={t.positions.modeLabel}
+                    />
+                  ) : null}
+                  {cityOptions.length > 0 ? (
+                    <FilterDropdown
+                      icon={MapPin}
+                      placeholder={t.positions.filterCityLabel}
+                      allLabel={t.positions.allCities}
+                      options={cityOptions}
+                      activeValue={city}
+                      onClear={() => setCity(null)}
+                      onSelect={setCity}
+                      triggerAria={t.positions.cityLabel}
+                    />
+                  ) : null}
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <span
+                      aria-live="polite"
+                      className="hidden text-xs tabular-nums text-muted-foreground sm:inline"
                     >
-                      <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-                      {c}
-                    </FilterChip>
-                  ))}
+                      {fillTemplate(t.positions.resultCount, { n: filtered.length })}
+                    </span>
+                    {hasActiveFilters ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 gap-1 rounded-full px-2.5 text-muted-foreground hover:text-foreground"
+                        onClick={resetFilters}
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                        {t.positions.clearFilters}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-              ) : null}
+              </div>
             </FadeIn>
 
             {filtered.length === 0 ? (
