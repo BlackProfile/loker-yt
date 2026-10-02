@@ -2065,3 +2065,21 @@ Work Log:
 Stage Summary:
 - Total 20 posisi aktif dengan cakupan fitur penuh, siap demo semua alur: filter mode/kota/kategori, detail on-site dgn info operasional, wizard domisili/komuter/shift, kuota, template pesan, dua bahasa.
 - File baru: scripts/seed-20-positions.ts (idempoten — aman dijalankan ulang, posisi existing dilewati).
+
+---
+Task ID: NR-9
+Agent: orchestrator (Z.ai Code)
+Task: Tambah posisi demo kondisi khusus — kuota penuh anggota, lewat batas waktu ditutup, dan sisa waktu tinggal dikit (user: "tambahkan juga posisi yang udah penuh anggota... saya mau lihat reaksi aplikasi bagaimana")
+
+Work Log:
+- Investigasi mekanisme reaksi aplikasi: closeExpiredPositions() (src/lib/seed.ts, lazy dipanggil GET /api/public/content) auto-close posisi bila (a) closesAt lewat, atau (b) lamaran non-REJECTED >= maxApplicants; setiap penutupan dicatat ActivityLog action AUTO_CLOSE. UI publik: chip "Kuota Penuh", tombol "Ditutup"/"Form Ditutup", chip "Segera Ditutup" (SOON_DAYS=3) + DeadlineCountdownCompact di kartu, DeadlineCountdown di detail; deep link posisi tutup → halaman "Lowongan tidak ditemukan" + tombol "Lihat lowongan lain".
+- Dibuat scripts/seed-position-states.ts (idempoten): (1) PENUH — top-up lamaran dummy realistis sampai kuota: Social Media Officer 10/10 (+9), Web Developer (Next.js) 10/10 (+10), Performance Ads Specialist 12/12 (+12) = 31 lamaran dummy (nama/email/telepon/pengalaman/motivasi Indonesia natural, trackingCode LM-XXXXXX unik, consentAt+source terisi, domisili/komuter/shift untuk HYBRID; status campuran NEW/REVIEWED/INTERVIEW); (2) LEWAT BATAS WAKTU — closesAt dimundurkan: Ilustrator Karakter -3 hari, Copywriter Iklan -5 hari, Podcast Editor -2 hari; (3) HAMPIR DITUTUP — closesAt dimajukan: Thumbnail Designer +7 jam, Host TikTok Live +10 jam, Community Manager +2 hari.
+- Seed dijalankan; reaksi API terverifikasi: pertama kali GET /api/public/content → 6 posisi otomatis non-aktif, 6 ActivityLog AUTO_CLOSE (3 "kuota pelamar (N) sudah penuh" + 3 "melewati batas waktu pendaftaran"), halaman publik 20 → 14 lowongan (filter department dinamis: chip "Teknologi" hilang otomatis karena satu-satunya posisinya ditutup).
+- BUG FIX (deadline-countdown.tsx): DeadlineCountdown di halaman detail menampilkan ISO mentah ("Pendaftaran ditutup: 2026-10-02T11:15:48.612Z") dan kotak countdown hampir tak terlihat di light mode (text-zinc-50 di latar putih, warisan styling hero gelap). Diperbaiki dengan prop variant "hero"|"detail" (detail pakai token tema muted/border/foreground) + tanggal diformat formatDateTimeId ("2 Okt 2026, 11.15") bila deadline bisa diparse; hero tetap pakai styling lama. position-detail.tsx kini passing variant="detail". Lint bersih.
+- Verifikasi E2E via :81: career page "14 lowongan" + countdown hidup di kartu ("Ditutup: 06:59:14", "09:59:14", "1 hari 23:59:14"); chip "Segera Ditutup" tampil di 3 kartu (Thumbnail Designer urgent, Host TikTok Live on-site urgent, Community Manager); detail Thumbnail Designer: badge Segera Ditutup + batas waktu terformat + countdown 00 HARI 06 JAM 5x DETIK jelas terbaca (setelah fix) + tick tiap detik; deep link /?posisi=copywriter-iklan → "Lowongan tidak ditemukan" + "Lihat lowongan lain"; admin → tab Posisi: tepat 6 switch posisi non-aktif (3 kuota + 3 expired), 20 total; tab Pelamar: 6/6 nama dummy terlihat; Log Aktivitas: 6 entri kuota penuh + 6 entri batas waktu; mobile 390px panel filter wrap rapi; dev.log bersih.
+
+Stage Summary:
+- 3 kondisi khusus hidup di DB dan reaksi aplikasi terbukti end-to-end: kuota penuh & lewat batas waktu → auto-close (non-aktif + AUTO_CLOSE log + hilang dari publik + deep-link waitlist page); hampir ditutup → chip "Segera Ditutup" + countdown detik-per-detik di kartu & detail.
+- Total 31 lamaran dummy memperkaya demo pipeline admin (status NEW/REVIEWED/INTERVIEW; Social Media Officer termasuk domisili/komuter/shift untuk kolom domisili NR-7).
+- Perbaikan permanen: DeadlineCountdown kini theme-aware (variant detail) dan menampilkan tanggal terformat — memperbaiki tampilan semua posisi ber-deadline, bukan hanya demo.
+- File: scripts/seed-position-states.ts (baru, idempoten), src/components/landing/deadline-countdown.tsx (variant+format), src/components/landing/position-detail.tsx (variant="detail").

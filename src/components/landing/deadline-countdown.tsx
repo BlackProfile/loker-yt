@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Calendar, Clock } from "lucide-react";
 import { useLang } from "@/components/landing/lang-context";
-import { parseDeadlineDate } from "@/components/landing/landing-utils";
+import {
+  formatDateTimeId,
+  parseDeadlineDate,
+} from "@/components/landing/landing-utils";
 
 const emptySubscribe = () => () => {};
 function useMounted(): boolean {
@@ -29,13 +32,29 @@ function diffParts(targetMs: number, nowMs: number): Remaining {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-export function DeadlineCountdown({ deadline }: { deadline: string }) {
+// Variant "hero" = latar gelap permanen (hero landing); "detail" = mengikuti
+// tema halaman detail posisi (terang/gelap).
+export function DeadlineCountdown({
+  deadline,
+  variant = "hero",
+}: {
+  deadline: string;
+  variant?: "hero" | "detail";
+}) {
   const { t } = useLang();
   const mounted = useMounted();
   const reduce = useReducedMotion();
   const target = useMemo(() => parseDeadlineDate(deadline), [deadline]);
   const targetMs = target?.getTime() ?? 0;
   const [now, setNow] = useState(() => Date.now());
+
+  // Tampilkan tanggal yang sudah diformat (mis. "2 Okt 2026, 11.15") bila
+  // string deadline bisa diparse; kalau tidak, tampilkan apa adanya.
+  const deadlineDisplay = useMemo(
+    () => (target ? formatDateTimeId(target.toISOString()) : deadline),
+    [target, deadline],
+  );
+  const isDetail = variant === "detail";
 
   const isFuture = target !== null && targetMs > Date.now();
 
@@ -50,9 +69,13 @@ export function DeadlineCountdown({ deadline }: { deadline: string }) {
   // tampilkan baris teks deadline.
   if (!mounted || !target || targetMs <= now) {
     return (
-      <p className="mt-4 flex items-center gap-2 text-sm text-zinc-400">
+      <p
+        className={`mt-4 flex items-center gap-2 text-sm ${
+          isDetail ? "text-muted-foreground" : "text-zinc-400"
+        }`}
+      >
         <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
-        {t.hero.deadlinePrefix} {deadline}
+        {t.hero.deadlinePrefix} {deadlineDisplay}
       </p>
     );
   }
@@ -67,9 +90,13 @@ export function DeadlineCountdown({ deadline }: { deadline: string }) {
 
   return (
     <div className="mt-6">
-      <p className="flex items-center gap-2 text-sm text-zinc-400">
+      <p
+        className={`flex items-center gap-2 text-sm ${
+          isDetail ? "text-muted-foreground" : "text-zinc-400"
+        }`}
+      >
         <Calendar className="h-4 w-4 text-rose-400" aria-hidden="true" />
-        {t.hero.deadlinePrefix} {deadline}
+        {t.hero.deadlinePrefix} {deadlineDisplay}
       </p>
       <div
         role="timer"
@@ -79,7 +106,9 @@ export function DeadlineCountdown({ deadline }: { deadline: string }) {
         {boxes.map((box) => (
           <div
             key={box.label}
-            className="min-w-16 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-center backdrop-blur-sm sm:min-w-20 sm:px-4"
+            className={`min-w-16 rounded-xl border px-3 py-2.5 text-center sm:min-w-20 sm:px-4 ${
+              isDetail ? "border-border bg-muted/60" : "border-white/10 bg-white/5 backdrop-blur-sm"
+            }`}
           >
             {box.pulse && !reduce ? (
               // Detak halus tiap pergantian detik: elemen di-remount via key agar
@@ -89,16 +118,26 @@ export function DeadlineCountdown({ deadline }: { deadline: string }) {
                 initial={{ scale: 1.16, opacity: 0.55 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ duration: 0.3, ease: "easeOut" }}
-                className="text-2xl font-bold tabular-nums text-zinc-50 sm:text-3xl"
+                className={`text-2xl font-bold tabular-nums sm:text-3xl ${
+                  isDetail ? "text-foreground" : "text-zinc-50"
+                }`}
               >
                 {box.value}
               </motion.p>
             ) : (
-              <p className="text-2xl font-bold tabular-nums text-zinc-50 sm:text-3xl">
+              <p
+                className={`text-2xl font-bold tabular-nums sm:text-3xl ${
+                  isDetail ? "text-foreground" : "text-zinc-50"
+                }`}
+              >
                 {box.value}
               </p>
             )}
-            <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-zinc-400 sm:text-xs">
+            <p
+              className={`mt-0.5 text-[10px] font-medium uppercase tracking-widest sm:text-xs ${
+                isDetail ? "text-muted-foreground" : "text-zinc-400"
+              }`}
+            >
               {box.label}
             </p>
           </div>

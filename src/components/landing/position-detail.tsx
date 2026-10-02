@@ -985,7 +985,7 @@ function PositionDetailViewInner({
 
             {position.closesAt ? (
               <div className="mt-6">
-                <DeadlineCountdown deadline={position.closesAt} />
+                <DeadlineCountdown deadline={position.closesAt} variant="detail" />
               </div>
             ) : null}
           </FadeIn>
