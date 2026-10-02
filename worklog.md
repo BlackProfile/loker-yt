@@ -2049,3 +2049,19 @@ Work Log:
 Stage Summary:
 - Panel filter kini 2 baris (dari 4): hemat ruang vertikal, hierarki jelas (kategori=chip, sisanya dropdown), tanpa duplikasi pill "Semua", hitungan pindah ke dalam menu, feedback hasil + reset selalu terlihat.
 - File berubah: src/components/landing/positions-section.tsx, src/components/landing/strings.ts.
+
+---
+Task ID: seed-20-lowongan
+Agent: orchestrator (Z.ai Code)
+Task: Buat 20 lowongan pekerjaan lengkap semua fitur (user: "buatkan saya 20 lowongan pekerjaan lengkap semua fitur")
+
+Work Log:
+- DB awal berisi 5 posisi bawaan; dibuat scripts/seed-20-positions.ts (idempoten via cek title + slug unik) untuk menambah 15 posisi baru, total 20.
+- 15 posisi baru (dept lama + 7 dept baru: Komunitas, Produksi Audio, Produksi Video, Pemasaran, Teknologi, Data & Analitik, Talent Management): Ilustrator Karakter, Motion Graphic Designer, Copywriter Iklan, Spesialis Riset Tren, Community Manager, Podcast Editor, Sound Designer & Mixer, Host TikTok Live (ONSITE Bandung, shift FIXED), Studio Operator Kameraperson (ONSITE Jakarta), Gaffer & Lighting Crew (ONSITE Surabaya, shift ROTATING), Digital Marketing Specialist (HYBRID Jakarta), Performance Ads Specialist (REMOTE), Web Developer Next.js (REMOTE), Data & Analytics Associate (HYBRID Bandung), Talent & People Coordinator (HYBRID Yogyakarta).
+- Setiap posisi lengkap: workMode terstruktur (12 REMOTE / 4 ONSITE / 4 HYBRID), kota+alamat+Google Maps (Jakarta/Bandung/Surabaya/Yogyakarta), jam kerja + shiftSystem + fasilitas, dailySlotQuota (6-8) untuk on-site, salaryText visible + salaryMin/Max, benefit 3-4, requirements 4, screening questions 2-3, requireCv/Intro/Portfolio, customDocs KTP/SKCK/Surat Sehat untuk on-site/hybrid, maxApplicants 10-25, aiCriteria, template apply/accept/reject/undangan wawancara/offer/welcome, assignment test untuk 4 posisi, rubricCriteria + checklistTemplate + noteTemplates, interviewMode (3 posisi studio = ONSITE) + durasi + kriteria scorecard, probationMonths, onboardingDocs, reapplyCooldownDays, roundPlan 1-3 ronde, closesAt beragam (14-60 hari), urgent x3, featured x2, titleEn/descriptionEn/requirementsEn.
+- Verifikasi: /api/public/content total 20 (mode 12/4/4, kota Jakarta 4/Bandung 2/Surabaya 1/Yogyakarta 1); UI :81 — "20 lowongan", 12 chip departemen, dropdown Mode Kerja (Remote 12/On-site 4/Hybrid 4) & Kota akurat, kartu baru + featured naik ke atas; detail Studio Operator menampilkan badge On-site·Jakarta, countdown deadline, kuota "0/15 terisi", blok Lokasi & Operasional (alamat + Buka di Peta, jam kerja, shift tetap, fasilitas); template pesan tersimpan (16 posisi dgn applyTemplate); roundPlan JSON valid.
+- dev.log bersih, tanpa error browser; lint tidak terpengaruh (file baru di scripts/).
+
+Stage Summary:
+- Total 20 posisi aktif dengan cakupan fitur penuh, siap demo semua alur: filter mode/kota/kategori, detail on-site dgn info operasional, wizard domisili/komuter/shift, kuota, template pesan, dua bahasa.
+- File baru: scripts/seed-20-positions.ts (idempoten — aman dijalankan ulang, posisi existing dilewati).
