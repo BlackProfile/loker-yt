@@ -2309,3 +2309,18 @@ Work Log:
 Stage Summary:
 - 17/17 ide Cek Status terimplementasi dan terverifikasi E2E di browser via gateway :81. Lint 0 error, dev.log bersih, cron stabil.
 - File: schema (ApplicationQuestion + 5 kolom), types.ts kontrak, stage-history/stage-notes lib, 9 endpoint baru/berubah, track/track-auth enrichment, cron offer-unseen + telegram reminder kandidat, status-page (+11 fitur UI), admin (dashboard card, chips, read receipt, panel pertanyaan, remind, editor stageNotes), home-view prefill ?code=.
+
+---
+Task ID: NR-16
+Agent: Z.ai Code (main)
+Task: Ubah tombol bahasa (LangToggle ID/EN) menjadi dropdown
+
+Work Log:
+- Baca upload/Screenshot 2026-10-02 172336.png (toggle ID/EN pill lama) + src/components/landing/lang-toggle.tsx
+- Cek pemakaian: landing-page.tsx baris 195 (header desktop) & 265 (Sheet mobile) — keduanya pakai komponen sama, cukup ubah satu file
+- Tulis ulang lang-toggle.tsx memakai shadcn DropdownMenu (Radix): trigger pill h-11 (ikon Languages + kode bahasa aktif + ChevronDown berputar saat terbuka, group-data-[state=open]:rotate-180), konten DropdownMenuRadioGroup berisi "Bahasa Indonesia" (ID) / "English" (EN) dengan indikator radio + shortcut kode di kanan
+- Pertahankan prop dark (styling border-white/15) & aria-label dari strings (t.aria.langToggle: "Ganti bahasa"/"Switch language")
+
+Stage Summary:
+- Verifikasi E2E via gateway :81 + agent-browser: dropdown terbuka di header desktop (aktif = ID, radio dot), klik English → seluruh halaman berubah ke EN dan trigger menampilkan "EN"; uji viewport mobile 390px → dropdown berfungsi di dalam Sheet; kembalikan ke ID sukses
+- bun run lint bersih, dev.log tanpa error; watcher akan auto-push
