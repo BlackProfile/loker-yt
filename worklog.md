@@ -2343,3 +2343,21 @@ Stage Summary:
 - GitHub tersinkron penuh: main == origin/main di github.com/BlackProfile/loker-yt, watcher auto-push aktif kembali (interval 60s, satu-satunya proses yang boleh push)
 - NR-15 dikonfirmasi selesai 17/17 + NR-16 (dropdown bahasa) selesai; tidak ada pekerjaan setengah jadi tersisa di working tree
 - Watcher akan otomatis commit+push semua perubahan berikutnya; jangan push manual
+
+---
+Task ID: NR-18 (a + b)
+Agent: full-stack-developer (a, deadline sebelum append) + Z.ai Code main (b: verifikasi & pelengkap)
+Task: Refactor UI Cek Status — pemecahan file 3299 baris + organisasi collapsible
+
+Work Log:
+- (NR-18-a) status-page.tsx 3299 → 1396 baris; 17 modul baru di src/components/landing/status/: status-types.ts, status-shared.tsx (DetailRow/FadeInSlide/StatusSection=Collapsible wrapper), status-login.tsx, status-changes-panel.tsx, status-apps-switcher.tsx, status-hero.tsx, status-timeline.tsx, status-interviews.tsx, status-offer.tsx, status-offer-letter.tsx, status-start-date.tsx, status-cv-panel.tsx, status-qa-panel.tsx, status-onboarding.tsx, status-final-banners.tsx, status-survey-card.tsx, status-confetti.tsx
+- Kontrak publik utuh: status-page.tsx tetap ekspor StatusPageView (home-view.tsx tak berubah); state utama tetap di orchestrator, komponen daun lewat props eksplisit; kode dipindah verbatim
+- Collapsible (satu-satunya perubahan perilaku): StatusSection (shadcn Collapsible) dipakai QaPanel (defaultOpen=questions.length>0), OnboardingPanel (defaultOpen=docs>0), CvUpdatePanel (default tertutup); hero/timeline/offer/tanggal mulai/interview tetap selalu tampak; state form bertahan lintas lipat-buka
+- (NR-18-b) Verifikasi menyeluruh via :81 + agent-browser: lint 0 error; tsc hanya error pra-eksisting (track-auth/telegram-bot terakhir disentuh 09:56 sebelum refactor 14:54; home-view "mini" sudah ada di HEAD); login Dewi LM-T88POG (ACCEPTED) sukses — hero+chip Diterima+salin kode/tautan, timeline bertanggal "24 Sep", expandable catatan tahap menampilkan teks, Tanya HR collapsed (0 pesan) lalu expand → textarea 500 char, KARTU offer/tanggal-mulai/survey tersembunyi BENAR karena seed tak punya data (offer:false, candidateStart:null, surveyToken:false via API); login Bagas LM-5ON90D (INTERVIEW) sukses — chip Wawancara, Tarik Lamaran, Perbarui CV & Tanya HR tampil, interview section tersembunyi benar (tanpa data jadwal); lipat-buka Tanya HR dengan teks terisi → teks BERTAHAN (uji awal "KOSONG" terbukti artefak metode eval/dispatchEvent, bukan bug); mobile 390px scrollWidth=clientWidth; console & errors bersih
+- Isolasi insiden tengah jalan: login gagal 401 ternyata BUKAN bug refactor — (1) DB dipulihkan db-guard ke seed demo (nadia LM-Q8BGKK & LM-O20QID uji NR-15 hilang, tersisa 5 pelamar seed), (2) agent-browser open URL beda-hash-tidak-reload sehingga initialCode lama (LM-O20QID) terkirim — dibuktikan via intercept fetch payload; solusi uji: reload penuh + storage clear
+- dev.log: server sehat (2 entri error = EADDRINUSE dari percobaan start ganda yang gagal tanpa dampak + noise); cron reminders 200 stabil
+
+Stage Summary:
+- Refactor NR-18 SELESAI: status-page.tsx kini orchestrator tipis (1396 baris) + 17 modul fokus; halaman lebih ringkas dengan panel sekunder collapsible; 100% fitur NR-15 dipertahankan dan terverifikasi E2E dengan akun seed (Dewi ACCEPTED, Bagas INTERVIEW)
+- Catatan operasional: data uji NR-15 yang kaya (offer/survey/start-date) terhapus oleh db-guard — untuk demo penuh fitur tersebut gunakan akun seed yang diubah datanya secara sengaja, bukan data uji baru yang menaikkan jumlah lamaran
+- Watcher auto-push menyebarkan seluruh perubahan ke GitHub
