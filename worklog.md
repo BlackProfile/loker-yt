@@ -2113,3 +2113,21 @@ Stage Summary:
 - Halaman Cek Status kini route khusus /#status: login ganda email+kode (kode = kata sandi), sesi opsional lintas kunjungan, multi-lamaran sekali login dengan badge pembaruan, hero status berwarna + salin kode, timeline, semua aksi pelamar (wawancara/offer/onboarding) + fitur baru tarik lamaran mandiri, lockout anti-bruteforce, dua bahasa penuh.
 - Admin menerima notifikasi + log saat pelamar menarik lamaran; pipeline tak berubah (REJECTED dengan alasan MENARIK_DIRI, tidak dihitung kuota).
 - File baru: src/lib/status-gate.ts, src/lib/status-session.ts, src/app/api/public/track-auth/, src/app/api/public/withdraw/, src/components/landing/status-page.tsx. Diubah: track/route, types.ts, strings.ts, status-check.tsx (intro), home-view.tsx, apply-wizard.tsx.
+
+---
+Task ID: NR-11-demo-login
+Agent: main
+Task: Tambahkan tombol demo di panel admin supaya login cepat tinggal klik (user request).
+
+Work Log:
+- Sesi dimulai dengan laporan "aplikasi eror": dev server Next.js mati (EADDRINUSE saat restart otomatis, proses hilang, :81 -> 502). Restart `bun run dev` + `dev-keepalive`, verifikasi penuh via :81 (landing render, /api/public/content 200, tanpa error console).
+- Investigasi `src/components/admin/login-card.tsx`: login form sudah ada, kredensial demo hanya teks statis (Alert amber), 2FA hanya aktif bila user.totpEnabled (akun demo seed tidak mengaktifkan 2FA -> one-click aman).
+- Refactor login-card.tsx: ekstrak `handleLoginError()` (dipakai form + demo), tambah `DEMO_ACCOUNTS` (Owner admin@lumina.id / HR hr@lumina.id / Pengamat viewer@lumina.id, password admin123), tambah `handleDemoLogin()` — POST /api/admin/login langsung dengan kredensial demo, toast "Berhasil masuk sebagai <role>", fallback isi form bila gagal (mis. 2FA diaktifkan manual).
+- UI: ganti Alert statis jadi panel "Masuk cepat — akun demo" (grid-cols-3 tombol outline amber, spinner per-role saat loading, semua tombol disabled saat proses, kredensial tetap tampil di bawah).
+- Lint bersih. E2E via :81: klik Owner -> dashboard "Pemilik Studio/Pemilik" muncul; logout -> HR OK; logout -> Pengamat OK; tanpa page error; viewport mobile 375px (setelah logout) demo login OK.
+
+Stage Summary:
+- Tombol demo login 3 peran (Owner/HR/Pengamat) aktif di #admin — satu klik langsung masuk tanpa mengetik.
+- Fallback aman: bila akun demo kelak mengaktifkan 2FA, klik tombol tetap mengisi form + meminta kode, tidak macet.
+- Tidak ada perubahan API/backend; hanya `src/components/admin/login-card.tsx`.
+- NR-10 (halaman Cek Status, "tambahkan semuanya") masih PENDING — belum mulai coding.

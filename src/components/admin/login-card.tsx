@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,6 +17,12 @@ import type { AdminSession } from "@/lib/types";
 import { ApiError, apiPost } from "./api";
 import { Reveal } from "./motion-primitives";
 
+const DEMO_ACCOUNTS = [
+  { role: "Owner", email: "admin@lumina.id", password: "admin123" },
+  { role: "HR", email: "hr@lumina.id", password: "admin123" },
+  { role: "Pengamat", email: "viewer@lumina.id", password: "admin123" },
+] as const;
+
 export function LoginCard({
   onSuccess,
 }: {
@@ -27,10 +32,33 @@ export function LoginCard({
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [demoRole, setDemoRole] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 2FA: muncul setelah server membalas 401 { error: "KODE_2FA" }.
   const [needsTotp, setNeedsTotp] = useState(false);
   const [totpCode, setTotpCode] = useState("");
+
+  function handleLoginError(err: unknown) {
+    if (err instanceof ApiError) {
+      if (err.status === 429 || err.message === "LOCKOUT") {
+        // Sisa waktu blokir sengaja tidak diekspos server.
+        setError(
+          "Terlalu banyak percobaan gagal. Akun diblokir sementara — coba lagi nanti."
+        );
+      } else if (err.message === "KODE_2FA") {
+        setNeedsTotp(true);
+        setError("Kode 2FA salah atau kedaluwarsa. Coba lagi.");
+      } else if (err.status === 401) {
+        setError(err.message || "Email atau password salah.");
+      } else {
+        setError(err.message);
+      }
+    } else if (err instanceof Error) {
+      setError(err.message);
+    } else {
+      setError("Terjadi kesalahan. Coba lagi.");
+    }
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -49,27 +77,34 @@ export function LoginCard({
       toast.success("Berhasil masuk");
       onSuccess(data.session);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 429 || err.message === "LOCKOUT") {
-          // Sisa waktu blokir sengaja tidak diekspos server.
-          setError(
-            "Terlalu banyak percobaan gagal. Akun diblokir sementara — coba lagi nanti."
-          );
-        } else if (err.message === "KODE_2FA") {
-          setNeedsTotp(true);
-          setError("Kode 2FA salah atau kedaluwarsa. Coba lagi.");
-        } else if (err.status === 401) {
-          setError(err.message || "Email atau password salah.");
-        } else {
-          setError(err.message);
-        }
-      } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Terjadi kesalahan. Coba lagi.");
-      }
+      handleLoginError(err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Masuk cepat satu klik: kirim kredensial demo langsung ke server.
+  // Bila akun ternyata mengaktifkan 2FA, isi form + minta kode (fallback).
+  async function handleDemoLogin(account: (typeof DEMO_ACCOUNTS)[number]) {
+    if (loading || demoRole) return;
+    setError(null);
+    setNeedsTotp(false);
+    setTotpCode("");
+    setDemoRole(account.role);
+    try {
+      const data = await apiPost<{ ok: boolean; session: AdminSession }>(
+        "/api/admin/login",
+        { email: account.email, password: account.password }
+      );
+      toast.success(`Berhasil masuk sebagai ${account.role}`);
+      onSuccess(data.session);
+    } catch (err) {
+      handleLoginError(err);
+      // Isi form agar user tinggal melengkapi (mis. kode 2FA) bila perlu.
+      setEmail(account.email);
+      setPassword(account.password);
+    } finally {
+      setDemoRole(null);
     }
   }
 
@@ -171,15 +206,41 @@ export function LoginCard({
               )}
             </Button>
           </form>
-          <Alert className="mt-4 rounded-lg border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-            <AlertDescription className="text-xs leading-relaxed">
-              Akun demo — Owner:{" "}
-              <span className="font-semibold">admin@lumina.id / admin123</span> ·
-              HR: <span className="font-semibold">hr@lumina.id / admin123</span> ·
-              Pengamat:{" "}
-              <span className="font-semibold">viewer@lumina.id / admin123</span>
-            </AlertDescription>
-          </Alert>
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950">
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              Masuk cepat — akun demo
+            </p>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {DEMO_ACCOUNTS.map((account) => (
+                <Button
+                  key={account.role}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title={`${account.email} · ${account.password}`}
+                  disabled={loading || demoRole !== null}
+                  onClick={() => handleDemoLogin(account)}
+                  className="h-9 border-amber-300 bg-white text-xs font-medium text-amber-900 hover:bg-amber-100 hover:text-amber-950 dark:border-amber-800 dark:bg-transparent dark:text-amber-200 dark:hover:bg-amber-900/50"
+                >
+                  {demoRole === account.role ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                      Masuk...
+                    </>
+                  ) : (
+                    account.role
+                  )}
+                </Button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-amber-700/90 dark:text-amber-400/90">
+              Owner <span className="font-medium">admin@lumina.id</span> · HR{" "}
+              <span className="font-medium">hr@lumina.id</span> · Pengamat{" "}
+              <span className="font-medium">viewer@lumina.id</span> — semua password{" "}
+              <span className="font-medium">admin123</span>. Klik salah satu untuk langsung
+              masuk.
+            </p>
+          </div>
         </CardContent>
       </Card>
       </Reveal>
