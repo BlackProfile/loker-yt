@@ -2131,3 +2131,22 @@ Stage Summary:
 - Fallback aman: bila akun demo kelak mengaktifkan 2FA, klik tombol tetap mengisi form + meminta kode, tidak macet.
 - Tidak ada perubahan API/backend; hanya `src/components/admin/login-card.tsx`.
 - NR-10 (halaman Cek Status, "tambahkan semuanya") masih PENDING — belum mulai coding.
+
+---
+Task ID: NR-12-restore-data
+Agent: main
+Task: User melapor data lowongan & pelamar demo hilang. Investigasi + restore + proteksi.
+
+Work Log:
+- Diagnosis: db/custom.db ter-reset ke seed dasar (5 posisi, 5 lamaran, 3 admin) — data NR-9 (20 posisi, 31 lamaran dummy) hilang. Tidak ada mekanisme app yang menghapus data (seed idempoten, db tidak di-track git, keepalive hanya restart server); penyebab pasti tidak ditemukan (kemungkinan file tertimpa/bersih-bersih sandbox).
+- Restore: jalankan `bun scripts/seed-20-positions.ts` (15 dibuat, total 20) lalu `bun scripts/seed-position-states.ts` (31 lamaran dummy, closesAt khusus dihitung ulang relatif waktu sekarang).
+- Trigger GET /api/public/content -> closeExpiredPositions: 6 AUTO_CLOSE baru (3 kuota penuh + 3 lewat batas waktu).
+- Verifikasi DB: 20 posisi (14 aktif + 6 nonaktif), 36 lamaran, 6 log AUTO_CLOSE.
+- Verifikasi browser via :81: landing render, API publik 14 posisi aktif, chip "Segera Ditutup" ×3, status "Ditutup" tampil, filter departemen baru muncul (Data & Analitik, Komunitas, dst).
+- Proteksi: (1) backup seed demo -> backups/custom.db.demo-seed.bak; (2) daemon scripts/db-guard.sh (berjalan tiap 60 dtk): bila posisi < 10 DAN lamaran < 10 (indikasi wipe total) -> restore backup + pkill "next dev" (keepalive menghidupkan ulang); log ke dev.log dengan prefix [db-guard]. Stop guard: pkill -f db-guard.sh. Restore manual: cp backups/custom.db.demo-seed.bak db/custom.db.
+
+Stage Summary:
+- Data demo lengkap kembali: 20 lowongan (14 aktif), 36 pelamar (5 bawaan + 31 dummy), kondisi khusus NR-9 aktif lagi (penuh/lewat batas/hampir tutup).
+- db-guard + backup mencegah kehilangan data demo berulang.
+- Catatan: dev.log ter-truncate tiap restart (tee) — wajar.
+- NR-10 (halaman Cek Status) tetap PENDING.
