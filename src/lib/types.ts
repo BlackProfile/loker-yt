@@ -498,25 +498,46 @@ export type AdminOverviewResponse = {
   avgAiScore: number | null;
 };
 
-// POST /api/public/track -> { code }
+// POST /api/public/track -> { code, email } — email WAJIB cocok dengan lamaran
+// (login ganda: kode pelacakan bertindak sebagai kata sandi).
 export type TrackResponse = {
   found: boolean;
   status?: StageKey; // tahap pipeline (bawaan atau kustom per posisi)
   positionTitle?: string | null;
   positionSlug?: string | null;
   submittedAt?: string;
+  updatedAt?: string; // terakhir kali lamaran berubah apa pun (untuk "terakhir diperbarui")
   steps?: { key: string; label: string; done: boolean; at: string | null }[];
   assignment?: { title: string | null; url: string | null; note: string | null } | null; // info tes posisi (jika ada)
   // Sesi wawancara aktif + riwayat (terurut ronde)
   interviews?: TrackInterviewInfo[];
   offer?: TrackOfferInfo | null;
   rejection?: { reasonLabel: string; note: string | null } | null; // note hanya jika admin memberi feedback
+  rejectionReason?: string | null; // alasan mentah (mis. MENARIK_DIRI) untuk mapping tampilan
   onboarding?: TrackOnboardingInfo | null;
   cooldown?: { until: string; days: number } | null; // pelamar masih dalam masa jeda lamar ulang
   // Slot jadwal yang bisa dipilih pelamar (hanya bila tahap belum final; maks 8, urut terdekat)
   slots?: TrackSlotInfo[];
   // Rencana onboarding dari admin (agenda hari pertama; tampil terpisah dari checklist dokumen)
   onboardingPlan?: OnboardingPlanItem[] | null;
+};
+
+// Ringkasan satu lamaran milik satu email (untuk daftar multi-lamaran di halaman status).
+export type TrackSummary = {
+  trackingCode: string;
+  positionTitle: string | null;
+  positionSlug: string | null;
+  status: string; // StageKey bawaan atau tahap kustom per posisi
+  submittedAt: string;
+  statusUpdatedAt: string; // terakhir kali tahap/isi lamaran berubah
+};
+
+// POST /api/public/track-auth — login pelamar (email + kode pelacakan).
+// Sukses: daftar SEMUA lamaran aktif milik email tersebut (multi-lamaran sekali login).
+export type TrackAuthResponse = {
+  ok: boolean;
+  applications?: TrackSummary[];
+  lockedForSec?: number; // sisa detik kunci lockout (bila ok=false karena lockout)
 };
 
 // GET /api/admin/analytics — data tab analitik

@@ -332,7 +332,7 @@ const id = {
   status: {
     badge: "Pelacakan",
     title: "Cek Status Lamaran",
-    desc: "Masukkan kode pelacakan yang kamu terima setelah mengirim lamaran untuk melihat progres seleksi.",
+    desc: "Masuk dengan email & kode pelacakan yang kamu terima setelah melamar untuk memantau progres seleksi.",
     codeLabel: "Kode Pelacakan",
     codePh: "LM-XXXXXX",
     track: "Lacak",
@@ -375,6 +375,26 @@ const id = {
       cancelRequest: "Batalkan Usulan",
       rescheduleSent: "Usulan ubah jadwal terkirim",
       cancelRequestToast: "Usulan ubah jadwal dibatalkan",
+      moveSlot: "Pindahkan jadwal",
+      cannotAttend: "Tidak bisa hadir",
+      slotPanelTitle: "Pindah ke slot terbuka berikut",
+      reload: "Muat ulang",
+      loadingSlots: "Memuat slot tersedia...",
+      noSlots: "Belum ada slot terbuka saat ini. Tim akan membuka jadwal baru — coba muat ulang nanti.",
+      moveToHere: "Pindah ke sini",
+      moveConfirm: "Pindahkan jadwal sesi ini ke {time}? Slot lama otomatis dibebaskan.",
+      moveYes: "Ya, pindahkan",
+      slotsNote: "Jadwal baru langsung aktif tanpa menunggu persetujuan admin.",
+      cancelConfirmTitle: "Batalkan kehadiran pada sesi ini?",
+      cancelConfirmDesc: "Sesi ronde {n} pada {time} akan dibatalkan. Slot jadwalnya dibebaskan dan tindakan ini tidak bisa diurungkan.",
+      cancelYes: "Ya, saya tidak bisa hadir",
+      slotBookTitle: "Pilih Jadwal Wawancara",
+      slotBookDesc: "Tim membuka jadwal berikut — pilih satu slot untuk sesi wawancaramu:",
+      pickSlot: "Pilih slot ini",
+      pickSlotAria: "Pilih slot {time}",
+      slotBookedToast: "Jadwal wawancara berhasil dipilih — detail tampil di daftar wawancara.",
+      slotMovedToast: "Jadwal wawancara berhasil dipindahkan.",
+      attendanceCancelledToast: "Kehadiran pada sesi ini dibatalkan.",
       tipsTitleOnline: "Tips wawancara online",
       tipsTitleOnsite: "Tips wawancara onsite",
       tipsOnline: [
@@ -428,6 +448,50 @@ const id = {
       reasonLabel: "Alasan",
       feedback: "Umpan balik untukmu",
       otherPositions: "Lihat Lowongan Lain",
+    },
+    page: {
+      openPage: "Buka Halaman Cek Status",
+      resumePage: "Lanjutkan Melihat Status",
+      introBullet1: "Masuk dengan email & kode pelacakanmu",
+      introBullet2: "Pantau semua lamaran dalam satu halaman",
+      introBullet3: "Konfirmasi wawancara & jawab penawaran langsung",
+      loginTitle: "Masuk untuk Melihat Status",
+      loginDesc: "Gunakan email yang kamu pakai saat melamar, lalu masukkan kode pelacakan sebagai kata sandi.",
+      emailLabel: "Email",
+      emailPh: "nama@email.com",
+      showCode: "Lihat kode",
+      hideCode: "Sembunyikan kode",
+      remember: "Ingat saya di perangkat ini",
+      login: "Masuk",
+      loggingIn: "Memeriksa...",
+      authFailed: "Email atau kode pelacakan tidak cocok. Periksa kembali ya.",
+      locked: "Terlalu banyak percobaan gagal. Coba lagi dalam {minutes} menit.",
+      tooFast: "Aksi terlalu cepat. Tunggu sebentar, lalu coba lagi ya.",
+      backHome: "Kembali ke Beranda",
+      logout: "Keluar",
+      loggedInAs: "Masuk sebagai {email}",
+      myApps: "Lamaran Saya ({n})",
+      updatedBadge: "Ada pembaruan",
+      selectAppAria: "Lihat status lamaran {title}",
+      currentStatus: "Status Saat Ini",
+      lastUpdated: "Diperbarui {time}",
+      copyCode: "Salin kode",
+      copyCodeAria: "Salin kode pelacakan",
+      copiedToast: "Kode pelacakan disalin",
+      statusWithdrawn: "Ditarik",
+      timelineTitle: "Progres Seleksi",
+      currentStepBadge: "Tahap ini",
+      withdraw: "Tarik Lamaran",
+      withdrawTitle: "Tarik lamaran ini?",
+      withdrawDesc: "Lamaranmu untuk {position} akan ditarik dan proses seleksi berhenti di tahap ini. Tindakan ini tidak bisa diurungkan.",
+      withdrawReasonLabel: "Alasan menarik diri (opsional)",
+      withdrawReasonPh: "Ceritakan singkat kenapa kamu menarik lamaran...",
+      withdrawConfirm: "Ya, Tarik Lamaran",
+      withdrawToast: "Lamaran berhasil ditarik. Terima kasih atas waktunya!",
+      lostCodeTitle: "Kehilangan kode pelacakan?",
+      lostCodeEmail: "Cek email konfirmasi lamaran — kode dikirim ke email yang kamu gunakan saat melamar.",
+      lostCodeWa: "Hubungi tim kami via WhatsApp untuk bantuan verifikasi kepemilikan.",
+      browseJobs: "Lihat Lowongan Terbuka",
     },
   },
   voices: {
@@ -868,6 +932,26 @@ type idDictShape = {
       cancelRequest: string;
       rescheduleSent: string;
       cancelRequestToast: string;
+      moveSlot: string;
+      cannotAttend: string;
+      slotPanelTitle: string;
+      reload: string;
+      loadingSlots: string;
+      noSlots: string;
+      moveToHere: string;
+      moveConfirm: string;
+      moveYes: string;
+      slotsNote: string;
+      cancelConfirmTitle: string;
+      cancelConfirmDesc: string;
+      cancelYes: string;
+      slotBookTitle: string;
+      slotBookDesc: string;
+      pickSlot: string;
+      pickSlotAria: string;
+      slotBookedToast: string;
+      slotMovedToast: string;
+      attendanceCancelledToast: string;
       tipsTitleOnline: string;
       tipsTitleOnsite: string;
       tipsOnline: string[];
@@ -909,6 +993,50 @@ type idDictShape = {
       uploadFailed: string;
     };
     rejectedDetail: { reasonLabel: string; feedback: string; otherPositions: string };
+    page: {
+      openPage: string;
+      resumePage: string;
+      introBullet1: string;
+      introBullet2: string;
+      introBullet3: string;
+      loginTitle: string;
+      loginDesc: string;
+      emailLabel: string;
+      emailPh: string;
+      showCode: string;
+      hideCode: string;
+      remember: string;
+      login: string;
+      loggingIn: string;
+      authFailed: string;
+      locked: string;
+      tooFast: string;
+      backHome: string;
+      logout: string;
+      loggedInAs: string;
+      myApps: string;
+      updatedBadge: string;
+      selectAppAria: string;
+      currentStatus: string;
+      lastUpdated: string;
+      copyCode: string;
+      copyCodeAria: string;
+      copiedToast: string;
+      statusWithdrawn: string;
+      timelineTitle: string;
+      currentStepBadge: string;
+      withdraw: string;
+      withdrawTitle: string;
+      withdrawDesc: string;
+      withdrawReasonLabel: string;
+      withdrawReasonPh: string;
+      withdrawConfirm: string;
+      withdrawToast: string;
+      lostCodeTitle: string;
+      lostCodeEmail: string;
+      lostCodeWa: string;
+      browseJobs: string;
+    };
   };
   voices: { badge: string; title: string; desc: string };
   subscribe: {
@@ -1336,7 +1464,7 @@ const en: Dict = {
   status: {
     badge: "Tracking",
     title: "Check Application Status",
-    desc: "Enter the tracking code you received after submitting your application to see your selection progress.",
+    desc: "Sign in with your email & the tracking code you received after applying to monitor your selection progress.",
     codeLabel: "Tracking Code",
     codePh: "LM-XXXXXX",
     track: "Track",
@@ -1379,6 +1507,26 @@ const en: Dict = {
       cancelRequest: "Withdraw Request",
       rescheduleSent: "Reschedule request sent",
       cancelRequestToast: "Reschedule request withdrawn",
+      moveSlot: "Reschedule via open slots",
+      cannotAttend: "Can't attend",
+      slotPanelTitle: "Move to the next open slot",
+      reload: "Reload",
+      loadingSlots: "Loading available slots...",
+      noSlots: "No open slots right now. The team will open new schedules — try reloading later.",
+      moveToHere: "Move here",
+      moveConfirm: "Move this session to {time}? The old slot will be released automatically.",
+      moveYes: "Yes, move it",
+      slotsNote: "New schedules take effect immediately without waiting for admin approval.",
+      cancelConfirmTitle: "Cancel attendance for this session?",
+      cancelConfirmDesc: "Round {n} session on {time} will be cancelled. Its slot will be released and this cannot be undone.",
+      cancelYes: "Yes, I can't attend",
+      slotBookTitle: "Pick an Interview Slot",
+      slotBookDesc: "The team opened the following schedules — pick one slot for your interview:",
+      pickSlot: "Pick this slot",
+      pickSlotAria: "Pick slot {time}",
+      slotBookedToast: "Interview slot booked — details are in the interview list.",
+      slotMovedToast: "Interview rescheduled successfully.",
+      attendanceCancelledToast: "Attendance for this session has been cancelled.",
       tipsTitleOnline: "Online interview tips",
       tipsTitleOnsite: "Onsite interview tips",
       tipsOnline: [
@@ -1432,6 +1580,50 @@ const en: Dict = {
       reasonLabel: "Reason",
       feedback: "Feedback for you",
       otherPositions: "Browse Other Openings",
+    },
+    page: {
+      openPage: "Open the Status Page",
+      resumePage: "Continue Tracking",
+      introBullet1: "Sign in with your email & tracking code",
+      introBullet2: "Track all your applications in one page",
+      introBullet3: "Confirm interviews & respond to offers directly",
+      loginTitle: "Sign In to View Status",
+      loginDesc: "Use the email you applied with, then enter your tracking code as the password.",
+      emailLabel: "Email",
+      emailPh: "name@email.com",
+      showCode: "Show code",
+      hideCode: "Hide code",
+      remember: "Remember me on this device",
+      login: "Sign In",
+      loggingIn: "Checking...",
+      authFailed: "Email or tracking code doesn't match. Please double-check.",
+      locked: "Too many failed attempts. Try again in {minutes} minutes.",
+      tooFast: "That was a bit fast. Please wait a moment and try again.",
+      backHome: "Back to Home",
+      logout: "Sign Out",
+      loggedInAs: "Signed in as {email}",
+      myApps: "My Applications ({n})",
+      updatedBadge: "New updates",
+      selectAppAria: "View status of {title}",
+      currentStatus: "Current Status",
+      lastUpdated: "Updated {time}",
+      copyCode: "Copy code",
+      copyCodeAria: "Copy tracking code",
+      copiedToast: "Tracking code copied",
+      statusWithdrawn: "Withdrawn",
+      timelineTitle: "Selection Progress",
+      currentStepBadge: "Current stage",
+      withdraw: "Withdraw Application",
+      withdrawTitle: "Withdraw this application?",
+      withdrawDesc: "Your application for {position} will be withdrawn and the selection stops at this stage. This cannot be undone.",
+      withdrawReasonLabel: "Reason for withdrawing (optional)",
+      withdrawReasonPh: "Briefly tell us why you are withdrawing...",
+      withdrawConfirm: "Yes, Withdraw",
+      withdrawToast: "Application withdrawn. Thank you for your time!",
+      lostCodeTitle: "Lost your tracking code?",
+      lostCodeEmail: "Check your application confirmation email — the code was sent to the address you applied with.",
+      lostCodeWa: "Contact our team via WhatsApp for ownership verification help.",
+      browseJobs: "Browse Open Positions",
     },
   },
   voices: {

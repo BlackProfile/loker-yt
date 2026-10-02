@@ -14,11 +14,12 @@ import { LandingPage } from "@/components/landing/landing-page";
 import { EmbedJobs } from "@/components/landing/embed-jobs";
 import { PositionDetailView } from "@/components/landing/position-detail";
 import { SurveyView } from "@/components/landing/survey-view";
+import { StatusPageView } from "@/components/landing/status-page";
 import { AdminApp } from "@/components/admin/admin-app";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type View = "landing" | "detail" | "admin" | "embed" | "survei";
+type View = "landing" | "detail" | "admin" | "embed" | "survei" | "status";
 
 // ---------------------------------------------------------------------------
 // Sumber data publik bersama (realtime + anti-flicker).
@@ -86,6 +87,10 @@ function readLocation(): { view: View; slug: string | null } {
   const params = new URLSearchParams(window.location.search);
   // "#admin" dan sub-halamannya (mis. "#admin/posisi/<id>") masuk ke panel admin.
   if (window.location.hash.startsWith("#admin")) return { view: "admin", slug: null };
+  // "#status" — halaman Cek Status pelamar (login email + kode pelacakan).
+  if (window.location.hash === "#status" || window.location.hash.startsWith("#status/")) {
+    return { view: "status", slug: null };
+  }
   if (params.get("embed") === "1") return { view: "embed", slug: null };
   // Survei pengalaman kandidat (?survei=token) — dikirim via email status final.
   const surveiToken = params.get("survei");
@@ -185,6 +190,15 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
     setSlug(null);
   }, []);
 
+  /** Tutup halaman Cek Status dan kembali ke landing. */
+  const exitStatus = useCallback(() => {
+    if (window.location.hash.startsWith("#status")) {
+      history.replaceState(null, "", window.location.pathname);
+    }
+    setView("landing");
+    setSlug(null);
+  }, []);
+
   const resetKey = `${view}:${slug ?? ""}`;
 
   // Layar pemeriksaan pertama (hanya saat benar-benar belum ada data).
@@ -243,6 +257,8 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
     <ViewErrorBoundary resetKey={resetKey}>
       {view === "admin" ? (
         <AdminApp onExit={exitAdmin} />
+      ) : view === "status" ? (
+        <StatusPageView onExit={exitStatus} />
       ) : view === "embed" ? (
         <EmbedView data={data} />
       ) : view === "survei" && slug ? (

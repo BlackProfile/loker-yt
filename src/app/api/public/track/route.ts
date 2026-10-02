@@ -1,13 +1,22 @@
-// POST /api/public/track — lacak status lamaran memakai kode tracking (tanpa data pribadi).
+// POST /api/public/track — lacak status lamaran memakai KODE + EMAIL (login ganda:
+// kode pelacakan berperan sebagai kata sandi; email harus cocok dengan lamaran).
 // Tahap-aware: pipeline bawaan (5 status) memakai alur lama; pipeline kustom per posisi
 // menampilkan satu langkah per tahap kustom.
 // v4: sertakan juga info wawancara (Zoom/Meet), penawaran (offer), alasan penolakan,
 //     dan onboarding (checklist dokumen) agar pelamar bisa bertindak dari halaman status.
 // v5: sertakan slot jadwal self-service (bila tahap belum final) + rencana onboarding.
+// v6: wajib email cocok + throttle per IP + lockout gagal login (status-gate).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parseRequirements } from "@/lib/seed";
 import { isBuiltInStage } from "@/lib/stages";
+import {
+  clientIp,
+  isLockedOut,
+  isThrottled,
+  clearAuthFails,
+  recordAuthFail,
+} from "@/lib/status-gate";
 import {
   INTERVIEW_PLATFORM_LABELS,
   INTERVIEW_PLATFORMS,
@@ -74,16 +83,35 @@ function parseOnboardingPlan(raw: string): TrackResponse["onboardingPlan"] {
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = clientIp(req);
+    if (isLockedOut(ip)) {
+      return NextResponse.json(
+        { found: false, lockedOut: true },
+        { status: 429 },
+      );
+    }
+    if (isThrottled(`track:${ip}`, 400)) {
+      return NextResponse.json({ error: "Terlalu cepat." }, { status: 429 });
+    }
+
     const body: unknown = await req.json().catch(() => null);
     const rawCode =
       body && typeof body === "object" && !Array.isArray(body)
         ? (body as Record<string, unknown>).code
         : undefined;
+    const rawEmail =
+      body && typeof body === "object" && !Array.isArray(body)
+        ? (body as Record<string, unknown>).email
+        : undefined;
 
     if (typeof rawCode !== "string" || !rawCode.trim()) {
       return NextResponse.json({ error: "Kode pelacakan wajib diisi." }, { status: 400 });
     }
+    if (typeof rawEmail !== "string" || !/\S+@\S+\.\S+/.test(rawEmail.trim())) {
+      return NextResponse.json({ error: "Email wajib diisi dengan format yang benar." }, { status: 400 });
+    }
     const code = rawCode.trim().toUpperCase();
+    const email = rawEmail.trim().toLowerCase();
 
     const application = await db.application.findUnique({
       where: { trackingCode: code },
@@ -103,10 +131,15 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    if (!application) {
+    // Login ganda: email harus cocok dengan email lamaran. Respons SELALU sama
+    // (found:false) baik kode salah, email salah, ATAU lamaran di tong sampah —
+    // agar tidak membocorkan keberadaan kode. Tiap kegagalan dicatat untuk lockout.
+    if (!application || application.deletedAt || application.email.trim().toLowerCase() !== email) {
+      recordAuthFail(ip);
       const notFound: TrackResponse = { found: false };
       return NextResponse.json(notFound);
     }
+    clearAuthFails(ip);
 
     // Lazy expiry: offer PENDING yang lewat deadline otomatis ditandai kedaluwarsa.
     const rawStatus = application.status.trim() || "NEW";
@@ -282,6 +315,7 @@ export async function POST(req: NextRequest) {
       positionTitle: application.position?.title ?? null,
       positionSlug: application.position?.slug ?? null,
       submittedAt: application.createdAt.toISOString(),
+      updatedAt: application.updatedAt.toISOString(),
       steps,
       assignment:
         assignmentInfo && (assignmentInfo.title || assignmentInfo.url || assignmentInfo.note)
@@ -290,6 +324,7 @@ export async function POST(req: NextRequest) {
       interviews: interviews.length > 0 ? interviews : undefined,
       offer,
       rejection,
+      rejectionReason: application.rejectionReason ?? null,
       onboarding,
       onboardingPlan: parseOnboardingPlan(application.onboardingPlan),
     };

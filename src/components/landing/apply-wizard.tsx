@@ -57,6 +57,8 @@ import {
   type FormSection,
 } from "@/lib/form-schema";
 import type { Lang } from "@/components/landing/strings";
+import { openStatusPage } from "@/components/landing/status-check";
+import { saveSession } from "@/lib/status-session";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -2478,7 +2480,14 @@ export function ApplyWizard({
   }
 
   function goToStatus() {
-    document.getElementById("status")?.scrollIntoView({ behavior: "smooth" });
+    // Simpan sesi sementara (sessionStorage — hilang saat tab ditutup) agar
+    // halaman status langsung terbuka tanpa login ulang setelah berhasil melamar.
+    const trackingCode = success?.trackingCode;
+    const email = values.email.trim();
+    if (trackingCode && email) {
+      saveSession({ email, code: trackingCode }, false);
+    }
+    openStatusPage();
   }
 
   if (success) {
