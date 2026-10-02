@@ -51,7 +51,13 @@ export type TelegramAlertKey =
   | "emailFailed" // email di kotak keluar gagal terkirim
   | "system" // event sistem: wawancara, offer, NO_SHOW, rekap
   | "quota" // kuota posisi hampir penuh / penuh
-  | "digest"; // digest pagi 07:00 WIB
+  | "digest" // digest pagi 07:00 WIB
+  | "interviewReminder" // pengingat wawancara H-1 hari & H-2 jam
+  | "slaStale" // alert lamaran menginap melewati batas SLA
+  | "candidateActivity" // aktivitas pelamar: slot, konfirmasi, offer, dokumen
+  | "digestEvening" // digest sore 17.00 WIB
+  | "digestWeekly" // rekap mingguan Senin pagi
+  | "exportScheduled"; // ekspor CSV terjadwal (Senin)
 
 export const TELEGRAM_ALERT_KEYS: TelegramAlertKey[] = [
   "newApplication",
@@ -60,6 +66,12 @@ export const TELEGRAM_ALERT_KEYS: TelegramAlertKey[] = [
   "system",
   "quota",
   "digest",
+  "interviewReminder",
+  "slaStale",
+  "candidateActivity",
+  "digestEvening",
+  "digestWeekly",
+  "exportScheduled",
 ];
 
 export const TELEGRAM_ALERT_LABELS: Record<TelegramAlertKey, string> = {
@@ -69,6 +81,12 @@ export const TELEGRAM_ALERT_LABELS: Record<TelegramAlertKey, string> = {
   system: "Event sistem (wawancara, offer, rekap)",
   quota: "Kuota posisi hampir penuh",
   digest: "Digest pagi (07.00 WIB)",
+  interviewReminder: "Pengingat wawancara (H-1 & H-2 jam)",
+  slaStale: "Lamaran menginap (SLA)",
+  candidateActivity: "Aktivitas pelamar (slot, offer, dokumen)",
+  digestEvening: "Digest sore (17.00 WIB)",
+  digestWeekly: "Rekap mingguan (Senin)",
+  exportScheduled: "Ekspor CSV terjadwal (Senin)",
 };
 
 export type TelegramAlerts = Record<TelegramAlertKey, boolean>;
@@ -80,6 +98,28 @@ export const DEFAULT_TELEGRAM_ALERTS: TelegramAlerts = {
   system: true,
   quota: true,
   digest: true,
+  interviewReminder: true,
+  slaStale: true,
+  candidateActivity: true,
+  digestEvening: true,
+  digestWeekly: true,
+  exportScheduled: true,
+};
+
+// Alert non-kritis: ditahan saat mode tenang (jam tenang) dan dirangkum di
+// digest pagi berikutnya. Alert kritis (kuota, email gagal, SLA, sistem) tetap terkirim.
+export const TELEGRAM_QUIET_HOLDABLE: TelegramAlertKey[] = [
+  "newApplication",
+  "survey",
+  "candidateActivity",
+];
+
+export type TelegramQuietHours = { enabled: boolean; startHour: number; endHour: number };
+
+export const DEFAULT_TELEGRAM_QUIET_HOURS: TelegramQuietHours = {
+  enabled: true,
+  startHour: 21, // 21.00 WIB
+  endHour: 8, // sampai 08.00 WIB
 };
 
 export type ScreeningQuestion = { id: string; label: string; required: boolean };

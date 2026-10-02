@@ -16,10 +16,11 @@ import { PositionDetailView } from "@/components/landing/position-detail";
 import { SurveyView } from "@/components/landing/survey-view";
 import { StatusPageView } from "@/components/landing/status-page";
 import { AdminApp } from "@/components/admin/admin-app";
+import { MiniAppView } from "@/components/landing/mini-app-view";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type View = "landing" | "detail" | "admin" | "embed" | "survei" | "status";
+type View = "landing" | "detail" | "admin" | "embed" | "survei" | "status" | "mini";
 
 // ---------------------------------------------------------------------------
 // Sumber data publik bersama (realtime + anti-flicker).
@@ -91,6 +92,8 @@ function readLocation(): { view: View; slug: string | null } {
   if (window.location.hash === "#status" || window.location.hash.startsWith("#status/")) {
     return { view: "status", slug: null };
   }
+  // Mini App Telegram (?mini=1) — panel versi ringkas di webview bot.
+  if (params.get("mini") === "1") return { view: "mini", slug: null };
   if (params.get("embed") === "1") return { view: "embed", slug: null };
   // Survei pengalaman kandidat (?survei=token) — dikirim via email status final.
   const surveiToken = params.get("survei");
@@ -199,6 +202,12 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
     setSlug(null);
   }, []);
 
+  // View Mini App Telegram: mandiri (tanpa konten publik, tanpa header/footer
+  // landing) — early return agar tampil langsung tanpa menunggu fetch konten.
+  if (view === "mini") {
+    return <MiniAppView />;
+  }
+
   const resetKey = `${view}:${slug ?? ""}`;
 
   // Layar pemeriksaan pertama (hanya saat benar-benar belum ada data).
@@ -281,7 +290,7 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
         />
       )}
       {/* Indikator kecil status realtime saat offline (anti-bingung tanpa mengganggu). */}
-      {!realtimeUp && view !== "admin" ? (
+      {!realtimeUp && view !== "admin" && view !== "mini" ? (
         <div className="pointer-events-none fixed bottom-3 left-1/2 z-40 -translate-x-1/2">
           <span className="rounded-full border bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur">
             Mode hemat — pembaruan otomatis terbatas

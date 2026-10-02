@@ -16,7 +16,20 @@ import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { pushNotification, queueEmail, sendSystemEvent, getSiteUrl } from "@/lib/notify";
 import type { TelegramButton } from "@/lib/notify";
 import { ensureMonthlyReport, previousMonthKey } from "@/lib/monthly-report";
-import { runTelegramDigest, runTelegramQuotaCheck, runTelegramSnoozeDispatch, runTelegramWeeklyChart } from "@/lib/telegram-bot";
+import {
+  runTelegramActivityWatch,
+  runTelegramDigest,
+  runTelegramDigestEvening,
+  runTelegramDigestWeekly,
+  runTelegramInterviewReminders,
+  runTelegramJobBroadcast,
+  runTelegramQuotaCheck,
+  runTelegramScheduledExport,
+  runTelegramSlaCheck,
+  runTelegramSnoozeDispatch,
+  runTelegramStageWatch,
+  runTelegramWeeklyChart,
+} from "@/lib/telegram-bot";
 
 export const dynamic = "force-dynamic";
 
@@ -369,6 +382,73 @@ export async function POST(req: NextRequest) {
       // diam
     }
 
+    // 12) NR-14 — pengingat wawancara H-1 hari & H-2 jam (chat admin).
+    let telegramReminders = 0;
+    try {
+      telegramReminders = await runTelegramInterviewReminders();
+    } catch {
+      // diam
+    }
+
+    // 13) NR-14 — alert SLA lamaran menginap.
+    let telegramSla = 0;
+    try {
+      telegramSla = await runTelegramSlaCheck();
+    } catch {
+      // diam
+    }
+
+    // 14) NR-14 — digest sore 17.00 WIB.
+    let telegramEvening = 0;
+    try {
+      const evening = await runTelegramDigestEvening();
+      telegramEvening = evening.sent;
+    } catch {
+      // diam
+    }
+
+    // 15) NR-14 — rekap mingguan Senin pagi.
+    let telegramWeekly = 0;
+    try {
+      const weekly = await runTelegramDigestWeekly();
+      telegramWeekly = weekly.sent;
+    } catch {
+      // diam
+    }
+
+    // 16) NR-14 — ekspor CSV terjadwal Senin pagi.
+    let telegramExport = 0;
+    try {
+      const exportResult = await runTelegramScheduledExport();
+      telegramExport = exportResult.sent;
+    } catch {
+      // diam
+    }
+
+    // 17) NR-14 — broadcast lowongan baru ke chat pelanggan.
+    let telegramJobs = 0;
+    try {
+      telegramJobs = await runTelegramJobBroadcast();
+    } catch {
+      // diam
+    }
+
+    // 18) NR-14 — notifikasi perubahan tahap untuk langganan kandidat.
+    let telegramStageWatch = 0;
+    try {
+      telegramStageWatch = await runTelegramStageWatch();
+    } catch {
+      // diam
+    }
+
+    // 19) NR-14 — kartu aktivitas pelamar (slot, offer, withdraw, dst.).
+    let telegramActivity = 0;
+    try {
+      telegramActivity = await runTelegramActivityWatch();
+    } catch {
+      // diam
+    }
+
     return NextResponse.json({
       ok: true,
       offerExpired,
@@ -382,6 +462,14 @@ export async function POST(req: NextRequest) {
       telegramSnooze,
       telegramQuota,
       telegramChart,
+      telegramReminders,
+      telegramSla,
+      telegramEvening,
+      telegramWeekly,
+      telegramExport,
+      telegramJobs,
+      telegramStageWatch,
+      telegramActivity,
     });
   } catch (error) {
     console.error("[POST /api/cron/reminders]", error);

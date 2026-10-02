@@ -1,7 +1,15 @@
 // Notifikasi webhook (Discord & Telegram) + bot Telegram admin + pembacaan pengaturan otomasi situs.
 // SERVER-ONLY — jangan pernah diimpor dari komponen klien. JANGAN PERNAH me-log token.
 import { db } from "@/lib/db";
-import { DEFAULT_TELEGRAM_ALERTS, TELEGRAM_ALERT_KEYS, type TelegramAlertKey, type TelegramAlerts } from "@/lib/types";
+import {
+  DEFAULT_TELEGRAM_ALERTS,
+  DEFAULT_TELEGRAM_QUIET_HOURS,
+  TELEGRAM_ALERT_KEYS,
+  TELEGRAM_QUIET_HOLDABLE,
+  type TelegramAlertKey,
+  type TelegramAlerts,
+  type TelegramQuietHours,
+} from "@/lib/types";
 
 const WEBHOOK_TIMEOUT_MS = 8_000; // 8 detik per channel
 
@@ -26,6 +34,7 @@ export type AutomationSettings = {
   telegramAllowedChats: string[]; // chat terdaftar (hasil pairing); gabungan dengan legacy chatId
   telegramAlerts: TelegramAlerts; // toggle per jenis alert
   telegramMutes: Record<string, string>; // mode diam per chat: chatId -> ISO waktu sampai bisu
+  telegramQuietHours: TelegramQuietHours; // mode tenang otomatis (alert non-kritis ditahan)
 };
 
 const DEFAULT_AUTOMATION: AutomationSettings = {
@@ -37,6 +46,7 @@ const DEFAULT_AUTOMATION: AutomationSettings = {
   telegramAllowedChats: [],
   telegramAlerts: { ...DEFAULT_TELEGRAM_ALERTS },
   telegramMutes: {},
+  telegramQuietHours: { ...DEFAULT_TELEGRAM_QUIET_HOURS },
 };
 
 /** Baca Setting "site" dan ambil field otomasi secara aman (fallback default bila rusak). */
@@ -85,6 +95,19 @@ export async function getAutomationSettings(): Promise<AutomationSettings> {
       }
     }
 
+    // Mode tenang otomatis: {enabled, startHour, endHour} — jam Bangkok.
+    const rawQuiet = obj.telegramQuietHours as Record<string, unknown> | null | undefined;
+    const quietHours: TelegramQuietHours = { ...DEFAULT_TELEGRAM_QUIET_HOURS };
+    if (rawQuiet && typeof rawQuiet === "object" && !Array.isArray(rawQuiet)) {
+      if (typeof rawQuiet.enabled === "boolean") quietHours.enabled = rawQuiet.enabled;
+      if (typeof rawQuiet.startHour === "number" && rawQuiet.startHour >= 0 && rawQuiet.startHour <= 23) {
+        quietHours.startHour = Math.floor(rawQuiet.startHour);
+      }
+      if (typeof rawQuiet.endHour === "number" && rawQuiet.endHour >= 0 && rawQuiet.endHour <= 23) {
+        quietHours.endHour = Math.floor(rawQuiet.endHour);
+      }
+    }
+
     return {
       chatbotEnabled: typeof obj.chatbotEnabled === "boolean" ? obj.chatbotEnabled : false,
       discordWebhookUrl: typeof obj.discordWebhookUrl === "string" ? obj.discordWebhookUrl.trim() : "",
@@ -94,6 +117,7 @@ export async function getAutomationSettings(): Promise<AutomationSettings> {
       telegramAllowedChats: allowedChats,
       telegramAlerts: alerts,
       telegramMutes: mutes,
+      telegramQuietHours: quietHours,
     };
   } catch {
     return { ...DEFAULT_AUTOMATION };
@@ -119,6 +143,55 @@ export function isChatMuted(settings: AutomationSettings, chatId: string): boole
 /** Daftar chat terdaftar yang TIDAK sedang dibisukan — untuk pengiriman notifikasi proaktif. */
 export function activeChats(settings: AutomationSettings): string[] {
   return settings.telegramAllowedChats.filter((chat) => !isChatMuted(settings, chat));
+}
+
+/** Jam saat ini menurut zona waktu Bangkok (WIB, UTC+7) — 0-23. */
+export function bangkokHourNow(): number {
+  return Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Bangkok", hour: "numeric", hour12: false }).format(new Date()),
+  );
+}
+
+/**
+ * True bila sedang dalam jendela mode tenang (mis. 21.00-08.00 WIB).
+ * Jendela melintang tengah malam: startHour > endHour (21 -> 8).
+ */
+export function isTelegramQuietNow(settings: AutomationSettings): boolean {
+  const { enabled, startHour, endHour } = settings.telegramQuietHours;
+  if (!enabled || startHour === endHour) return false;
+  const hour = bangkokHourNow();
+  return startHour > endHour ? hour >= startHour || hour < endHour : hour >= startHour && hour < endHour;
+}
+
+/** Tahan notifikasi saat mode tenang: tambah penghitung untuk dirangkum di digest pagi. */
+async function holdQuietNotification(): Promise<void> {
+  try {
+    const site = await readSiteObj();
+    const current = typeof site.telegramQuietCount === "number" ? site.telegramQuietCount : 0;
+    site.telegramQuietCount = current + 1;
+    await writeSiteObj(site);
+  } catch {
+    // penghitung bersifat kosmetik — kegagalan diabaikan
+  }
+}
+
+/** Baca/ubah mentah objek Setting "site" (dipakai penghitung mode tenang). */
+async function readSiteObj(): Promise<Record<string, unknown>> {
+  const row = await db.setting.findUnique({ where: { key: "site" } });
+  try {
+    const parsed: unknown = row ? JSON.parse(row.value) : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? { ...(parsed as Record<string, unknown>) } : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeSiteObj(obj: Record<string, unknown>): Promise<void> {
+  await db.setting.upsert({
+    where: { key: "site" },
+    update: { value: JSON.stringify(obj) },
+    create: { key: "site", value: JSON.stringify(obj) },
+  });
 }
 
 /** fetch dengan timeout (default 8 detik). */
@@ -154,7 +227,7 @@ export async function sendDiscordNotification(
 }
 
 /** Satu baris tombol inline Telegram. */
-export type TelegramButton = { text: string; url?: string; callback_data?: string };
+export type TelegramButton = { text: string; url?: string; callback_data?: string; webAppUrl?: string };
 
 /** Hasil kirim terperinci — description berisi alasan Telegram bila gagal. */
 export type TelegramSendResult = { ok: boolean; description?: string };
@@ -181,9 +254,11 @@ export async function sendTelegramMessageDetailed(
       payload.reply_markup = {
         inline_keyboard: opts.buttons.map((row) =>
           row.map((btn) =>
-            btn.url
-              ? { text: btn.text, url: btn.url }
-              : { text: btn.text, callback_data: btn.callback_data ?? "noop" },
+            btn.webAppUrl
+              ? { text: btn.text, web_app: { url: btn.webAppUrl } }
+              : btn.url
+                ? { text: btn.text, url: btn.url }
+                : { text: btn.text, callback_data: btn.callback_data ?? "noop" },
           ),
         ),
       };
@@ -281,6 +356,11 @@ export async function sendTelegramAlert(
     const settings = await getAutomationSettings();
     if (!settings.telegramBotToken) return 0;
     if (!settings.telegramAlerts[alertKey]) return 0;
+    // Mode tenang: alert non-kritis ditahan (dihitung) dan dirangkum di digest pagi.
+    if (TELEGRAM_QUIET_HOLDABLE.includes(alertKey) && isTelegramQuietNow(settings)) {
+      await holdQuietNotification();
+      return 0;
+    }
     const chats = activeChats(settings);
     if (chats.length === 0) return 0;
     let sent = 0;
@@ -347,15 +427,21 @@ export async function sendNewApplicationNotifications(app: {
     }
 
     // Channel Telegram — dikirim ke semua chat terdaftar yang tidak sedang dibisukan,
-    // digate toggle alert.
+    // digate toggle alert. Saat mode tenang, lamaran baru ditahan (dihitung) dan
+    // dirangkum di digest pagi berikutnya.
     if (settings.telegramBotToken && settings.telegramAlerts.newApplication) {
       try {
-        for (const chat of activeChats(settings)) {
-          const result = await sendTelegramNotification(settings.telegramBotToken, chat, telegramText, {
-            buttons: telegramButtons,
-          });
-          if (result === "ok") telegram = "ok";
-          else telegram = result === "gagal" ? "gagal" : telegram;
+        if (isTelegramQuietNow(settings)) {
+          await holdQuietNotification();
+          telegram = "nonaktif";
+        } else {
+          for (const chat of activeChats(settings)) {
+            const result = await sendTelegramNotification(settings.telegramBotToken, chat, telegramText, {
+              buttons: telegramButtons,
+            });
+            if (result === "ok") telegram = "ok";
+            else telegram = result === "gagal" ? "gagal" : telegram;
+          }
         }
       } catch {
         telegram = "gagal";
