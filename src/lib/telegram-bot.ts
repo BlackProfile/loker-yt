@@ -78,24 +78,51 @@ type SendOptions = { buttons?: TelegramButton[][] };
 
 /* --------------------------------- Util dasar --------------------------------- */
 
+// Retry khusus error jaringan (socket tertutup, timeout, DNS) — error HTTP dari
+// Telegram (400/403/404/...) sifatnya deterministik dan TIDAK diulang. Tanpa retry,
+// tombol/pesan balasan "hilang" diam-diam saat jaringan flaky (pernah terjadi).
+const TG_NETWORK_RETRY_MAX = 3;
+const TG_NETWORK_RETRY_DELAY_MS = 900;
+
+function isNetworkErrorMessage(message: string): boolean {
+  return (
+    message.includes("socket") ||
+    message.includes("closed") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("aborted") ||
+    message.includes("Unable to connect") ||
+    message.includes("fetch failed")
+  );
+}
+
 async function tgApi<T = unknown>(token: string, method: string, payload?: Record<string, unknown>): Promise<{ ok: boolean; result?: T; description?: string }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TG_API_TIMEOUT_MS);
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload ?? {}),
-      signal: controller.signal,
-    });
-    const json = (await res.json().catch(() => null)) as { ok?: boolean; result?: T; description?: string } | null;
-    if (!res.ok || !json?.ok) return { ok: false, description: json?.description ?? `HTTP ${res.status}` };
-    return { ok: true, result: json.result, description: json.description };
-  } catch (error) {
-    return { ok: false, description: error instanceof Error ? error.message : "network error" };
-  } finally {
-    clearTimeout(timer);
+  let lastError = "unknown error";
+  for (let attempt = 1; attempt <= TG_NETWORK_RETRY_MAX; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TG_API_TIMEOUT_MS);
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload ?? {}),
+        signal: controller.signal,
+      });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; result?: T; description?: string } | null;
+      if (!res.ok || !json?.ok) return { ok: false, description: json?.description ?? `HTTP ${res.status}` };
+      return { ok: true, result: json.result, description: json.description };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "network error";
+      if (attempt < TG_NETWORK_RETRY_MAX && isNetworkErrorMessage(lastError)) {
+        await new Promise((resolve) => setTimeout(resolve, TG_NETWORK_RETRY_DELAY_MS * attempt));
+        continue;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  console.warn(`[telegram-bot] tgApi ${method} gagal setelah ${TG_NETWORK_RETRY_MAX} percobaan: ${lastError}`);
+  return { ok: false, description: lastError };
 }
 
 async function tgSendMessage(token: string, chatId: number | string, text: string, opts?: SendOptions): Promise<boolean> {
@@ -431,7 +458,25 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<{ re
     const cmd = (parts[0] ?? "").split("@")[0].toLowerCase();
     const args = parts.slice(1).join(" ").trim();
 
-    switch (cmd) {
+    // Alias tombol keyboard (teks polos tanpa "/") — "Ringkasan", "Jadwal", dst.
+    // dikirim Telegram sebagai pesan biasa. Hanya berlaku bila pesan TEPAT satu
+    // kata; kalimat panjang tetap masuk ke asisten jawaban bebas.
+    const COMMAND_ALIASES: Record<string, string> = {
+      ringkasan: "/ringkasan",
+      posisi: "/posisi",
+      lowongan: "/posisi",
+      jadwal: "/jadwal",
+      wawancara: "/jadwal",
+      kandidat: "/kandidat",
+      pelamar: "/kandidat",
+      laporan: "/laporan",
+      bantuan: "/bantuan",
+      menu: "/menu",
+      help: "/help",
+    };
+    const effectiveCmd = parts.length === 1 ? (COMMAND_ALIASES[cmd] ?? cmd) : cmd;
+
+    switch (effectiveCmd) {
       case "/start":
       case "/menu":
       case "/bantuan":
@@ -512,6 +557,21 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<{ re
 
 /* ----------------------------- Chat belum terdaftar ----------------------------- */
 
+/** Teks panduan pairing — dipakai pesan biasa & callback tombol (agar tidak "mati" diam-diam). */
+function pairingInstructionsText(chatId: number | string): string {
+  return [
+    "Chat ini belum terhubung ke Lumina Studio.",
+    "",
+    "Cara menghubungkan:",
+    "1. Buka panel admin, tab Pengaturan, kartu Bot Telegram.",
+    "2. Klik Buat Kode Pemasangan.",
+    "3. Kirim perintah berikut ke chat ini:",
+    "/mulai KODE",
+    "",
+    `Chat ID kamu: ${chatId}`,
+  ].join("\n");
+}
+
 async function handleUnregisteredChat(message: TgMessage, token: string, replies: string[]): Promise<void> {
   const chatId = message.chat.id;
   const text = (message.text ?? "").trim();
@@ -525,17 +585,7 @@ async function handleUnregisteredChat(message: TgMessage, token: string, replies
     return;
   }
 
-  const reply = [
-    "Chat ini belum terhubung ke Lumina Studio.",
-    "",
-    "Cara menghubungkan:",
-    "1. Buka panel admin, tab Pengaturan, kartu Bot Telegram.",
-    "2. Klik Buat Kode Pemasangan.",
-    "3. Kirim perintah berikut ke chat ini:",
-    "/mulai KODE",
-    "",
-    `Chat ID kamu: ${chatId}`,
-  ].join("\n");
+  const reply = pairingInstructionsText(chatId);
   await tgSendMessage(token, chatId, reply);
   replies.push(reply);
 }
@@ -1444,7 +1494,11 @@ async function handleCallback(
   const messageId = message.message_id;
   const settings = await getAutomationSettings();
   if (!settings.telegramAllowedChats.includes(String(chatId))) {
+    // Jangan diam-diam: toast + pesan panduan pairing yang terlihat, supaya
+    // tombol tidak terasa "mati" untuk chat yang belum terhubung.
     await tgAnswerCallback(token, callback.id, "Chat tidak terdaftar.");
+    await tgSendMessage(token, chatId, pairingInstructionsText(chatId));
+    replies.push("pairing-instructions");
     return;
   }
 

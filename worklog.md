@@ -2150,3 +2150,21 @@ Stage Summary:
 - db-guard + backup mencegah kehilangan data demo berulang.
 - Catatan: dev.log ter-truncate tiap restart (tee) — wajar.
 - NR-10 (halaman Cek Status) tetap PENDING.
+
+---
+Task ID: NR-13-telegram-buttons
+Agent: main
+Task: User melapor tombol "Ringkasan" & "Jadwal" di bot Telegram tidak bisa digunakan (screenshot = pesan Digest Pagi dengan inline keyboard).
+
+Work Log:
+- Identifikasi konteks: screenshot adalah inline keyboard pesan "Digest Pagi" (baris tombol Ringkasan | Jadwal persis di buildDigest). Bot @lok3rbot via mini-service poller :3004 (forward ke /api/telegram/update) + handler di src/lib/telegram-bot.ts.
+- Fakta log: poller menerima update ("polling AKTIF" 06:33, "forward error socket closed" 06:35-06:36 = tepat saat user menekan tombol); app memproses POST /api/telegram/update 200; outbound test sendMessage ke grup admin (-5203902428) sukses 200.
+- Akar masalah berlapis: (1) tgApi TANPA retry/log — saat jaringan ke api.telegram.org flaky ("socket connection was closed unexpectedly"), balasan editMessage/fallback sendMessage gagal diam-diam sehingga tombol terasa mati; (2) callback dari chat tak terdaftar ditolak diam-diam (hanya toast "Chat tidak terdaftar."); (3) telegramAllowedChats kosong kembali setelah DB reset NR-12 (hasil pairing hilang; grup admin lolos hanya via legacy telegramChatId).
+- Perbaikan src/lib/telegram-bot.ts: (1) tgApi retry 3x (backoff 900ms*attempt) khusus error jaringan + console.warn bila gagal akhir; (2) callback chat tak terdaftar kini mengirim pesan panduan pairing TERLIHAT (fungsi pairingInstructionsText dipakai bersama handleUnregisteredChat); (3) alias teks polos satu kata (Ringkasan/Jadwal/Posisi/Kandidat/Laporan/Menu/Bantuan) dipetakan ke perintah slash yang sama — kalimat panjang tetap ke asisten bebas.
+- Generate kode pairing baru di DB (telegramPair, TTL 2 jam): 974035.
+- Uji sintetis POST /api/telegram/update: pesan "ringkasan" dari chat tak terdaftar -> balas panduan pairing; callback cb:jadwal chat tak terdaftar -> replies ["pairing-instructions"]. HTTP 200 semua, lint bersih.
+
+Stage Summary:
+- Tombol bot kini tahan flaky (retry), penolakan chat tak terpairing terlihat + memandu, teks keyboard polos didukung.
+- Chat user perlu pairing ulang sekali: kirim /mulai 974035 ke bot (atau buat kode baru dari admin: Pengaturan -> Bot Telegram).
+- Grup admin (-5203902428) tetap terdaftar via legacy chatId.
