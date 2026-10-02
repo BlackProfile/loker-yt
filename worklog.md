@@ -2083,3 +2083,16 @@ Stage Summary:
 - Total 31 lamaran dummy memperkaya demo pipeline admin (status NEW/REVIEWED/INTERVIEW; Social Media Officer termasuk domisili/komuter/shift untuk kolom domisili NR-7).
 - Perbaikan permanen: DeadlineCountdown kini theme-aware (variant detail) dan menampilkan tanggal terformat — memperbaiki tampilan semua posisi ber-deadline, bukan hanya demo.
 - File: scripts/seed-position-states.ts (baru, idempoten), src/components/landing/deadline-countdown.tsx (variant+format), src/components/landing/position-detail.tsx (variant="detail").
+
+---
+Task ID: NR-10-ide
+Agent: orchestrator (Z.ai Code)
+Task: Ide redesign "Cek Status" — dari section inline menjadi halaman khusus dengan login email + kode pelacakan (user request)
+
+Work Log:
+- Investigasi kondisi existing: StatusCheckSection (status-check.tsx, 1700 baris) masih SECTION inline di landing (sections.statusCheck), login kode pelacakan saja (POST /api/public/track {code}), tanpa penyimpanan sesi (masukkan ulang kode tiap kunjungan). Fitur existing yang kaya: timeline tahap-aware (pipeline kustom ikut), aksi wawancara (konfirmasi/ubah jadwal/slot mandiri/gcal/cancel), offer terima/tolak, unggah dokumen onboarding, realtime recheck useLiveEvent.
+- Routing view home-view.tsx: #admin, ?embed=1, ?survei=token, ?posisi=slug — pola siap ditambah view halaman #status. Nav header sudah punya item "Cek Status" (scroll ke section) + tombol wizard sukses goToStatus.
+- Usulan 12 ide disampaikan ke user (fondasi halaman #status, login ganda email+kode, sesi ingat perangkat, multi-lamaran sekali login, badge pembaruan sejak kunjungan terakhir, hero status, timeline penuh, panel aksi, tarik lamaran self-service, rate limit+lockout, dua bahasa, bantuan kode hilang) + rekomendasi paket inti 1-8. Menunggu persetujuan user sebelum implementasi.
+
+Stage Summary:
+- Fakta kunci: API track hanya cocokkan kode (perlu diperketat email+kode), email Application tidak unik (1 email bisa >1 lamaran — memungkinkan fitur multi-lamaran), tanpa sesi tersimpan. Belum ada perubahan kode pada sesi ini.
