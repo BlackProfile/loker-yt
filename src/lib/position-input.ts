@@ -883,6 +883,11 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.requireCv !== undefined) out.requireCv = f.requireCv;
   if (f.requireIntro !== undefined) out.requireIntro = f.requireIntro;
   if (f.requirePortfolio !== undefined) out.requirePortfolio = f.requirePortfolio;
+  // NR-22 — slot opsional wizard klasik
+  if (f.showCvField !== undefined) out.showCvField = f.showCvField;
+  if (f.showIntroField !== undefined) out.showIntroField = f.showIntroField;
+  if (f.showPortfolioField !== undefined) out.showPortfolioField = f.showPortfolioField;
+  if (f.showSocialField !== undefined) out.showSocialField = f.showSocialField;
   if (f.customDocs !== undefined) out.customDocs = JSON.stringify(f.customDocs);
   if (f.maxApplicants !== undefined) out.maxApplicants = f.maxApplicants;
   if (f.applyOpen !== undefined) out.applyOpen = f.applyOpen;
