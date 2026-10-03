@@ -140,7 +140,8 @@ export type FormField = {
   max?: number; // number & rating (rating = skala 1..max)
 };
 
-/** Jenis bagian: tiga bawaan + kustom. Bagian bawaan tak bisa dihapus, tapi isa dikonfigurasi. */
+/** Jenis bagian: tiga inti (biodata/experience/files) + kustom. Semua bisa dihapus
+ * setelah membuka kunci; identitas (nama & email) tetap selalu dikumpulkan wizard. */
 export type FormSectionKind = "biodata" | "experience" | "files" | "custom";
 
 export const FORM_SECTION_KINDS: FormSectionKind[] = ["biodata", "experience", "files", "custom"];
@@ -157,12 +158,25 @@ export type FormSection = {
   description?: string;
   titleEn?: string;
 
-  // Konfigurasi bagian bawaan (boleh tidak ada = pakai nilai bawaan):
+  // Label kustom item inti (absen/kosong = pakai label bawaan FORM_CORE_ITEM_DEFAULTS).
+  // NR-23: semua item inti kini bisa diedit penuh — labelnya ikut disimpan di sini.
+  nameLabel?: string;       // biodata
+  emailLabel?: string;      // biodata
+  waLabel?: string;         // biodata
+  experienceLabel?: string; // experience
+  motivationLabel?: string; // experience
+  cvLabel?: string;         // files
+  introLabel?: string;      // files
+  portfolioLabel?: string;  // files
+
+  // Konfigurasi item inti (boleh tidak ada = pakai nilai bawaan):
   // biodata — WA boleh tidak wajib (nama & email selalu wajib, identitas pelamar).
   waRequired?: boolean;
-  // experience — dua pertanyaan inti bisa dimatikan satu per satu.
+  // experience — dua pertanyaan inti bisa dimatikan & diatur wajib satu per satu.
   experienceEnabled?: boolean;
+  experienceRequired?: boolean; // NR-23 — default true (perilaku lama)
   motivationEnabled?: boolean;
+  motivationRequired?: boolean; // NR-23 — default true (perilaku lama)
   // files — tiga slot berkas bawaan bisa dimatikan; wajib hanya berlaku saat aktif.
   cvEnabled?: boolean;
   cvRequired?: boolean;
@@ -171,6 +185,38 @@ export type FormSection = {
   portfolioEnabled?: boolean;
   portfolioRequired?: boolean;
 };
+
+/** Batas panjang label kustom item inti (konsisten dgn judul bagian). */
+export const FORM_CORE_LABEL_MAX = 60;
+
+/** Label bawaan item inti — satu sumber untuk builder, wizard, pratinjau, dan pesan server. */
+export const FORM_CORE_ITEM_DEFAULTS = {
+  name: "Nama Lengkap",
+  email: "Email",
+  wa: "Nomor WhatsApp",
+  experience: "Ceritakan pengalamanmu",
+  motivation: "Alasan bergabung",
+  cv: "CV (PDF, maks 5 MB)",
+  intro: "Audio/Video perkenalan (maks 10 MB)",
+  portfolio: "Link Portofolio",
+} as const;
+
+export type FormCoreItemKey = keyof typeof FORM_CORE_ITEM_DEFAULTS;
+
+/** Label efektif item inti: kustom admin bila diisi, selain itu label bawaan. */
+export function coreItemLabel(section: FormSection, key: FormCoreItemKey): string {
+  const override =
+    key === "name" ? section.nameLabel :
+    key === "email" ? section.emailLabel :
+    key === "wa" ? section.waLabel :
+    key === "experience" ? section.experienceLabel :
+    key === "motivation" ? section.motivationLabel :
+    key === "cv" ? section.cvLabel :
+    key === "intro" ? section.introLabel :
+    section.portfolioLabel;
+  const trimmed = override?.trim();
+  return trimmed ? trimmed : FORM_CORE_ITEM_DEFAULTS[key];
+}
 
 export type RetiredFormField = { id: string; label: string };
 
@@ -248,8 +294,17 @@ export function isExperienceEnabled(section: FormSection): boolean {
   return section.kind !== "experience" || section.experienceEnabled !== false;
 }
 
+/** Wajib hanya berlaku saat itemnya aktif — default true (perilaku lama). */
+export function isExperienceRequired(section: FormSection): boolean {
+  return isExperienceEnabled(section) && section.experienceRequired !== false;
+}
+
 export function isMotivationEnabled(section: FormSection): boolean {
   return section.kind !== "experience" || section.motivationEnabled !== false;
+}
+
+export function isMotivationRequired(section: FormSection): boolean {
+  return isMotivationEnabled(section) && section.motivationRequired !== false;
 }
 
 export function isCvEnabled(section: FormSection): boolean {
@@ -335,6 +390,45 @@ export function newFormId(prefix: string): string {
 
 /* ---------------------------------- Parser ---------------------------------- */
 
+/**
+ * Ambil label kustom item inti dari raw — trim + batas panjang; kosong = tidak
+ * diset (pakai label bawaan). strict=true mengembalikan pesan error bila melebihi
+ * batas (dipakai sanitasi server); strict=false memotong diam-diam (dipakai parser).
+ */
+function pickCoreLabels(
+  section: FormSection,
+  raw: Record<string, unknown>,
+  strict: boolean,
+): string | null {
+  const candidates: [FormCoreItemKey, "nameLabel" | "emailLabel" | "waLabel" | "experienceLabel" | "motivationLabel" | "cvLabel" | "introLabel" | "portfolioLabel"][] =
+    section.kind === "biodata"
+      ? [["name", "nameLabel"], ["email", "emailLabel"], ["wa", "waLabel"]]
+      : section.kind === "experience"
+        ? [["experience", "experienceLabel"], ["motivation", "motivationLabel"]]
+        : section.kind === "files"
+          ? [["cv", "cvLabel"], ["intro", "introLabel"], ["portfolio", "portfolioLabel"]]
+          : [];
+  for (const [key, prop] of candidates) {
+    const value = raw[prop];
+    if (value == null) continue;
+    if (typeof value !== "string") {
+      if (strict) return `Label item "${FORM_CORE_ITEM_DEFAULTS[key]}" harus berupa teks.`;
+      continue;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    if (trimmed.length > FORM_CORE_LABEL_MAX) {
+      if (strict) {
+        return `Label item "${FORM_CORE_ITEM_DEFAULTS[key]}" maksimal ${FORM_CORE_LABEL_MAX} karakter.`;
+      }
+      section[prop] = trimmed.slice(0, FORM_CORE_LABEL_MAX);
+      continue;
+    }
+    section[prop] = trimmed;
+  }
+  return null;
+}
+
 /** Jenis bagian dari input mentah: valid, atau ditebak dari id bawaan, atau kustom. */
 function parseSectionKind(value: unknown, id: string): FormSectionKind {
   if (typeof value === "string" && (FORM_SECTION_KINDS as readonly string[]).includes(value)) {
@@ -353,7 +447,9 @@ function normalizeSectionFlags(section: FormSection, raw: Record<string, unknown
   }
   if (section.kind === "experience") {
     section.experienceEnabled = raw.experienceEnabled !== false;
+    section.experienceRequired = section.experienceEnabled && raw.experienceRequired !== false;
     section.motivationEnabled = raw.motivationEnabled !== false;
+    section.motivationRequired = section.motivationEnabled && raw.motivationRequired !== false;
   }
   if (section.kind === "files") {
     section.cvEnabled = raw.cvEnabled !== false;
