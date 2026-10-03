@@ -2470,3 +2470,42 @@ Hasil Uji (curl + agent-browser via :81; cookie OWNER admin@lumina.id, HR hr@lum
 Stage Summary:
 - NR-19-c selesai: (1) Agregasi scorecard — endpoint /api/admin/reports/scorecards (semua role, filter posisi+periode, skala 1-5, tanpa PII kandidat) + section "Agregasi Scorecard" di dasar tab Laporan (metrik, badge rekomendasi emerald/zinc/rose, 2 tabel, skeleton, empty state, refetch saat filter/realtime); (2) Log audit — GET /api/admin/logs mendapat filter action prefix (whitelist+startsWith), actor, from/to, q (kompatibel mundur dgn applicationId/limit), endpoint /api/admin/logs/export CSV UTF-8+BOM (OWNER/HR, maks 5000 baris, filename log-aktivitas-YYYY-MM-DD.csv), dan tab Log Aktivitas mendapat baris filter lengkap (aksi/aktor/dari-sampai/detail debounce 400ms) + tombol Unduh CSV hanya OWNER/HR.
 - File diubah/dibuat: src/app/api/admin/reports/scorecards/route.ts (baru), src/app/api/admin/logs/route.ts, src/app/api/admin/logs/export/route.ts (baru), src/components/admin/reports-tab.tsx, src/components/admin/logs-tab.tsx. Tidak ada file dari daftar larangan yang disentuh; tidak ada perubahan types.ts/schema.prisma.
+
+---
+Task ID: NR-19-a
+Agent: full-stack-developer (timeout — dilengkapi & diverifikasi ulang oleh orchestrator)
+Task: Laporan Email Terjadwal + WIP Limit Pipeline (ide 1-2 dari 10 ide backend admin NR-19)
+
+Work Log:
+- Agent bekerja hingga hampir selesai lalu timeout sebelum menulis worklog; orchestrator memverifikasi seluruh artefaknya di disk dan menguji ulang semuanya.
+- Endpoint baru GET/PUT /api/admin/reports/schedule (OWNER untuk PUT) — Setting "reportEmailSchedule" {weeklyEnabled, monthlyEnabled}, default keduanya true.
+- src/lib/report-email.ts baru — buildReportEmail(): ringkasan pipeline (total per status, lamaran 7 hari, 5 posisi teratas, wawancara 7 hari ke depan, offer PENDING) dalam body email Indonesia.
+- cron/reminders: 2 job baru — Senin 08:00 (EMAIL_REPORT_WEEKLY) & tanggal 1 07:00 (EMAIL_REPORT_MONTHLY) ke email semua AdminUser OWNER|HR aktif via EmailOutbox (kind SYSTEM, QUEUED); dedupe via ActivityLog; dukungan body {"forceEmailReport":true} untuk uji manual.
+- action-items: field wipOver (parseStageWipLimits + findWipOverages per posisi, tahap non-final).
+- tasks-tab: section "Kapasitas Tahap Melebihi Batas"; dashboard-tab: chip amber "X tahap melebihi kapasitas" di kartu Perlu Tindakan; kanban-board: badge rose "Melebihi batas (count/limit)" di header kolom (per posisi, sumber limits props atau fetch sendiri + cache + live refresh positions:changed); position-settings-pages: editor "Batas Kapasitas Tahap (opsional)" di Seleksi (input number per tahap efektif, cleanStageWipLimits).
+- settings-tab: Card "Laporan Email Terjadwal" dengan 2 Switch (fetch GET + PUT, toast).
+
+Stage Summary:
+- Terverifikasi orchestrator: GET/PUT schedule 200 (PUT monthly toggle UI -> API terbaca), forceEmailReport 2x -> EmailOutbox 4 baris (mingguan+bulanan x admin+hr, dedupe benar, ActivityLog EMAIL_REPORT_*), action-items wipOver {Video Editor NEW 3>2}, badge kanban "Melebihi batas (3/2)", chip dashboard, editor batas kapasitas di Kelola Posisi. Demo WIP dipertahankan: Video Editor {NEW:2, INTERVIEW:1}.
+- Catatan: agent NR-19-a meninggalkan lamaran uji "Uji WIP Satu/Dua" (Video Editor) — dipertahankan sebagai demo WIP.
+
+---
+Task ID: NR-19 (a-e + verifikasi)
+Agent: Z.ai Code main (orchestrator)
+Task: Implementasi 10 ide backend admin ("semuanya") — 4 kategori: otomasi & operasi, data & insight, keamanan & kepatuhan, integrasi & ekspansi.
+
+Work Log:
+- Riset (agent Explore): peta lengkap 15 tab admin + 90 route admin + cron 22 job + schema; gap terkonfirmasi: email digest laporan, PDF server-side, agregasi scorecard, WIP limit, toggle digest UI, filter log, XLSX, import file, invite flow.
+- FONDASI orchestrator: schema += Position.stageWipLimits (JSON) + AdminUser.inviteToken/inviteExpiresAt; db:push sukses. types.ts: Position.stageWipLimits, WEBHOOK_EVENTS += offer.sent/interview.scheduled/interview.completed (+label ID), AdminUser.invitePending/inviteExpiresAt, ActionItemsResponse.wipOver. src/lib/wip-limits.ts baru; position-input.ts sanitizeStageWipLimits (create+PATCH); seed.ts serializePosition stageWipLimits.
+- NR-19-a (otomasi): laporan email terjadwal + WIP limit (lihat entri NR-19-a).
+- NR-19-b (data ops): job backup harian VACUUM INTO backups/auto/lumina-YYYY-MM-DD.db (rotasi 7, idempoten, log DAILY_BACKUP) di cron/maintenance; API /api/admin/backups (list/download/restore-from/delete, OWNER, anti path-traversal); lib/restore-db.ts diekstrak (BONUS FIX: restore lama 500 karena dynamic import node:sqlite dicegat bundler — diperbaiki, restore kini 200); import-applications mode multipart CSV/XLSX (xlsx SheetJS, header fleksibel, ≤5MB); export ?format=xlsx 2 sheet (Lamaran+Ringkasan); data-tab kartu Backup Otomatis + Impor dari File; applications-tab dropdown ekspor CSV/XLSX.
+- NR-19-c (insight): /api/admin/reports/scorecards (agregasi per kriteria/pewawancara/rekomendasi, tanpa PII); logs route filter action-prefix/actor/from/to/q (whitelist ketat); /api/admin/logs/export CSV BOM (OWNER|HR, ≤5000); reports-tab section Agregasi Scorecard; logs-tab filter lengkap + tombol Unduh CSV.
+- NR-19-d (keamanan): users POST invite:true (token 24-hex + 48 jam + EmailOutbox INVITE berisi /#admin/invite?token=); users/[id] PATCH resend-invite/cancel-invite; publik POST /api/public/admin-invite/accept (rate limit 10/menit/IP, 404 generik, password ≥8); users-tab dialog Undang Admin + chip "Undangan tertunda" + menu kirim ulang/batalkan; login-card mode "Selesaikan Pendaftaran"; anonymize route (OWNER|HR, 409 hired, scrub PII menyeluruh: nama/email/telepon/CV/jawaban->[dihapus], offerSalary dikosongkan, status+statistik dipertahankan) + tombol "Anonimkan Data" + AlertDialog merah di detail dialog.
+- NR-19-e (integrasi): webhooks.ts WebhookEventName dari WEBHOOK_EVENTS + log delivery; emit offer.sent (hanya offer pertama), interview.scheduled (admin POST + slot book publik actor "Pelamar"), interview.completed (transisi -> COMPLETED, tidak duplikat); payload tanpa gaji/link/PII; webhook-test dukung event baru; UI webhook events di data-tab ternyata otomatis dari WEBHOOK_EVENTS.
+- Orchestrator verification: lint 0 error; restore route onboarding/upload yang terhapus ulang (git checkout); FIX pre-existing /api/admin/webhooks/test 404 (data-tab kini memanggil /api/admin/webhook-test); FIX overflow mobile tasks-tab (Card min-w-0 overflow-hidden); browser E2E :81: semua UI baru terverifikasi (chip dashboard, section WIP tugas, badge kanban 3/2, editor batas kapasitas, card Laporan Email + switch roundtrip, Agregasi Scorecard, filter log OFFER_ + Unduh CSV, dialog Undang Admin -> EmailOutbox INVITE QUEUED + link benar -> chip tertunda -> menu resend/cancel, Backup Otomatis list/Unduh/Pulihkan/Hapus, Impor dari File, dropdown ekspor CSV/XLSX, tombol Anonimkan + dialog konfirmasi); mobile 390px tanpa overflow setelah fix; console bersih; watcher auto-push mati (72 perubahan) -> di-restart -> 3426220 ter-push.
+- Data uji dibersihkan (user qa.nr19 dihapus, outbox ikut); demo dipertahankan: WIP Video Editor, LM-Y14IAD anonymized (irreversibel by design), 1 backup auto.
+
+Stage Summary:
+- 10/10 ide backend admin terimplementasi & terverifikasi E2E via browser gateway :81. Semua subagent menulis entri worklog sendiri (NR-19-b/c/d/e), NR-19-a dilengkapi orchestrator.
+- File kunci baru: api/admin/reports/{schedule,scorecards}, api/admin/backups, api/admin/logs/export, api/admin/applications/[id]/anonymize, api/public/admin-invite/accept, lib/{report-email,restore-db,wip-limits}.ts.
+- Keputusan desain: email laporan hanya antre EmailOutbox (SMTP pipeline existing); WIP demo Video Editor {NEW:2,INTERVIEW:1}; invite token tidak pernah bocor di respons API; payload webhook bebas gaji/link/PII.
