@@ -2546,3 +2546,22 @@ Work Log:
 Stage Summary:
 - NR-21 selesai: 2 lowongan baru hidup — Pembantu Operasional Studio (featured+urgent, dgn tahap trial "Coba Kerja 1 Hari") dan Pembantu Rumah Tangga (live-in, privasi alamat, netral gender). Total 8 posisi aktif; backup demo-seed ikut 8 posisi sehingga tahan db-guard.
 - Murni data (tanpa perubahan kode/schema): .zscripts/add-pembantu.ts + worklog. Kedua wizard memakai fitur ONSITE existing (domisili/komuter/shift) yang otomatis ter-custom per kota posisi.
+
+---
+Task ID: NR-22
+Agent: Z.ai Code main (orchestrator)
+Task: "Buat ini bisa disembunyikan — masa supir dan pembantu butuh ini" — sakelar per-posisi untuk menyembunyikan slot opsional wizard klasik (unggah CV, unggah perkenalan, link portofolio, link sosial media).
+
+Work Log:
+- Riset: wizard apply-wizard.tsx punya 2 mode — skema (Form Builder, sudah punya flag per bagian) dan klasik (mode lama yang selalu menampilkan CV/intro di langkah Berkas + portofolio/sosial di langkah Pengalaman). Supir/POS/PRT memakai mode klasik → slot opsional selalu tampil.
+- Schema: Position += showCvField/showIntroField/showPortfolioField/showSocialField Boolean @default(true); db:push sukses.
+- types.ts (Position), position-input.ts (PositionFields + daftar booleans sanitize + guard "wajib selalu menang" + positionFieldsToDb mapping — FIX: semula lupa dipetakan sehingga PATCH 200 tapi DB tak berubah, ketahuan lewat uji PATCH langsung yang memberi 400 "Tidak ada perubahan"), seed.ts (serializePosition null-safe + demo-seed import), defaults.ts (DefaultPositionSeed), api/admin/positions/route.ts (create, default true), duplicate route (ikut disalin).
+- Wizard klasik: classicShowCv/Intro/Portfolio/Social (requireXxx menang), classicFilesHasContent; langkah Berkas dilewati (filesStep=-1, previewStep bergeser) bila CV+intro disembunyikan DAN tak ada customDocs; grid portofolio/sosial & baris pratinjau dibungkus kondisi; kartu pratinjau Berkas hanya render bila ada isi.
+- Admin Penerimaan (position-settings-pages.tsx): section "Slot Opsional Formulir" (4 switch border-dashed) di bawah sakelar Wajib; sakelar slot terkunci nyala+disabled bila pasangannya Wajib aktif; payload hanya dikirim saat mode klasik.
+- Data: set-hide-fields.ts → Supir/POS/PRT keempat flag false; backup demo-seed ikut diperbarui.
+- E2E browser :81: API publik /api/public/content — Supir/POS/PRT keempat flag false, 5 posisi kreatif true. Supir: wizard Data Diri → Pengalaman (portofolio & sosial HILANG) → Info Kehadiran → Berkas (CV & intro HILANG, 3 customDocs tetap) → Pratinjau (baris CV/intro/portofolio/sosial tidak ada) → kirim sukses LM-RTZF0O (dibersihkan beserta file-nya). Video Editor (kreatif, requirePortfolio=true): portofolio/sosial tampil di langkah Pengalaman, validasi "Portofolio atau sosial wajib" tetap bekerja, CV/intro tampil di Berkas. Edge case: posisi uji REMOTE dengan keempat slot disembunyikan & tanpa customDocs — langkah Berkas otomatis dilewati (Data Diri → Pengalaman → Pratinjau), posisi uji dihapus. Admin: section Slot Opsional tampil utk Supir (4 switch off) & Video Editor (on); roundtrip UI: Unggah Perkenalan ON → Simpan → DB true → OFF → Simpan → DB false.
+- bun run lint 0 error; tsc: 14 error src/ semuanya pre-existing (track-auth/telegram-bot/home-view, tak tersentuh); mobile 390px tanpa overflow; console & dev.log bersih; main == origin/main.
+
+Stage Summary:
+- NR-22 selesai: 4 slot opsional wizard klasik kini bisa disembunyikan per posisi lewat admin (Kelola Posisi → Penerimaan → Berkas Wajib → "Slot Opsional Formulir"). Supir Armada Operasional, Pembantu Operasional Studio, dan Pembantu Rumah Tangga kini tanpa CV/intro/portofolio/sosmed; posisi kreatif tidak berubah. Bidang yang diwajibkan selalu tampil; langkah Berkas kosong otomatis terlewati.
+- File berubah: prisma/schema.prisma, src/lib/{types,position-input,seed,defaults}.ts, src/components/landing/apply-wizard.tsx, src/components/admin/position-settings-pages.tsx, src/app/api/admin/positions/route.ts, src/app/api/admin/positions/[id]/duplicate/route.ts (+.zscripts/set-hide-fields.ts, test-sanitize.ts, cleanup-app2.ts).
