@@ -2156,6 +2156,14 @@ export function ApplyWizard({
               value={selectedPosition?.title ?? ""}
               fallback={t.apply.summary.notChosen}
             />
+            {/* NR-24 — ekspektasi gaji hanya bila kolom tampil & terisi */}
+            {showExpectedSalaryField && expectedSalaryNumber > 0 ? (
+              <PreviewRow
+                label={t.apply.salary.previewLabel}
+                value={expectedSalaryFormatted}
+                fallback={t.apply.preview.notFilled}
+              />
+            ) : null}
             {source ? (
               <PreviewRow
                 label={t.apply.fields.source}
@@ -2294,6 +2302,12 @@ export function ApplyWizard({
       // menyimpan maksimal 300 karakter untuk analitik sumber lamaran.
       if (typeof document !== "undefined" && document.referrer) {
         fd.append("referrer", document.referrer.slice(0, 300));
+      }
+      // NR-24 — ekspektasi gaji bulanan (opsional): dikirim hanya bila kolom
+      // tampil & terisi (>0). Kosong/tersembunyi = tanpa field — server
+      // mengabaikan nilai non-valid, jadi lebih aman tidak mengirim sama sekali.
+      if (showExpectedSalaryField && expectedSalaryNumber > 0) {
+        fd.append("expectedSalary", String(expectedSalaryNumber));
       }
       if (cvFile) fd.append("cvFile", cvFile);
       if (introFile) fd.append("introFile", introFile);
@@ -3695,6 +3709,40 @@ export function ApplyWizard({
               </p>
             </div>
 
+            {/* NR-24 — ekspektasi gaji (opsional) — di atas kartu pratinjau;
+                hanya tampil bila posisi tidak menyembunyikannya. Selalu
+                opsional: tidak masuk validasi langkah apa pun. */}
+            {showExpectedSalaryField ? (
+              <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-4">
+                <Label htmlFor="apply-expected-salary">
+                  {t.apply.salary.label}
+                </Label>
+                <div className="relative">
+                  <span
+                    className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground"
+                    aria-hidden="true"
+                  >
+                    Rp
+                  </span>
+                  <Input
+                    id="apply-expected-salary"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={expectedSalaryInput}
+                    onChange={(event) =>
+                      setExpectedSalaryInput(sanitizeSalaryInput(event.target.value))
+                    }
+                    placeholder="3.500.000"
+                    className="h-11 pl-10"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t.apply.salary.help}
+                </p>
+              </div>
+            ) : null}
+
             {/* Mode klasik: kartu Data Diri (mode skema memakai kartu per bagian) */}
             {!schema ? (
             <PreviewSection
@@ -3722,6 +3770,14 @@ export function ApplyWizard({
                 value={selectedPosition?.title ?? ""}
                 fallback={t.apply.summary.notChosen}
               />
+              {/* NR-24 — ekspektasi gaji hanya bila kolom tampil & terisi */}
+              {showExpectedSalaryField && expectedSalaryNumber > 0 ? (
+                <PreviewRow
+                  label={t.apply.salary.previewLabel}
+                  value={expectedSalaryFormatted}
+                  fallback={t.apply.preview.notFilled}
+                />
+              ) : null}
               {/* Sumber pelamar — tampil hanya bila diisi */}
               {source ? (
                 <PreviewRow

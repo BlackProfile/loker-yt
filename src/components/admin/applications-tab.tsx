@@ -96,6 +96,7 @@ const SORT_OPTIONS = [
   { value: "newest", label: "Terbaru" },
   { value: "oldest", label: "Terlama" },
   { value: "aiScore", label: "Skor AI" },
+  { value: "followup", label: "Tindak lanjut terdekat" }, // NR-24 — sort=followup (snoozeUntil asc)
 ] as const;
 
 // Opsi filter rencana komuter (info kehadiran posisi on-site/hybrid).
@@ -127,6 +128,11 @@ export function ApplicationsTab() {
   const [tag, setTag] = useState<string>(ALL);
   const [talentPool, setTalentPool] = useState(false);
   const [hasInterview, setHasInterview] = useState(false);
+  // NR-24 — filter per pelamar server-side (gabung AND dengan filter lain):
+  // bintang personal admin login, snooze tindak lanjut, dan HOLD.
+  const [starredOnly, setStarredOnly] = useState(false);
+  const [followupOnly, setFollowupOnly] = useState(false);
+  const [holdOnly, setHoldOnly] = useState(false);
   // Filter arsip (client-side memakai field archivedAt): Semua / Aktif / Diarsip.
   const [archiveFilter, setArchiveFilter] = useState<string>("ACTIVE");
   // Filter info kehadiran (client-side, posisi on-site/hybrid): rencana komuter
@@ -206,6 +212,9 @@ export function ApplicationsTab() {
       tag: tag !== ALL ? tag : undefined,
       talentPool: talentPool ? "1" : undefined,
       hasInterview: hasInterview ? "1" : undefined,
+      starred: starredOnly ? "1" : undefined, // NR-24 — milik admin login (server pakai session)
+      followup: followupOnly ? "1" : undefined, // NR-24 — snoozeUntil != null
+      hold: holdOnly ? "1" : undefined, // NR-24 — holdReason != null
     });
   }, [
     q,
@@ -218,6 +227,9 @@ export function ApplicationsTab() {
     tag,
     talentPool,
     hasInterview,
+    starredOnly,
+    followupOnly,
+    holdOnly,
   ]);
 
   const hasActiveFilter =
@@ -230,6 +242,9 @@ export function ApplicationsTab() {
     tag !== ALL ||
     talentPool ||
     hasInterview ||
+    starredOnly ||
+    followupOnly ||
+    holdOnly ||
     archiveFilter !== "ACTIVE" ||
     komuterFilter !== ALL ||
     domisiliFilter.trim() !== "";
@@ -360,6 +375,9 @@ export function ApplicationsTab() {
     setTag(ALL);
     setTalentPool(false);
     setHasInterview(false);
+    setStarredOnly(false); // NR-24 — kembalikan ke default saat reset
+    setFollowupOnly(false);
+    setHoldOnly(false);
     setArchiveFilter("ACTIVE");
     setKomuterFilter(ALL);
     setDomisiliFilter("");
