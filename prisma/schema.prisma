@@ -78,6 +78,12 @@ model Position {
   requireCv    Boolean       @default(false)
   requireIntro Boolean       @default(false)
   requirePortfolio Boolean   @default(false)
+  // NR-22 — sembunyikan slot opsional di wizard klasik (mis. supir/pembantu
+  // tidak perlu CV/intro/portofolio/sosmed). Bidang wajib selalu menang.
+  showCvField        Boolean @default(true) // tampilkan unggah CV (opsional)
+  showIntroField     Boolean @default(true) // tampilkan unggah audio/video perkenalan (opsional)
+  showPortfolioField Boolean @default(true) // tampilkan input link portofolio
+  showSocialField    Boolean @default(true) // tampilkan input link sosial media
   customDocs   String        @default("[]") // JSON string[] label dokumen wajib tambahan dari pelamar
   maxApplicants Int? // kuota pelamar; null = tanpa kuota
   applyOpen    Boolean       @default(true) // formulir lamaran posisi ini buka/tutup (dikendalikan per posisi)

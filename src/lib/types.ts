@@ -277,6 +277,11 @@ export type Position = {
   requireCv: boolean;
   requireIntro: boolean;
   requirePortfolio: boolean;
+  // NR-22 — slot opsional wizard klasik bisa disembunyikan per posisi
+  showCvField: boolean;
+  showIntroField: boolean;
+  showPortfolioField: boolean;
+  showSocialField: boolean;
   customDocs: string[]; // label dokumen wajib tambahan (bebas, mis. "KTP", "Ijazah")
   maxApplicants: number | null;
   applyOpen: boolean; // formulir lamaran posisi ini buka/tutup (setting per posisi)
