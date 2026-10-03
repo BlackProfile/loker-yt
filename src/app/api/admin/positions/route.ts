@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
 
         stages: f.stages ?? "[]",
         stageNotes: f.stageNotes ?? null,
+        stageWipLimits: f.stageWipLimits ?? null,
         aiCriteria: f.aiCriteria ?? null,
         autoShortlistScore: f.autoShortlistScore ?? null,
         autoShortlistStage: f.autoShortlistStage ?? null,

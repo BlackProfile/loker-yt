@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { pushNotification } from "@/lib/notify";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { emitWebhook } from "@/lib/webhooks";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
 
     const application = await db.application.findUnique({
       where: { trackingCode: code },
-      select: { id: true, name: true, status: true, positionId: true, position: { select: { title: true } } },
+      select: { id: true, name: true, status: true, positionId: true, trackingCode: true, position: { select: { title: true } } },
     });
     if (!application) {
       return NextResponse.json({ error: "Kode pelacakan tidak ditemukan." }, { status: 404 });
@@ -129,6 +130,20 @@ export async function POST(req: NextRequest) {
       body: `${application.name} memilih slot ${when} untuk posisi ${application.position?.title ?? "-"} (ronde ${created.round}).`,
       category: "INTERVIEW",
       applicationId: application.id,
+    });
+
+    // Webhook keluar: jadwal wawancara dibuat lewat pemilihan slot oleh pelamar.
+    // Link meeting / alamat TIDAK dikirim ke endpoint eksternal (hanya mode + platform).
+    void emitWebhook("interview.scheduled", {
+      interviewId: created.id,
+      applicationId: application.id,
+      trackingCode: application.trackingCode ?? null,
+      positionTitle: application.position?.title ?? null,
+      scheduledAt: slot.scheduledAt.toISOString(),
+      mode: created.mode,
+      platform: created.platform,
+      actor: "Pelamar",
+      createdAt: created.createdAt.toISOString(),
     });
 
     void emitRealtime(REALTIME_EVENTS.applications, REALTIME_EVENTS.interviews);

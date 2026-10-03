@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -26,9 +27,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { History, Loader2, RefreshCw, ShieldCheck, UserSearch } from "lucide-react";
+import { Download, History, Loader2, RefreshCw, ShieldCheck, UserSearch } from "lucide-react";
 import type { Application, LogEntry } from "@/lib/types";
-import { apiGet } from "./api";
+import { apiGet, buildQuery } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import {
@@ -266,13 +267,90 @@ function LoginAuditCard() {
 }
 
 // Tab Log: riwayat aktivitas sistem, AI, dan admin.
+
+// Prefix aksi yang dikenal untuk filter dropdown (NR-19-c). Nilai berakhalan "_"
+// dicocokkan sebagai prefix di server (mis. OFFER_ -> OFFER_SENT, OFFER_REMIND, ...).
+const ACTION_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: "STATUS_CHANGE", label: "STATUS_CHANGE — Ubah Status" },
+  { value: "OFFER_", label: "OFFER_ — Semua aksi offer" },
+  { value: "INTERVIEW_", label: "INTERVIEW_ — Semua aksi wawancara" },
+  { value: "APPLICATION_", label: "APPLICATION_ — Semua aksi lamaran" },
+  { value: "QUESTION_ANSWERED", label: "QUESTION_ANSWERED — Jawaban pertanyaan" },
+  { value: "WEEKLY_DIGEST", label: "WEEKLY_DIGEST — Ringkasan mingguan" },
+  { value: "DAILY_BACKUP", label: "DAILY_BACKUP — Backup harian" },
+  { value: "MAINTENANCE", label: "MAINTENANCE — Pemeliharaan" },
+  { value: "LOGIN_", label: "LOGIN_ — Semua aksi login" },
+];
+
 export function LogsTab() {
-  const { reportError } = useAdminSession();
+  const { reportError, role } = useAdminSession();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Application | null>(null);
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
   const appCacheRef = useRef<Map<string, Application>>(new Map());
+
+  // ---- Filter lanjutan (NR-19-c Tugas 2c) ----
+  // applicationId tidak dipakai UI (perilaku lama API dipertahankan di server).
+  const [actionFilter, setActionFilter] = useState("ALL");
+  const [actorInput, setActorInput] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [queryInput, setQueryInput] = useState("");
+  // Nilai ter-debounce (400 ms) untuk input teks agar tidak fetch per ketukan.
+  const [actorDebounced, setActorDebounced] = useState("");
+  const [queryDebounced, setQueryDebounced] = useState("");
+  const debounceTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (debounceTimerRef.current !== null) window.clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = window.setTimeout(() => {
+      setActorDebounced(actorInput.trim().slice(0, 80));
+      setQueryDebounced(queryInput.trim().slice(0, 80));
+    }, 400);
+    return () => {
+      if (debounceTimerRef.current !== null) window.clearTimeout(debounceTimerRef.current);
+    };
+  }, [actorInput, queryInput]);
+
+  // ISO dari input date: "2026-02-10" -> rentang lokal penuh hari tersebut.
+  const fromIso = fromDate ? new Date(`${fromDate}T00:00:00`).toISOString() : undefined;
+  const toIso = toDate ? new Date(`${toDate}T23:59:59.999`).toISOString() : undefined;
+
+  // Ref agar refresh senyap (realtime) selalu memakai filter terbaru.
+  const filtersRef = useRef({
+    action: "ALL",
+    actor: "",
+    fromIso: undefined as string | undefined,
+    toIso: undefined as string | undefined,
+    q: "",
+  });
+  useEffect(() => {
+    filtersRef.current = {
+      action: actionFilter,
+      actor: actorDebounced,
+      fromIso,
+      toIso,
+      q: queryDebounced,
+    };
+  }, [actionFilter, actorDebounced, fromIso, toIso, queryDebounced]);
+
+  function buildLogsQuery(f: {
+    action: string;
+    actor: string;
+    fromIso?: string;
+    toIso?: string;
+    q: string;
+  }): string {
+    // buildQuery melewatkan "" dan "ALL" -> filter kosong tidak dikirim.
+    return buildQuery({
+      limit: LIMIT,
+      action: f.action === "ALL" ? undefined : f.action,
+      actor: f.actor,
+      from: f.fromIso,
+      to: f.toIso,
+      q: f.q,
+    });
+  }
 
   // silent: refresh senyap (dipakai event realtime) — log lama tetap tampil
   // sampai data baru siap, tanpa skeleton ulang.
@@ -280,7 +358,7 @@ export function LogsTab() {
     if (!silent) setLoading(true);
     try {
       const data = await apiGet<LogEntry[]>(
-        `/api/admin/logs?limit=${LIMIT}`
+        `/api/admin/logs${buildLogsQuery(filtersRef.current)}`
       );
       setLogs(data);
     } catch (err) {
@@ -290,9 +368,25 @@ export function LogsTab() {
     }
   }, [reportError]);
 
+  // Fetch saat mount dan setiap kali filter berubah (teks sudah ter-debounce).
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, actionFilter, actorDebounced, queryDebounced, fromIso, toIso]);
+
+  // Tombol Unduh CSV: buka endpoint export dengan filter aktif (window.open
+  // mengirim cookie sesi; endpoint membatasi OWNER/HR).
+  const canExport = role === "OWNER" || role === "HR";
+  function handleDownloadCsv() {
+    const { action, actor, fromIso: fIso, toIso: tIso, q } = filtersRef.current;
+    const query = buildQuery({
+      action: action === "ALL" ? undefined : action,
+      actor,
+      from: fIso,
+      to: tIso,
+      q,
+    });
+    window.open(`/api/admin/logs/export${query}`, "_blank", "noopener");
+  }
 
   // Realtime: aktivitas lamaran baru/perubahan status langsung tercatat.
   useLiveRefresh("applications:changed", () => {
@@ -337,7 +431,7 @@ export function LogsTab() {
       <LoginAuditCard />
 
       <Card className="gap-0 rounded-2xl py-6">
-        <CardHeader className="flex-row items-center justify-between px-6">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 px-6">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <History className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
@@ -347,22 +441,91 @@ export function LogsTab() {
               100 aktivitas terakhir dari sistem, AI, dan admin.
             </CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-10 active:scale-[0.99] sm:h-9"
-            onClick={() => void load()}
-            disabled={loading}
-            aria-label="Segarkan log aktivitas"
-          >
-            <RefreshCw
-              className={`size-4 ${loading ? "animate-spin" : ""}`}
-              aria-hidden="true"
-            />
-            Segarkan
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {canExport ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 active:scale-[0.99] sm:h-9"
+                onClick={handleDownloadCsv}
+                aria-label="Unduh CSV log aktivitas"
+              >
+                <Download className="size-4" aria-hidden="true" />
+                Unduh CSV
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 active:scale-[0.99] sm:h-9"
+              onClick={() => void load()}
+              disabled={loading}
+              aria-label="Segarkan log aktivitas"
+            >
+              <RefreshCw
+                className={`size-4 ${loading ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              Segarkan
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="px-6">
+          {/* Filter lanjutan (NR-19-c): aksi, aktor, periode, dan pencarian detail.
+              Semua filter diterapkan ke fetch daftar dan tombol Unduh CSV. */}
+          <div className="mb-4 flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+            <Select value={actionFilter} onValueChange={setActionFilter}>
+              <SelectTrigger
+                className="h-11 w-full md:h-10 md:w-64"
+                aria-label="Filter aksi log"
+              >
+                <SelectValue placeholder="Semua aksi" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Semua aksi</SelectItem>
+                {ACTION_FILTER_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="text"
+              value={actorInput}
+              onChange={(e) => setActorInput(e.target.value)}
+              placeholder="Aktor..."
+              maxLength={80}
+              className="h-11 w-full md:h-10 md:w-40"
+              aria-label="Filter aktor"
+            />
+            <div className="flex gap-2">
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="h-11 w-full md:h-10 md:w-36"
+                aria-label="Dari tanggal"
+              />
+              <Input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="h-11 w-full md:h-10 md:w-36"
+                aria-label="Sampai tanggal"
+              />
+            </div>
+            <Input
+              type="search"
+              value={queryInput}
+              onChange={(e) => setQueryInput(e.target.value)}
+              placeholder="Cari di detail... (400ms)"
+              maxLength={80}
+              className="h-11 w-full md:h-10 md:flex-1"
+              aria-label="Pencarian detail"
+            />
+          </div>
+
           {/* Skeleton hanya saat pemuatan pertama; refresh senyap mempertahankan
               tabel lama sampai data baru siap. */}
           {loading && logs.length === 0 ? (

@@ -1,11 +1,13 @@
 // GET /api/admin/action-items — daftar hal yang butuh tindakan admin (semua role):
 // lamaran belum ditinjau > 3 hari, permintaan reschedule, offer menunggu jawaban
 // (dengan urgensi deadline), wawancara selesai tanpa skor, onboarding belum lengkap,
-// dan lamaran duplikat yang perlu dicek.
+// lamaran duplikat yang perlu dicek, dan tahap pipeline yang melebihi batas
+// kapasitas (wipOver — NR-19).
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { parseOnboardingDocs } from "@/lib/seed";
+import { findWipOverages, parseStageWipLimits } from "@/lib/wip-limits";
 import type { ActionItemsResponse } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +27,25 @@ export type ExtendedActionItemsResponse = ActionItemsResponse & {
   staleNewApplications: SimpleApplicationItem[];
   duplicateApplications: SimpleApplicationItem[];
 };
+
+const BUILTIN_FINAL_STAGES = new Set(["ACCEPTED", "REJECTED"]);
+
+/** Tahap final untuk satu posisi: ACCEPTED/REJECTED bawaan + tahap kustom berkategori final. */
+function finalStagesOfPosition(categoriesRaw: string): Set<string> {
+  const final = new Set<string>(BUILTIN_FINAL_STAGES);
+  try {
+    const categories: unknown = JSON.parse(categoriesRaw || "{}");
+    if (categories && typeof categories === "object" && !Array.isArray(categories)) {
+      for (const [stage, category] of Object.entries(categories as Record<string, unknown>)) {
+        if (category === "ACCEPTED" || category === "REJECTED") final.add(stage);
+      }
+    }
+  } catch {
+    // JSON kategori rusak — pakai final bawaan saja.
+  }
+  // Tahap kustom tanpa kategori dianggap non-final (bisa jadi tahap kerja aktif).
+  return final;
+}
 
 export async function GET() {
   try {
@@ -140,6 +161,58 @@ export async function GET() {
         createdAt: row.createdAt.toISOString(),
       })),
     };
+
+    const wipOver: NonNullable<ActionItemsResponse["wipOver"]> = [];
+
+    // NR-19 — Tahap yang melebihi batas kapasitas (WIP limit) per posisi.
+    // Hitungan mengikuti papan kanban: lamaran yang tidak di tong sampah dan
+    // berada pada tahap non-final (bukan ACCEPTED/REJECTED bawaan maupun tahap
+    // kustom berkategori final).
+    try {
+      const wipPositions = await db.position.findMany({
+        where: { stageWipLimits: { not: null } },
+        select: {
+          id: true,
+          title: true,
+          stageCategories: true,
+          stageWipLimits: true,
+        },
+      });
+      if (wipPositions.length > 0) {
+        const grouped = await db.application.groupBy({
+          by: ["positionId", "status"],
+          where: {
+            positionId: { in: wipPositions.map((p) => p.id) },
+            deletedAt: null,
+          },
+          _count: { _all: true },
+        });
+        for (const position of wipPositions) {
+          const limits = parseStageWipLimits(position.stageWipLimits);
+          if (!limits) continue;
+          const finalStages = finalStagesOfPosition(position.stageCategories);
+          const stageCounts: Record<string, number> = {};
+          for (const row of grouped) {
+            if (row.positionId !== position.id) continue;
+            if (finalStages.has(row.status)) continue;
+            stageCounts[row.status] = (stageCounts[row.status] ?? 0) + row._count._all;
+          }
+          for (const overage of findWipOverages(limits, stageCounts)) {
+            wipOver.push({
+              positionId: position.id,
+              positionTitle: position.title,
+              stage: overage.stage,
+              count: overage.count,
+              limit: overage.limit,
+            });
+          }
+        }
+      }
+    } catch (wipError) {
+      // Peringatan kapasitas bersifat pelengkap — jangan gagalkan endpoint.
+      console.error("[GET /api/admin/action-items] wipOver", wipError);
+    }
+    body.wipOver = wipOver;
 
     return NextResponse.json(body);
   } catch (error) {

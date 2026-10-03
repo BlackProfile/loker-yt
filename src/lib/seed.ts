@@ -8,6 +8,7 @@ import type {
 } from "@prisma/client";
 import { db } from "@/lib/db";
 import { parsePositionStageNotes } from "@/lib/stage-notes";
+import { parseStageWipLimits } from "@/lib/wip-limits";
 import {
   DEFAULT_ADMIN_PASSWORD,
   DEFAULT_POSITIONS,
@@ -375,6 +376,8 @@ export function serializePosition(record: PositionRecordModel): Position {
     stageCategories: parseStageCategories(record.stageCategories),
     // NR-15 — override penjelasan tahap untuk halaman Cek Status
     stageNotes: parsePositionStageNotes(record.stageNotes),
+    // NR-19 — batas kapasitas per tahap pipeline (WIP limit)
+    stageWipLimits: parseStageWipLimits(record.stageWipLimits),
     aiCriteria: record.aiCriteria,
     autoShortlistScore: record.autoShortlistScore,
     autoShortlistStage: record.autoShortlistStage,

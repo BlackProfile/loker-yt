@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertDialog,
@@ -30,6 +30,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,6 +44,8 @@ import {
   ArchiveRestore,
   Download,
   Eye,
+  FileSpreadsheet,
+  FileText,
   Inbox,
   LayoutGrid,
   Loader2,
@@ -632,16 +640,41 @@ export function ApplicationsTab() {
                 Kanban
               </Button>
             </div>
-            {/* Export CSV */}
-            <a
-              href={`/api/admin/applications/export${activeQuery}`}
-              download
-              className={cn(buttonVariants({ variant: "outline" }), "h-10 rounded-xl")}
-              aria-label="Ekspor daftar lamaran ke CSV"
-            >
-              <Download className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Export CSV</span>
-            </a>
+            {/* Ekspor: dropdown CSV / Excel XLSX (NR-19-b) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="h-10 rounded-xl"
+                  aria-label="Ekspor daftar lamaran"
+                >
+                  <Download className="size-4" aria-hidden="true" />
+                  <span className="hidden sm:inline">Ekspor</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem asChild>
+                  <a
+                    href={`/api/admin/applications/export${activeQuery}`}
+                    download
+                    aria-label="Unduh CSV"
+                  >
+                    <FileText className="size-4" aria-hidden="true" />
+                    Unduh CSV
+                  </a>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <a
+                    href={`/api/admin/applications/export${activeQuery}${activeQuery ? "&" : "?"}format=xlsx`}
+                    download
+                    aria-label="Unduh Excel (XLSX)"
+                  >
+                    <FileSpreadsheet className="size-4" aria-hidden="true" />
+                    Unduh Excel (XLSX)
+                  </a>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 

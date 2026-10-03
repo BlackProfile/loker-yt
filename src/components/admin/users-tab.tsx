@@ -30,6 +30,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -45,12 +51,16 @@ import {
   EyeOff,
   KeyRound,
   Loader2,
+  MailPlus,
+  MoreVertical,
   Pencil,
   Plus,
+  RefreshCw,
   ShieldCheck,
   ShieldOff,
   Smartphone,
   Trash2,
+  UserX,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -128,6 +138,19 @@ const EMPTY_FORM: UserForm = {
   isActive: true,
 };
 
+// Form undangan admin (NR-19): tanpa password — penerima mengatur sandinya sendiri.
+type InviteForm = {
+  name: string;
+  email: string;
+  role: Role;
+};
+
+const EMPTY_INVITE_FORM: InviteForm = {
+  name: "",
+  email: "",
+  role: "HR",
+};
+
 /** Detail user dari GET /api/admin/users/[id]: profil + scope posisi + status 2FA. */
 type AdminUserDetail = AdminUser & {
   totpEnabled: boolean;
@@ -182,6 +205,14 @@ export function UsersTab() {
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
   const [resetting, setResetting] = useState(false);
 
+  // Undangan admin (NR-19): kirim undangan / kirim ulang / batalkan
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteForm, setInviteForm] = useState<InviteForm>(EMPTY_INVITE_FORM);
+  const [inviteErrors, setInviteErrors] = useState<Partial<Record<"name" | "email", string>>>({});
+  const [inviteSaving, setInviteSaving] = useState(false);
+  const [inviteActionBusy, setInviteActionBusy] = useState(false);
+  const [cancelInviteTarget, setCancelInviteTarget] = useState<AdminUser | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -224,6 +255,12 @@ export function UsersTab() {
     setErrors({});
     setScopeDraft([]);
     setDialogOpen(true);
+  }
+
+  function openInvite() {
+    setInviteForm(EMPTY_INVITE_FORM);
+    setInviteErrors({});
+    setInviteOpen(true);
   }
 
   async function openEdit(user: AdminUser) {
@@ -329,6 +366,67 @@ export function UsersTab() {
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
+    }
+  }
+
+  /* ------------------- Undangan admin (NR-19) ------------------- */
+
+  async function submitInvite(): Promise<void> {
+    if (inviteSaving) return;
+    const next: typeof inviteErrors = {};
+    if (inviteForm.name.trim().length < 2) next.name = "Nama minimal 2 karakter.";
+    if (!inviteForm.email.trim() || !/^\S+@\S+\.\S+$/.test(inviteForm.email.trim())) {
+      next.email = "Email tidak valid.";
+    }
+    setInviteErrors(next);
+    if (Object.keys(next).length > 0) return;
+    setInviteSaving(true);
+    try {
+      await apiPost<AdminUser>("/api/admin/users", {
+        name: inviteForm.name.trim(),
+        email: inviteForm.email.trim(),
+        role: inviteForm.role,
+        invite: true,
+      });
+      toast.success("Undangan terkirim ke email");
+      setInviteOpen(false);
+      setInviteForm(EMPTY_INVITE_FORM);
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setInviteSaving(false);
+    }
+  }
+
+  async function handleResendInvite(user: AdminUser) {
+    if (inviteActionBusy) return;
+    setInviteActionBusy(true);
+    try {
+      await apiPatch<AdminUser>(`/api/admin/users/${user.id}`, { action: "resend-invite" });
+      toast.success(`Undangan dikirim ulang ke ${user.email}`);
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setInviteActionBusy(false);
+    }
+  }
+
+  async function handleCancelInvite() {
+    if (!cancelInviteTarget || inviteActionBusy) return;
+    setInviteActionBusy(true);
+    try {
+      await apiPatch<AdminUser>(`/api/admin/users/${cancelInviteTarget.id}`, {
+        action: "cancel-invite",
+      });
+      toast.success("Undangan dibatalkan");
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setInviteActionBusy(false);
+      setCancelInviteTarget(null);
     }
   }
 
@@ -582,10 +680,20 @@ export function UsersTab() {
               Admin panel dengan role Pemilik, HR, atau Pengamat.
             </CardDescription>
           </div>
-          <Button onClick={openCreate} className="h-11 active:scale-[0.99] sm:h-10">
-            <Plus className="size-4" aria-hidden="true" />
-            Tambah Pengguna
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={openInvite}
+              className="h-11 active:scale-[0.99] sm:h-10"
+            >
+              <MailPlus className="size-4" aria-hidden="true" />
+              Undang Admin
+            </Button>
+            <Button onClick={openCreate} className="h-11 active:scale-[0.99] sm:h-10">
+              <Plus className="size-4" aria-hidden="true" />
+              Tambah Pengguna
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="px-6">
           {loading ? (
@@ -624,6 +732,14 @@ export function UsersTab() {
                           className="border-zinc-200 bg-zinc-100 px-1.5 py-0 text-[10px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
                         >
                           Nonaktif
+                        </Badge>
+                      ) : null}
+                      {user.invitePending ? (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-200 bg-amber-100 px-1.5 py-0 text-[10px] text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                        >
+                          Undangan tertunda
                         </Badge>
                       ) : null}
                     </div>
@@ -666,6 +782,38 @@ export function UsersTab() {
                       >
                         <ShieldOff className="size-4" aria-hidden="true" />
                       </Button>
+                    ) : null}
+                    {user.invitePending ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-11 sm:size-9"
+                            aria-label={`Aksi undangan untuk ${user.name}`}
+                            title="Aksi undangan"
+                          >
+                            <MoreVertical className="size-4" aria-hidden="true" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                          <DropdownMenuItem
+                            disabled={inviteActionBusy}
+                            onClick={() => void handleResendInvite(user)}
+                          >
+                            <RefreshCw className="size-4" aria-hidden="true" />
+                            Kirim ulang undangan
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
+                            disabled={inviteActionBusy}
+                            onClick={() => setCancelInviteTarget(user)}
+                          >
+                            <UserX className="size-4" aria-hidden="true" />
+                            Batalkan undangan
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     ) : null}
                   </div>
                 </div>
@@ -1046,6 +1194,137 @@ export function UsersTab() {
               disabled={resetting}
             >
               {resetting ? "Mereset..." : "Ya, Reset 2FA"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog undang admin via email (NR-19) */}
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Undang Admin</DialogTitle>
+            <DialogDescription>
+              Kirim tautan aktivasi akun via email. Penerima mengatur password sendiri — tautan
+              berlaku 48 jam.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitInvite();
+            }}
+          >
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="u-invite-name">Nama *</Label>
+              <Input
+                id="u-invite-name"
+                value={inviteForm.name}
+                onChange={(e) => setInviteForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="mis. Rani Putri"
+                className="h-10"
+              />
+              {inviteErrors.name ? (
+                <p className="text-xs text-rose-600 dark:text-rose-400" role="alert">
+                  {inviteErrors.name}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="u-invite-email">Email *</Label>
+              <Input
+                id="u-invite-email"
+                type="email"
+                value={inviteForm.email}
+                onChange={(e) => setInviteForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="nama@lumina.id"
+                className="h-10"
+              />
+              {inviteErrors.email ? (
+                <p className="text-xs text-rose-600 dark:text-rose-400" role="alert">
+                  {inviteErrors.email}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Role</Label>
+              <Select
+                value={inviteForm.role}
+                onValueChange={(v) => setInviteForm((f) => ({ ...f, role: v as Role }))}
+              >
+                <SelectTrigger className="h-10 w-full" aria-label="Role pengguna yang diundang">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {ROLE_LABELS[r]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Akun dibuat dengan status aktif tanpa password — penerima mengaturnya lewat tautan
+                undangan.
+              </p>
+            </div>
+            <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
+          </form>
+          <DialogFooter className="gap-2 border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setInviteOpen(false)}
+              disabled={inviteSaving}
+              className="h-10"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={() => void submitInvite()}
+              disabled={inviteSaving}
+              className="h-10"
+            >
+              {inviteSaving ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Mengirim...
+                </>
+              ) : (
+                "Kirim Undangan"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Konfirmasi batalkan undangan (NR-19) */}
+      <AlertDialog
+        open={!!cancelInviteTarget}
+        onOpenChange={(open) => {
+          if (!open) setCancelInviteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Batalkan undangan ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cancelInviteTarget
+                ? `Tautan undangan untuk ${cancelInviteTarget.email} akan dinonaktifkan dan tidak dapat digunakan lagi. Anda dapat mengundang ulang kapan saja.`
+                : "Tindakan tidak bisa dibatalkan."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={inviteActionBusy}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleCancelInvite();
+              }}
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              disabled={inviteActionBusy}
+            >
+              {inviteActionBusy ? "Membatalkan..." : "Ya, Batalkan Undangan"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

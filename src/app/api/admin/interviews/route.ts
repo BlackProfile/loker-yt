@@ -10,6 +10,7 @@ import {
   serializeInterview,
 } from "@/lib/seed";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { emitWebhook } from "@/lib/webhooks";
 import type { Interview } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -162,6 +163,20 @@ export async function POST(req: NextRequest) {
         action: "INTERVIEW_SCHEDULED",
         detail: `Wawancara ronde ${created.round} dijadwalkan ${scheduledAt.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}`,
       },
+    });
+
+    // Webhook keluar: jadwal wawancara baru dibuat — fire-and-forget ke endpoint berlangganan.
+    // Link meeting / alamat TIDAK dikirim ke endpoint eksternal (hanya mode + platform).
+    void emitWebhook("interview.scheduled", {
+      interviewId: created.id,
+      applicationId,
+      trackingCode: application.trackingCode ?? null,
+      positionTitle: application.position?.title ?? null,
+      scheduledAt: scheduledAt.toISOString(),
+      mode,
+      platform,
+      actor: session.name,
+      createdAt: created.createdAt.toISOString(),
     });
 
     void emitRealtime(REALTIME_EVENTS.applications, REALTIME_EVENTS.interviews);

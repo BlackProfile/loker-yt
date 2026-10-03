@@ -30,6 +30,10 @@ model AdminUser {
   totpSecret        String? // secret TOTP (2FA) — null = belum diaktifkan
   totpEnabled       Boolean @default(false)
   assignedPositions String  @default("[]") // JSON string[] positionId — scope kandidat untuk HR (kosong = semua)
+
+  // Alur undangan admin (set sandi via tautan email)
+  inviteToken       String?  @unique // token undangan aktif — null = tidak ada undangan
+  inviteExpiresAt   DateTime? // kedaluwarsa undangan (48 jam sejak dibuat)
 }
 
 // Posisi lowongan yang dibuka — v3: fitur lengkap per lowongan
@@ -86,6 +90,7 @@ model Position {
   stages               String  @default("[]") // JSON string[]; [] = pipeline default (5 status bawaan)
   stageCategories      String  @default("{}") // JSON {"tahap kustom": "REVIEW"|"INTERVIEW"|"ACCEPTED"|"REJECTED"}
   stageNotes           String? // JSON {"tahap": "penjelasan untuk pelamar di halaman status"} — override teks bawaan
+  stageWipLimits       String? // JSON {"tahap": maxKandidat} — batas kapasitas per tahap pipeline (null = tanpa batas)
   aiCriteria           String? // kriteria AI khusus posisi (pelengkap prompt screening)
   autoShortlistScore   Int? // skor AI minimal untuk auto-shortlist
   autoShortlistStage   String? // tahap tujuan auto-shortlist (harus ada di stages posisi)

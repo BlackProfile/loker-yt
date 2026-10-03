@@ -7,6 +7,7 @@ import { getSession } from "@/lib/server-auth";
 import { APPLICATION_INCLUDE, serializeApplication } from "@/lib/seed";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { sendSystemEvent } from "@/lib/notify";
+import { emitWebhook } from "@/lib/webhooks";
 import { POSITION_TYPES } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -145,6 +146,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       applicationId: id,
       action: "OFFER_SENT",
     });
+
+    // Webhook keluar: offer PERTAMA dikirim ke pelamar — fire-and-forget.
+    // Hanya saat transisi pertama ke PENDING (belum pernah ada offer sebelumnya);
+    // edit/batal/kirim-ulang via PATCH tidak pernah memicu webhook ini.
+    // Gaji TIDAK dikirim ke endpoint eksternal — salary selalu null.
+    if (!existing.offerStatus) {
+      void emitWebhook("offer.sent", {
+        applicationId: id,
+        trackingCode: existing.trackingCode ?? null,
+        positionTitle: existing.position?.title ?? null,
+        type,
+        salary: null,
+        sentAt: (updated.offerSentAt ?? new Date()).toISOString(),
+        deadline: deadline.toISOString(),
+      });
+    }
 
     void emitRealtime(REALTIME_EVENTS.applications);
     return NextResponse.json({ application: serializeApplication(updated), message }, { status: 201 });

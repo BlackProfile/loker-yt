@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -27,16 +27,49 @@ import {
 } from "@/lib/stages";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { apiPost } from "./api";
+import { apiGet, apiPost } from "./api";
 import { formatRelative, initialsOf } from "./format";
 import { AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
+import { useLiveRefresh } from "./use-live-refresh";
 import { cn } from "@/lib/utils";
 
 const COLUMN_ID_PREFIX = "col-";
 
 // Set kosong bersama agar prop duplicateIds opsional tidak membuat Set baru tiap render.
 const EMPTY_SET: Set<string> = new Set();
+
+// ------------------ NR-19: batas kapasitas tahap (WIP limit) ------------------
+
+// Baris posisi minimal untuk memuat limits (API mengembalikan stageWipLimits terparse).
+type PositionLimitsRow = { id: string; stageWipLimits?: Record<string, number> | null };
+
+// Cache modul: limits per posisi dimuat sekali per sesi panel (segarkan saat event
+// positions:changed) — dipakai bila parent tidak memberikan prop stageWipLimits.
+let wipLimitsCache: Record<string, Record<string, number>> | null = null;
+
+/**
+ * Hitung pelampauan batas kapasitas satu kolom kanban: kelompokkan kartu kolom
+ * per posisi, lalu cek jumlah kartu terhadap limits tiap posisi terkait.
+ */
+function columnOverLimit(
+  column: StageKey,
+  columnApps: Application[],
+  limitsByPosition: Record<string, Record<string, number>>
+): { count: number; limit: number } | null {
+  const perPosition = new Map<string, number>();
+  for (const app of columnApps) {
+    if (!app.positionId) continue;
+    perPosition.set(app.positionId, (perPosition.get(app.positionId) ?? 0) + 1);
+  }
+  for (const [positionId, count] of perPosition) {
+    const limit = limitsByPosition[positionId]?.[column];
+    if (typeof limit === "number" && count > limit) {
+      return { count, limit };
+    }
+  }
+  return null;
+}
 
 /** Meta tampilan kolom; kolom "Lainnya" (tahap kustom agregat) memakai tampilan zinc khusus. */
 function columnMeta(column: StageKey): { label: string; dot: string; soft: string } {
@@ -207,6 +240,7 @@ function KanbanColumn({
   apps,
   canMutate,
   duplicateIds,
+  overLimit,
   onOpenDetail,
   onUpdated,
 }: {
@@ -215,6 +249,7 @@ function KanbanColumn({
   apps: Application[];
   canMutate: boolean;
   duplicateIds: Set<string>;
+  overLimit?: { count: number; limit: number } | null;
   onOpenDetail: (app: Application) => void;
   onUpdated?: (app: Application) => void;
 }) {
@@ -232,6 +267,14 @@ function KanbanColumn({
       <div className="flex items-center gap-2 border-b px-3 py-2.5">
         <span className={cn("size-2 rounded-full", meta.dot)} aria-hidden="true" />
         <p className="truncate text-sm font-semibold">{meta.label}</p>
+        {overLimit ? (
+          <Badge
+            className="shrink-0 border-rose-200 bg-rose-100 px-1.5 py-0 text-[10px] font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+            aria-label={`Tahap ${meta.label} melebihi batas kapasitas: ${overLimit.count} dari ${overLimit.limit}`}
+          >
+            Melebihi batas ({overLimit.count}/{overLimit.limit})
+          </Badge>
+        ) : null}
         <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-secondary-foreground">
           {apps.length}
         </span>
@@ -286,6 +329,7 @@ export function KanbanBoard({
   stages,
   hasPositionFilter,
   duplicateIds,
+  stageWipLimits,
   onMove,
   onOpenDetail,
   onUpdated,
@@ -295,6 +339,9 @@ export function KanbanBoard({
   stages: string[] | null | undefined;
   hasPositionFilter: boolean;
   duplicateIds?: Set<string>;
+  /** NR-19 — limits posisi terpilih dari parent (opsional). Tanpa prop ini,
+   *  limits dimuat sendiri dari /api/admin/positions (cache modul). */
+  stageWipLimits?: Record<string, number> | null;
   onMove: (id: string, status: StageKey) => void;
   onOpenDetail: (app: Application) => void;
   onUpdated?: (app: Application) => void;
@@ -339,6 +386,49 @@ export function KanbanBoard({
   }
 
   const justDraggedRef = useRef(false);
+
+  // NR-19 — sumber limits: props (posisi terpilih) atau muat sendiri + cache modul.
+  const [fetchedLimits, setFetchedLimits] = useState<Record<string, Record<string, number>>>(
+    () => wipLimitsCache ?? {}
+  );
+
+  const loadLimits = useCallback(() => {
+    if (stageWipLimits !== undefined) return; // parent sudah memberi limits
+    apiGet<PositionLimitsRow[]>("/api/admin/positions")
+      .then((rows) => {
+        const map: Record<string, Record<string, number>> = {};
+        for (const row of rows) {
+          if (row.stageWipLimits) map[row.id] = row.stageWipLimits;
+        }
+        wipLimitsCache = map;
+        setFetchedLimits(map);
+      })
+      .catch(() => {
+        // Badge kapasitas pelengkap — biarkan data lama/kosong saat gagal.
+      });
+  }, [stageWipLimits]);
+
+  useEffect(() => {
+    loadLimits();
+  }, [loadLimits]);
+
+  // Posisi berubah (editor batas kapasitas disimpan) -> segarkan limits.
+  useLiveRefresh("positions:changed", loadLimits);
+
+  const limitsByPosition: Record<string, Record<string, number>> = useMemo(() => {
+    if (stageWipLimits !== undefined) {
+      // Prop berlaku untuk seluruh kolom (konteks satu posisi terpilih) — petakan
+      // berdasarkan positionId lamaran yang tampil di papan; null = tanpa batas.
+      const map: Record<string, Record<string, number>> = {};
+      if (stageWipLimits) {
+        for (const app of apps) {
+          if (app.positionId) map[app.positionId] = stageWipLimits;
+        }
+      }
+      return map;
+    }
+    return fetchedLimits;
+  }, [stageWipLimits, apps, fetchedLimits]);
 
   function handleDragStart(_event: DragStartEvent) {
     justDraggedRef.current = true;
@@ -427,6 +517,7 @@ export function KanbanBoard({
               apps={columnApps}
               canMutate={canMutate}
               duplicateIds={duplicateIds ?? EMPTY_SET}
+              overLimit={columnOverLimit(column, columnApps, limitsByPosition)}
               onOpenDetail={(app) => {
                 if (justDraggedRef.current) return;
                 onOpenDetail(app);

@@ -1,10 +1,15 @@
 // GET  /api/admin/users — daftar semua pengguna admin (OWNER saja).
 // POST /api/admin/users — buat pengguna admin baru (OWNER saja).
+//      Mode undangan (NR-19): body {name, email, role, invite: true} — akun dibuat tanpa
+//      sandi dari admin; pelanggan menerima email berisi tautan 48 jam untuk mengatur sandi
+//      sendiri via /api/public/admin-invite/accept. Token TIDAK pernah dikirim balik ke klien.
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { getSession, hashPassword } from "@/lib/server-auth";
+import { queueEmail } from "@/lib/notify";
 import { serializeAdminUser } from "@/lib/seed";
-import { ROLES } from "@/lib/types";
+import { ROLES, type AdminUser } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -12,12 +17,29 @@ const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
 const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const INVITE_TTL_MS = 48 * 60 * 60 * 1000; // tautan undangan berlaku 48 jam
 
-async function requireOwner(): Promise<{ error: NextResponse | null; session: null }> {
+async function requireOwner(): Promise<{
+  error: NextResponse | null;
+  session: AdminSessionLocal | null;
+}> {
   const session = await getSession();
   if (!session) return { error: NextResponse.json(UNAUTHORIZED, { status: 401 }), session: null };
   if (session.role !== "OWNER") return { error: NextResponse.json(FORBIDDEN, { status: 403 }), session: null };
-  return { error: null, session: null };
+  return { error: null, session };
+}
+
+type AdminSessionLocal = NonNullable<Awaited<ReturnType<typeof getSession>>>;
+
+type AdminUserRecord = Awaited<ReturnType<typeof db.adminUser.findMany>>[number];
+
+/** Tambahkan status undangan ke hasil serializeAdminUser — TANPA membocorkan token. */
+function withInviteFields(user: AdminUserRecord): AdminUser {
+  return {
+    ...serializeAdminUser(user),
+    invitePending: !!user.inviteToken && !!user.inviteExpiresAt && user.inviteExpiresAt.getTime() > Date.now(),
+    inviteExpiresAt: user.inviteExpiresAt ? user.inviteExpiresAt.toISOString() : null,
+  };
 }
 
 export async function GET() {
@@ -26,7 +48,7 @@ export async function GET() {
     if (guard.error) return guard.error;
 
     const users = await db.adminUser.findMany({ orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
-    return NextResponse.json(users.map(serializeAdminUser));
+    return NextResponse.json(users.map(withInviteFields));
   } catch (error) {
     console.error("[GET /api/admin/users]", error);
     return NextResponse.json({ error: "Gagal memuat daftar pengguna. Coba lagi nanti." }, { status: 500 });
@@ -37,6 +59,7 @@ export async function POST(req: NextRequest) {
   try {
     const guard = await requireOwner();
     if (guard.error) return guard.error;
+    const session = guard.session!;
 
     const body: unknown = await req.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -48,6 +71,7 @@ export async function POST(req: NextRequest) {
     const email = typeof data.email === "string" ? data.email.trim() : "";
     const password = typeof data.password === "string" ? data.password : "";
     const role = typeof data.role === "string" ? data.role.trim() : "";
+    const invite = data.invite === true;
 
     if (name.length < 2) {
       return NextResponse.json({ error: "Nama minimal 2 karakter." }, { status: 400 });
@@ -55,7 +79,8 @@ export async function POST(req: NextRequest) {
     if (!EMAIL_REGEX.test(email)) {
       return NextResponse.json({ error: "Format email tidak valid." }, { status: 400 });
     }
-    if (password.length < 6) {
+    // Mode undangan tidak butuh password dari admin — penerima mengaturnya sendiri.
+    if (!invite && password.length < 6) {
       return NextResponse.json({ error: "Password minimal 6 karakter." }, { status: 400 });
     }
     if (!(ROLES as string[]).includes(role)) {
@@ -68,11 +93,67 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Email sudah terdaftar." }, { status: 400 });
     }
 
+    if (!invite) {
+      const created = await db.adminUser.create({
+        data: { name, email, passwordHash: hashPassword(password), role, isActive: true },
+      });
+      return NextResponse.json(withInviteFields(created), { status: 201 });
+    }
+
+    // ---------------- Mode undangan (NR-19) ----------------
+    // passwordHash diisi hash dari token acak (tidak dipakai login langsung —
+    // akan ditimpa saat penerima mengatur sandinya via tautan undangan).
+    const inviteToken = randomBytes(24).toString("hex");
+    const placeholderSecret = randomBytes(32).toString("hex");
+    const inviteExpiresAt = new Date(Date.now() + INVITE_TTL_MS);
+
     const created = await db.adminUser.create({
-      data: { name, email, passwordHash: hashPassword(password), role, isActive: true },
+      data: {
+        name,
+        email,
+        role,
+        isActive: true,
+        passwordHash: hashPassword(placeholderSecret),
+        inviteToken,
+        inviteExpiresAt,
+      },
     });
 
-    return NextResponse.json(serializeAdminUser(created), { status: 201 });
+    const inviteUrl = `${req.nextUrl.origin}/#admin/invite?token=${inviteToken}`;
+    const roleLabel = role === "OWNER" ? "Pemilik" : role === "HR" ? "HR" : "Pengamat";
+
+    await queueEmail({
+      toEmail: email,
+      subject: "Undangan Admin Lumina Studio",
+      body: [
+        `Halo ${name},`,
+        "",
+        `Anda diundang menjadi admin Lumina Studio dengan role ${roleLabel}.`,
+        "Untuk mengaktifkan akun Anda, buka tautan berikut lalu atur password pilihan Anda:",
+        "",
+        inviteUrl,
+        "",
+        "Ketentuan:",
+        "- Tautan berlaku 48 jam sejak email ini dikirim.",
+        "- Setelah password diatur, Anda dapat langsung masuk ke Panel Admin.",
+        "- Bila Anda tidak merasa mengharapkan undangan ini, abaikan email ini.",
+        "",
+        "Salam hangat,",
+        `Tim Lumina Studio (diundang oleh ${session.name})`,
+      ].join("\n"),
+      kind: "INVITE",
+    });
+
+    await db.activityLog.create({
+      data: {
+        actor: session.name,
+        action: "USER_INVITED",
+        detail: `Undangan admin dikirim ke ${email} (role ${roleLabel}) — tautan berlaku 48 jam`,
+      },
+    });
+
+    // Respons TIDAK menyertakan inviteToken — hanya status menunggu + kedaluwarsa.
+    return NextResponse.json(withInviteFields(created), { status: 201 });
   } catch (error) {
     console.error("[POST /api/admin/users]", error);
     return NextResponse.json({ error: "Gagal membuat pengguna. Coba lagi nanti." }, { status: 500 });

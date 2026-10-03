@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2, Lock } from "lucide-react";
+import { Eye, EyeOff, Loader2, Lock, MailPlus } from "lucide-react";
 import { toast } from "sonner";
 import type { AdminSession } from "@/lib/types";
 import { ApiError, apiPost } from "./api";
@@ -22,6 +22,18 @@ const DEMO_ACCOUNTS = [
   { role: "HR", email: "hr@lumina.id", password: "admin123" },
   { role: "Pengamat", email: "viewer@lumina.id", password: "admin123" },
 ] as const;
+
+/** Baca token undangan dari hash URL: "#admin/invite?token=..." (NR-19). */
+function readInviteTokenFromHash(): string | null {
+  if (typeof window === "undefined") return null;
+  const hash = window.location.hash;
+  if (!hash.startsWith("#admin/invite")) return null;
+  const queryIndex = hash.indexOf("?");
+  if (queryIndex < 0) return null;
+  const token = new URLSearchParams(hash.slice(queryIndex + 1)).get("token");
+  const clean = token?.trim() ?? "";
+  return clean ? clean.slice(0, 128) : null;
+}
 
 export function LoginCard({
   onSuccess,
@@ -37,6 +49,67 @@ export function LoginCard({
   // 2FA: muncul setelah server membalas 401 { error: "KODE_2FA" }.
   const [needsTotp, setNeedsTotp] = useState(false);
   const [totpCode, setTotpCode] = useState("");
+
+  // NR-19 — mode penerimaan undangan admin (hash "#admin/invite?token=...").
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [inviteName, setInviteName] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
+  const [inviteConfirm, setInviteConfirm] = useState("");
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+
+  // Hash dibaca di sisi klien saat mount (hash tidak dikirim ke server).
+  useEffect(() => {
+    setInviteToken(readInviteTokenFromHash());
+  }, []);
+
+  /** Kembali ke mode login & bersihkan hash undangan menjadi "#admin". */
+  function exitInviteMode() {
+    history.replaceState(null, "", "#admin");
+    setInviteToken(null);
+    setInviteName("");
+    setInvitePassword("");
+    setInviteConfirm("");
+    setInviteError(null);
+  }
+
+  async function handleInviteAccept(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (inviteLoading || !inviteToken) return;
+    setInviteError(null);
+    if (invitePassword.length < 8) {
+      setInviteError("Password minimal 8 karakter.");
+      return;
+    }
+    if (invitePassword !== inviteConfirm) {
+      setInviteError("Konfirmasi password tidak sama dengan password baru.");
+      return;
+    }
+    setInviteLoading(true);
+    try {
+      await apiPost<{ ok: boolean }>("/api/public/admin-invite/accept", {
+        token: inviteToken,
+        password: invitePassword,
+        ...(inviteName.trim() ? { name: inviteName.trim() } : {}),
+      });
+      toast.success("Akun aktif. Silakan masuk.");
+      exitInviteMode();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setInviteError(
+          err.status === 404
+            ? "Tautan undangan tidak valid atau sudah kedaluwarsa."
+            : err.message
+        );
+      } else if (err instanceof Error) {
+        setInviteError(err.message);
+      } else {
+        setInviteError("Terjadi kesalahan. Coba lagi.");
+      }
+    } finally {
+      setInviteLoading(false);
+    }
+  }
 
   function handleLoginError(err: unknown) {
     if (err instanceof ApiError) {
@@ -106,6 +179,115 @@ export function LoginCard({
     } finally {
       setDemoRole(null);
     }
+  }
+
+  // ---------------- Mode penerimaan undangan (NR-19) ----------------
+  // Email TIDAK dikirim dalam token — akun ditemukan lewat token undangan.
+  if (inviteToken) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-background">
+        <Reveal slideX={0} slideY={16} duration={0.35} className="w-full max-w-sm">
+          <Card className="w-full rounded-2xl p-8 shadow-sm">
+            <CardHeader className="items-center px-0 text-center">
+              <div className="mx-auto mb-2 flex size-14 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950">
+                <MailPlus className="size-6 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+              </div>
+              <CardTitle className="text-xl font-bold">Selesaikan Pendaftaran</CardTitle>
+              <CardDescription>
+                Undangan admin Lumina Studio terdeteksi. Atur password untuk mengaktifkan akun Anda
+                — tautan berlaku 48 jam.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              <form onSubmit={handleInviteAccept} className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="invite-name">Nama (opsional)</Label>
+                  <Input
+                    id="invite-name"
+                    value={inviteName}
+                    onChange={(e) => setInviteName(e.target.value)}
+                    placeholder="mis. Rani Putri"
+                    autoComplete="name"
+                    maxLength={60}
+                    className="h-11"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="invite-password">Password Baru</Label>
+                  <div className="relative">
+                    <Input
+                      id="invite-password"
+                      type={showPassword ? "text" : "password"}
+                      value={invitePassword}
+                      onChange={(e) => setInvitePassword(e.target.value)}
+                      placeholder="Minimal 8 karakter"
+                      autoComplete="new-password"
+                      className="h-11 pr-10"
+                      required
+                    />
+                    <button
+                      type="button"
+                      aria-label={
+                        showPassword ? "Sembunyikan password" : "Lihat password"
+                      }
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="text-muted-foreground hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Eye className="size-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="invite-confirm">Konfirmasi Password</Label>
+                  <Input
+                    id="invite-confirm"
+                    type={showPassword ? "text" : "password"}
+                    value={inviteConfirm}
+                    onChange={(e) => setInviteConfirm(e.target.value)}
+                    placeholder="Ulangi password baru"
+                    autoComplete="new-password"
+                    className="h-11"
+                    required
+                  />
+                  {inviteError ? (
+                    <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">
+                      {inviteError}
+                    </p>
+                  ) : null}
+                </div>
+                <Button
+                  type="submit"
+                  className="h-11 w-full active:scale-[0.99]"
+                  disabled={inviteLoading}
+                >
+                  {inviteLoading ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      Memproses...
+                    </>
+                  ) : (
+                    "Aktifkan Akun"
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-10 text-muted-foreground"
+                  onClick={exitInviteMode}
+                  disabled={inviteLoading}
+                >
+                  Kembali ke halaman masuk
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </Reveal>
+      </div>
+    );
   }
 
   return (

@@ -1,5 +1,16 @@
 // GET /api/admin/logs — riwayat aktivitas (semua role).
-// Query opsional: applicationId, limit (default 50, maks 200).
+// Query opsional (NR-19-c Tugas 2a — filter lanjutan, semua kompatibel mundur):
+//   - applicationId : lamaran tertentu (perilaku lama dipertahankan).
+//   - limit         : 1-200, default 50 (perilaku lama dipertahankan).
+//   - action        : prefix match aman — "OFFER_" mengembalikan semua aksi
+//                     berawalan itu. Whitelist karakter [A-Za-z0-9_], maks 40.
+//                     Dieksekusi lewat Prisma startsWith (LIKE ter-escape oleh
+//                     Prisma; input sudah disaring whitelist sehingga tidak ada
+//                     wildcard/metakarakter yang bisa disisipkan).
+//   - actor         : contains, maks 80.
+//   - from & to     : ISO date -> filter createdAt gte / lte (diabaikan bila tak valid).
+//   - q             : contains pada kolom detail, maks 80.
+// Where Prisma dibangun kondisional — hanya filter yang terisi yang disertakan.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
@@ -8,6 +19,18 @@ import type { LogEntry } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
+
+/** Teks aman: trim + potong panjang maksimum. */
+function cleanText(value: string | null, max: number): string {
+  return (value ?? "").trim().slice(0, max);
+}
+
+/** Parse ISO date; null bila kosong/tidak valid. */
+function parseIsoDate(value: string | null): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,8 +44,29 @@ export async function GET(req: NextRequest) {
     const limitParam = Number.parseInt(searchParams.get("limit") ?? "", 10);
     const limit = Number.isInteger(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 50;
 
+    // Filter lanjutan (NR-19-c).
+    const rawAction = cleanText(searchParams.get("action"), 40);
+    const action = /^[A-Za-z0-9_]+$/.test(rawAction) ? rawAction : "";
+    const actor = cleanText(searchParams.get("actor"), 80);
+    const q = cleanText(searchParams.get("q"), 80);
+    const from = parseIsoDate(searchParams.get("from"));
+    const to = parseIsoDate(searchParams.get("to"));
+
     const rows = await db.activityLog.findMany({
-      where: applicationId ? { applicationId } : undefined,
+      where: {
+        ...(applicationId ? { applicationId } : {}),
+        ...(action ? { action: { startsWith: action } } : {}),
+        ...(actor ? { actor: { contains: actor } } : {}),
+        ...(q ? { detail: { contains: q } } : {}),
+        ...(from || to
+          ? {
+              createdAt: {
+                ...(from ? { gte: from } : {}),
+                ...(to ? { lte: to } : {}),
+              },
+            }
+          : {}),
+      },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit,
       include: { application: { select: { name: true } } },

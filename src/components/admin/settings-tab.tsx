@@ -1423,6 +1423,122 @@ function RetentionCard() {
 }
 
 // ---------------------------------------------------------------------------
+// Laporan Email Terjadwal (NR-19) — toggle laporan mingguan/bulanan (OWNER saja).
+// Kartu mandiri: GET/PUT /api/admin/reports/schedule, simpan langsung saat toggle.
+// ---------------------------------------------------------------------------
+
+type ReportEmailScheduleUi = { weeklyEnabled: boolean; monthlyEnabled: boolean };
+
+function ReportEmailScheduleCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+  const [schedule, setSchedule] = useState<ReportEmailScheduleUi>({
+    weeklyEnabled: true,
+    monthlyEnabled: true,
+  });
+  const [loading, setLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState<"weeklyEnabled" | "monthlyEnabled" | null>(null);
+
+  const load = useCallback(async () => {
+    if (role !== "OWNER") {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await apiGet<{ schedule: ReportEmailScheduleUi }>(
+        "/api/admin/reports/schedule"
+      );
+      setSchedule({
+        weeklyEnabled: data.schedule.weeklyEnabled !== false,
+        monthlyEnabled: data.schedule.monthlyEnabled !== false,
+      });
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [role, reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleToggle(key: "weeklyEnabled" | "monthlyEnabled", value: boolean) {
+    if (savingKey) return;
+    setSavingKey(key);
+    const previous = schedule;
+    setSchedule((s) => ({ ...s, [key]: value })); // optimistik, revert bila gagal
+    try {
+      const res = await apiPut<{ ok: true; schedule: ReportEmailScheduleUi }>(
+        "/api/admin/reports/schedule",
+        { [key]: value },
+      );
+      setSchedule(res.schedule);
+      toast.success("Pengaturan laporan email tersimpan.");
+    } catch (err) {
+      setSchedule(previous);
+      reportError(err);
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  // OWNER-only: kartu disembunyikan untuk role lain.
+  if (!isOwner) return null;
+
+  return (
+    <CollapsibleCard
+      id="laporan-email"
+      icon={Mailbox}
+      title="Laporan Email Terjadwal"
+      description="Kirim ringkasan pipeline ke email Pemilik & HR setiap Senin 08.00 dan tanggal 1 07.00 (masuk antrean email)."
+    >
+        {loading ? (
+          <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            Memuat jadwal laporan...
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Laporan mingguan</p>
+                <p className="text-xs text-muted-foreground">
+                  Ringkasan pipeline dikirim setiap Senin pukul 08.00.
+                </p>
+              </div>
+              <Switch
+                checked={schedule.weeklyEnabled}
+                disabled={savingKey !== null}
+                onCheckedChange={(checked) => void handleToggle("weeklyEnabled", checked)}
+                aria-label="Aktifkan laporan email mingguan"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Laporan bulanan</p>
+                <p className="text-xs text-muted-foreground">
+                  Ringkasan pipeline dikirim setiap tanggal 1 pukul 07.00.
+                </p>
+              </div>
+              <Switch
+                checked={schedule.monthlyEnabled}
+                disabled={savingKey !== null}
+                onCheckedChange={(checked) => void handleToggle("monthlyEnabled", checked)}
+                aria-label="Aktifkan laporan email bulanan"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Email hanya masuk antrean di Kotak Keluar — pengiriman mengikuti ketersediaan SMTP.
+            </p>
+          </div>
+        )}
+    </CollapsibleCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Email Kandidat — template otomatis saat status lamaran berubah (OWNER saja).
 // ---------------------------------------------------------------------------
 
@@ -2437,6 +2553,9 @@ export function SettingsTab() {
 
       {/* Kotak Keluar Email (arsip + kirim ulang, ketergantungan SMTP) */}
       <EmailOutboxCard />
+
+      {/* Laporan Email Terjadwal (NR-19 — toggle mingguan/bulanan, OWNER saja) */}
+      <ReportEmailScheduleCard />
 
       {/* Email Kandidat — template otomatis per status lamaran */}
       <CandidateEmailsCard />

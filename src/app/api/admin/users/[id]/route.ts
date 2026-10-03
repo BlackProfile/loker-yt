@@ -1,10 +1,13 @@
 // GET    /api/admin/users/[id] — detail pengguna (termasuk scope posisi & status 2FA, OWNER saja).
 // PATCH  /api/admin/users/[id] — update nama/role/status aktif/password/scope posisi/reset 2FA (OWNER saja).
+//        Aksi undangan (NR-19): body {action: "resend-invite"} / {action: "cancel-invite"}.
 // DELETE /api/admin/users/[id] — hapus pengguna (OWNER saja, dengan proteksi owner terakhir).
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
 import type { AdminUser as AdminUserRecordModel } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getSession, hashPassword } from "@/lib/server-auth";
+import { queueEmail } from "@/lib/notify";
 import { parseAssignedPositions, serializeAdminUser } from "@/lib/seed";
 import { ROLES } from "@/lib/types";
 
@@ -13,6 +16,50 @@ export const dynamic = "force-dynamic";
 const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
 const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
 const NOT_FOUND = { error: "Pengguna tidak ditemukan" };
+
+const INVITE_TTL_MS = 48 * 60 * 60 * 1000; // tautan undangan berlaku 48 jam
+
+/** Tambahkan status undangan (TANPA token) ke hasil serializeAdminUser. */
+function withInviteFields(user: AdminUserRecordModel) {
+  return {
+    ...serializeAdminUser(user),
+    invitePending:
+      !!user.inviteToken && !!user.inviteExpiresAt && user.inviteExpiresAt.getTime() > Date.now(),
+    inviteExpiresAt: user.inviteExpiresAt ? user.inviteExpiresAt.toISOString() : null,
+  };
+}
+
+/** Kirim ulang email undangan admin (NR-19). Token TIDAK masuk log maupun respons. */
+async function sendInviteEmail(
+  user: AdminUserRecordModel,
+  inviteToken: string,
+  origin: string,
+  actorName: string,
+): Promise<void> {
+  const roleLabel = user.role === "OWNER" ? "Pemilik" : user.role === "HR" ? "HR" : "Pengamat";
+  const inviteUrl = `${origin}/#admin/invite?token=${inviteToken}`;
+  await queueEmail({
+    toEmail: user.email,
+    subject: "Undangan Admin Lumina Studio",
+    body: [
+      `Halo ${user.name},`,
+      "",
+      `Anda diundang menjadi admin Lumina Studio dengan role ${roleLabel}.`,
+      "Untuk mengaktifkan akun Anda, buka tautan berikut lalu atur password pilihan Anda:",
+      "",
+      inviteUrl,
+      "",
+      "Ketentuan:",
+      "- Tautan berlaku 48 jam sejak email ini dikirim.",
+      "- Setelah password diatur, Anda dapat langsung masuk ke Panel Admin.",
+      "- Bila Anda tidak merasa mengharapkan undangan ini, abaikan email ini.",
+      "",
+      "Salam hangat,",
+      `Tim Lumina Studio (diundang oleh ${actorName})`,
+    ].join("\n"),
+    kind: "INVITE",
+  });
+}
 
 async function requireOwner() {
   const session = await getSession();
@@ -71,6 +118,41 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Data tidak valid." }, { status: 400 });
     }
     const data = body as Record<string, unknown>;
+    const session = guard.session!;
+
+    // ---------------- Aksi undangan (NR-19) — sebelum penanganan field biasa ----------------
+    if (data.action === "resend-invite") {
+      // Regenerate token selalu + perpanjang 48 jam, lalu kirim email undangan lagi.
+      const inviteToken = randomBytes(24).toString("hex");
+      const updated = await db.adminUser.update({
+        where: { id },
+        data: { inviteToken, inviteExpiresAt: new Date(Date.now() + INVITE_TTL_MS) },
+      });
+      await sendInviteEmail(updated, inviteToken, req.nextUrl.origin, session.name);
+      await db.activityLog.create({
+        data: {
+          actor: session.name,
+          action: "USER_INVITE_RESENT",
+          detail: `Undangan admin dikirim ulang ke ${updated.email} — tautan baru berlaku 48 jam`,
+        },
+      });
+      return NextResponse.json(withInviteFields(updated));
+    }
+    if (data.action === "cancel-invite") {
+      // Batalkan undangan tertunda: token + kedaluwarsa dikosongkan.
+      const updated = await db.adminUser.update({
+        where: { id },
+        data: { inviteToken: null, inviteExpiresAt: null },
+      });
+      await db.activityLog.create({
+        data: {
+          actor: session.name,
+          action: "USER_INVITE_CANCELLED",
+          detail: `Undangan admin untuk ${updated.email} dibatalkan`,
+        },
+      });
+      return NextResponse.json(withInviteFields(updated));
+    }
 
     const updateData: {
       name?: string;

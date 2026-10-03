@@ -649,6 +649,7 @@ type SelectionState = {
   stages: string[];
   stageCategories: Record<string, StageCategory>;
   stageNotes: Record<string, string>; // NR-15: penjelasan per tahap untuk halaman status pelamar
+  stageWipLimits: Record<string, string>; // NR-19: batas kapasitas per tahap (string dari input angka; "" = tanpa batas)
   aiCriteria: string;
   autoShortlistScore: string;
   autoShortlistStage: string; // "" = nonaktif
@@ -665,6 +666,11 @@ function buildSelectionState(p: Position): SelectionState {
     stages: [...p.stages],
     stageCategories: { ...p.stageCategories },
     stageNotes: p.stageNotes ? { ...p.stageNotes } : {},
+    stageWipLimits: p.stageWipLimits
+      ? Object.fromEntries(
+          Object.entries(p.stageWipLimits).map(([stage, limit]) => [stage, String(limit)])
+        )
+      : {},
     aiCriteria: p.aiCriteria ?? "",
     autoShortlistScore: p.autoShortlistScore == null ? "" : String(p.autoShortlistScore),
     autoShortlistStage: p.autoShortlistStage ?? "",
@@ -719,6 +725,30 @@ export function PositionSelectionPage({
     return out;
   }, [effectiveStages, form.stageNotes]);
 
+  // NR-19 — batas kapasitas tahap yang dikirim ke server: hanya tahap aktif
+  // dengan angka valid 1-999 (kosong = tanpa batas; {} di server = clear/null).
+  const cleanStageWipLimits = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const stage of effectiveStages) {
+      const raw = (form.stageWipLimits[stage] ?? "").trim();
+      if (!raw) continue;
+      const limit = Number(raw);
+      if (Number.isInteger(limit) && limit >= 1 && limit <= 999) out[stage] = limit;
+    }
+    return out;
+  }, [effectiveStages, form.stageWipLimits]);
+
+  const invalidWipStages = useMemo(() => {
+    const out: string[] = [];
+    for (const stage of effectiveStages) {
+      const raw = (form.stageWipLimits[stage] ?? "").trim();
+      if (!raw) continue;
+      const limit = Number(raw);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 999) out.push(stageLabel(stage));
+    }
+    return out;
+  }, [effectiveStages, form.stageWipLimits]);
+
   // Lamaran pada tahap di luar daftar pipeline tersimpan (dari stats funnel).
   const outOfStageApps = useMemo(() => {
     if (!statsRow) return 0;
@@ -739,6 +769,10 @@ export function PositionSelectionPage({
         const errors: string[] = [];
         if (cleanedStages.length > 12)
           errors.push("Pipeline tahap maksimal 12 tahap.");
+        if (invalidWipStages.length > 0)
+          errors.push(
+            `Batas kapasitas tahap ${invalidWipStages.join(", ")} harus angka bulat 1-999, atau dikosongkan.`
+          );
         if (form.autoShortlistScore.trim() !== "") {
           if (
             !isInt(form.autoShortlistScore) ||
@@ -758,6 +792,7 @@ export function PositionSelectionPage({
         stages: cleanedStages,
         stageCategories: form.stageCategories,
         stageNotes: cleanStageNotes,
+        stageWipLimits: cleanStageWipLimits,
         aiCriteria: form.aiCriteria.trim() || null,
         autoShortlistScore:
           form.autoShortlistScore.trim() === "" ? null : Number(form.autoShortlistScore),
@@ -847,6 +882,44 @@ export function PositionSelectionPage({
                   className="h-10"
                   maxLength={400}
                   aria-label={`Penjelasan tahap ${stageLabel(stage)} untuk pelamar`}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* NR-19 idea 2: batas kapasitas per tahap (WIP limit) — kanban + Pusat Tugas */}
+        <div className="flex flex-col gap-1.5">
+          <Label>Batas Kapasitas Tahap (opsional)</Label>
+          <p className="text-xs text-muted-foreground">
+            Batas maksimum kandidat aktif per tahap. Kolom kanban yang melebihinya ditandai dan
+            tahap bermasalah muncul di Pusat Tugas. Kosongkan untuk tahap tanpa batas.
+          </p>
+          <div className="flex flex-col gap-2">
+            {effectiveStages.map((stage, i) => (
+              <div key={stage} className="flex flex-col gap-1 sm:flex-row sm:items-center">
+                <span
+                  className="w-44 shrink-0 truncate rounded-lg border bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900"
+                  title={stage}
+                >
+                  {stageLabel(stage)}
+                </span>
+                <Input
+                  id={`pos-stageWipLimit-${i}`}
+                  type="number"
+                  min={1}
+                  max={999}
+                  step={1}
+                  value={form.stageWipLimits[stage] ?? ""}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      stageWipLimits: { ...f.stageWipLimits, [stage]: e.target.value },
+                    }))
+                  }
+                  placeholder="Tanpa batas"
+                  className="h-10"
+                  aria-label={`Batas kapasitas tahap ${stageLabel(stage)}`}
                 />
               </div>
             ))}

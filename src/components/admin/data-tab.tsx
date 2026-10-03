@@ -5,7 +5,7 @@
 // tong sampah (soft delete), webhook keluar, dan arsip otomatis.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -36,6 +36,7 @@ import {
   Download,
   FileSpreadsheet,
   FileUp,
+  History,
   Info,
   Loader2,
   PauseCircle,
@@ -52,8 +53,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { WEBHOOK_EVENTS, WEBHOOK_EVENT_LABELS, type SiteContent } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { apiDelete, apiGet, apiPost, apiPut } from "./api";
-import { formatRelative } from "./format";
+import { formatDateTime, formatRelative } from "./format";
 import { useAdminSession } from "./admin-context";
 
 /* ------------------------------- Util CSV ------------------------------- */
@@ -570,7 +572,7 @@ function WebhooksCard() {
     setTestingId(id);
     try {
       const res = await apiPost<{ ok: boolean; status: number | null }>(
-        "/api/admin/webhooks/test",
+        "/api/admin/webhook-test",
         { id },
       );
       if (res.ok) {
@@ -1001,6 +1003,221 @@ function AutoArchiveCard() {
   );
 }
 
+/* ------------------------- Backup Otomatis (galeri) ------------------------- */
+
+type AutoBackupEntry = {
+  file: string;
+  sizeBytes: number;
+  createdAt: string;
+};
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function AutoBackupCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+
+  const [backups, setBackups] = useState<AutoBackupEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyFile, setBusyFile] = useState<string | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<AutoBackupEntry | null>(null);
+  const [restoring, setRestoring] = useState(false);
+
+  const load = useCallback(async () => {
+    if (role !== "OWNER") {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await apiGet<{ ok: boolean; backups: AutoBackupEntry[] }>(
+        "/api/admin/backups",
+      );
+      setBackups(data.backups ?? []);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [role, reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleRestore() {
+    if (!restoreTarget || restoring) return;
+    setRestoring(true);
+    try {
+      await apiPost("/api/admin/backups", { file: restoreTarget.file });
+      toast.success(`Database berhasil dipulihkan dari "${restoreTarget.file}".`);
+      setRestoreTarget(null);
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  async function handleDelete(entry: AutoBackupEntry) {
+    if (busyFile) return;
+    setBusyFile(entry.file);
+    try {
+      await apiDelete(`/api/admin/backups?file=${encodeURIComponent(entry.file)}`);
+      toast.success(`Backup "${entry.file}" dihapus.`);
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBusyFile(null);
+    }
+  }
+
+  return (
+    <DataCard
+      icon={History}
+      title="Backup Otomatis"
+      description="Setiap hari sistem menyimpan salinan database ke backups/auto (7 terakhir disimpan)."
+    >
+      {!isOwner ? (
+        <div
+          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+          role="note"
+        >
+          <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span>
+            Mengelola backup otomatis hanya dapat dilakukan oleh pemilik studio (OWNER).
+          </span>
+        </div>
+      ) : loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Memuat daftar backup...
+        </div>
+      ) : backups.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Belum ada backup otomatis. Backup dibuat saat perawatan data dijalankan
+          (cron/tombol &quot;Jalankan Sekarang&quot;) dan akan muncul di sini.
+        </p>
+      ) : (
+        <div className="flex max-h-96 flex-col gap-2 overflow-y-auto nice-scrollbar">
+          {backups.map((entry) => (
+            <div
+              key={entry.file}
+              className="flex flex-col gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <p
+                  className="truncate font-mono text-xs font-medium sm:text-sm"
+                  title={entry.file}
+                >
+                  {entry.file}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {formatBytes(entry.sizeBytes)} · {formatDateTime(entry.createdAt)}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <a
+                  href={`/api/admin/backups?download=${encodeURIComponent(entry.file)}`}
+                  download
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "sm" }),
+                    "h-9",
+                  )}
+                  aria-label={`Unduh ${entry.file}`}
+                >
+                  <Download className="size-4" aria-hidden="true" />
+                  Unduh
+                </a>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  disabled={busyFile !== null || restoring}
+                  onClick={() => setRestoreTarget(entry)}
+                >
+                  <RotateCcw className="size-4" aria-hidden="true" />
+                  Pulihkan
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-9 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                  aria-label={`Hapus ${entry.file}`}
+                  disabled={busyFile !== null || restoring}
+                  onClick={() => void handleDelete(entry)}
+                >
+                  {busyFile === entry.file ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Trash2 className="size-4" aria-hidden="true" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Konfirmasi restore dari backup otomatis */}
+      <AlertDialog
+        open={restoreTarget !== null}
+        onOpenChange={(open) => {
+          if (!restoring && !open) setRestoreTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <TriangleAlert
+                className="size-5 text-rose-600 dark:text-rose-400"
+                aria-hidden="true"
+              />
+              Pulihkan database dari backup otomatis?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="flex flex-col gap-2">
+                <p>
+                  <strong>Semua data saat ini akan diganti</strong> dengan isi file{" "}
+                  <span className="font-mono">{restoreTarget?.file ?? "backup"}</span> —
+                  termasuk posisi, lamaran, akun admin, dan pengaturan.
+                </p>
+                <p>Tindakan ini tidak bisa dibatalkan.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={restoring}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={restoring}
+              className="bg-rose-600 text-white hover:bg-rose-700 focus-visible:ring-rose-600 dark:bg-rose-600 dark:text-white dark:hover:bg-rose-700"
+              onClick={(event) => {
+                event.preventDefault();
+                void handleRestore();
+              }}
+            >
+              {restoring ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Memulihkan...
+                </>
+              ) : (
+                "Ya, Ganti Semua Data"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </DataCard>
+  );
+}
+
 /* --------------------------------- Tab --------------------------------- */
 
 export function DataTab() {
@@ -1025,6 +1242,10 @@ export function DataTab() {
     skipped: { row: number; reason: string }[];
   } | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Impor dari file (CSV/Excel, NR-19-b) ---
+  const [importFileBusy, setImportFileBusy] = useState(false);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Tutup rekrutmen ---
   const [site, setSite] = useState<SiteContent | null>(null);
@@ -1148,6 +1369,50 @@ export function DataTab() {
     }
   }
 
+  async function handleImportFile(file: File) {
+    if (importFileBusy) return;
+    if (!isOwner) {
+      toast.error("Impor lamaran hanya dapat dilakukan oleh OWNER dan HR.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Ukuran file melebihi batas 5 MB.");
+      return;
+    }
+    setImportFileBusy(true);
+    setImportResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/admin/import-applications", {
+        method: "POST",
+        body: fd,
+      });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message =
+          data && typeof data === "object" && "error" in data
+            ? String((data as { error: unknown }).error)
+            : "Gagal mengimpor lamaran dari file.";
+        throw new Error(message);
+      }
+      const result = data as {
+        created: number;
+        skipped?: { row: number; reason: string }[];
+        skippedRows?: number;
+      };
+      const skipped = result.skipped ?? [];
+      setImportResult({ created: result.created, skipped });
+      toast.success(
+        `${result.created} baris diimpor, ${result.skippedRows ?? skipped.length} dilewati.`,
+      );
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setImportFileBusy(false);
+    }
+  }
+
   async function handleSaveSite(closed: boolean, message: string) {
     if (!site || savingSite) return;
     setSavingSite(true);
@@ -1219,6 +1484,9 @@ export function DataTab() {
           </div>
         )}
       </DataCard>
+
+      {/* ------------------------- Backup Otomatis ------------------------- */}
+      <AutoBackupCard />
 
       {/* ------------------------- Restore Database ------------------------- */}
       <DataCard
@@ -1369,6 +1637,48 @@ export function DataTab() {
               Impor {parsedRows.length > 0 ? `(${parsedRows.length})` : ""} Lamaran
             </Button>
           </div>
+
+          {/* Impor langsung dari file CSV/Excel (NR-19-b) — mode tempel tetap ada */}
+          <div className="flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Impor dari File (CSV/Excel)</p>
+              <p className="text-xs text-muted-foreground">
+                Unggah .csv, .xlsx, atau .xls (maks 5 MB). Kolom dikenali otomatis dari
+                header: nama, email, telepon/WA, posisi/lowongan, pengalaman,
+                motivasi/alasan.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 active:scale-[0.99] sm:h-9"
+                disabled={importFileBusy || importing || !isOwner}
+                onClick={() => importFileInputRef.current?.click()}
+              >
+                {importFileBusy ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <FileSpreadsheet className="size-4" aria-hidden="true" />
+                )}
+                Impor dari File
+              </Button>
+              <input
+                ref={importFileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="hidden"
+                aria-hidden="true"
+                tabIndex={-1}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void handleImportFile(file);
+                }}
+              />
+            </div>
+          </div>
+
           {!isOwner ? (
             <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
               <Info className="size-3.5 shrink-0" aria-hidden="true" />

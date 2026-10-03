@@ -3,14 +3,19 @@
 // Fire-and-forget: kegagalan delivery tidak pernah melempar error ke pemanggil.
 import crypto from "crypto";
 import { db } from "@/lib/db";
+import { WEBHOOK_EVENTS } from "@/lib/types";
 
 const TIMEOUT_MS = 5000;
 
-export type WebhookEventName =
-  | "application.created"
-  | "application.stage_changed"
-  | "application.archived"
-  | "offer.responded";
+/** Nama event mengikuti sumber tunggal WEBHOOK_EVENTS di types.ts (termasuk offer.sent, interview.scheduled, interview.completed). */
+export type WebhookEventName = (typeof WEBHOOK_EVENTS)[number];
+
+/** Ringkasan percobaan pengiriman satu event (untuk route uji / logging). */
+export type WebhookDelivery = {
+  event: WebhookEventName;
+  /** URL endpoint yang DICOBANI dikirimi event (termasuk yang akhirnya gagal). */
+  targets: string[];
+};
 
 function sign(secret: string, timestamp: string, body: string): string {
   return crypto.createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
@@ -19,8 +24,10 @@ function sign(secret: string, timestamp: string, body: string): string {
 /**
  * Kirim event ke semua endpoint aktif yang berlangganan event tersebut.
  * Aman dipanggil dari route mana pun — seluruh kesalahan ditelan dan dicatat.
+ * Selalu mengembalikan ringkasan target yang dicoba (tidak pernah melempar).
  */
-export async function emitWebhook(event: WebhookEventName, payload: Record<string, unknown>): Promise<void> {
+export async function emitWebhook(event: WebhookEventName, payload: Record<string, unknown>): Promise<WebhookDelivery> {
+  const delivery: WebhookDelivery = { event, targets: [] };
   try {
     const endpoints = await db.webhookEndpoint.findMany({ where: { active: true } });
     const targets = endpoints.filter((ep) => {
@@ -31,7 +38,7 @@ export async function emitWebhook(event: WebhookEventName, payload: Record<strin
         return false;
       }
     });
-    if (targets.length === 0) return;
+    if (targets.length === 0) return delivery;
 
     const body = JSON.stringify({
       event,
@@ -41,6 +48,7 @@ export async function emitWebhook(event: WebhookEventName, payload: Record<strin
 
     await Promise.all(
       targets.map(async (ep) => {
+        delivery.targets.push(ep.url);
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
         let status: number | null = null;
@@ -63,6 +71,12 @@ export async function emitWebhook(event: WebhookEventName, payload: Record<strin
         } finally {
           clearTimeout(timer);
         }
+        // Observabilitas: setiap percobaan delivery dicatat (status null = gagal jaringan/timeout).
+        if (status !== null && status >= 200 && status < 300) {
+          console.log(`[webhooks] ${event} -> ${ep.url} (HTTP ${status})`);
+        } else {
+          console.log(`[webhooks] ${event} -> ${ep.url} (status ${status === null ? "null — gagal jaringan/timeout" : status})`);
+        }
         try {
           await db.webhookEndpoint.update({
             where: { id: ep.id },
@@ -80,4 +94,5 @@ export async function emitWebhook(event: WebhookEventName, payload: Record<strin
   } catch (error) {
     console.error("[webhooks] emitWebhook gagal:", error);
   }
+  return delivery;
 }

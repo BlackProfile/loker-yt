@@ -448,6 +448,9 @@ export function DashboardTab() {
     }
   }
 
+  // NR-19 — tahap pipeline yang melebihi batas kapasitas (chip ringkas di kartu tindakan).
+  const wipOverCount = actionItems?.wipOver?.length ?? 0;
+
   // Kelompok kartu "Perlu Tindakan" — hanya kelompok berisi yang tampil.
   const actionGroups: {
     key: string;
@@ -501,9 +504,17 @@ export function DashboardTab() {
       {actionGroups.length > 0 ? (
         <Card className="gap-0 rounded-2xl border-amber-200 bg-amber-50/60 py-6 dark:border-amber-900 dark:bg-amber-950/20">
           <CardHeader className="px-6">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
               <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
               Perlu Tindakan
+              {wipOverCount > 0 ? (
+                <Badge
+                  className="shrink-0 border-amber-200 bg-amber-100 text-amber-700 tabular-nums dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                  aria-label={`${wipOverCount} tahap melebihi kapasitas`}
+                >
+                  {wipOverCount} tahap melebihi kapasitas
+                </Badge>
+              ) : null}
             </CardTitle>
             <CardDescription className="mt-1">
               Item yang menunggu keputusan atau penilaian tim rekrutmen.

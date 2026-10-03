@@ -64,6 +64,7 @@ import {
   StickyNote,
   Tag,
   Trash2,
+  UserX,
   Users,
   Video,
   X,
@@ -650,6 +651,10 @@ export function ApplicationDetailDialog({
   // Email pengingat offer PENDING (NR-15, idea 6).
   const [remindSending, setRemindSending] = useState(false);
 
+  // Anonimisasi data pelamar (NR-19, ide 7 — hak hapus data).
+  const [anonymizeConfirmOpen, setAnonymizeConfirmOpen] = useState(false);
+  const [anonymizing, setAnonymizing] = useState(false);
+
   // Panel Penawaran (form & edit inline memakai state yang sama).
   const [offerForm, setOfferForm] = useState<{
     salary: string;
@@ -707,6 +712,8 @@ export function ApplicationDetailDialog({
     setOfferCancelOpen(false);
     setOfferMessage(null);
     setRemindSending(false);
+    setAnonymizeConfirmOpen(false);
+    setAnonymizing(false);
     setOnboardingSaving(false);
     setDocInput("");
     setVideoNoteSec("");
@@ -1103,6 +1110,24 @@ export function ApplicationDetailDialog({
       toast.error(err instanceof Error ? err.message : "Gagal mengirim pengingat. Coba lagi.");
     } finally {
       setRemindSending(false);
+    }
+  }
+
+  // Anonimkan data pelamar (NR-19): hapus PII permanen, statistik tetap.
+  async function handleAnonymize() {
+    if (anonymizing) return;
+    setAnonymizing(true);
+    try {
+      const res = await apiPost<{ ok: boolean; application: Application }>(
+        `/api/admin/applications/${app.id}/anonymize`
+      );
+      toast.success("Data pelamar dianonimkan");
+      setAnonymizeConfirmOpen(false);
+      if (res?.application) onSaved(res.application);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setAnonymizing(false);
     }
   }
 
@@ -1537,7 +1562,7 @@ export function ApplicationDetailDialog({
               )}
             </div>
 
-            {/* Cetak dokumen (Task 27-e): profil pelamar & surat penawaran */}
+            {/* Cetak dokumen (Task 27-e): profil pelamar & surat penawaran + anonimisasi (NR-19) */}
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
@@ -1556,6 +1581,51 @@ export function ApplicationDetailDialog({
                 <FileText className="size-4" aria-hidden="true" />
                 Surat Penawaran (PDF)
               </Button>
+              {canMutate && !app.hiredAt ? (
+                <AlertDialog
+                  open={anonymizeConfirmOpen}
+                  onOpenChange={setAnonymizeConfirmOpen}
+                >
+                  <Button
+                    variant="outline"
+                    className="h-11 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:h-9 dark:border-rose-900 dark:hover:bg-rose-950"
+                    onClick={() => setAnonymizeConfirmOpen(true)}
+                    disabled={anonymizing}
+                  >
+                    <UserX className="size-4" aria-hidden="true" />
+                    Anonimkan Data
+                  </Button>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Anonimkan data pelamar ini?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Nama, kontak, CV, dan jawaban akan dihapus permanen. Statistik tetap
+                        tersimpan. Tindakan tidak dapat dibatalkan.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={anonymizing}>Batal</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={(e) => {
+                          e.preventDefault();
+                          void handleAnonymize();
+                        }}
+                        className="bg-rose-600 text-white hover:bg-rose-700"
+                        disabled={anonymizing}
+                      >
+                        {anonymizing ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            Menganonimkan...
+                          </>
+                        ) : (
+                          "Ya, Anonimkan"
+                        )}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ) : null}
             </div>
 
             {/* Sumber & atribusi UTM */}

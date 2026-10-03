@@ -10,12 +10,21 @@
 //      7 hari terakhir via sendSystemEvent (Setting "site".weeklyDigestEnabled, default true)
 //   7. Rekap bulanan: tanggal 1 jam 07:00-07:59 lokal — snapshot bulan sebelumnya
 //      ke MonthlyReport (idempoten) + notifikasi in-app untuk OWNER
+//   23. NR-19 Laporan email mingguan: Senin 08:00 lokal bila Setting
+//       "reportEmailSchedule".weeklyEnabled !== false -> buildReportEmail + baris
+//       EmailOutbox (kind SYSTEM, QUEUED) untuk semua admin OWNER/HR aktif
+//       (dedupe ActivityLog EMAIL_REPORT_WEEKLY; TIDAK kirim SMTP langsung)
+//   24. NR-19 Laporan email bulanan: tanggal 1 jam 07:00 lokal bila monthlyEnabled
+//       !== false -> sama, dedupe EMAIL_REPORT_MONTHLY
+// Uji manual: POST body {"forceEmailReport": true} memproses job laporan email
+// mengabaikan cek hari/jam (dedupe harian tetap berlaku).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { pushNotification, queueEmail, sendSystemEvent, getSiteUrl } from "@/lib/notify";
 import type { TelegramButton } from "@/lib/notify";
 import { ensureMonthlyReport, previousMonthKey } from "@/lib/monthly-report";
+import { readReportEmailSchedule, runScheduledReportEmail } from "@/lib/report-email";
 import {
   runTelegramActivityWatch,
   runTelegramCandidateInterviewReminders,
@@ -63,6 +72,16 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date();
+
+    // Body opsional untuk pengujian manual: {"forceEmailReport": true} memaksa
+    // job laporan email berjalan tanpa menunggu Senin 08.00 / tanggal 1 07.00.
+    const rawBody: unknown = await req.json().catch(() => null);
+    const forceEmailReport =
+      !!rawBody &&
+      typeof rawBody === "object" &&
+      !Array.isArray(rawBody) &&
+      (rawBody as Record<string, unknown>).forceEmailReport === true;
+
     let offerExpired = 0;
     let remindersDay = 0;
     let remindersHour = 0;
@@ -538,6 +557,34 @@ export async function POST(req: NextRequest) {
       // diam
     }
 
+    // 23) NR-19 — Laporan email mingguan: Senin jam 08:00-08:59 waktu server
+    //     (pola job weekly digest) bila Setting "reportEmailSchedule".weeklyEnabled
+    //     !== false. Hanya membuat baris EmailOutbox QUEUED + notifikasi admin;
+    //     dedupe via ActivityLog EMAIL_REPORT_WEEKLY (satu kirim per hari).
+    let emailReportWeekly = 0;
+    try {
+      const schedule = await readReportEmailSchedule();
+      const weeklyDue = forceEmailReport || (now.getDay() === 1 && now.getHours() === 8);
+      if (schedule.weeklyEnabled && weeklyDue) {
+        emailReportWeekly = await runScheduledReportEmail(now, "WEEKLY");
+      }
+    } catch {
+      // diam — laporan email tidak boleh menggagalkan cron
+    }
+
+    // 24) NR-19 — Laporan email bulanan: tanggal 1 jam 07:00-07:59 waktu server
+    //     bila monthlyEnabled !== false. Dedupe via EMAIL_REPORT_MONTHLY.
+    let emailReportMonthly = 0;
+    try {
+      const schedule = await readReportEmailSchedule();
+      const monthlyDue = forceEmailReport || (now.getDate() === 1 && now.getHours() === 7);
+      if (schedule.monthlyEnabled && monthlyDue) {
+        emailReportMonthly = await runScheduledReportEmail(now, "MONTHLY");
+      }
+    } catch {
+      // diam
+    }
+
     return NextResponse.json({
       ok: true,
       offerExpired,
@@ -562,6 +609,8 @@ export async function POST(req: NextRequest) {
       offerUnseenAlert,
       telegramCandInterview,
       telegramCandOffer,
+      emailReportWeekly,
+      emailReportMonthly,
     });
   } catch (error) {
     console.error("[POST /api/cron/reminders]", error);

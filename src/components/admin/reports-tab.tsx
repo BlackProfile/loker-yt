@@ -9,11 +9,13 @@
 // 5. Kecepatan proses per tahap        -> GET /api/admin/reports/time-in-stage
 // 6. Rekap bulanan (snapshot otomatis + cetak PDF) -> GET/POST /api/admin/reports/monthly
 // 7. Rekap survei pengalaman kandidat  -> GET /api/admin/reports/candidate-survey
+// 8. Agregasi scorecard wawancara      -> GET /api/admin/reports/scorecards (NR-19-c)
 // Semua fetch memakai helper apiGet; refresh senyap saat event realtime lamaran/posisi.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CalendarDays,
+  ClipboardCheck,
   Filter,
   Inbox,
   Link2,
@@ -28,6 +30,7 @@ import {
   Timer,
   type LucideIcon,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import {
@@ -158,6 +161,50 @@ type SurveyRecapResponse = {
     positionTitle: string | null;
   }[];
 };
+
+// NR-19-c: respons GET /api/admin/reports/scorecards (agregasi scorecard wawancara).
+type ScorecardResponse = {
+  ok: boolean;
+  generatedAt: string;
+  days: number;
+  positions: { id: string; title: string }[];
+  summary: {
+    total: number;
+    filled: number;
+    avgOverall: number | null;
+    recommendation: { LANJUT: number; CADANGAN: number; TOLAK: number; UNKNOWN: number };
+  };
+  criteria: { key: string; label: string; avg: number | null; count: number }[];
+  byInterviewer: { name: string; count: number; avg: number | null }[];
+};
+
+// Badge distribusi rekomendasi: LANJUT=emerald, CADANGAN=zinc, TOLAK=rose.
+const SCORECARD_REC_BADGES: { key: "LANJUT" | "CADANGAN" | "TOLAK"; label: string; className: string }[] = [
+  {
+    key: "LANJUT",
+    label: "Lanjut",
+    className:
+      "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400",
+  },
+  {
+    key: "CADANGAN",
+    label: "Cadangan",
+    className:
+      "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  },
+  {
+    key: "TOLAK",
+    label: "Tolak",
+    className:
+      "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400",
+  },
+];
+
+/** Angka desimal gaya id-ID: "4,5". Null -> "-". */
+function fmtScore1(value: number | null): string {
+  if (value == null) return "-";
+  return value.toFixed(1).replace(".", ",");
+}
 
 /* --------------------------------- Helper UI --------------------------------- */
 
@@ -366,6 +413,230 @@ function StageSpeedCard({
 }
 
 /* --------------------------------- Komponen --------------------------------- */
+
+/* ------------------- Section 8: agregasi scorecard wawancara ------------------- */
+
+// NR-19-c: agregasi scorecard hasil wawancara dari GET /api/admin/reports/scorecards.
+// Filter posisi + periode (30/90/365 hari) memicu fetch ulang; refresh senyap saat
+// event realtime wawancara. Tanpa nama kandidat (hanya agregat + nama pewawancara).
+function ScorecardSection() {
+  const { reportError } = useAdminSession();
+  const [scPositionId, setScPositionId] = useState("ALL");
+  const [scDays, setScDays] = useState("90");
+  const [data, setData] = useState<ScorecardResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Ref agar refresh senyap selalu memakai filter terbaru.
+  const filterRef = useRef({ positionId: "ALL", days: "90" });
+  useEffect(() => {
+    filterRef.current = { positionId: scPositionId, days: scDays };
+  }, [scPositionId, scDays]);
+
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const { positionId, days } = filterRef.current;
+        const res = await apiGet<ScorecardResponse>(
+          `/api/admin/reports/scorecards${buildQuery({ positionId, days: Number(days) })}`
+        );
+        setData(res);
+      } catch (err) {
+        reportError(err);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [reportError]
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useLiveRefresh("interviews:changed", () => {
+    void load(true);
+  });
+
+  function handlePositionChange(value: string) {
+    setScPositionId(value);
+    filterRef.current = { positionId: value, days: filterRef.current.days };
+    void load();
+  }
+
+  function handleDaysChange(value: string) {
+    setScDays(value);
+    filterRef.current = { positionId: filterRef.current.positionId, days: value };
+    void load();
+  }
+
+  const summary = data?.summary ?? null;
+  const criteria = data?.criteria ?? [];
+  const byInterviewer = data?.byInterviewer ?? [];
+  // Filter select memakai daftar posisi dari respons endpoint (bukan /positions umum).
+  const scPositions = data?.positions ?? [];
+
+  return (
+    <SectionCard
+      icon={ClipboardCheck}
+      iconClass="text-rose-600"
+      title="Agregasi Scorecard"
+      description="Rata-rata nilai per kriteria dan performa pewawancara dari scorecard hasil wawancara. Tanpa data pribadi kandidat."
+    >
+      {/* Filter posisi + periode */}
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Select value={scPositionId} onValueChange={handlePositionChange}>
+          <SelectTrigger
+            className="h-11 w-full sm:h-9 sm:w-56"
+            aria-label="Filter posisi agregasi scorecard"
+          >
+            <SelectValue placeholder="Semua posisi" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Semua posisi</SelectItem>
+            {scPositions.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={scDays} onValueChange={handleDaysChange}>
+          <SelectTrigger
+            className="h-11 w-full sm:h-9 sm:w-44"
+            aria-label="Filter periode agregasi scorecard"
+          >
+            <SelectValue placeholder="90 hari terakhir" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="30">30 hari terakhir</SelectItem>
+            <SelectItem value="90">90 hari terakhir</SelectItem>
+            <SelectItem value="365">365 hari terakhir</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {loading && !data ? (
+        <SectionSkeleton rows={4} />
+      ) : !summary || summary.total === 0 ? (
+        <SectionEmpty text="Belum ada data scorecard pada periode ini." />
+      ) : (
+        <>
+          {/* Ringkasan metrik kecil */}
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatCard label="Total Wawancara" value={String(summary.total)} />
+            <StatCard label="Scorecard Terisi" value={String(summary.filled)} />
+            <StatCard
+              label="Rata-rata Skor (1-5)"
+              value={fmtScore1(summary.avgOverall)}
+              valueClass="text-xl text-rose-600 dark:text-rose-400"
+            />
+            <div className="rounded-xl border p-3">
+              <p className="text-xs font-medium text-muted-foreground">Distribusi Rekomendasi</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {SCORECARD_REC_BADGES.map((badge) => (
+                  <Badge
+                    key={badge.key}
+                    variant="outline"
+                    className={`px-1.5 py-0 text-[10px] ${badge.className}`}
+                    aria-label={`Rekomendasi ${badge.label}: ${summary.recommendation[badge.key]}`}
+                  >
+                    {badge.label} {summary.recommendation[badge.key]}
+                  </Badge>
+                ))}
+              </div>
+              {summary.recommendation.UNKNOWN > 0 ? (
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  {summary.recommendation.UNKNOWN} sesi belum berhasil (tanpa rekomendasi)
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {/* Tabel kriteria */}
+            <div className="rounded-xl border">
+              <p className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Rata-rata per Kriteria
+              </p>
+              {criteria.length === 0 ? (
+                <p className="px-3 py-4 text-sm text-muted-foreground">
+                  Belum ada kriteria bernilai pada periode ini.
+                </p>
+              ) : (
+                <div className="nice-scrollbar max-h-72 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead className="px-3 py-2">Kriteria</TableHead>
+                        <TableHead className="px-3 py-2 text-right">Rata-rata</TableHead>
+                        <TableHead className="px-3 py-2 text-right">Jumlah</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {criteria.map((row) => (
+                        <TableRow key={row.key}>
+                          <TableCell className="max-w-56 truncate px-3 py-2 text-sm">
+                            {row.label}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right text-sm font-semibold tabular-nums">
+                            {fmtScore1(row.avg)}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right text-sm tabular-nums text-muted-foreground">
+                            {row.count}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+
+            {/* Tabel pewawancara */}
+            <div className="rounded-xl border">
+              <p className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Performa Pewawancara
+              </p>
+              {byInterviewer.length === 0 ? (
+                <p className="px-3 py-4 text-sm text-muted-foreground">
+                  Belum ada sesi dengan pewawancara tercatat pada periode ini.
+                </p>
+              ) : (
+                <div className="nice-scrollbar max-h-72 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead className="px-3 py-2">Pewawancara</TableHead>
+                        <TableHead className="px-3 py-2 text-right">Sesi</TableHead>
+                        <TableHead className="px-3 py-2 text-right">Rata-rata Skor</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {byInterviewer.map((row) => (
+                        <TableRow key={row.name}>
+                          <TableCell className="max-w-56 truncate px-3 py-2 text-sm">
+                            {row.name}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right text-sm tabular-nums text-muted-foreground">
+                            {row.count}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-right text-sm font-semibold tabular-nums">
+                            {fmtScore1(row.avg)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </SectionCard>
+  );
+}
 
 export function ReportsTab() {
   const { reportError } = useAdminSession();
@@ -1330,6 +1601,9 @@ export function ReportsTab() {
           </>
         )}
       </SectionCard>
+
+      {/* 8. Agregasi scorecard wawancara (NR-19-c) — section paling bawah */}
+      <ScorecardSection />
 
       <ProfilePrintDialog
         key={selectedAppId || "none"}

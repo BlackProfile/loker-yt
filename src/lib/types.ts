@@ -289,6 +289,7 @@ export type Position = {
   stages: string[]; // [] = pipeline bawaan (5 status)
   stageCategories: Record<string, StageCategory>; // kategori tahap kustom: {"Tahap": "REVIEW" | ...}
   stageNotes: Record<string, string> | null; // NR-15 override penjelasan tahap di halaman status
+  stageWipLimits: Record<string, number> | null; // NR-19 batas kapasitas per tahap pipeline (null = tanpa batas)
   aiCriteria: string | null;
   autoShortlistScore: number | null;
   autoShortlistStage: string | null;
@@ -363,7 +364,10 @@ export const WEBHOOK_EVENTS = [
   "application.created",
   "application.stage_changed",
   "application.archived",
+  "offer.sent",
   "offer.responded",
+  "interview.scheduled",
+  "interview.completed",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -372,7 +376,10 @@ export const WEBHOOK_EVENT_LABELS: Record<string, string> = {
   "application.created": "Lamaran baru masuk",
   "application.stage_changed": "Tahap pelamar berubah",
   "application.archived": "Lamaran diarsipkan",
+  "offer.sent": "Penawaran dikirim ke pelamar",
   "offer.responded": "Pelamar menjawab penawaran",
+  "interview.scheduled": "Wawancara dijadwalkan",
+  "interview.completed": "Wawancara selesai",
 };
 
 export type Application = {
@@ -477,6 +484,8 @@ export type AdminUser = {
   role: Role;
   isActive: boolean;
   createdAt: string;
+  invitePending?: boolean; // NR-19 undangan set-sandi masih menunggu
+  inviteExpiresAt?: string | null;
 };
 
 export type AdminSession = { id: string; name: string; email: string; role: Role };
@@ -681,6 +690,13 @@ export type ActionItemsResponse = {
     name: string;
     positionTitle: string | null;
     missingDocs: string[];
+  }[];
+  wipOver?: { // NR-19 tahap melewati batas kapasitas (WIP limit)
+    positionId: string;
+    positionTitle: string | null;
+    stage: string;
+    count: number;
+    limit: number;
   }[];
 };
 

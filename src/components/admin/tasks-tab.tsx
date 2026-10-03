@@ -14,6 +14,7 @@ import {
   ClipboardCheck,
   Copy,
   Eye,
+  Gauge,
   Handshake,
   Inbox,
   Loader2,
@@ -45,6 +46,9 @@ type ExtendedActionItems = ActionItemsResponse & {
   duplicateApplications?: SimpleAppItem[];
 };
 
+// NR-19 — item tahap melebihi batas kapasitas (wipOver dari ActionItemsResponse).
+type WipOverItem = NonNullable<ActionItemsResponse["wipOver"]>[number];
+
 function offerUrgency(deadline: string | null): { label: string; urgent: boolean } | null {
   if (!deadline) return null;
   const ms = new Date(deadline).getTime() - Date.now();
@@ -71,7 +75,7 @@ function TaskGroup({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="rounded-2xl">
+    <Card className="min-w-0 overflow-hidden rounded-2xl">
       <CardContent className="flex flex-col gap-3 p-4 sm:p-6">
         <div className="flex flex-wrap items-center gap-2">
           <span
@@ -162,9 +166,15 @@ export function TasksTab() {
   const offers = items?.offersAwaiting ?? [];
   const reschedules = items?.rescheduleRequests ?? [];
   const unscored = items?.unscoredInterviews ?? [];
+  const wipOver = items?.wipOver ?? [];
 
   const totalCount =
-    staleNew.length + duplicates.length + offers.length + reschedules.length + unscored.length;
+    staleNew.length +
+    duplicates.length +
+    offers.length +
+    reschedules.length +
+    unscored.length +
+    wipOver.length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -192,7 +202,7 @@ export function TasksTab() {
       </div>
 
       {loading && !items ? (
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid min-w-0 gap-3 lg:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-40 w-full rounded-2xl" />
           ))}
@@ -208,7 +218,7 @@ export function TasksTab() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid min-w-0 gap-3 lg:grid-cols-2">
           {/* Lamaran belum ditinjau > 3 hari */}
           <TaskGroup
             icon={AlertCircle}
@@ -425,6 +435,42 @@ export function TasksTab() {
               </div>
             )}
           </TaskGroup>
+
+          {/* NR-19 — tahap pipeline melebihi batas kapasitas (WIP limit) */}
+          {wipOver.length > 0 ? (
+            <TaskGroup
+              icon={Gauge}
+              title="Kapasitas Tahap Melebihi Batas"
+              description="Jumlah kandidat aktif pada satu tahap melewati batas kapasitas posisi."
+              count={wipOver.length}
+              tone="amber"
+            >
+              <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
+                {wipOver.map((row: WipOverItem) => (
+                  <div
+                    key={`${row.positionId}-${row.stage}`}
+                    className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 p-2.5 dark:border-amber-900"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {row.positionTitle ?? "Tanpa posisi"} &mdash; tahap {row.stage}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {row.count} kandidat (batas {row.limit})
+                      </p>
+                    </div>
+                    <Badge
+                      variant="destructive"
+                      className="shrink-0 tabular-nums"
+                      aria-label={`${row.stage} melebihi batas: ${row.count} dari ${row.limit}`}
+                    >
+                      {row.count}/{row.limit}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </TaskGroup>
+          ) : null}
         </div>
       )}
 

@@ -81,6 +81,7 @@ export type PositionFields = {
   stages?: string; // JSON string[]; "[]" = pakai pipeline bawaan
   stageCategories?: string; // JSON Record<tahap kustom, StageCategory>; "{}" = pakai heuristik bawaan
   stageNotes?: string; // JSON Record<tahap, teks penjelasan untuk pelamar>; "{}" = tanpa override
+  stageWipLimits?: string; // NR-19 JSON Record<tahap, maxKandidat>; "{}" = tanpa batas kapasitas
   aiCriteria?: string | null;
   autoShortlistScore?: number | null;
   autoShortlistStage?: string | null;
@@ -326,6 +327,29 @@ function sanitizeStageNotes(value: unknown): Sanitized<string | undefined> {
   }
   if (Object.keys(out).length > 24) {
     return err("Catatan tahap maksimal 24 tahap.");
+  }
+  return ok(JSON.stringify(out));
+}
+
+/** NR-19 Batas kapasitas per tahap (WIP limit): objek {tahap: angka > 0} -> JSON. */
+function sanitizeStageWipLimits(value: unknown): Sanitized<string | undefined> {
+  if (value === undefined) return ok(undefined);
+  if (value === null) return ok("{}");
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return err("Batas kapasitas tahap harus berupa objek {tahap: angka}.");
+  }
+  const out: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const stage = typeof key === "string" ? key.trim().slice(0, 40) : "";
+    if (!stage) continue;
+    const n = typeof raw === "number" ? raw : Number(raw);
+    if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n) || n > 999) {
+      return err(`Batas kapasitas tahap "${stage}" harus angka bulat 1-999.`);
+    }
+    out[stage] = n;
+  }
+  if (Object.keys(out).length > 24) {
+    return err("Batas kapasitas maksimal 24 tahap.");
   }
   return ok(JSON.stringify(out));
 }
@@ -598,6 +622,10 @@ export async function sanitizePositionInput(
   if (!stageNotes.ok) return stageNotes;
   if (stageNotes.value !== undefined) f.stageNotes = stageNotes.value;
 
+  const stageWipLimits = sanitizeStageWipLimits(data.stageWipLimits);
+  if (!stageWipLimits.ok) return stageWipLimits;
+  if (stageWipLimits.value !== undefined) f.stageWipLimits = stageWipLimits.value;
+
   const aiCriteria = sanitizeNullableText(data.aiCriteria, "Kriteria AI", 600);
   if (!aiCriteria.ok) return aiCriteria;
   if (aiCriteria.value !== undefined) f.aiCriteria = aiCriteria.value;
@@ -849,6 +877,7 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.stages !== undefined) out.stages = f.stages;
   if (f.stageCategories !== undefined) out.stageCategories = f.stageCategories;
   if (f.stageNotes !== undefined) out.stageNotes = f.stageNotes;
+  if (f.stageWipLimits !== undefined) out.stageWipLimits = f.stageWipLimits;
   if (f.aiCriteria !== undefined) out.aiCriteria = f.aiCriteria;
   if (f.autoShortlistScore !== undefined) out.autoShortlistScore = f.autoShortlistScore;
   if (f.autoShortlistStage !== undefined) out.autoShortlistStage = f.autoShortlistStage;

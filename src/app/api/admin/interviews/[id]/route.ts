@@ -16,6 +16,7 @@ import {
   serializeInterview,
 } from "@/lib/seed";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { emitWebhook } from "@/lib/webhooks";
 import { appendStageHistory } from "@/lib/stage-history";
 
 export const dynamic = "force-dynamic";
@@ -301,6 +302,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (logs.length > 0) {
       await db.activityLog.createMany({ data: logs.map((l) => ({ ...l, applicationId: existing.applicationId })) });
+    }
+
+    // Webhook keluar: wawancara selesai — fire-and-forget ke endpoint berlangganan.
+    // Hanya pada transisi -> COMPLETED (status sebelumnya bukan COMPLETED) supaya
+    // PATCH ulang / penyimpanan scorecard berikutnya tidak memicu event duplikat.
+    if (updateData.status === "COMPLETED" && existing.status !== "COMPLETED") {
+      const completedAt = updateData.completedAt ?? updated.completedAt ?? new Date();
+      void emitWebhook("interview.completed", {
+        interviewId: id,
+        applicationId: existing.applicationId,
+        trackingCode: existing.application?.trackingCode ?? null,
+        positionTitle: existing.application?.position?.title ?? null,
+        recommendation: updateData.recommendation ?? existing.recommendation ?? null,
+        completedAt: completedAt.toISOString(),
+        actor: session.name,
+      });
     }
 
     // Rekomendasi menggerakkan pipeline
