@@ -1630,6 +1630,42 @@ export function ApplicationDetailDialog({
   const [videoNoteText, setVideoNoteText] = useState("");
   const [videoNotesSaving, setVideoNotesSaving] = useState(false);
 
+  // NR-24-b — bintang personal, tindak lanjut, tahan proses, gaji, dokumen kedaluwarsa.
+  const [starSaving, setStarSaving] = useState(false);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [snoozeDate, setSnoozeDate] = useState("");
+  const [snoozeSaving, setSnoozeSaving] = useState(false);
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [holdReasonInput, setHoldReasonInput] = useState("");
+  const [holdReviewInput, setHoldReviewInput] = useState("");
+  const [holdSaving, setHoldSaving] = useState(false);
+  const [salaryEditing, setSalaryEditing] = useState(false);
+  const [salaryInput, setSalaryInput] = useState("");
+  const [salarySaving, setSalarySaving] = useState(false);
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  const [docExpiryBusy, setDocExpiryBusy] = useState<string | null>(null);
+
+  // NR-24-b — undo penolakan (pola kunci ala NR-23).
+  const [undoUnlocked, setUndoUnlocked] = useState(false);
+  const [undoConfirmOpen, setUndoConfirmOpen] = useState(false);
+  const [undoReason, setUndoReason] = useState("");
+  const [undoSaving, setUndoSaving] = useState(false);
+
+  // NR-24-b — Do-not-Hire (match email/telepon) + penggabungan duplikat.
+  const [dnhEntries, setDnhEntries] = useState<DoNotHireEntry[]>([]);
+  const [dnhUnlock, setDnhUnlock] = useState(false);
+  const [dnhRemoveOpen, setDnhRemoveOpen] = useState(false);
+  const [dnhSaving, setDnhSaving] = useState(false);
+  const [dnhAddOpen, setDnhAddOpen] = useState(false);
+  const [dnhReasonInput, setDnhReasonInput] = useState("");
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeCandidates, setMergeCandidates] = useState<Application[]>([]);
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
+  const [mergeSaving, setMergeSaving] = useState(false);
+  const tagsFetchedRef = useRef(false);
+
   // Reset form hanya saat berganti pelamar (bukan tiap update objek) agar
   // pesan penolakan/penawaran yang baru dibuat tidak ikut terhapus.
   const lastAppIdRef = useRef<string | null>(null);
@@ -1666,6 +1702,34 @@ export function ApplicationDetailDialog({
     setVideoNoteSec("");
     setVideoNoteText("");
     setVideoNotesSaving(false);
+    // NR-24-b — reset state fitur per pelamar saat berganti kandidat.
+    setStarSaving(false);
+    setSnoozeOpen(false);
+    setSnoozeDate("");
+    setSnoozeSaving(false);
+    setHoldOpen(false);
+    setHoldReasonInput("");
+    setHoldReviewInput("");
+    setHoldSaving(false);
+    setSalaryEditing(false);
+    setSalaryInput("");
+    setSalarySaving(false);
+    setDocExpiryBusy(null);
+    setUndoUnlocked(false);
+    setUndoConfirmOpen(false);
+    setUndoReason("");
+    setUndoSaving(false);
+    setDnhUnlock(false);
+    setDnhRemoveOpen(false);
+    setDnhSaving(false);
+    setDnhAddOpen(false);
+    setDnhReasonInput("");
+    setMergeOpen(false);
+    setMergeCandidates([]);
+    setMergeLoading(false);
+    setMergeTargetId("");
+    setMergeConfirmOpen(false);
+    setMergeSaving(false);
   }, [application]);
 
   const applicationId = application?.id ?? null;
@@ -1733,6 +1797,68 @@ export function ApplicationDetailDialog({
   useLiveRefresh("interviews:changed", () => {
     void loadSessions(true);
   });
+
+  // NR-24-b — navigasi prev/next aktif hanya bila ketiga prop terisi & daftar > 1.
+  const navActive =
+    Array.isArray(navIds) &&
+    navIds.length > 1 &&
+    typeof navIndex === "number" &&
+    navIndex >= 0 &&
+    navIndex < navIds.length &&
+    typeof onNavigate === "function";
+
+  // Keyboard ArrowLeft/ArrowRight untuk pindah antar lamaran (saat dialog terbuka).
+  // Diabaikan bila sedang mengetik di input/textarea/select/contenteditable atau
+  // bila dialog/alert lain (wawancara, konfirmasi) sedang terbuka.
+  useEffect(() => {
+    if (!navActive || !application) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      const t = e.target;
+      if (t instanceof HTMLElement) {
+        if (t.isContentEditable) return;
+        const tag = t.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      }
+      if (document.querySelector('[role="alertdialog"]')) return;
+      if (sessionDetail || sessionCreateOpen) return;
+      if (!navIds || typeof navIndex !== "number" || typeof onNavigate !== "function") return;
+      const next = e.key === "ArrowRight" ? navIndex + 1 : navIndex - 1;
+      if (next < 0 || next >= navIds.length) return;
+      onNavigate(navIds[next]);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [navActive, application, navIds, navIndex, onNavigate, sessionDetail, sessionCreateOpen]);
+
+  // NR-24-b — suggesi tag: cache sekali per mount dialog.
+  useEffect(() => {
+    if (tagsFetchedRef.current) return;
+    tagsFetchedRef.current = true;
+    apiGet<{ tags: string[] }>("/api/admin/tags")
+      .then((res) => {
+        setTagSuggestions(Array.isArray(res.tags) ? res.tags : []);
+      })
+      .catch(() => {
+        // Suggesi bersifat pelengkap; abaikan kegagalan.
+      });
+  }, []);
+
+  // NR-24-b — daftar Do-not-Hire: muat saat dialog terbuka / kandidat berganti.
+  useEffect(() => {
+    if (!applicationId) return;
+    let cancelled = false;
+    apiGet<{ entries: DoNotHireEntry[] }>("/api/admin/donothire")
+      .then((res) => {
+        if (!cancelled) setDnhEntries(res.entries ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setDnhEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applicationId]);
 
   if (!application) return null;
 
