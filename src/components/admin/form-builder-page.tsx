@@ -59,6 +59,7 @@ import {
   ListChecks,
   Loader2,
   Lock,
+  LockOpen,
   Plus,
   Settings2,
   Sparkles,
@@ -67,11 +68,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  FORM_CORE_ITEM_DEFAULTS,
+  FORM_CORE_LABEL_MAX,
   FORM_FIELD_TYPES,
   FORM_FIELD_TYPE_LABELS,
   FORM_LIMITS,
   FORM_SCHEMA_VERSION,
-  FORM_SECTION_KIND_LABELS,
   defaultBiodataSection,
   defaultExperienceSection,
   defaultFilesSection,
@@ -151,7 +153,7 @@ type AiQuestionsResponse = { questions: { label: string }[] };
 
 /* -------------------------------- Utilitas -------------------------------- */
 
-/** Skema kosong untuk posisi tanpa konten klasik: v2 lengkap dengan 3 bagian bawaan. */
+/** Skema kosong untuk posisi tanpa konten klasik: v2 lengkap dengan 3 bagian inti. */
 function emptySchema(): FormSchema {
   return {
     version: FORM_SCHEMA_VERSION,
@@ -180,9 +182,9 @@ function insertCustomSection(sections: FormSection[], section: FormSection): For
 
 /**
  * Fingerprint kanonik bagian + pertanyaan — dasar perbandingan "dirty"
- * (retiredFields diurus server). Urutan bagian, judul, deskripsi, dan SEMUA
- * flag bawaan ikut diperhitungkan; flag dibaca lewat semantik getter (aman
- * untuk properti yang belum terisi) agar bentuk tersimpan tidak memicu
+ * (retiredFields diurus server). Urutan bagian, judul, deskripsi, label item
+ * inti, dan SEMUA flag ikut diperhitungkan; flag dibaca lewat semantik getter
+ * (aman untuk properti yang belum terisi) agar bentuk tersimpan tidak memicu
  * false-positive.
  */
 function editableFingerprint(schema: FormSchema | null): string {
@@ -193,9 +195,20 @@ function editableFingerprint(schema: FormSchema | null): string {
       title: s.title,
       description: s.description ?? null,
       titleEn: s.titleEn ?? null,
+      // NR-23 — label kustom item inti ikut fingerprint.
+      nameLabel: s.nameLabel ?? null,
+      emailLabel: s.emailLabel ?? null,
+      waLabel: s.waLabel ?? null,
+      experienceLabel: s.experienceLabel ?? null,
+      motivationLabel: s.motivationLabel ?? null,
+      cvLabel: s.cvLabel ?? null,
+      introLabel: s.introLabel ?? null,
+      portfolioLabel: s.portfolioLabel ?? null,
       waRequired: s.kind === "biodata" ? s.waRequired !== false : null,
       experienceEnabled: s.kind === "experience" ? s.experienceEnabled !== false : null,
+      experienceRequired: s.kind === "experience" ? s.experienceRequired !== false : null,
       motivationEnabled: s.kind === "experience" ? s.motivationEnabled !== false : null,
+      motivationRequired: s.kind === "experience" ? s.motivationRequired !== false : null,
       cvEnabled: s.kind === "files" ? s.cvEnabled !== false : null,
       cvRequired: s.kind === "files" ? s.cvEnabled !== false && s.cvRequired === true : null,
       introEnabled: s.kind === "files" ? s.introEnabled !== false : null,
@@ -1068,6 +1081,9 @@ export function FormBuilderPage({
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
+  // NR-23 — kunci anti-hapus bagian inti: default TERKUNCI, dibuka manual per
+  // sesi edit (tidak tersimpan) agar setiap muat ulang kembali terkunci.
+  const [unlockedCoreIds, setUnlockedCoreIds] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1076,8 +1092,8 @@ export function FormBuilderPage({
     )
       .then((data) => {
         if (cancelled) return;
-        // GET sudah mengembalikan v2; normalisasi defensif menjamin ketiga
-        // bagian bawaan ada (skema v1 sisa otomatis dirakit ulang menjadi v2).
+        // GET sudah mengembalikan v2; normalisasi defensif hanya merakit ulang
+        // skema v1 sisa menjadi v2 (skema v2 dipercaya apa adanya — NR-23).
         const saved = normalizeFormSchema(data.schema ?? null);
         const derived = normalizeFormSchema(data.derived ?? null);
         setSavedSchema(saved);
@@ -1109,6 +1125,15 @@ export function FormBuilderPage({
     }));
   }
 
+  /** Buka/tutup kunci anti-hapus satu bagian inti (per sesi edit). */
+  function toggleCoreLock(sectionId: string) {
+    setUnlockedCoreIds((prev) =>
+      prev.includes(sectionId)
+        ? prev.filter((id) => id !== sectionId)
+        : [...prev, sectionId],
+    );
+  }
+
   function moveSection(sectionId: string, dir: 1 | -1) {
     setDraft((prev) => {
       const index = prev.sections.findIndex((s) => s.id === sectionId);
@@ -1123,7 +1148,7 @@ export function FormBuilderPage({
   function addSection() {
     setDraft((prev) => {
       // Batas dihitung dari bagian TAMBAHAN (kustom), bukan total bagian —
-      // 3 bagian bawaan tidak dihitung.
+      // bagian inti tidak dihitung.
       if (customSectionCount(prev) >= FORM_LIMITS.maxSections) return prev;
       if (prev.sections.length >= FORM_LIMITS.maxTotalSections) return prev;
       return {
@@ -1287,6 +1312,9 @@ export function FormBuilderPage({
         setSavedSchema(res.schema);
       }
       if (res.position) onUpdated(res.position);
+      // Kunci bagian inti otomatis terpasang kembali setelah menyimpan —
+      // penghapusan selalu butuh buka kunci baru di sesi berikutnya.
+      setUnlockedCoreIds([]);
       // Jawaban bergantung pada skema tersimpan — paksa tab Jawaban memuat ulang
       // saat dibuka berikutnya (sebelumnya bisa 400/klise lama).
       setResponsesLoaded(false);
@@ -1562,6 +1590,8 @@ export function FormBuilderPage({
                     fields={draft.fields.filter((f) => f.sectionId === section.id)}
                     canAddField={totalFields < FORM_LIMITS.maxFields}
                     canMutate={canMutate}
+                    locked={section.kind !== "custom" && !unlockedCoreIds.includes(section.id)}
+                    onToggleLock={() => toggleCoreLock(section.id)}
                     onPatch={(patch) => updateSection(section.id, patch)}
                     onMove={(dir) => moveSection(section.id, dir)}
                     onRemove={() => removeSection(section.id)}
