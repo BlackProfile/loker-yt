@@ -3731,28 +3731,67 @@ export function ApplicationDetailDialog({
                     </Card>
                   </div>
                 ) : null}
-                {/* Dokumen wajib tambahan yang diunggah pelamar (customDocs posisi) */}
-                {app.extraDocs.map((doc) => (
-                  <div key={doc.fileId} className="flex items-center gap-2">
-                    <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 truncate text-sm">
-                      <span className="font-medium">{doc.label}</span>
-                      {doc.filename ? (
-                        <span className="ml-1.5 text-xs text-muted-foreground">
-                          {doc.filename}
+                {/* Dokumen wajib tambahan yang diunggah pelamar (customDocs posisi).
+                    NR-24-b (ide 13): masa berlaku dokumen per fileId (docExpiries). */}
+                {app.extraDocs.map((doc) => {
+                  const expiry = app.docExpiries?.[doc.fileId] ?? "";
+                  const expiryDays = expiry ? daysUntil(expiry) : null;
+                  return (
+                    <div key={doc.fileId} className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        <span className="min-w-0 flex-1 truncate text-sm">
+                          <span className="font-medium">{doc.label}</span>
+                          {doc.filename ? (
+                            <span className="ml-1.5 text-xs text-muted-foreground">
+                              {doc.filename}
+                            </span>
+                          ) : null}
                         </span>
-                      ) : null}
-                    </span>
-                    <a
-                      href={`/api/files/${doc.fileId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
-                    >
-                      Unduh
-                    </a>
-                  </div>
-                ))}
+                        <a
+                          href={`/api/files/${doc.fileId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+                        >
+                          Unduh
+                        </a>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 pl-6">
+                        <span className="text-xs text-muted-foreground">Masa berlaku:</span>
+                        {canMutate ? (
+                          <Input
+                            type="date"
+                            value={expiry}
+                            onChange={(e) => void handleDocExpiry(doc.fileId, e.target.value)}
+                            disabled={docExpiryBusy === doc.fileId}
+                            aria-label={`Masa berlaku dokumen ${doc.label}`}
+                            className="h-8 w-40"
+                          />
+                        ) : expiry ? (
+                          <span className="text-xs tabular-nums">{formatDate(expiry)}</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                        {expiryDays != null && expiryDays < 0 ? (
+                          <Badge
+                            variant="outline"
+                            className="px-1.5 py-0 text-[10px] border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
+                          >
+                            Kedaluwarsa
+                          </Badge>
+                        ) : expiryDays != null && expiryDays <= 30 ? (
+                          <Badge
+                            variant="outline"
+                            className="px-1.5 py-0 text-[10px] border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+                          >
+                            Segera habis
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
 
@@ -4005,12 +4044,21 @@ export function ApplicationDetailDialog({
                     <Input
                       id={`tags-${app.id}`}
                       value={tagInput}
-                      onChange={(e) => setTagInput(e.target.value)}
-                      placeholder="Tambah tag lalu tekan Enter"
+                      onChange={(e) => handleTagInputChange(e.target.value)}
+                      list={`tag-suggestions-${app.id}`}
+                      placeholder="Tambah tag — Enter atau koma"
                       aria-label="Tambah tag baru"
                       className="h-9 w-full sm:w-64"
                       disabled={tagsSaving}
                     />
+                    {/* NR-24-b (ide 3): datalist suggesi tag dari GET /api/admin/tags */}
+                    <datalist id={`tag-suggestions-${app.id}`}>
+                      {tagSuggestions
+                        .filter((s) => !app.tags.includes(s))
+                        .map((s) => (
+                          <option key={s} value={s} />
+                        ))}
+                    </datalist>
                   </form>
                 ) : null}
               </div>
@@ -4204,8 +4252,8 @@ export function ApplicationDetailDialog({
               </div>
             </div>
 
-            {/* Tolak Lamaran */}
-            {canMutate && (app.status !== "REJECTED" || rejectMessage) ? (
+            {/* Tolak Lamaran — NR-24-b: panel juga tampil utk REJECTED yang masih bisa di-undo */}
+            {showRejectPanel ? (
               <div className="flex flex-col gap-3 rounded-lg border border-rose-200 p-3 dark:border-rose-900">
                 <div className="flex items-center gap-2">
                   <XCircle className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
@@ -4213,13 +4261,112 @@ export function ApplicationDetailDialog({
                 </div>
 
                 {app.status === "REJECTED" ? (
-                  <p className="text-sm text-muted-foreground">
-                    Ditolak {formatDate(app.rejectedAt)}
-                    {app.rejectionReason
-                      ? ` — ${REJECTION_REASON_LABELS[app.rejectionReason]}`
-                      : ""}
-                    {app.rejectionNote ? ` · ${app.rejectionNote}` : ""}
-                  </p>
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Ditolak {formatDate(app.rejectedAt)}
+                      {app.rejectionReason
+                        ? ` — ${REJECTION_REASON_LABELS[app.rejectionReason]}`
+                        : ""}
+                      {app.rejectionNote ? ` · ${app.rejectionNote}` : ""}
+                    </p>
+                    {/* NR-24-b (ide 14) — undo penolakan dengan pola KUNCI ala NR-23:
+                        terkunci default -> buka kunci -> AlertDialog konfirmasi. */}
+                    {canUndoReject ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => setUndoUnlocked((v) => !v)}
+                              aria-label={
+                                undoUnlocked
+                                  ? "Kunci kembali"
+                                  : "Buka kunci untuk membatalkan penolakan"
+                              }
+                              className={cn(
+                                "flex size-8 items-center justify-center rounded-md border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+                                undoUnlocked
+                                  ? "border-amber-300 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950"
+                                  : "text-muted-foreground hover:bg-accent"
+                              )}
+                            >
+                              {undoUnlocked ? (
+                                <LockOpen className="size-3.5" aria-hidden="true" />
+                              ) : (
+                                <Lock className="size-3.5" aria-hidden="true" />
+                              )}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {undoUnlocked
+                              ? "Kunci kembali"
+                              : "Buka kunci dulu untuk membatalkan penolakan"}
+                          </TooltipContent>
+                        </Tooltip>
+                        <AlertDialog
+                          open={undoConfirmOpen}
+                          onOpenChange={setUndoConfirmOpen}
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-9 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                            disabled={!undoUnlocked || undoSaving}
+                            onClick={() => setUndoConfirmOpen(true)}
+                          >
+                            Batalkan Penolakan
+                          </Button>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                Batalkan penolakan {app.name}?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Status akan kembali ke tahap sebelum penolakan dan pelamar
+                                menerima email pembaruan.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <div className="flex flex-col gap-1.5">
+                              <Label htmlFor="undo-reject-reason">
+                                Alasan pembatalan (wajib)
+                              </Label>
+                              <Textarea
+                                id="undo-reject-reason"
+                                value={undoReason}
+                                onChange={(e) => setUndoReason(e.target.value)}
+                                placeholder="mis. Pelamar melanjutkan proses setelah konfirmasi"
+                                rows={2}
+                                maxLength={300}
+                                disabled={undoSaving}
+                              />
+                            </div>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel disabled={undoSaving}>
+                                Batal
+                              </AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  void handleUndoReject();
+                                }}
+                                className="bg-rose-600 text-white hover:bg-rose-700"
+                                disabled={undoSaving || !undoReason.trim()}
+                              >
+                                {undoSaving ? (
+                                  <>
+                                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                                    Membatalkan...
+                                  </>
+                                ) : (
+                                  "Ya, Batalkan Penolakan"
+                                )}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    ) : null}
+                  </>
                 ) : (
                   <>
                     <div className="flex flex-col gap-1.5">
