@@ -3155,9 +3155,11 @@ export function ApplyWizard({
             ) : null}
 
             {/* Link portofolio & sosial media — hanya mode klasik; mode skema
-                memindahkan portofolio ke bagian Berkas skema */}
-            {!schema ? (
+                memindahkan portofolio ke bagian Berkas skema. NR-22: tiap slot
+                bisa disembunyikan per posisi. */}
+            {!schema && (classicShowPortfolio || classicShowSocial) ? (
             <div className="grid gap-5 sm:grid-cols-2">
+              {classicShowPortfolio ? (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-portfolio">{t.apply.fields.portfolio}</Label>
                 <Input
@@ -3174,7 +3176,9 @@ export function ApplyWizard({
                   }
                 />
               </div>
+              ) : null}
 
+              {classicShowSocial ? (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-social">{t.apply.fields.social}</Label>
                 <Input
@@ -3187,6 +3191,7 @@ export function ApplyWizard({
                   className="h-11"
                 />
               </div>
+              ) : null}
 
               {/* Posisi tertentu mewajibkan salah satu diisi */}
               {errors.portfolioUrl ? (
@@ -3451,8 +3456,12 @@ export function ApplyWizard({
             skema di atas. */}
         {!schema && step === filesStep && (
           <div className="flex flex-col gap-5">
-            {renderCvUpload(selectedPosition?.requireCv === true)}
-            {renderIntroUpload(selectedPosition?.requireIntro === true)}
+            {classicShowCv
+              ? renderCvUpload(selectedPosition?.requireCv === true)
+              : null}
+            {classicShowIntro
+              ? renderIntroUpload(selectedPosition?.requireIntro === true)
+              : null}
 
             {/* Dokumen wajib tambahan milik posisi (customDocs) — hanya mode
                 klasik; skema aktif memakai field file milik skema */}
@@ -3631,16 +3640,21 @@ export function ApplyWizard({
                 value={values.motivation}
                 fallback={t.apply.preview.notFilled}
               />
-              <PreviewRow
-                label={t.apply.fields.portfolio}
-                value={values.portfolioUrl}
-                fallback={t.apply.preview.notFilled}
-              />
-              <PreviewRow
-                label={t.apply.fields.social}
-                value={values.socialLinks}
-                fallback={t.apply.preview.notFilled}
-              />
+              {/* NR-22 — slot portofolio/sosial hanya bila tidak disembunyikan */}
+              {classicShowPortfolio ? (
+                <PreviewRow
+                  label={t.apply.fields.portfolio}
+                  value={values.portfolioUrl}
+                  fallback={t.apply.preview.notFilled}
+                />
+              ) : null}
+              {classicShowSocial ? (
+                <PreviewRow
+                  label={t.apply.fields.social}
+                  value={values.socialLinks}
+                  fallback={t.apply.preview.notFilled}
+                />
+              ) : null}
             </PreviewSection>
             ) : null}
 
@@ -3703,15 +3717,20 @@ export function ApplyWizard({
             ) : null}
 
             {/* Mode klasik: kartu Berkas Terlampir (mode skema memakai kartu
-                per bagian — slot berkas aktif ada di kartu bagian Berkas) */}
-            {!schema ? (
+                per bagian — slot berkas aktif ada di kartu bagian Berkas).
+                NR-22 — kartu & slot mengikuti slot yang tidak disembunyikan. */}
+            {!schema && classicFilesHasContent ? (
             <PreviewSection
               title={t.apply.preview.sectionFiles}
               editLabel={t.apply.preview.edit}
               onEdit={() => goToStep(filesStep)}
             >
-              {renderPreviewFileRow("cv", selectedPosition?.requireCv === true)}
-              {renderPreviewFileRow("intro", selectedPosition?.requireIntro === true)}
+              {classicShowCv
+                ? renderPreviewFileRow("cv", selectedPosition?.requireCv === true)
+                : null}
+              {classicShowIntro
+                ? renderPreviewFileRow("intro", selectedPosition?.requireIntro === true)
+                : null}
               {/* Dokumen wajib tambahan — pratinjau berkas terunggah per label */}
               {customDocs.map((label, index) => {
                 const file = extraFiles[index];
