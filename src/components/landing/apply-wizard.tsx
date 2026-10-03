@@ -1877,11 +1877,11 @@ export function ApplyWizard({
    * (markup & state sama persis; hanya tanda wajib/opsional yang mengikuti
    * parameter: kolom posisi di mode klasik, flag bagian Berkas di mode skema).
    */
-  function renderCvUpload(required: boolean) {
+  function renderCvUpload(required: boolean, labelOverride?: string) {
     return (
       <div className="flex flex-col gap-2">
         <Label htmlFor="apply-cv" className="gap-2">
-          {t.apply.uploads.cvLabel}
+          {labelOverride ?? t.apply.uploads.cvLabel}
           <span
             className={cn(
               "text-xs font-normal",
@@ -1959,11 +1959,11 @@ export function ApplyWizard({
    * Blok unggah audio/video perkenalan — dipakai langkah Berkas klasik DAN
    * bagian Berkas skema (markup & state sama persis).
    */
-  function renderIntroUpload(required: boolean) {
+  function renderIntroUpload(required: boolean, labelOverride?: string) {
     return (
       <div className="flex flex-col gap-2">
         <Label htmlFor="apply-intro" className="gap-2">
-          {t.apply.uploads.introLabel}
+          {labelOverride ?? t.apply.uploads.introLabel}
           <span
             className={cn(
               "text-xs font-normal",
@@ -2922,7 +2922,7 @@ export function ApplyWizard({
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-name">
-                  {t.apply.fields.name} <span className="text-rose-600">*</span>
+                  {nameFieldLabel} <span className="text-rose-600">*</span>
                 </Label>
                 <Input
                   id="apply-name"
@@ -2944,7 +2944,7 @@ export function ApplyWizard({
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-email">
-                  {t.apply.fields.email} <span className="text-rose-600">*</span>
+                  {emailFieldLabel} <span className="text-rose-600">*</span>
                 </Label>
                 <Input
                   id="apply-email"
@@ -2969,7 +2969,7 @@ export function ApplyWizard({
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-phone" className="gap-2">
-                  {t.apply.fields.phone}
+                  {waFieldLabel}
                   {biodataWaRequired ? (
                     <span className="text-rose-600">*</span>
                   ) : (
@@ -3097,7 +3097,10 @@ export function ApplyWizard({
             {(!schema || (experienceEntry && isExperienceEnabled(experienceEntry.section))) ? (
             <div className="flex flex-col gap-2">
               <Label htmlFor="apply-experience">
-                {t.apply.fields.experience} <span className="text-rose-600">*</span>
+                {experienceFieldLabel}{" "}
+                {schema && experienceEntry && isExperienceRequired(experienceEntry.section) ? (
+                  <span className="text-rose-600">*</span>
+                ) : null}
               </Label>
               <Textarea
                 id="apply-experience"
@@ -3122,7 +3125,10 @@ export function ApplyWizard({
             {(!schema || (experienceEntry && isMotivationEnabled(experienceEntry.section))) ? (
             <div className="flex flex-col gap-2">
               <Label htmlFor="apply-motivation">
-                {t.apply.fields.motivation} <span className="text-rose-600">*</span>
+                {motivationFieldLabel}{" "}
+                {schema && experienceEntry && isMotivationRequired(experienceEntry.section) ? (
+                  <span className="text-rose-600">*</span>
+                ) : null}
               </Label>
               <Textarea
                 id="apply-motivation"
@@ -3443,15 +3449,21 @@ export function ApplyWizard({
               </p>
             ) : null}
             {isCvEnabled(filesEntry.section)
-              ? renderCvUpload(isCvRequired(filesEntry.section))
+              ? renderCvUpload(
+                  isCvRequired(filesEntry.section),
+                  coreItemLabel(filesEntry.section, "cv"),
+                )
               : null}
             {isIntroEnabled(filesEntry.section)
-              ? renderIntroUpload(isIntroRequired(filesEntry.section))
+              ? renderIntroUpload(
+                  isIntroRequired(filesEntry.section),
+                  coreItemLabel(filesEntry.section, "intro"),
+                )
               : null}
             {isPortfolioEnabled(filesEntry.section) ? (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-portfolio" className="gap-2">
-                  {t.apply.fields.portfolio}
+                  {portfolioFieldLabel}
                   <span
                     className={cn(
                       "text-xs font-normal",
