@@ -78,6 +78,8 @@ export type PositionFields = {
   showIntroField?: boolean;
   showPortfolioField?: boolean;
   showSocialField?: boolean;
+  // NR-24 — tampilkan kolom opsional ekspektasi gaji di wizard
+  showExpectedSalary?: boolean;
   customDocs?: string[]; // label dokumen wajib tambahan
   maxApplicants?: number | null;
   applyOpen?: boolean; // formulir lamaran posisi ini buka/tutup
@@ -537,6 +539,7 @@ export async function sanitizePositionInput(
     ["showIntroField", "showIntroField"],
     ["showPortfolioField", "showPortfolioField"],
     ["showSocialField", "showSocialField"],
+    ["showExpectedSalary", "showExpectedSalary"],
     ["applyOpen", "applyOpen"],
   ];
   for (const [key, name] of booleans) {
@@ -888,6 +891,8 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.showIntroField !== undefined) out.showIntroField = f.showIntroField;
   if (f.showPortfolioField !== undefined) out.showPortfolioField = f.showPortfolioField;
   if (f.showSocialField !== undefined) out.showSocialField = f.showSocialField;
+  // NR-24 — kolom opsional ekspektasi gaji (WAJIB dipetakan — pelajaran NR-22)
+  if (f.showExpectedSalary !== undefined) out.showExpectedSalary = f.showExpectedSalary;
   if (f.customDocs !== undefined) out.customDocs = JSON.stringify(f.customDocs);
   if (f.maxApplicants !== undefined) out.maxApplicants = f.maxApplicants;
   if (f.applyOpen !== undefined) out.applyOpen = f.applyOpen;

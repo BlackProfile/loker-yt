@@ -186,6 +186,8 @@ export type DefaultPositionSeed = {
   showIntroField?: boolean;
   showPortfolioField?: boolean;
   showSocialField?: boolean;
+  // NR-24 — kolom opsional ekspektasi gaji di wizard
+  showExpectedSalary?: boolean;
   maxApplicants?: number;
   aiCriteria?: string;
   applyTemplate?: string;

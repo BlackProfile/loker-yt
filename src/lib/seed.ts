@@ -1138,6 +1138,7 @@ async function runSeed(): Promise<void> {
           showIntroField: position.showIntroField ?? true,
           showPortfolioField: position.showPortfolioField ?? true,
           showSocialField: position.showSocialField ?? true,
+          showExpectedSalary: position.showExpectedSalary ?? true,
           maxApplicants: position.maxApplicants ?? null,
           aiCriteria: position.aiCriteria ?? null,
           applyTemplate: position.applyTemplate ?? null,

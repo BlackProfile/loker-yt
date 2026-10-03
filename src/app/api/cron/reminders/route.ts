@@ -16,6 +16,10 @@
 //       (dedupe ActivityLog EMAIL_REPORT_WEEKLY; TIDAK kirim SMTP langsung)
 //   24. NR-19 Laporan email bulanan: tanggal 1 jam 07:00 lokal bila monthlyEnabled
 //       !== false -> sama, dedupe EMAIL_REPORT_MONTHLY
+//   25. NR-24 "followupBell": lamaran deletedAt null dengan snoozeUntil <= now ->
+//       NotificationItem "Tindak lanjut jatuh tempo" + ActivityLog FOLLOWUP_REMIND
+//       (dedupe: satu pengingat per lamaran per snoozeUntil — dicek via ActivityLog
+//       FOLLOWUP_REMIND yang createdAt >= snoozeUntil)
 // Uji manual: POST body {"forceEmailReport": true} memproses job laporan email
 // mengabaikan cek hari/jam (dedupe harian tetap berlaku).
 import { NextRequest, NextResponse } from "next/server";
@@ -585,6 +589,61 @@ export async function POST(req: NextRequest) {
       // diam
     }
 
+    // 25) NR-24 — "followupBell": pengingat tindak lanjut jatuh tempo di lonceng
+    //     admin. Lamaran deletedAt null dengan snoozeUntil <= now (waktu server,
+    //     konsisten dengan job lain di cron ini) mendapat NotificationItem in-app
+    //     + ActivityLog FOLLOWUP_REMIND. Dedupe: lewati bila sudah ada ActivityLog
+    //     FOLLOWUP_REMIND untuk lamaran tsb dengan createdAt >= snoozeUntil
+    //     (artinya pengingat untuk jadwal snooze ini sudah pernah dibunyikan).
+    let followupBell = 0;
+    try {
+      const dueFollowups = await db.application.findMany({
+        where: { deletedAt: null, snoozeUntil: { not: null, lte: now } },
+        select: {
+          id: true,
+          name: true,
+          trackingCode: true,
+          snoozeUntil: true,
+          position: { select: { title: true } },
+        },
+        take: 50,
+      });
+      for (const app of dueFollowups) {
+        if (!app.snoozeUntil) continue;
+        const already = await db.activityLog.findFirst({
+          where: {
+            applicationId: app.id,
+            action: "FOLLOWUP_REMIND",
+            createdAt: { gte: app.snoozeUntil },
+          },
+          select: { id: true },
+        });
+        if (already) continue;
+        const codeLabel = app.trackingCode ?? "-";
+        await pushNotification({
+          title: "Tindak lanjut jatuh tempo",
+          body: `${app.name} (${codeLabel}) — hubungi lagi (${app.position?.title ?? "-"})`,
+          category: "APPLICATION",
+          applicationId: app.id,
+        });
+        await db.activityLog.create({
+          data: {
+            applicationId: app.id,
+            actor: "Sistem",
+            action: "FOLLOWUP_REMIND",
+            detail: `Pengingat tindak lanjut (snooze s.d. ${formatDateTimeId(app.snoozeUntil)})`,
+          },
+        });
+        followupBell += 1;
+      }
+      if (followupBell > 0) {
+        void emitRealtime(REALTIME_EVENTS.applications);
+      }
+    } catch (followupError) {
+      console.error("[POST /api/cron/reminders] followupBell", followupError);
+      // diam — pengingat tidak boleh menggagalkan cron
+    }
+
     return NextResponse.json({
       ok: true,
       offerExpired,
@@ -611,6 +670,7 @@ export async function POST(req: NextRequest) {
       telegramCandOffer,
       emailReportWeekly,
       emailReportMonthly,
+      followupBell,
     });
   } catch (error) {
     console.error("[POST /api/cron/reminders]", error);

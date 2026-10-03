@@ -104,6 +104,8 @@ export async function POST(req: NextRequest) {
         showIntroField: f.showIntroField ?? true,
         showPortfolioField: f.showPortfolioField ?? true,
         showSocialField: f.showSocialField ?? true,
+        // NR-24 — kolom opsional ekspektasi gaji (default tampil)
+        showExpectedSalary: f.showExpectedSalary ?? true,
         customDocs: JSON.stringify(f.customDocs ?? []),
         maxApplicants: f.maxApplicants ?? null,
         applyOpen: f.applyOpen ?? true,

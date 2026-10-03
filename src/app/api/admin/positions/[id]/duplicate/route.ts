@@ -62,6 +62,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         showIntroField: existing.showIntroField,
         showPortfolioField: existing.showPortfolioField,
         showSocialField: existing.showSocialField,
+        // NR-24 — kolom ekspektasi gaji ikut disalin
+        showExpectedSalary: existing.showExpectedSalary,
         customDocs: existing.customDocs,
         maxApplicants: existing.maxApplicants,
         applyOpen: existing.applyOpen,
