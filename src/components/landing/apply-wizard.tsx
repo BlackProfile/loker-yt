@@ -39,15 +39,19 @@ import {
 } from "@/lib/types";
 import {
   FORM_LIMITS,
+  coreItemLabel,
+  defaultBiodataSection,
   formatAnswerValue,
   isAllowedFormFile,
   isCvEnabled,
   isCvRequired,
   isExperienceEnabled,
+  isExperienceRequired,
   isFormSchemaActive,
   isIntroEnabled,
   isIntroRequired,
   isMotivationEnabled,
+  isMotivationRequired,
   isPortfolioEnabled,
   isPortfolioRequired,
   isWaRequired,
@@ -925,17 +929,24 @@ export function ApplyWizard({
   // null — wizard tidak menormalkan ulang. null/tidak aktif = mode klasik.
   const rawSchema = selectedPosition?.formSchema ?? null;
   const schema = rawSchema && isFormSchemaActive({ formSchema: rawSchema }) ? rawSchema : null;
-  // Langkah wizard = section yang punya isi (sectionHasStep — bagian bawaan
-  // yang dikosongkan otomatis dilewati), SESUAI URUTAN di skema. Pratinjau
-  // selalu langkah terakhir. Tidak ada lagi urutan tetap biodata→pengalaman→kustom→berkas.
+  // Langkah wizard = section yang punya isi (sectionHasStep — bagian inti yang
+  // dikosongkan otomatis dilewati), SESUAI URUTAN di skema. Pratinjau selalu
+  // langkah terakhir. NR-23: semua bagian (termasuk Data Diri) bisa dihapus
+  // admin — identitas tetap dikumpulkan lewat langkah fallback berlabel bawaan.
   const sectionSteps: { section: FormSection; fields: FormField[]; stepIndex: number }[] = [];
   if (schema) {
-    let nextStepIndex = 0;
     for (const section of schema.sections) {
       if (!sectionHasStep(schema, section)) continue;
-      sectionSteps.push({ section, fields: sectionFields(schema, section.id), stepIndex: nextStepIndex });
-      nextStepIndex += 1;
+      sectionSteps.push({ section, fields: sectionFields(schema, section.id), stepIndex: 0 });
     }
+    // Identitas (nama & email) selalu dikumpulkan — bila bagian Data Diri sudah
+    // dihapus, langkah identitas memakai konfigurasi & label bawaan di posisi awal.
+    if (!sectionSteps.some((entry) => entry.section.kind === "biodata")) {
+      sectionSteps.unshift({ section: defaultBiodataSection(), fields: [], stepIndex: 0 });
+    }
+    sectionSteps.forEach((entry, index) => {
+      entry.stepIndex = index;
+    });
   }
 
   // NR-4 — sisipkan langkah Info Kehadiran: mode klasik setelah Pengalaman
@@ -1298,12 +1309,34 @@ export function ApplyWizard({
   function validateStep2(opts: {
     experienceEnabled: boolean;
     motivationEnabled: boolean;
+    /** NR-23 — wajib per item (default true); false = pertanyaan opsional. */
+    experienceRequired?: boolean;
+    motivationRequired?: boolean;
+    /** Label kustom bagian skema — bila diisi, pesan galat memakai label ini. */
+    experienceLabel?: string;
+    motivationLabel?: string;
   }): FormErrors {
     const next: FormErrors = {};
-    if (opts.experienceEnabled && values.experience.trim().length < MIN_TEXT_LENGTH)
-      next.experience = t.apply.errors.experience;
-    if (opts.motivationEnabled && values.motivation.trim().length < MIN_TEXT_LENGTH)
-      next.motivation = t.apply.errors.motivation;
+    if (
+      opts.experienceEnabled &&
+      (opts.experienceRequired ?? true) &&
+      values.experience.trim().length < MIN_TEXT_LENGTH
+    )
+      next.experience = opts.experienceLabel
+        ? lang === "en"
+          ? `"${opts.experienceLabel}" must be at least 10 characters.`
+          : `"${opts.experienceLabel}" minimal 10 karakter.`
+        : t.apply.errors.experience;
+    if (
+      opts.motivationEnabled &&
+      (opts.motivationRequired ?? true) &&
+      values.motivation.trim().length < MIN_TEXT_LENGTH
+    )
+      next.motivation = opts.motivationLabel
+        ? lang === "en"
+          ? `"${opts.motivationLabel}" must be at least 10 characters.`
+          : `"${opts.motivationLabel}" minimal 10 karakter.`
+        : t.apply.errors.motivation;
     // Pertanyaan screening wajib milik posisi terpilih — mode klasik saja
     // (skema aktif menggantikan screening dengan langkah dinamis).
     if (!schema) {
@@ -1507,6 +1540,10 @@ export function ApplyWizard({
           validateStep2({
             experienceEnabled: isExperienceEnabled(entry.section),
             motivationEnabled: isMotivationEnabled(entry.section),
+            experienceRequired: isExperienceRequired(entry.section),
+            motivationRequired: isMotivationRequired(entry.section),
+            experienceLabel: coreItemLabel(entry.section, "experience"),
+            motivationLabel: coreItemLabel(entry.section, "motivation"),
           }),
         );
         break;
@@ -2640,6 +2677,22 @@ export function ApplyWizard({
   // waRequired bagian biodata (opsional tetap divalidasi ≥8 digit bila diisi).
   const biodataWaRequired =
     schema && biodataEntry ? isWaRequired(biodataEntry.section) : true;
+
+  // NR-23 — label item inti mengikuti konfigurasi bagian (bisa diedit admin di
+  // Form Builder); mode klasik & bagian yang dihapus memakai label bawaan terjemahan.
+  const biodataCfg = schema && biodataEntry ? biodataEntry.section : null;
+  const experienceCfg = schema && experienceEntry ? experienceEntry.section : null;
+  const filesCfg = schema && filesEntry ? filesEntry.section : null;
+  const nameFieldLabel = biodataCfg ? coreItemLabel(biodataCfg, "name") : t.apply.fields.name;
+  const emailFieldLabel = biodataCfg ? coreItemLabel(biodataCfg, "email") : t.apply.fields.email;
+  const waFieldLabel = biodataCfg ? coreItemLabel(biodataCfg, "wa") : t.apply.fields.phone;
+  const experienceFieldLabel = experienceCfg
+    ? coreItemLabel(experienceCfg, "experience")
+    : t.apply.fields.experience;
+  const motivationFieldLabel = experienceCfg
+    ? coreItemLabel(experienceCfg, "motivation")
+    : t.apply.fields.motivation;
+  const portfolioFieldLabel = filesCfg ? coreItemLabel(filesCfg, "portfolio") : t.apply.fields.portfolio;
 
   return (
     <div className="@container flex flex-col gap-6">
