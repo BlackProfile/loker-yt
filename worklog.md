@@ -2509,3 +2509,23 @@ Stage Summary:
 - 10/10 ide backend admin terimplementasi & terverifikasi E2E via browser gateway :81. Semua subagent menulis entri worklog sendiri (NR-19-b/c/d/e), NR-19-a dilengkapi orchestrator.
 - File kunci baru: api/admin/reports/{schedule,scorecards}, api/admin/backups, api/admin/logs/export, api/admin/applications/[id]/anonymize, api/public/admin-invite/accept, lib/{report-email,restore-db,wip-limits}.ts.
 - Keputusan desain: email laporan hanya antre EmailOutbox (SMTP pipeline existing); WIP demo Video Editor {NEW:2,INTERVIEW:1}; invite token tidak pernah bocor di respons API; payload webhook bebas gaji/link/PII.
+
+---
+Task ID: NR-20
+Agent: Z.ai Code main (orchestrator)
+Task: Tambah lowongan "Supir Armada Operasional" — 12 ide (konten, screening, pipeline, penguat) atas persetujuan "semuanya".
+
+Work Log:
+- Konteks: sesi sebelumnya (terputus) sudah menyiapkan .zscripts/add-supir.ts (seed idempoten 12 ide) + memperbaiki db-guard menjadi mode relatif-backup via scripts/guard-check.ts (RESTORE hanya bila posisi DAN lamaran live < backup + cek skema kompatibel; SKIP_STALE_BAK bila skema usang). DB live sudah berisi posisi Supir (6 posisi) dan backup demo-seed juga sudah 6 posisi.
+- Verifikasi seed: cek seluruh field — title/titleEn/description/descriptionEn, 7 persyaratan (ID+EN), 5 fasilitas, salaryText+salaryMin/Max+visible, ONSITE Jakarta + alamat Cipete + mapsUrl + workHours + shift FIXED, urgent+featured+order 0, 5 screeningQuestions wajib, 3 customDocs (SIM B2/SKCK/Surat Sehat), 5 tahap kustom (Screening Berkas→Tes Mengemudi→Wawancara→Tes Kesehatan→Offer) + kategori + 5 stageNotes, rubric 5 kriteria, checklist 5 item, aiCriteria + autoShortlist 75→Tes Mengemudi, dailySlotQuota 4, interviewMode ONSITE 60 menit + roundPlan 2 ronde, 4 template pesan (apply/invite/offer/welcome), onboardingDocs 4 item.
+- Daemon mati saat sesi dimulai (hanya dev server hidup) — di-restart semua: dev-keepalive, realtime, telegram, auto-push, db-guard.
+- E2E browser via :81 (PUBLIK): landing — kartu Supir urutan pertama (featured), badge Unggulan+Urgent, gaji, On-site Jakarta; dialog detail — deskripsi, persyaratan, 5 tahap, lokasi+jam kerja+shift tetap+fasilitas, link peta; wizard lamaran — step 1 data diri, step 2 pengalaman+motivasi+5 pertanyaan screening wajib, step 3 domisili/komuter/shift (wajib, khusus ONSITE), step 4 upload 3 dokumen wajib (dummy files), pratinjau + 2 checkbox persetujuan, konfirmasi → terkirim LM-L4399O + pesan konfirmasi memakai applyTemplate khusus supir; halaman Cek Status — pipeline 5 tahap tampil dengan expander "Apa yang terjadi di tahap ini?".
+- Otomasi terbukti berjalan: ActivityLog = APPLICATION_SUBMITTED → AI_SCREENING (skor 90/100, LAYAK_WAWANCARA) → AUTO_SHORTLIST (90>=75 → pindah otomatis ke "Tes Mengemudi") → WEBHOOK. Jawaban screening, domisili/komuter/shift, 3 extraDocs tersimpan benar di DB.
+- E2E browser via :81 (ADMIN, owner): tab Posisi — kartu Supir (Tayang, Form Buka, 1 lamaran); Kelola Posisi — Ringkasan + editor Seleksi (5 tahap + 5 catatan tahap terbaca); tab Pipeline — grup per lowongan, kandidat uji muncul di kategori Wawancara dengan chip tahap "Tes Mengemudi" + aksi Jadwalkan/Penawaran/Detail/Tolak; dialog Detail — jawaban screening, domisili Tangerang, "Siap komuter", "Shift pagi", 3 file dokumen, skor AI 90, rubrik & checklist tampil.
+- Cleanup: lamaran uji "Uji Supir Demo" dihapus beserta 3 FileAsset + file fisik & notifikasi (0) — kembali ke 6 posisi + 5 lamaran demo. guard-check OK (live 6/5, backup 6/5). Tidak ada data uji tertinggal.
+- bun run lint: 0 error. dev.log bersih (tanpa error runtime). main == origin/main (auto-push watcher sinkron).
+
+Stage Summary:
+- NR-20 selesai: lowongan "Supir Armada Operasional" (slug supir-armada-operasional) hidup dengan 12/12 ide — konten dwibahasa, screening & dokumen wajib khas supir, pipeline 5 tahap kustom + penjelasan per tahap, rubric & checklist tes mengemudi, AI criteria + auto-shortlist, slot on-site, urgent+featured, 4 template pesan.
+- Alur uang-bukti: satu lamaran uji menempuh jalur lengkap publik→AI→auto-shortlist→admin pipeline→detail, lalu dibersihkan.
+- File: .zscripts/add-supir.ts (seed), .zscripts/{check-positions,check-supir,check-app,cleanup-app}.ts (util uji), scripts/db-guard.sh + scripts/guard-check.ts (dari sesi sebelumnya). Tidak ada perubahan kode aplikasi/schema — posisi murni data, tahan db-guard karena backup ikut 6 posisi.
