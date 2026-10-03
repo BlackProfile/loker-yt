@@ -2,10 +2,16 @@
 # db-guard: deteksi database demo ter-reset (data lowongan & pelamar demo hilang)
 # lalu pulihkan otomatis dari backup + restart dev server.
 #
-# Latar belakang: db/custom.db pernah ter-reset sendiri ke seed dasar
-# (5 posisi / 5 lamaran) padahal seed demo berisi 20 posisi / 36 lamaran.
-# Guard ini memantau setiap 60 detik; bila posisi < 10 DAN lamaran < 10
-# (indikasi wipe total, bukan penghapusan biasa), restore backup.
+# Latar belakang: db/custom.db kadang ter-reset oleh platform ke seed dasar
+# padahal backups/custom.db.demo-seed.bak berisi demo lengkap. Guard ini
+# memantau setiap 60 detik dan memulihkan bila live lebih kecil dari backup.
+#
+# NR-20: logika diperbaiki —
+#   1. Bandingkan dengan isi backup (relatif), bukan ambang mutlak 10/10,
+#      agar tidak loop restore ketika jumlah posisi memang < 10.
+#      Restore hanya bila posisi DAN lamaran live < backup (indikasi wipe total).
+#   2. Cek kompatibilitas skema via scripts/guard-check.ts (bun:sqlite):
+#      backup yang kehilangan kolom (skema usang) tidak pernah di-restore.
 #
 # Stop guard:  pkill -f db-guard.sh
 # Restore manual: cp backups/custom.db.demo-seed.bak db/custom.db && pkill -f "next dev"
@@ -18,12 +24,7 @@ INTERVAL=60
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [db-guard] $*" >> "$LOG"; }
 
-log "dimulai (pid $$) — memantau db/demo data"
-
-count() {
-  # Hitung jumlah baris tabel via bun+prisma; output angka, gagal => 0
-  bun -e "import {PrismaClient} from '@prisma/client'; const db=new PrismaClient(); process.stdout.write(String(await db.$1.count())); await db.\$disconnect();" 2>/dev/null || echo 0
-}
+log "dimulai (pid $$) — memantau db/demo data (mode relatif-backup)"
 
 while true; do
   sleep "$INTERVAL"
@@ -31,14 +32,19 @@ while true; do
     log "backup tidak ditemukan ($BAK) — guard idle"
     continue
   fi
-  pos=$(count position)
-  apps=$(count application)
-  if [ "$pos" -lt 10 ] && [ "$apps" -lt 10 ]; then
-    log "TERDETEKSI RESET: posisi=$pos lamaran=$apps — restore dari backup..."
-    cp "$BAK" "$DB" || { log "gagal copy backup"; continue; }
-    log "restore selesai, restart dev server (keepalive akan menghidupkan ulang)"
-    pkill -f "next dev" 2>/dev/null || true
-  else
-    log "OK: posisi=$pos lamaran=$apps"
-  fi
+  decision=$(bun "$PROJECT_DIR/scripts/guard-check.ts" 2>>"$LOG")
+  token=$(echo "$decision" | head -1)
+  case "$token" in
+    RESTORE)
+      cp "$BAK" "$DB" || { log "gagal copy backup"; continue; }
+      log "restore selesai, restart dev server (keepalive akan menghidupkan ulang)"
+      pkill -f "next dev" 2>/dev/null || true
+      ;;
+    SKIP_STALE_BAK)
+      # alasan sudah dicatat guard-check.ts ke dev.log via stderr
+      ;;
+    *)
+      # OK — live sehat
+      ;;
+  esac
 done
