@@ -2206,13 +2206,14 @@ export function ApplyWizard({
       if (values.socialLinks.trim())
         fd.append("socialLinks", values.socialLinks.trim());
       // Pengalaman & motivasi dikirim string kosong bila bagian Pengalaman
-      // skema mematikannya (server juga melewati validasi ≥10 saat flag mati).
+      // skema mematikannya ATAU bagian itu sudah dihapus admin (NR-23) —
+      // server juga melewati validasi ≥10 untuk keduanya.
       const experienceSection =
         schema?.sections.find((section) => section.kind === "experience") ?? null;
       const experienceOn =
-        schema && experienceSection ? isExperienceEnabled(experienceSection) : true;
+        schema && experienceSection ? isExperienceEnabled(experienceSection) : !schema;
       const motivationOn =
-        schema && experienceSection ? isMotivationEnabled(experienceSection) : true;
+        schema && experienceSection ? isMotivationEnabled(experienceSection) : !schema;
       fd.append(
         "experience",
         schema && !experienceOn ? "" : values.experience.trim(),

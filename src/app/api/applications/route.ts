@@ -320,15 +320,30 @@ export async function POST(req: NextRequest) {
     const biodataSection = formSchema?.sections.find((s) => s.kind === "biodata");
     const waRequired = schemaActive && biodataSection ? isWaRequired(biodataSection) : true;
     const experienceSection = formSchema?.sections.find((s) => s.kind === "experience");
-    const experienceEnabled =
-      schemaActive && experienceSection ? isExperienceEnabled(experienceSection) : true;
-    const motivationEnabled =
-      schemaActive && experienceSection ? isMotivationEnabled(experienceSection) : true;
+    // NR-23 — mode klasik (tanpa skema aktif): pengalaman/motivasi selalu ada & wajib.
+    // Mode skema: flag bagian menentukan; bila bagian Pengalaman DIHAPUS admin,
+    // keduanya dianggap mati (tidak ada pertanyaan → tidak ada validasi).
+    const experienceEnabled = schemaActive
+      ? experienceSection
+        ? isExperienceEnabled(experienceSection)
+        : false
+      : true;
+    const motivationEnabled = schemaActive
+      ? experienceSection
+        ? isMotivationEnabled(experienceSection)
+        : false
+      : true;
     // NR-23 — "Wajib" pengalaman/motivasi kini per item (default true = perilaku lama).
-    const experienceRequired =
-      schemaActive && experienceSection ? isExperienceRequired(experienceSection) : true;
-    const motivationRequired =
-      schemaActive && experienceSection ? isMotivationRequired(experienceSection) : true;
+    const experienceRequired = schemaActive
+      ? experienceSection
+        ? isExperienceRequired(experienceSection)
+        : false
+      : true;
+    const motivationRequired = schemaActive
+      ? experienceSection
+        ? isMotivationRequired(experienceSection)
+        : false
+      : true;
 
     // Nomor WhatsApp: wajib sesuai konfigurasi bagian Data Diri; bila diisi
     // (atau wajib), formatnya tetap divalidasi.
