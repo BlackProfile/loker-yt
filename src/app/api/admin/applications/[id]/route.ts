@@ -1,4 +1,6 @@
-// PATCH  /api/admin/applications/[id] — update status/catatan/rating/tags/wawancara/talent pool/rubrik/checklist/catatan video (OWNER/HR).
+// PATCH  /api/admin/applications/[id] — update status/catatan/rating/tags/wawancara/talent pool/rubrik/checklist/catatan video
+//        + fitur per pelamar NR-24: ekspektasi gaji, bintang personal (starred), HOLD
+//        (holdReason/holdReviewAt), dan masa berlaku dokumen (docExpiries) (OWNER/HR).
 // DELETE /api/admin/applications/[id] — pindahkan lamaran ke tong sampah (soft delete, OWNER/HR).
 // Setiap perubahan dicatat ke ActivityLog. Perubahan tahap memicu webhook application.stage_changed.
 import { NextRequest, NextResponse } from "next/server";
@@ -6,6 +8,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import {
   APPLICATION_INCLUDE,
+  parseDocExpiries,
   parseRequirements,
   parseScoreRecord,
   parseTags,
@@ -24,6 +27,12 @@ export const dynamic = "force-dynamic";
 const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
 const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
 const NOT_FOUND = { error: "Lamaran tidak ditemukan" };
+
+// Batas NR-24
+const EXPECTED_SALARY_MAX = 1_000_000_000; // Rp 1 miliar — pelindung salah ketik
+const HOLD_REASON_MAX = 300;
+const DOC_EXPIRY_KEY_MAX = 64;
+const DOC_EXPIRY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function labelOf(status: string): string {
   return isBuiltInStage(status) ? STATUS_LABELS[status as ApplicationStatus] : status;
@@ -63,7 +72,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       videoNotes?: string | null;
       stageUpdatedAt?: Date;
       stageHistory?: string;
+      // NR-24 — fitur per pelamar
+      expectedSalary?: number | null;
+      starredBy?: string;
+      holdReason?: string | null;
+      holdReviewAt?: Date | null;
+      docExpiries?: string | null;
     } = {};
+    // Field yang perlu merge dengan nilai existing — dihitung setelah record diambil.
+    let starredToggle: boolean | undefined;
+    let docExpiryPatch: Record<string, string | null> | undefined;
 
     if (data.status !== undefined) {
       // Status/tahap menerima string apa pun (5 status bawaan ATAU tahap kustom posisi).
@@ -218,13 +236,127 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       updateData.videoNotes = notes.length > 0 ? JSON.stringify(notes) : null;
     }
 
-    if (Object.keys(updateData).length === 0) {
+    // NR-24 — Ekspektasi gaji bulanan (Rp): null = hapus; number = integer 0..1 miliar.
+    if (data.expectedSalary !== undefined) {
+      if (data.expectedSalary === null) {
+        updateData.expectedSalary = null;
+      } else if (
+        typeof data.expectedSalary === "number" &&
+        Number.isInteger(data.expectedSalary) &&
+        data.expectedSalary >= 0 &&
+        data.expectedSalary <= EXPECTED_SALARY_MAX
+      ) {
+        updateData.expectedSalary = data.expectedSalary;
+      } else {
+        return NextResponse.json(
+          { error: `Ekspektasi gaji harus angka bulat antara 0 dan ${EXPECTED_SALARY_MAX.toLocaleString("id-ID")}, atau null untuk menghapus.` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // NR-24 — Bintang personal per admin (toggle session.id pada kolom starredBy).
+    if (data.starred !== undefined) {
+      if (typeof data.starred !== "boolean") {
+        return NextResponse.json({ error: "starred harus berupa boolean." }, { status: 400 });
+      }
+      starredToggle = data.starred;
+    }
+
+    // NR-24 — Tahan proses (HOLD): alasan singkat; string kosong = lepas tahanan.
+    if (data.holdReason !== undefined) {
+      if (data.holdReason === null) {
+        updateData.holdReason = null;
+      } else if (typeof data.holdReason === "string") {
+        const reason = data.holdReason.trim();
+        if (reason.length > HOLD_REASON_MAX) {
+          return NextResponse.json(
+            { error: `Alasan tahan proses maksimal ${HOLD_REASON_MAX} karakter.` },
+            { status: 400 }
+          );
+        }
+        updateData.holdReason = reason.length > 0 ? reason : null;
+      } else {
+        return NextResponse.json({ error: "Alasan tahan proses harus berupa teks." }, { status: 400 });
+      }
+    }
+
+    // NR-24 — Tanggal review ulang HOLD: ISO string valid atau null (hapus jadwal).
+    if (data.holdReviewAt !== undefined) {
+      if (data.holdReviewAt === null) {
+        updateData.holdReviewAt = null;
+      } else if (typeof data.holdReviewAt === "string") {
+        const parsed = new Date(data.holdReviewAt);
+        if (Number.isNaN(parsed.getTime())) {
+          return NextResponse.json({ error: "Tanggal review HOLD tidak valid." }, { status: 400 });
+        }
+        updateData.holdReviewAt = parsed;
+      } else {
+        return NextResponse.json({ error: "Tanggal review HOLD tidak valid." }, { status: 400 });
+      }
+    }
+
+    // NR-24 — Masa berlaku dokumen tambahan: patch {fileId: "YYYY-MM-DD" | null}.
+    // Digabung (merge) dengan map existing; null/false menghapus kunci; hasil kosong disimpan null.
+    if (data.docExpiries !== undefined) {
+      if (!data.docExpiries || typeof data.docExpiries !== "object" || Array.isArray(data.docExpiries)) {
+        return NextResponse.json(
+          { error: "Masa berlaku dokumen harus berupa objek {fileId: tanggal}." },
+          { status: 400 }
+        );
+      }
+      const patch: Record<string, string | null> = {};
+      for (const [rawKey, rawValue] of Object.entries(data.docExpiries as Record<string, unknown>)) {
+        const key = rawKey.trim();
+        if (!key || key.length > DOC_EXPIRY_KEY_MAX) {
+          return NextResponse.json(
+            { error: `ID dokumen tidak valid (maksimal ${DOC_EXPIRY_KEY_MAX} karakter).` },
+            { status: 400 }
+          );
+        }
+        if (rawValue === null || rawValue === false) {
+          patch[key] = null; // hapus kunci
+        } else if (typeof rawValue === "string" && DOC_EXPIRY_DATE_RE.test(rawValue)) {
+          patch[key] = rawValue;
+        } else {
+          return NextResponse.json(
+            { error: `Tanggal masa berlaku untuk "${key.slice(0, 20)}" harus berformat YYYY-MM-DD.` },
+            { status: 400 }
+          );
+        }
+      }
+      docExpiryPatch = patch;
+    }
+
+    const hasMergeFields = starredToggle !== undefined || docExpiryPatch !== undefined;
+    if (Object.keys(updateData).length === 0 && !hasMergeFields) {
       return NextResponse.json({ error: "Tidak ada perubahan yang dikirim." }, { status: 400 });
     }
 
     const existing = await db.application.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json(NOT_FOUND, { status: 404 });
+    }
+
+    // Merge bintang personal: tambah/hapus session.id dari JSON string[] existing.
+    if (starredToggle !== undefined) {
+      const current = parseTags(existing.starredBy);
+      const next = starredToggle
+        ? current.includes(session.id)
+          ? current
+          : [...current, session.id]
+        : current.filter((uid) => uid !== session.id);
+      updateData.starredBy = JSON.stringify(next);
+    }
+
+    // Merge masa berlaku dokumen: map existing + patch; nilai null menghapus kunci.
+    if (docExpiryPatch !== undefined) {
+      const merged = parseDocExpiries(existing.docExpiries);
+      for (const [key, value] of Object.entries(docExpiryPatch)) {
+        if (value === null) delete merged[key];
+        else merged[key] = value;
+      }
+      updateData.docExpiries = Object.keys(merged).length > 0 ? JSON.stringify(merged) : null;
     }
 
     const stageChanged =
@@ -322,6 +454,58 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         actor: session.name,
         action: "NOTE",
         detail: `Catatan video diperbarui (${newNotes.length} catatan)`,
+      });
+    }
+
+    // NR-24 — log fitur per pelamar (hanya bila nilai benar-benar berubah)
+    if (updateData.expectedSalary !== undefined && updateData.expectedSalary !== existing.expectedSalary) {
+      logs.push({
+        actor: session.name,
+        action: "SALARY_EXPECTATION",
+        detail: updateData.expectedSalary === null
+          ? "Ekspektasi gaji dihapus"
+          : `Ekspektasi gaji diatur: Rp ${updateData.expectedSalary.toLocaleString("id-ID")}`,
+      });
+    }
+    if (updateData.starredBy !== undefined) {
+      const wasStarred = parseTags(existing.starredBy).includes(session.id);
+      const nowStarred = parseTags(updateData.starredBy).includes(session.id);
+      if (nowStarred !== wasStarred) {
+        logs.push(
+          nowStarred
+            ? { actor: session.name, action: "STAR", detail: `Ditandai penting oleh ${session.name}` }
+            : { actor: session.name, action: "UNSTAR", detail: `Bintang dilepas (${session.name})` }
+        );
+      }
+    }
+    if (updateData.holdReason !== undefined && updateData.holdReason !== existing.holdReason) {
+      logs.push(
+        updateData.holdReason
+          ? { actor: session.name, action: "HOLD_SET", detail: `Proses ditahan: ${updateData.holdReason}` }
+          : { actor: session.name, action: "HOLD_CLEAR", detail: "Tahan proses dilepas" }
+      );
+    }
+    if (updateData.holdReviewAt !== undefined) {
+      const oldReview = existing.holdReviewAt ? existing.holdReviewAt.toISOString() : null;
+      const newReview = updateData.holdReviewAt ? updateData.holdReviewAt.toISOString() : null;
+      if (oldReview !== newReview) {
+        logs.push(
+          updateData.holdReviewAt
+            ? {
+                actor: session.name,
+                action: "HOLD_REVIEW",
+                detail: `Review HOLD dijadwalkan ${formatDateTimeId(updateData.holdReviewAt)}`,
+              }
+            : { actor: session.name, action: "HOLD_REVIEW_CLEARED", detail: "Jadwal review HOLD dihapus" }
+        );
+      }
+    }
+    if (updateData.docExpiries !== undefined && updateData.docExpiries !== existing.docExpiries) {
+      const entryCount = Object.keys(parseDocExpiries(updateData.docExpiries)).length;
+      logs.push({
+        actor: session.name,
+        action: "DOC_EXPIRY",
+        detail: `Masa berlaku dokumen diperbarui (${entryCount} entri)`,
       });
     }
     if (logs.length > 0) {
