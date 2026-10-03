@@ -145,9 +145,7 @@ check "POST /api/cron/reminders 200 (got $C)" "[ '$C' = '200' ]"
 FB=$(python3 -c "import json; print('OK' if 'followupBell' in json.load(open('/tmp/nr24a1-cron.json')) else 'BAD')")
 check "respons cron punya followupBell" "[ '$FB' = 'OK' ]"
 
-# ---- 12. Uji Do-not-Hire: pasang Setting, submit lagi, cek notifikasi + log ----
-req PUT "$BASE/api/admin/settings" '{"doNotHire":{"nr24a1@test.lumina":{"reason":"uji nr24","by":"Pemilik Studio","at":"2026-01-01T00:00:00.000Z"}}}' 2>/dev/null || true
-# Jika PUT settings butuh bentuk penuh, fallback langsung via prisma di cleanup; cek respons:
+# ---- 12. Uji Do-not-Hire (Setting doNotHire sudah dipasang setup-nr24a1.ts), submit lagi ----
 C2=$(curl -s -b "$JAR" -X POST -H "Content-Type: application/json" -d "{\"name\":\"Tester DNH\",\"email\":\"NR24A1@test.lumina\",\"phone\":\"6281299900011\",\"positionId\":\"$POS_ID\",\"experience\":\"Uji kedua untuk peringatan Do-not-Hire NR-24.\",\"motivation\":\"Memverifikasi peringatan DNH muncul otomatis.\",\"consent\":\"1\",\"formStartedAt\":\"$NOW_MS\"}" -o /tmp/nr24a1-app2.json -w "%{http_code}" "$BASE/api/applications")
 check "POST lamaran kedua (email kapital+telepon beda format) 201 (got $C2)" "[ '$C2' = '201' ]"
 APP2_ID=$(python3 -c "import json; print(json.load(open('/tmp/nr24a1-app2.json')).get('id',''))")
