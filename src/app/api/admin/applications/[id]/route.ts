@@ -78,6 +78,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       holdReason?: string | null;
       holdReviewAt?: Date | null;
       docExpiries?: string | null;
+      snoozeUntil?: Date | null;
     } = {};
     // Field yang perlu merge dengan nilai existing — dihitung setelah record diambil.
     let starredToggle: boolean | undefined;
@@ -296,6 +297,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
+    // NR-24 — Tanggal tindak lanjut (reuse snoozeUntil, sama dengan snooze bot Telegram):
+    // ISO string valid atau null (hapus). Bot Telegram & lonceng cron memakai field ini.
+    if (data.snoozeUntil !== undefined) {
+      if (data.snoozeUntil === null) {
+        updateData.snoozeUntil = null;
+      } else if (typeof data.snoozeUntil === "string") {
+        const parsed = new Date(data.snoozeUntil);
+        if (Number.isNaN(parsed.getTime())) {
+          return NextResponse.json({ error: "Tanggal tindak lanjut tidak valid." }, { status: 400 });
+        }
+        updateData.snoozeUntil = parsed;
+      } else {
+        return NextResponse.json({ error: "Tanggal tindak lanjut tidak valid." }, { status: 400 });
+      }
+    }
+
     // NR-24 — Masa berlaku dokumen tambahan: patch {fileId: "YYYY-MM-DD" | null}.
     // Digabung (merge) dengan map existing; null/false menghapus kunci; hasil kosong disimpan null.
     if (data.docExpiries !== undefined) {
@@ -484,6 +501,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           ? { actor: session.name, action: "HOLD_SET", detail: `Proses ditahan: ${updateData.holdReason}` }
           : { actor: session.name, action: "HOLD_CLEAR", detail: "Tahan proses dilepas" }
       );
+    }
+    if (updateData.snoozeUntil !== undefined) {
+      const oldSnooze = existing.snoozeUntil ? existing.snoozeUntil.toISOString() : null;
+      const newSnooze = updateData.snoozeUntil ? updateData.snoozeUntil.toISOString() : null;
+      if (oldSnooze !== newSnooze) {
+        logs.push(
+          updateData.snoozeUntil
+            ? {
+                actor: session.name,
+                action: "FOLLOWUP_SET",
+                detail: `Tindak lanjut dijadwalkan ${formatDateTimeId(updateData.snoozeUntil)}`,
+              }
+            : { actor: session.name, action: "FOLLOWUP_CLEARED", detail: "Tanggal tindak lanjut dihapus" }
+        );
+      }
     }
     if (updateData.holdReviewAt !== undefined) {
       const oldReview = existing.holdReviewAt ? existing.holdReviewAt.toISOString() : null;
