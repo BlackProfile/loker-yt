@@ -2810,6 +2810,61 @@ export function ApplicationDetailDialog({
           <DialogTitle className="flex flex-wrap items-center gap-2 pr-6 text-lg font-bold">
             <span>{app.name}</span>
             <StatusBadge status={app.status} />
+            {/* NR-24-b — navigasi antar lamaran (prev/next) bila prop navigasi tersedia */}
+            {navActive && navIds && typeof navIndex === "number" ? (
+              <span className="ml-1 inline-flex items-center gap-0.5 rounded-full border p-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 sm:size-9"
+                  disabled={navIndex <= 0}
+                  onClick={() => onNavigate?.(navIds[navIndex - 1])}
+                  aria-label="Lamaran sebelumnya"
+                >
+                  <ChevronLeft className="size-4" aria-hidden="true" />
+                </Button>
+                <span className="min-w-12 text-center text-xs font-semibold tabular-nums text-muted-foreground">
+                  {navIndex + 1} / {navIds.length}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 sm:size-9"
+                  disabled={navIndex >= navIds.length - 1}
+                  onClick={() => onNavigate?.(navIds[navIndex + 1])}
+                  aria-label="Lamaran berikutnya"
+                >
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                </Button>
+              </span>
+            ) : null}
+            {/* NR-24-b — bintang personal per admin (klik = toggle via PATCH starred) */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 sm:size-9"
+                  onClick={() => void handleToggleStar()}
+                  disabled={starSaving}
+                  aria-pressed={isStarred}
+                  aria-label={isStarred ? "Lepas tanda penting" : "Tandai lamaran penting"}
+                >
+                  <Star
+                    className={cn(
+                      "size-4",
+                      isStarred
+                        ? "fill-amber-400 text-amber-500"
+                        : "text-muted-foreground"
+                    )}
+                    aria-hidden="true"
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isStarred ? "Bintang dilepas" : "Tandai penting (bintang pribadi)"}
+              </TooltipContent>
+            </Tooltip>
             {duplicateIds.has(app.id) ? (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -2852,6 +2907,123 @@ export function ApplicationDetailDialog({
 
         <div className="-mr-2 max-h-[75vh] overflow-y-auto pr-2 nice-scrollbar">
           <div className="flex flex-col gap-4">
+            {/* NR-24-b — banner lamaran digabung (ide 12) */}
+            {app.mergedIntoId ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20">
+                <Copy className="size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                <span className="text-amber-800 dark:text-amber-300">
+                  Lamaran ini sudah digabung ke lamaran lain.
+                </span>
+                {onNavigate ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto h-11 border-amber-300 text-amber-800 hover:bg-amber-100 sm:h-8 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
+                    onClick={() => onNavigate(app.mergedIntoId as string)}
+                  >
+                    Buka Lamaran Utama
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {/* NR-24-b — banner duplikat + panel gabung ke lamaran utama (ide 12) */}
+            {!app.mergedIntoId && app.isDuplicate ? (
+              <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/20">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Copy className="size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <span className="text-sm text-amber-800 dark:text-amber-300">
+                    Terdeteksi kemungkinan duplikat.
+                  </span>
+                  {canMutate ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto h-11 border-amber-300 text-amber-800 hover:bg-amber-100 sm:h-8 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
+                      onClick={() => void openMergePanel()}
+                    >
+                      {mergeOpen ? "Tutup" : "Gabungkan ke..."}
+                    </Button>
+                  ) : null}
+                </div>
+                {canMutate && mergeOpen ? (
+                  <div className="flex flex-col gap-2 rounded-lg border bg-background p-2.5">
+                    {mergeLoading ? (
+                      <p className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        Memuat lamaran lain...
+                      </p>
+                    ) : mergeCandidates.length === 0 ? (
+                      <p className="py-1 text-xs text-muted-foreground">
+                        Tidak ada lamaran lain dengan email yang sama yang bisa digabung.
+                      </p>
+                    ) : (
+                      <Select
+                        value={mergeTargetId || "__pilih__"}
+                        onValueChange={setMergeTargetId}
+                        disabled={mergeSaving}
+                      >
+                        <SelectTrigger className="h-11 w-full sm:h-9" aria-label="Pilih lamaran utama">
+                          <SelectValue placeholder="Pilih lamaran utama" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__pilih__" disabled>
+                            Pilih lamaran utama
+                          </SelectItem>
+                          {mergeCandidates.map((r) => (
+                            <SelectItem key={r.id} value={r.id}>
+                              {r.name} — {r.trackingCode} — {r.positionTitle ?? "-"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {mergeCandidates.length > 0 ? (
+                      <AlertDialog open={mergeConfirmOpen} onOpenChange={setMergeConfirmOpen}>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="h-11 w-fit sm:h-9"
+                          disabled={!mergeTargetId || mergeSaving}
+                          onClick={() => setMergeConfirmOpen(true)}
+                        >
+                          Gabungkan
+                        </Button>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Gabungkan lamaran ini ke lamaran utama?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Timeline, berkas, dan diskusi akan dipindah ke lamaran utama.
+                              Lamaran ini berubah menjadi Ditolak (Lamaran ganda).
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel disabled={mergeSaving}>Batal</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={(e) => {
+                                e.preventDefault();
+                                void handleMerge();
+                              }}
+                              className="bg-rose-600 text-white hover:bg-rose-700"
+                              disabled={mergeSaving}
+                            >
+                              {mergeSaving ? (
+                                <>
+                                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                                  Menggabungkan...
+                                </>
+                              ) : (
+                                "Ya, Gabungkan"
+                              )}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {/* Panel AI */}
             <AiPanel app={app} onUpdated={onSaved} />
 
@@ -2909,6 +3081,299 @@ export function ApplicationDetailDialog({
                   <span className="text-muted-foreground">-</span>
                 )}
               </InfoItem>
+              {/* NR-24-b (ide 6) — ekspektasi gaji + perbandingan rentang posisi */}
+              {app.expectedSalary != null || salaryEditing ? (
+                <div className="rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">Ekspektasi Gaji</p>
+                    {canMutate && !salaryEditing ? (
+                      <button
+                        type="button"
+                        className="ml-auto rounded-md p-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                        onClick={() => {
+                          setSalaryInput(app.expectedSalary != null ? String(app.expectedSalary) : "");
+                          setSalaryEditing(true);
+                        }}
+                        aria-label="Ubah ekspektasi gaji"
+                      >
+                        <Pencil className="size-3.5" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                  {salaryEditing ? (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void handleSaveSalary();
+                      }}
+                      className="mt-1.5 flex flex-wrap items-center gap-1.5"
+                    >
+                      <Input
+                        type="number"
+                        min={0}
+                        inputMode="numeric"
+                        value={salaryInput}
+                        onChange={(e) => setSalaryInput(e.target.value)}
+                        placeholder="mis. 3500000"
+                        aria-label="Ekspektasi gaji dalam rupiah (kosongkan untuk menghapus)"
+                        className="h-9 w-40"
+                        disabled={salarySaving}
+                        autoFocus
+                      />
+                      <Button
+                        type="submit"
+                        size="sm"
+                        variant="outline"
+                        className="h-9"
+                        disabled={salarySaving}
+                      >
+                        {salarySaving ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : null}
+                        Simpan
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-9"
+                        onClick={() => setSalaryEditing(false)}
+                        disabled={salarySaving}
+                      >
+                        Batal
+                      </Button>
+                    </form>
+                  ) : (
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-sm">
+                      <span className="tabular-nums">
+                        {app.expectedSalary != null ? formatRupiah(app.expectedSalary) : "-"}
+                      </span>
+                      {salaryBadge ? (
+                        <Badge variant="outline" className={cn("px-1.5 py-0 text-[10px]", salaryBadge.cls)}>
+                          {salaryBadge.label}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            {/* NR-24-b (ide 7) — riwayat melamar pelamar yang sama di Lumina */}
+            <ApplicationHistoryCard
+              key={`history-${app.id}`}
+              applicationId={app.id}
+              onNavigate={onNavigate}
+            />
+
+            {/* NR-24-b (ide 4 & 8) — tindak lanjut + tahan proses, jauh dari tombol status utama */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-2 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Tindak Lanjut</p>
+                </div>
+                {app.snoozeUntil ? (
+                  <Badge
+                    variant="outline"
+                    className="w-fit border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+                  >
+                    <Clock className="size-3" aria-hidden="true" />
+                    Tindak lanjut: {formatDate(app.snoozeUntil)}
+                    {canMutate ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleClearSnooze()}
+                        aria-label="Hapus jadwal tindak lanjut"
+                        disabled={snoozeSaving}
+                        className="ml-0.5 outline-none hover:text-amber-900 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 dark:hover:text-amber-300"
+                      >
+                        <X className="size-3" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </Badge>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Belum ada jadwal tindak lanjut.</p>
+                )}
+                {canMutate && !snoozeOpen ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 w-fit"
+                    onClick={() => {
+                      setSnoozeDate(app.snoozeUntil ? isoToDateInput(app.snoozeUntil) : "");
+                      setSnoozeOpen(true);
+                    }}
+                  >
+                    <CalendarPlus className="size-4" aria-hidden="true" />
+                    Atur Tindak Lanjut
+                  </Button>
+                ) : null}
+                {canMutate && snoozeOpen ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleSaveSnooze();
+                    }}
+                    className="flex flex-col gap-1.5"
+                  >
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Input
+                        type="date"
+                        value={snoozeDate}
+                        onChange={(e) => setSnoozeDate(e.target.value)}
+                        aria-label="Tanggal tindak lanjut"
+                        className="h-9 min-w-36 flex-1"
+                        disabled={snoozeSaving}
+                      />
+                      <Button
+                        type="submit"
+                        size="sm"
+                        className="h-9"
+                        disabled={snoozeSaving || !snoozeDate}
+                      >
+                        {snoozeSaving ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : null}
+                        Simpan
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-9"
+                        onClick={() => setSnoozeOpen(false)}
+                        disabled={snoozeSaving}
+                      >
+                        Batal
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => snoozePlusDays(3)}
+                        disabled={snoozeSaving}
+                      >
+                        +3 hari
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => snoozePlusDays(7)}
+                        disabled={snoozeSaving}
+                      >
+                        +7 hari
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
+              </div>
+              <div className="flex flex-col gap-2 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <PauseCircle className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Tahan Proses</p>
+                </div>
+                {app.holdReason ? (
+                  <>
+                    <Badge
+                      variant="outline"
+                      className="w-fit border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+                    >
+                      <PauseCircle className="size-3" aria-hidden="true" />
+                      Ditahan: {app.holdReason}
+                    </Badge>
+                    {app.holdReviewAt ? (
+                      <p className="text-xs text-muted-foreground">
+                        Review {formatDate(app.holdReviewAt)}
+                      </p>
+                    ) : null}
+                    {canMutate ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-fit"
+                        onClick={() => void handleReleaseHold()}
+                        disabled={holdSaving}
+                      >
+                        {holdSaving ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : null}
+                        Lepas Tahanan
+                      </Button>
+                    ) : null}
+                  </>
+                ) : canMutate && !holdOpen ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 w-fit"
+                    onClick={() => {
+                      setHoldReasonInput("");
+                      setHoldReviewInput("");
+                      setHoldOpen(true);
+                    }}
+                  >
+                    <PauseCircle className="size-4" aria-hidden="true" />
+                    Tahan Proses
+                  </Button>
+                ) : canMutate ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleSetHold();
+                    }}
+                    className="flex flex-col gap-1.5"
+                  >
+                    <Textarea
+                      value={holdReasonInput}
+                      onChange={(e) => setHoldReasonInput(e.target.value)}
+                      placeholder="Alasan menahan proses (maks. 300)"
+                      aria-label="Alasan menahan proses"
+                      rows={2}
+                      maxLength={300}
+                      disabled={holdSaving}
+                    />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Input
+                        type="date"
+                        value={holdReviewInput}
+                        onChange={(e) => setHoldReviewInput(e.target.value)}
+                        aria-label="Tanggal review ulang (opsional)"
+                        className="h-9 min-w-36 flex-1"
+                        disabled={holdSaving}
+                      />
+                      <Button
+                        type="submit"
+                        size="sm"
+                        className="h-9"
+                        disabled={holdSaving || !holdReasonInput.trim()}
+                      >
+                        {holdSaving ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : null}
+                        Tahan
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-9"
+                        onClick={() => setHoldOpen(false)}
+                        disabled={holdSaving}
+                      >
+                        Batal
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Proses tidak ditahan.</p>
+                )}
+              </div>
             </div>
 
             {/* NR-15: read receipt — kapan terakhir pelamar membuka halaman status */}

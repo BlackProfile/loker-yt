@@ -150,8 +150,9 @@ check "question answered=false ($ANS)" "$([ "$ANS" = "False" ] && echo OK || ech
 req GET "$BASE/api/admin/applications/$DEWI/history"
 check "GET history 200 (got $(code))" "$([ "$(code)" = "200" ] && echo OK || echo BAD)"
 HN=$(py 'print(len(json.load(open(os.environ["J"])).get("history",[])))')
-HT=$(py 'print(json.load(open(os.environ["J"]))["history"][0]["trackingCode"] if json.load(open(os.environ["J"]))["history"] else "")')
-check "history berisi lamaran uji email sama ($HN/$HT)" "$([ "$HN" = "1" ] && [ -n "$HT" ] && echo OK || echo BAD)"
+HID=$(py 'print(json.load(open(os.environ["J"]))["history"][0]["id"] if json.load(open(os.environ["J"]))["history"] else "")')
+HTC=$(py 'print(json.load(open(os.environ["J"]))["history"][0]["trackingCode"] if json.load(open(os.environ["J"]))["history"] else "")')
+check "history berisi lamaran uji email sama ($HN/$HID/$HTC)" "$([ "$HN" = "1" ] && [ "$HID" = "$TEMP" ] && echo OK || echo BAD)"
 
 # ---- 7. MERGE (source=lamaran uji -> target=Dewi) ----
 req POST "$BASE/api/admin/applications/$DEWI/merge" "{\"sourceId\":\"$DEWI\"}"
@@ -235,7 +236,7 @@ check "PUT donothire email kapital dinormalisasi lowercase ($KEY)" "$([ "$KEY" =
 
 req PUT "$BASE/api/admin/donothire" '{"key":"+62 812-0000-0024","reason":"Nomor tidak aktif."}'
 NKEYS=$(py 'print(len(json.load(open(os.environ["J"])).get("entries",[])))')
-HASPHONE=$(py 'print("081200000024" in [e["key"] for e in json.load(open(os.environ["J"])).get("entries",[])])')
+HASPHONE=$(py 'print("6281200000024" in [e["key"] for e in json.load(open(os.environ["J"])).get("entries",[])])')
 check "PUT donothire telepon digit-only ($NKEYS entri, phone=$HASPHONE)" "$([ "$NKEYS" = "2" ] && [ "$HASPHONE" = "True" ] && echo OK || echo BAD)"
 
 req PUT "$BASE/api/admin/donothire" '{"key":"   ","reason":"tanpa kunci"}'
@@ -260,7 +261,7 @@ check "DELETE confirm=YA menghapus entri ($OK, sisa $NKEYS)" "$([ "$OK" = "True"
 req DELETE "$BASE/api/admin/donothire?key=test@example.com&confirm=YA"
 check "DELETE entri tak ada -> 404 (got $(code))" "$([ "$(code)" = "404" ] && echo OK || echo BAD)"
 
-req DELETE "$BASE/api/admin/donothire?key=081200000024&confirm=YA"
+req DELETE "$BASE/api/admin/donothire?key=6281200000024&confirm=YA"
 NKEYS=$(py 'print(len(json.load(open(os.environ["J"])).get("entries",[])))')
 check "DELETE entri telepon -> kosong ($NKEYS)" "$([ "$NKEYS" = "0" ] && echo OK || echo BAD)"
 
@@ -279,9 +280,6 @@ check "PUT tags dedupe -> 2 ($OK/$NT)" "$([ "$OK" = "True" ] && [ "$NT" = "2" ] 
 req GET "$BASE/api/admin/tags"
 FOUND=$(py 'import json,os; t=json.load(open(os.environ["J"]))["tags"]; print(all(x in t for x in ["uji-nr24","Tag Kedua"]) and t==sorted(t, key=str.lower))')
 check "GET tags memuat 2 tag urut abjad ($FOUND)" "$([ "$FOUND" = "True" ] && echo OK || echo BAD)"
-
-req PUT "$BASE/admin/tags" '{}'
-# (panggilan sengaja salah path tidak dihitung — abaikan)
 
 echo ""
 echo "=============================="
