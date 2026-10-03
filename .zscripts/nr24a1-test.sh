@@ -32,7 +32,7 @@ check "login admin 200 (got $C)" "$([ "$C" = "200" ] && echo OK || echo BAD)"
 ADMIN_ID=$(python3 -c "
 import json
 d=json.load(open('/tmp/nr24a1-login.json'))
-u=d.get('user', d) if isinstance(d, dict) else {}
+u=d.get("session", d) if isinstance(d, dict) else {}
 print(u.get('id','') if isinstance(u, dict) else '')")
 check "id admin terbaca ($ADMIN_ID)" "$([ -n "$ADMIN_ID" ] && echo OK || echo BAD)"
 
@@ -45,7 +45,7 @@ ok=[p for p in rows if p.get("isActive") and not any(q.get("required") for q in 
 print(ok[0]["id"] if ok else "")')
 check "posisi demo ramah uji dipilih ($POS_ID)" "$([ -n "$POS_ID" ] && echo OK || echo BAD)"
 NOW_MS=$(python3 -c "import time; print(int((time.time()-10)*1000))")
-C=$(curl -s -X POST -H "Content-Type: application/json" -d "{\"name\":\"Tester NR24\",\"email\":\"nr24a1@test.lumina\",\"phone\":\"081299900011\",\"positionId\":\"$POS_ID\",\"experience\":\"Pengalaman uji otomatis NR-24 fondasi per pelamar.\",\"motivation\":\"Ingin memastikan fondasi NR-24 bekerja baik.\",\"expectedSalary\":\"3500000\",\"consent\":\"1\",\"formStartedAt\":\"$NOW_MS\"}" -o /tmp/nr24a1-app.json -w "%{http_code}" "$BASE/api/applications")
+C=$(curl -s -X POST -H "X-Forwarded-For: 10.7.0.$RANDOM" -H "Content-Type: application/json" -d "{\"name\":\"Tester NR24\",\"email\":\"nr24a1@test.lumina\",\"phone\":\"081299900011\",\"positionId\":\"$POS_ID\",\"experience\":\"Pengalaman uji otomatis NR-24 fondasi per pelamar.\",\"motivation\":\"Ingin memastikan fondasi NR-24 bekerja baik.\",\"expectedSalary\":\"3500000\",\"consent\":\"1\",\"formStartedAt\":\"$NOW_MS\"}" -o /tmp/nr24a1-app.json -w "%{http_code}" "$BASE/api/applications")
 check "POST /api/applications expectedSalary=3500000 -> 201 (got $C)" "$([ "$C" = "201" ] && echo OK || echo BAD:$(head -c 120 /tmp/nr24a1-app.json))"
 APP_ID=$(python3 -c "import json; print(json.load(open('/tmp/nr24a1-app.json')).get('id',''))")
 check "id lamaran uji ada ($APP_ID)" "$([ -n "$APP_ID" ] && echo OK || echo BAD)"
@@ -131,7 +131,7 @@ FB=$(python3 -c "import json; print('OK' if 'followupBell' in json.load(open('/t
 check "POST /api/cron/reminders 200 + punya followupBell (got $C)" "$([ "$C" = "200" ] && [ "$FB" = "OK" ] && echo OK || echo BAD)"
 
 # ---- 12. Uji Do-not-Hire (Setting doNotHire dari setup-nr24a1.ts) ----
-C2=$(curl -s -X POST -H "Content-Type: application/json" -d "{\"name\":\"Tester DNH\",\"email\":\"NR24A1@test.lumina\",\"phone\":\"+62 812-9990-0011\",\"positionId\":\"$POS_ID\",\"experience\":\"Uji kedua untuk peringatan Do-not-Hire NR-24.\",\"motivation\":\"Memverifikasi peringatan DNH muncul otomatis.\",\"consent\":\"1\",\"formStartedAt\":\"$NOW_MS\"}" -o /tmp/nr24a1-app2.json -w "%{http_code}" "$BASE/api/applications")
+C2=$(curl -s -X POST -H "X-Forwarded-For: 10.7.0.$RANDOM" -H "Content-Type: application/json" -d "{\"name\":\"Tester DNH\",\"email\":\"NR24A1@test.lumina\",\"phone\":\"+62 812-9990-0011\",\"positionId\":\"$POS_ID\",\"experience\":\"Uji kedua untuk peringatan Do-not-Hire NR-24.\",\"motivation\":\"Memverifikasi peringatan DNH muncul otomatis.\",\"consent\":\"1\",\"formStartedAt\":\"$NOW_MS\"}" -o /tmp/nr24a1-app2.json -w "%{http_code}" "$BASE/api/applications")
 check "POST lamaran kedua (email kapital + telepon berformat) 201 (got $C2)" "$([ "$C2" = "201" ] && echo OK || echo BAD:$(head -c 120 /tmp/nr24a1-app2.json))"
 APP2_ID=$(python3 -c "import json; print(json.load(open('/tmp/nr24a1-app2.json')).get('id',''))")
 req GET "$BASE/api/admin/logs?applicationId=$APP2_ID&limit=50"
