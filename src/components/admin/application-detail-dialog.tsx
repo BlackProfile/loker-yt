@@ -1352,28 +1352,25 @@ function UnifiedInboxSection({
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string[]>([]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    apiGet<{ items: InboxItem[]; unanswered: number }>(
-      `/api/admin/applications/${applicationId}/inbox`
-    )
-      .then((res) => {
-        if (!cancelled) {
-          setItems(res.items ?? []);
-          setUnanswered(res.unanswered ?? 0);
-        }
-      })
-      .catch(() => {
-        // Panel pelengkap; biarkan kosong tanpa toast saat gagal.
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+  const loadInbox = useCallback(async () => {
+    try {
+      const res = await apiGet<{ items: InboxItem[]; unanswered: number }>(
+        `/api/admin/applications/${applicationId}/inbox`
+      );
+      setItems(res.items ?? []);
+      setUnanswered(res.unanswered ?? 0);
+    } catch {
+      // Panel pelengkap; biarkan kosong tanpa toast saat gagal.
+    } finally {
+      setLoading(false);
+    }
   }, [applicationId]);
+
+  // Muat sekali saat dialog dibuka / kandidat berganti.
+  useEffect(() => {
+    setLoading(true);
+    void loadInbox();
+  }, [loadInbox]);
 
   function toggleExpanded(key: string) {
     setExpanded((prev) =>
@@ -1473,26 +1470,25 @@ function ApplicationHistoryCard({
   const [history, setHistory] = useState<ApplicationHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    apiGet<{ history: ApplicationHistoryItem[] }>(
-      `/api/admin/applications/${applicationId}/history`
-    )
-      .then((res) => {
-        if (!cancelled) setHistory(res.history ?? []);
-      })
-      .catch(() => {
-        // Kartu pelengkap; biarkan kosong tanpa toast saat gagal.
-        if (!cancelled) setHistory([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+  const loadHistory = useCallback(async () => {
+    try {
+      const res = await apiGet<{ history: ApplicationHistoryItem[] }>(
+        `/api/admin/applications/${applicationId}/history`
+      );
+      setHistory(res.history ?? []);
+    } catch {
+      // Kartu pelengkap; biarkan kosong tanpa toast saat gagal.
+      setHistory([]);
+    } finally {
+      setLoading(false);
+    }
   }, [applicationId]);
+
+  // Muat sekali saat dialog dibuka / kandidat berganti.
+  useEffect(() => {
+    setLoading(true);
+    void loadHistory();
+  }, [loadHistory]);
 
   if (loading) return null;
   if (history.length === 0) return null;
