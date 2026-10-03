@@ -99,6 +99,11 @@ export async function POST(req: NextRequest) {
         requireCv: f.requireCv ?? false,
         requireIntro: f.requireIntro ?? false,
         requirePortfolio: f.requirePortfolio ?? false,
+        // NR-22 — slot opsional wizard klasik (default tampil)
+        showCvField: f.showCvField ?? true,
+        showIntroField: f.showIntroField ?? true,
+        showPortfolioField: f.showPortfolioField ?? true,
+        showSocialField: f.showSocialField ?? true,
         customDocs: JSON.stringify(f.customDocs ?? []),
         maxApplicants: f.maxApplicants ?? null,
         applyOpen: f.applyOpen ?? true,

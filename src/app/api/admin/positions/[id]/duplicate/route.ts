@@ -57,6 +57,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         requireCv: existing.requireCv,
         requireIntro: existing.requireIntro,
         requirePortfolio: existing.requirePortfolio,
+        // NR-22 — slot opsional ikut disalin
+        showCvField: existing.showCvField,
+        showIntroField: existing.showIntroField,
+        showPortfolioField: existing.showPortfolioField,
+        showSocialField: existing.showSocialField,
         customDocs: existing.customDocs,
         maxApplicants: existing.maxApplicants,
         applyOpen: existing.applyOpen,
