@@ -4477,6 +4477,164 @@ export function ApplicationDetailDialog({
               </div>
             ) : null}
 
+            {/* NR-24-b (ide 15) — Do-not-Hire: match email lowercase / telepon digit-only */}
+            {dnhMatch || (canMutate && (app.email || app.phone)) ? (
+              <div className="flex flex-col gap-2 rounded-lg border border-rose-200 p-3 dark:border-rose-900">
+                <div className="flex flex-wrap items-center gap-2">
+                  <ShieldAlert className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Do-not-Hire</p>
+                </div>
+                {dnhMatch ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
+                      >
+                        <ShieldAlert className="size-3" aria-hidden="true" />
+                        Do-not-Hire: {dnhMatch.reason}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        Ditandai {formatDate(dnhMatch.at)}
+                        {dnhMatch.by ? ` oleh ${dnhMatch.by}` : ""}
+                      </span>
+                    </div>
+                    {role === "OWNER" ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Pola kunci NR-23: buka kunci -> tombol aktif -> AlertDialog */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => setDnhUnlock((v) => !v)}
+                              aria-label={
+                                dnhUnlock
+                                  ? "Kunci kembali"
+                                  : "Buka kunci untuk melepas Do-not-Hire"
+                              }
+                              className={cn(
+                                "flex size-8 items-center justify-center rounded-md border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+                                dnhUnlock
+                                  ? "border-amber-300 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950"
+                                  : "text-muted-foreground hover:bg-accent"
+                              )}
+                            >
+                              {dnhUnlock ? (
+                                <LockOpen className="size-3.5" aria-hidden="true" />
+                              ) : (
+                                <Lock className="size-3.5" aria-hidden="true" />
+                              )}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {dnhUnlock
+                              ? "Kunci kembali"
+                              : "Buka kunci dulu untuk melepas Do-not-Hire"}
+                          </TooltipContent>
+                        </Tooltip>
+                        <AlertDialog open={dnhRemoveOpen} onOpenChange={setDnhRemoveOpen}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-9 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                            disabled={!dnhUnlock || dnhSaving}
+                            onClick={() => setDnhRemoveOpen(true)}
+                          >
+                            Lepas
+                          </Button>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                Lepas penandaan Do-not-Hire untuk pelamar ini?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Pelamar dengan email/telepon ini akan bisa melamar kembali.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel disabled={dnhSaving}>Batal</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  void handleDnhRemove();
+                                }}
+                                className="bg-rose-600 text-white hover:bg-rose-700"
+                                disabled={dnhSaving}
+                              >
+                                {dnhSaving ? (
+                                  <>
+                                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                                    Melepas...
+                                  </>
+                                ) : (
+                                  "Ya, Lepas"
+                                )}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Hanya Owner yang dapat melepas penandaan Do-not-Hire.
+                      </p>
+                    )}
+                  </div>
+                ) : canMutate && dnhAddOpen ? (
+                  <form
+                    onSubmit={handleDnhAdd}
+                    className="flex flex-wrap items-center gap-1.5"
+                  >
+                    <Input
+                      value={dnhReasonInput}
+                      onChange={(e) => setDnhReasonInput(e.target.value)}
+                      placeholder="Alasan Do-not-Hire (maks. 300)"
+                      aria-label="Alasan Do-not-Hire"
+                      maxLength={300}
+                      className="h-9 min-w-48 flex-1"
+                      disabled={dnhSaving}
+                      autoFocus
+                    />
+                    <Button
+                      type="submit"
+                      size="sm"
+                      variant="outline"
+                      className="h-9 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                      disabled={dnhSaving || !dnhReasonInput.trim()}
+                    >
+                      {dnhSaving ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <ShieldAlert className="size-4" aria-hidden="true" />
+                      )}
+                      Tandai
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-9"
+                      onClick={() => setDnhAddOpen(false)}
+                      disabled={dnhSaving}
+                    >
+                      Batal
+                    </Button>
+                  </form>
+                ) : canMutate ? (
+                  <button
+                    type="button"
+                    className="w-fit text-xs font-medium text-rose-600 outline-none underline underline-offset-2 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-rose-400"
+                    onClick={() => {
+                      setDnhReasonInput("");
+                      setDnhAddOpen(true);
+                    }}
+                  >
+                    Tandai Do-not-Hire
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
             {/* Penawaran (offer) */}
             {canMutate && app.status !== "REJECTED" ? (
               <div className="flex flex-col gap-3 rounded-lg border p-3">
@@ -4747,8 +4905,29 @@ export function ApplicationDetailDialog({
 
             {/* Pertanyaan pelamar dari halaman Cek Status (NR-15, idea 10).
                 Key dibedakan dari TeamDiscussion (sibling) agar React tidak
-                menyangka ada dua anak dengan key sama. */}
-            <CandidateQuestions key={`q-${app.id}`} applicationId={app.id} canMutate={canMutate} />
+                menyangka ada dua anak dengan key sama. Anchor #nr24-candidate-questions
+                dipakai badge Kotak Masuk Terpadu untuk scroll ke panel ini. */}
+            <div id="nr24-candidate-questions" className="scroll-mt-4">
+              <CandidateQuestions key={`q-${app.id}`} applicationId={app.id} canMutate={canMutate} />
+            </div>
+
+            <Separator />
+
+            {/* NR-24-b (ide 5) — log panggilan telepon */}
+            <CallLogSection key={`call-${app.id}`} applicationId={app.id} canMutate={canMutate} />
+
+            {/* NR-24-b (ide 6) — tugas uji / assessment */}
+            <AssessmentSection key={`asg-${app.id}`} applicationId={app.id} canMutate={canMutate} />
+
+            {/* NR-24-b (ide 11) — dokumen internal (hanya admin) */}
+            <InternalDocsSection key={`idoc-${app.id}`} applicationId={app.id} canMutate={canMutate} />
+
+            {/* NR-24-b (ide 10) — kotak masuk terpadu (email + pertanyaan + panggilan) */}
+            <UnifiedInboxSection
+              key={`inbox-${app.id}`}
+              applicationId={app.id}
+              onGotoQuestions={scrollToCandidateQuestions}
+            />
 
             <Separator />
 
