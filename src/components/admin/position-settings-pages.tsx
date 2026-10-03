@@ -247,6 +247,11 @@ type IntakeState = {
   requireCv: boolean;
   requireIntro: boolean;
   requirePortfolio: boolean;
+  // NR-22 — slot opsional wizard klasik bisa disembunyikan per posisi
+  showCvField: boolean;
+  showIntroField: boolean;
+  showPortfolioField: boolean;
+  showSocialField: boolean;
 };
 
 function buildIntakeState(p: Position): IntakeState {
@@ -260,6 +265,10 @@ function buildIntakeState(p: Position): IntakeState {
     requireCv: p.requireCv,
     requireIntro: p.requireIntro,
     requirePortfolio: p.requirePortfolio,
+    showCvField: p.showCvField !== false,
+    showIntroField: p.showIntroField !== false,
+    showPortfolioField: p.showPortfolioField !== false,
+    showSocialField: p.showSocialField !== false,
   };
 }
 
@@ -354,6 +363,11 @@ export function PositionIntakePage({
           payload.requireCv = form.requireCv;
           payload.requireIntro = form.requireIntro;
           payload.requirePortfolio = form.requirePortfolio;
+          payload.showCvField = form.requireCv || form.showCvField;
+          payload.showIntroField = form.requireIntro || form.showIntroField;
+          payload.showPortfolioField =
+            form.requirePortfolio || form.showPortfolioField;
+          payload.showSocialField = form.showSocialField;
         }
         return payload;
       }}
@@ -495,6 +509,7 @@ export function PositionIntakePage({
             Pengaturan CV, intro, dan portofolio dikelola di tab Formulir — bagian Berkas.
           </p>
         ) : (
+          <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {(
               [
@@ -519,6 +534,44 @@ export function PositionIntakePage({
               </div>
             ))}
           </div>
+
+          {/* NR-22 — sembunyikan slot opsional yang tidak relevan (mis. supir
+              & pembantu tidak butuh CV/intro/portofolio/sosmed). Slot yang
+              diwajibkan selalu tampil — sakelarnya terkunci nyala. */}
+          <div className="mt-1 flex flex-col gap-2">
+            <p className="text-sm font-medium">Slot Opsional Formulir</p>
+            <p className="text-xs text-muted-foreground">
+              Matikan bila slot tidak relevan untuk posisi ini — pelamar tidak
+              akan melihatnya. Slot yang diwajibkan selalu tampil.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {(
+                [
+                  ["showCvField", "Unggah CV", "Tampilkan unggah CV opsional", form.requireCv],
+                  ["showIntroField", "Unggah Perkenalan", "Tampilkan audio/video perkenalan opsional", form.requireIntro],
+                  ["showPortfolioField", "Link Portofolio", "Tampilkan input tautan portofolio", form.requirePortfolio],
+                  ["showSocialField", "Link Sosial Media", "Tampilkan input tautan sosial media", false],
+                ] as const
+              ).map(([key, label, hint, locked]) => (
+                <div
+                  key={key}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-dashed p-3 sm:flex-col sm:items-start sm:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{label}</p>
+                    <p className="text-xs text-muted-foreground">{hint}</p>
+                  </div>
+                  <Switch
+                    checked={locked || form[key]}
+                    disabled={locked}
+                    onCheckedChange={(checked) => set(key, checked)}
+                    aria-label={label}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+          </>
         )}
 
         <div className="flex flex-col gap-2">
