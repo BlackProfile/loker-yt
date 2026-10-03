@@ -282,6 +282,8 @@ export type Position = {
   showIntroField: boolean;
   showPortfolioField: boolean;
   showSocialField: boolean;
+  // NR-24 — tampilkan kolom opsional ekspektasi gaji di wizard
+  showExpectedSalary: boolean;
   customDocs: string[]; // label dokumen wajib tambahan (bebas, mis. "KTP", "Ijazah")
   maxApplicants: number | null;
   applyOpen: boolean; // formulir lamaran posisi ini buka/tutup (setting per posisi)
@@ -469,7 +471,77 @@ export type Application = {
   startProposedAt?: string | null; // usulan tanggal mulai baru dari pelamar
   startProposedNote?: string | null; // catatan singkat dari pelamar
 
+  // NR-24 — fitur per pelamar (fondasi batch 1)
+  expectedSalary: number | null; // ekspektasi gaji bulanan pelamar (Rp)
+  starredBy: string[]; // AdminUser.id yang menandai lamaran ini penting (bintang personal)
+  holdReason: string | null; // alasan proses ditahan (HOLD)
+  holdReviewAt: string | null; // tanggal review ulang untuk HOLD (ISO)
+  docExpiries: Record<string, string>; // {fileId: "YYYY-MM-DD"} masa berlaku dokumen extraDocs
+  mergedIntoId: string | null; // id lamaran utama bila lamaran ini digabung
+
   createdAt: string;
+};
+
+/* ------------------------ NR-24 — fitur per pelamar (kontrak) ------------------------ */
+
+/** Satu entri riwayat panggilan telepon ke pelamar (ApplicationCall). */
+export type CallLog = {
+  id: string;
+  result: "DIANGGAT" | "TIDAK_DIANGGAT" | "SALAH_SAMBUNGAN";
+  summary: string;
+  actor: string;
+  createdAt: string;
+};
+
+/** Satu tes/asesmen yang dikirim ke pelamar (ApplicationAssessment). */
+export type Assessment = {
+  id: string;
+  title: string;
+  link: string | null;
+  note: string | null;
+  dueAt: string | null;
+  status: "SENT" | "SUBMITTED" | "LATE";
+  score: number | null;
+  feedback: string | null;
+  createdAt: string;
+  submittedAt: string | null;
+};
+
+/** Satu dokumen internal lamaran (ApplicationInternalDoc) — hanya terlihat admin. */
+export type InternalDoc = {
+  id: string;
+  name: string;
+  fileId: string;
+  uploadedBy: string;
+  createdAt: string;
+};
+
+/** Item kotak masuk gabungan (email, pertanyaan pelamar, atau hasil panggilan). */
+export type InboxItem = {
+  kind: "EMAIL" | "QUESTION" | "CALL";
+  at: string;
+  from: string;
+  title: string;
+  body: string;
+  answered?: boolean;
+};
+
+/** Ringkasan satu lamaran milik pelamar yang sama (daftar riwayat lamaran). */
+export type ApplicationHistoryItem = {
+  id: string;
+  trackingCode: string | null;
+  positionTitle: string | null;
+  status: string;
+  createdAt: string;
+  aiScore: number | null;
+};
+
+/** Entri daftar Do-not-Hire (Setting "doNotHire" — map {key: {reason, by, at}}). */
+export type DoNotHireEntry = {
+  key: string;
+  reason: string;
+  by: string;
+  at: string;
 };
 
 export type Role = "OWNER" | "HR" | "VIEWER";
@@ -703,6 +775,21 @@ export type ActionItemsResponse = {
     count: number;
     limit: number;
   }[];
+  followupDue: { // NR-24 — lamaran di-snooze yang mendekati/jatuh tempo tindak lanjut
+    id: string;
+    name: string;
+    trackingCode: string | null;
+    snoozeUntil: string | null;
+    positionTitle: string | null;
+  }[];
+  holdReviewDue: { // NR-24 — lamaran HOLD yang mendekati/jatuh tempo review ulang
+    id: string;
+    name: string;
+    trackingCode: string | null;
+    holdReason: string | null;
+    holdReviewAt: string | null;
+    positionTitle: string | null;
+  }[];
 };
 
 // POST /api/applications -> sukses
@@ -878,6 +965,7 @@ export type RejectionReason =
   | "TIDAK_HADIR"
   | "MENARIK_DIRI"
   | "TIDAK_RESPON"
+  | "DUPLICATE"
   | "LAINNYA";
 
 export const REJECTION_REASONS: RejectionReason[] = [
@@ -888,6 +976,7 @@ export const REJECTION_REASONS: RejectionReason[] = [
   "TIDAK_HADIR",
   "MENARIK_DIRI",
   "TIDAK_RESPON",
+  "DUPLICATE",
   "LAINNYA",
 ];
 
@@ -899,6 +988,7 @@ export const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
   TIDAK_HADIR: "Tidak hadir wawancara",
   MENARIK_DIRI: "Menarik lamaran sendiri",
   TIDAK_RESPON: "Tidak merespons dalam waktu yang ditentukan",
+  DUPLICATE: "Lamaran ganda",
   LAINNYA: "Alasan lain",
 };
 
