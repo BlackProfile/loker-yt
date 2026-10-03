@@ -3,14 +3,15 @@
 // validasi submit, tab Jawaban, dan ekspor CSV. File ini CLIENT-SAFE:
 // tidak boleh mengimpor modul server-only (db/prisma).
 //
-// Model mental (v2 — SEMUA bagian bisa diedit):
+// Model mental (v2 — SEMUA bagian bisa diedit & dihapus lewat kunci):
 // - Seluruh bagian (Data Diri, Pengalaman, Berkas, dan bagian tambahan) hidup di
 //   `Position.formSchema` (JSON string) sebagai `sections` berurutan bebas.
 //   Urutan wizard publik = urutan sections di skema (Pratinjau selalu terakhir).
-// - Bagian bawaan TIDAK BISA dihapus (dibutuhkan untuk identitas, duplikat, dan
-//   komunikasi) tetapi ISA diedit: judul, deskripsi, posisi, dan isi itemnya
-//   (WA wajib/tidak, pengalaman & motivasi aktif/tidak, CV/intro/portofolio
-//   aktif & wajib/tidak). Bagian yang isinya kosong otomatis dilewati wizard.
+// - NR-23 — TIDAK ada lagi perlakuan khusus "bawaan": badge dihapus, semua item
+//   inti bisa diedit (label disimpan per bagian), dan SEMUA bagian bisa dihapus
+//   setelah membuka kunci (anti-hapus-sengaja). Bila bagian Data Diri dihapus,
+//   wizard tetap mengumpulkan identitas (nama & email) dengan label bawaan.
+// - Bagian yang isinya kosong otomatis dilewati wizard.
 // - Kolom Application tetap: name/email/phone (biodata), experience/motivation
 //   (pengalaman), cvFileId/introFileId/portfolioUrl (berkas), formAnswers
 //   (semua pertanyaan kustom di bagian mana pun, kunci fieldId stabil).
@@ -48,7 +49,7 @@ export function isChoiceType(type: FormFieldType): boolean {
 
 export const FORM_LIMITS = {
   maxSections: 5, // maks bagian TAMBAHAN (kustom) per skema
-  maxTotalSections: 8, // 3 bagian bawaan + 5 tambahan
+  maxTotalSections: 8, // batas total bagian per skema (3 inti + 5 tambahan)
   maxFields: 25,
   maxOptions: 12,
   labelMin: 2,
@@ -493,6 +494,7 @@ export function parseFormSchema(raw: string | null | undefined): FormSchema | nu
     const titleEn = typeof s.titleEn === "string" ? s.titleEn.trim().slice(0, FORM_LIMITS.sectionTitleMax) : "";
     if (titleEn) section.titleEn = titleEn;
     sections.push(normalizeSectionFlags(section, s));
+    pickCoreLabels(section, s, false);
   }
 
   const fields: FormField[] = [];
@@ -579,17 +581,14 @@ export function normalizeFormSchema(
   filesFallback?: { requireCv?: boolean; requireIntro?: boolean; requirePortfolio?: boolean },
 ): FormSchema | null {
   if (!schema) return null;
-  const hasKind = (kind: FormSectionKind) => schema.sections.some((s) => s.kind === kind);
-  if (
-    schema.version >= FORM_SCHEMA_VERSION &&
-    hasKind("biodata") &&
-    hasKind("experience") &&
-    hasKind("files")
-  ) {
+  // NR-23 — skema v2 dipercaya apa adanya: bagian inti (termasuk Data Diri)
+  // boleh dihapus admin, jadi TIDAK ada penyisipan paksa lagi. Penyusunan ulang
+  // hanya untuk sisa skema v1 yang belum punya sections.
+  if (schema.version >= FORM_SCHEMA_VERSION) {
     return schema;
   }
 
-  // Rakit ulang: sisipkan bagian bawaan yang hilang, pertahankan bagian lain.
+  // Rakit ulang (khusus skema v1): sisipkan bagian inti yang hilang, pertahankan bagian lain.
   const taken = new Set(schema.sections.map((s) => s.id));
   const freeId = (base: string): string => {
     let id = base;
@@ -736,8 +735,9 @@ export type FormSchemaSanitizeResult =
  * Sanitasi input skema dari admin (PUT /form atau PATCH posisi).
  * - null/""  -> null (kembali ke mode klasik)
  * - objek    -> JSON string v2 yang sudah bersih (version dipaksa 2)
- * Ketiga bagian bawaan dijamin ada (disisipkan otomatis bila klien lupa),
- * urutan bagian dari klien dipertahankan apa adanya. Retired fields otomatis
+ * Bagian inti boleh ADA maupun TIDAK (admin bebas menghapus lewat kunci) dan
+ * urutan bagian dari klien dipertahankan apa adanya; maksimal satu bagian per
+ * jenis inti. Retired fields otomatis
  * digabung dari previousSchemaRaw (field lama yang hilang dipindah ke makam,
  * bukan dihapus, agar jawaban lama tetap terbaca).
  */
@@ -758,7 +758,7 @@ export function sanitizeFormSchemaInput(
   // Sections
   if (!Array.isArray(obj.sections)) return { ok: false, error: "Bagian formulir harus berupa daftar." };
   if (obj.sections.length > LIMIT.maxTotalSections) {
-    return { ok: false, error: `Maksimal ${LIMIT.maxTotalSections} bagian formulir (termasuk 3 bagian bawaan).` };
+    return { ok: false, error: `Maksimal ${LIMIT.maxTotalSections} bagian formulir.` };
   }
 
   const sections: FormSection[] = [];
@@ -810,12 +810,14 @@ export function sanitizeFormSchemaInput(
     }
     sectionIds.add(id);
     sections.push(normalizeSectionFlags(section, s));
+    const labelError = pickCoreLabels(section, s, true);
+    if (labelError) return { ok: false, error: labelError };
   }
 
-  // Jaminan bawaan: biodata di depan, pengalaman setelahnya, berkas di akhir.
-  if (!seenKinds.has("biodata")) sections.unshift(defaultBiodataSection());
-  if (!seenKinds.has("experience")) sections.splice(1, 0, defaultExperienceSection());
-  if (!seenKinds.has("files")) sections.push(defaultFilesSection());
+  // NR-23 — TIDAK ada lagi jaminan "biodata di depan, pengalaman setelahnya,
+  // berkas di akhir": admin bebas menghapus/mengurutkan bagian (identitas nama
+  // & email tetap selalu dikumpulkan wizard dengan label bawaan bila bagian
+  // Data Diri dihapus). Urutan dikirim apa adanya.
 
   // Fields
   if (!Array.isArray(obj.fields)) return { ok: false, error: "Pertanyaan formulir harus berupa daftar." };
