@@ -32,7 +32,7 @@ check "login admin 200 (got $C)" "$([ "$C" = "200" ] && echo OK || echo BAD)"
 ADMIN_ID=$(python3 -c "
 import json
 d=json.load(open('/tmp/nr24a1-login.json'))
-u=d.get("session", d) if isinstance(d, dict) else {}
+u=d.get('session', d) if isinstance(d, dict) else {}
 print(u.get('id','') if isinstance(u, dict) else '')")
 check "id admin terbaca ($ADMIN_ID)" "$([ -n "$ADMIN_ID" ] && echo OK || echo BAD)"
 
