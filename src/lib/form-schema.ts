@@ -549,7 +549,12 @@ export function parseFormSchema(raw: string | null | undefined): FormSchema | nu
     }
     fields.push(field);
   }
-  if (sections.length === 0 && fields.length === 0) return null;
+
+  const version = typeof obj.version === "number" && Number.isFinite(obj.version) ? obj.version : 1;
+  // NR-23 — skema v2 boleh kosong (semua bagian inti dihapus admin; identitas
+  // tetap dikumpulkan wizard). Skema v1/tanpa versi yang kosong tetap dianggap
+  // rusak (null → mode klasik).
+  if (sections.length === 0 && fields.length === 0 && version < FORM_SCHEMA_VERSION) return null;
 
   const retiredFields: RetiredFormField[] = [];
   const seenRetired = new Set<string>();
@@ -563,7 +568,6 @@ export function parseFormSchema(raw: string | null | undefined): FormSchema | nu
     retiredFields.push({ id, label });
   }
 
-  const version = typeof obj.version === "number" && Number.isFinite(obj.version) ? obj.version : 1;
   return { version, sections, fields, retiredFields };
 }
 
