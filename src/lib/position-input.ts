@@ -73,6 +73,11 @@ export type PositionFields = {
   requireCv?: boolean;
   requireIntro?: boolean;
   requirePortfolio?: boolean;
+  // NR-22 — slot opsional wizard klasik bisa disembunyikan per posisi
+  showCvField?: boolean;
+  showIntroField?: boolean;
+  showPortfolioField?: boolean;
+  showSocialField?: boolean;
   customDocs?: string[]; // label dokumen wajib tambahan
   maxApplicants?: number | null;
   applyOpen?: boolean; // formulir lamaran posisi ini buka/tutup
@@ -528,6 +533,10 @@ export async function sanitizePositionInput(
     ["requireCv", "requireCv"],
     ["requireIntro", "requireIntro"],
     ["requirePortfolio", "requirePortfolio"],
+    ["showCvField", "showCvField"],
+    ["showIntroField", "showIntroField"],
+    ["showPortfolioField", "showPortfolioField"],
+    ["showSocialField", "showSocialField"],
     ["applyOpen", "applyOpen"],
   ];
   for (const [key, name] of booleans) {
@@ -535,6 +544,11 @@ export async function sanitizePositionInput(
     if (!parsed.ok) return parsed;
     if (parsed.value !== undefined) (f as Record<string, unknown>)[key] = parsed.value;
   }
+  // NR-22 — bidang wajib selalu menang: slot yang diwajibkan tidak boleh
+  // disembunyikan (konsistensi wizard publik).
+  if (f.requireCv === true) f.showCvField = true;
+  if (f.requireIntro === true) f.showIntroField = true;
+  if (f.requirePortfolio === true) f.showPortfolioField = true;
 
   const order = sanitizeOrder(data.order);
   if (!order.ok) return order;

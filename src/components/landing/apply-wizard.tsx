@@ -965,12 +965,31 @@ export function ApplyWizard({
   // Mode skema: langkah 0..sectionSteps.length-1 adalah section, pratinjau di akhir.
   // Mode klasik: 4 langkah lama (Data Diri → Pengalaman → Berkas → Pratinjau),
   // atau 5 langkah saat posisi ONSITE/HYBRID (Info Kehadiran sebelum Berkas).
+  // NR-22 — mode klasik: slot opsional (CV, intro, portofolio, sosial) bisa
+  // disembunyikan per posisi (mis. supir/pembantu tidak butuh CV). Bidang
+  // wajib (requireXxx) selalu menang di atas penyembunyian.
+  const classicShowCv = !schema && (
+    selectedPosition?.requireCv === true ||
+    selectedPosition?.showCvField !== false
+  );
+  const classicShowIntro = !schema && (
+    selectedPosition?.requireIntro === true ||
+    selectedPosition?.showIntroField !== false
+  );
+  const classicShowPortfolio = !schema && (
+    selectedPosition?.requirePortfolio === true ||
+    selectedPosition?.showPortfolioField !== false
+  );
+  const classicShowSocial = !schema && selectedPosition?.showSocialField !== false;
+  const classicFilesHasContent = !schema && (
+    classicShowCv || classicShowIntro || customDocs.length > 0
+  );
   const previewStep = schema
     ? sectionSteps.length + (attendanceStepIndex >= 0 ? 1 : 0)
-    : attendanceStepIndex >= 0
-      ? 4
-      : 3;
-  const filesStep = attendanceStepIndex >= 0 ? 3 : 2; // langkah Berkas — hanya mode klasik
+    : classicFilesHasContent
+      ? (attendanceStepIndex >= 0 ? 4 : 3)
+      : (attendanceStepIndex >= 0 ? 3 : 2);
+  const filesStep = classicFilesHasContent ? (attendanceStepIndex >= 0 ? 3 : 2) : -1; // langkah Berkas — hanya mode klasik; -1 = tanpa isi (dilewati)
 
   // Entri langkah per bagian bawaan (mode skema) — dipakai render & validasi.
   const biodataEntry =

@@ -181,6 +181,11 @@ export type DefaultPositionSeed = {
   requireCv?: boolean;
   requireIntro?: boolean;
   requirePortfolio?: boolean;
+  // NR-22 — slot opsional wizard klasik bisa disembunyikan per posisi
+  showCvField?: boolean;
+  showIntroField?: boolean;
+  showPortfolioField?: boolean;
+  showSocialField?: boolean;
   maxApplicants?: number;
   aiCriteria?: string;
   applyTemplate?: string;
