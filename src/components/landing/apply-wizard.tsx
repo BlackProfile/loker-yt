@@ -2102,17 +2102,17 @@ export function ApplyWizard({
         {section.kind === "biodata" ? (
           <>
             <PreviewRow
-              label={t.apply.summary.name}
+              label={nameFieldLabel}
               value={values.name}
               fallback={t.apply.preview.notFilled}
             />
             <PreviewRow
-              label={t.apply.summary.email}
+              label={emailFieldLabel}
               value={values.email}
               fallback={t.apply.preview.notFilled}
             />
             <PreviewRow
-              label={t.apply.summary.phone}
+              label={waFieldLabel}
               value={values.phone}
               fallback={t.apply.preview.notFilled}
             />
@@ -2134,14 +2134,14 @@ export function ApplyWizard({
           <>
             {isExperienceEnabled(section) ? (
               <PreviewRow
-                label={t.apply.fields.experience}
+                label={experienceFieldLabel}
                 value={values.experience}
                 fallback={t.apply.preview.notFilled}
               />
             ) : null}
             {isMotivationEnabled(section) ? (
               <PreviewRow
-                label={t.apply.fields.motivation}
+                label={motivationFieldLabel}
                 value={values.motivation}
                 fallback={t.apply.preview.notFilled}
               />
@@ -2158,7 +2158,7 @@ export function ApplyWizard({
               : null}
             {isPortfolioEnabled(section) ? (
               <PreviewRow
-                label={t.apply.fields.portfolio}
+                label={portfolioFieldLabel}
                 value={values.portfolioUrl}
                 fallback={t.apply.preview.notFilled}
               />
