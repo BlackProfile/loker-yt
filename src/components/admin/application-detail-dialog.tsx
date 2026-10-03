@@ -238,6 +238,13 @@ function historyStatusLabel(status: string): string {
   return STATUS_LABELS[status as ApplicationStatus] ?? status;
 }
 
+/** NR-24: snoozeUntil ada di DB/PATCH tetapi belum di serialisasi Application —
+ * dibaca defensif agar UI tetap benar bila backend menambahkannya. */
+function readSnoozeUntil(app: Application): string | null {
+  const raw = (app as unknown as { snoozeUntil?: unknown }).snoozeUntil;
+  return typeof raw === "string" ? raw : null;
+}
+
 /* --------------------- Jawaban Formulir (Form Builder, Task 30) --------------------- */
 
 /** Jawaban dianggap kosong bila null, string kosong, atau daftar kosong. */
@@ -894,10 +901,10 @@ function AssessmentSection({
   }, [loadAssessments]);
 
   function updateDraft(id: string, patchDraft: Partial<AssessmentDraft>) {
-    setDrafts((prev) => ({
-      ...prev,
-      [id]: { status: "SENT", score: "", feedback: "", ...prev[id], ...patchDraft },
-    }));
+    setDrafts((prev) => {
+      const base: AssessmentDraft = prev[id] ?? { status: "SENT", score: "", feedback: "" };
+      return { ...prev, [id]: { ...base, ...patchDraft } };
+    });
   }
 
   async function handleUpdate(a: Assessment) {
@@ -1631,6 +1638,9 @@ export function ApplicationDetailDialog({
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [snoozeDate, setSnoozeDate] = useState("");
   const [snoozeSaving, setSnoozeSaving] = useState(false);
+  // snoozeUntil belum ada di tipe Application (kontrak NR-24-a1) — pelacak lokal
+  // agar chip tampil benar setelah diatur/dihapus dalam sesi ini.
+  const [snoozeLocal, setSnoozeLocal] = useState<string | null>(null);
   const [holdOpen, setHoldOpen] = useState(false);
   const [holdReasonInput, setHoldReasonInput] = useState("");
   const [holdReviewInput, setHoldReviewInput] = useState("");
@@ -1703,6 +1713,7 @@ export function ApplicationDetailDialog({
     setSnoozeOpen(false);
     setSnoozeDate("");
     setSnoozeSaving(false);
+    setSnoozeLocal(readSnoozeUntil(application));
     setHoldOpen(false);
     setHoldReasonInput("");
     setHoldReviewInput("");
@@ -1937,6 +1948,9 @@ export function ApplicationDetailDialog({
   // Bintang personal: session.id milik admin aktif ada di app.starredBy.
   const isStarred = session ? app.starredBy.includes(session.id) : false;
 
+  // Tindak lanjut yang ditampilkan: prioritas hasil aksi sesi ini, fallback nilai dari app.
+  const snoozeUntilDisplay = snoozeLocal ?? readSnoozeUntil(app);
+
   // Ekspektasi gaji vs rentang gaji posisi (salaryMin/salaryMax).
   const expectedSalary = app.expectedSalary;
   const salaryMin = pos?.salaryMin ?? null;
@@ -2116,6 +2130,7 @@ export function ApplicationDetailDialog({
     setSnoozeSaving(true);
     const updated = await patch({ snoozeUntil: iso }, "Tindak lanjut diatur");
     if (updated) {
+      setSnoozeLocal(iso);
       setSnoozeOpen(false);
       setSnoozeDate("");
     }
@@ -2124,7 +2139,8 @@ export function ApplicationDetailDialog({
 
   async function handleClearSnooze() {
     setSnoozeSaving(true);
-    await patch({ snoozeUntil: null }, "Tindak lanjut dihapus");
+    const updated = await patch({ snoozeUntil: null }, "Tindak lanjut dihapus");
+    if (updated) setSnoozeLocal(null);
     setSnoozeSaving(false);
   }
 
@@ -3169,13 +3185,13 @@ export function ApplicationDetailDialog({
                   <Clock className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
                   <p className="text-sm font-semibold">Tindak Lanjut</p>
                 </div>
-                {app.snoozeUntil ? (
+                {snoozeUntilDisplay ? (
                   <Badge
                     variant="outline"
                     className="w-fit border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
                   >
                     <Clock className="size-3" aria-hidden="true" />
-                    Tindak lanjut: {formatDate(app.snoozeUntil)}
+                    Tindak lanjut: {formatDate(snoozeUntilDisplay)}
                     {canMutate ? (
                       <button
                         type="button"
@@ -3197,7 +3213,7 @@ export function ApplicationDetailDialog({
                     size="sm"
                     className="h-9 w-fit"
                     onClick={() => {
-                      setSnoozeDate(app.snoozeUntil ? isoToDateInput(app.snoozeUntil) : "");
+                      setSnoozeDate(snoozeUntilDisplay ? isoToDateInput(snoozeUntilDisplay) : "");
                       setSnoozeOpen(true);
                     }}
                   >
