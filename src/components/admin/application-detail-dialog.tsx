@@ -1936,6 +1936,53 @@ export function ApplicationDetailDialog({
     app.shiftPref != null ||
     attendanceStartDate !== "";
 
+  /* --------------------- NR-24-b — nilai turunan fitur per pelamar --------------------- */
+
+  // Bintang personal: session.id milik admin aktif ada di app.starredBy.
+  const isStarred = session ? app.starredBy.includes(session.id) : false;
+
+  // Ekspektasi gaji vs rentang gaji posisi (salaryMin/salaryMax).
+  const expectedSalary = app.expectedSalary;
+  const salaryMin = pos?.salaryMin ?? null;
+  const salaryMax = pos?.salaryMax ?? null;
+  const salaryBadge =
+    expectedSalary != null && (salaryMin != null || salaryMax != null)
+      ? salaryMax != null && expectedSalary > salaryMax
+        ? {
+            label: "Di atas rentang",
+            cls: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400",
+          }
+        : salaryMin != null && expectedSalary < salaryMin
+          ? {
+              label: "Di bawah rentang",
+              cls: "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-300",
+            }
+          : {
+              label: "Sesuai rentang",
+              cls: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400",
+            }
+      : null;
+
+  // Undo penolakan: hanya bila ditolak bukan karena menarik diri dan belum digabung.
+  const canUndoReject =
+    app.status === "REJECTED" &&
+    app.rejectionReason !== "MENARIK_DIRI" &&
+    !app.mergedIntoId;
+
+  // Do-not-Hire: match email (lowercase) atau telepon digit-only dengan daftar DNH.
+  const phoneDigits = (app.phone ?? "").replace(/[^0-9]/g, "");
+  const dnhMatch =
+    dnhEntries.find(
+      (e) =>
+        e.key === app.email.toLowerCase() ||
+        (phoneDigits !== "" && e.key === phoneDigits)
+    ) ?? null;
+
+  // Panel Tolak Lamaran kini juga tampil untuk lamaran REJECTED yang masih
+  // bisa di-undo (agar kontrol Batalkan Penolakan punya rumah).
+  const showRejectPanel =
+    canMutate && (app.status !== "REJECTED" || Boolean(rejectMessage) || canUndoReject);
+
   async function patch(
     body: Record<string, unknown>,
     successMessage: string
@@ -1992,18 +2039,34 @@ export function ApplicationDetailDialog({
     }
   }
 
-  async function handleAddTag(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const tag = tagInput.trim();
-    if (!tag || tagsSaving) return;
-    if (app.tags.includes(tag)) {
+  async function addTagNow(tag: string) {
+    const clean = tag.trim();
+    if (!clean || tagsSaving) return;
+    if (app.tags.includes(clean)) {
       toast.error("Tag sudah ada.");
       return;
     }
     setTagsSaving(true);
-    const updated = await patch({ tags: [...app.tags, tag] }, "Tag ditambahkan");
+    const updated = await patch({ tags: [...app.tags, clean] }, "Tag ditambahkan");
     if (updated) setTagInput("");
     setTagsSaving(false);
+  }
+
+  async function handleAddTag(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await addTagNow(tagInput);
+  }
+
+  // NR-24-b (ide 3): koma langsung menambahkan tag sebelum koma; sisanya tetap di input.
+  function handleTagInputChange(value: string) {
+    if (value.includes(",")) {
+      const first = value.slice(0, value.indexOf(","));
+      const rest = value.slice(value.indexOf(",") + 1).trimStart();
+      setTagInput(rest);
+      void addTagNow(first);
+    } else {
+      setTagInput(value);
+    }
   }
 
   async function handleRemoveTag(tag: string) {
@@ -2028,6 +2091,239 @@ export function ApplicationDetailDialog({
       { talentPool },
       talentPool ? "Ditambahkan ke Talent Pool" : "Dikeluarkan dari Talent Pool"
     );
+  }
+
+  /* ----------------------- NR-24-b — aksi fitur per pelamar ----------------------- */
+
+  // Bintang personal (ide 2): toggle lewat PATCH {starred} (server pakai session).
+  async function handleToggleStar() {
+    if (starSaving) return;
+    setStarSaving(true);
+    await patch({ starred: !isStarred }, isStarred ? "Bintang dilepas" : "Ditandai penting");
+    setStarSaving(false);
+  }
+
+  // Tindak lanjut (ide 4): snoozeUntil ISO akhir hari Jakarta.
+  function snoozePlusDays(days: number) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    setSnoozeDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+  }
+
+  async function handleSaveSnooze() {
+    const iso = dateToEndOfDayIso(snoozeDate);
+    if (!iso) {
+      toast.error("Tanggal tindak lanjut tidak valid.");
+      return;
+    }
+    setSnoozeSaving(true);
+    const updated = await patch({ snoozeUntil: iso }, "Tindak lanjut diatur");
+    if (updated) {
+      setSnoozeOpen(false);
+      setSnoozeDate("");
+    }
+    setSnoozeSaving(false);
+  }
+
+  async function handleClearSnooze() {
+    setSnoozeSaving(true);
+    await patch({ snoozeUntil: null }, "Tindak lanjut dihapus");
+    setSnoozeSaving(false);
+  }
+
+  // Tahan proses (ide 8): holdReason ≤300 + tanggal review opsional.
+  async function handleSetHold() {
+    const reason = holdReasonInput.trim();
+    if (!reason) {
+      toast.error("Isi alasan menahan proses.");
+      return;
+    }
+    if (reason.length > 300) {
+      toast.error("Alasan maksimal 300 karakter.");
+      return;
+    }
+    const reviewIso = holdReviewInput ? dateToEndOfDayIso(holdReviewInput) : null;
+    if (holdReviewInput && !reviewIso) {
+      toast.error("Tanggal review tidak valid.");
+      return;
+    }
+    setHoldSaving(true);
+    const updated = await patch(
+      { holdReason: reason, holdReviewAt: reviewIso },
+      "Proses ditahan (HOLD)"
+    );
+    if (updated) {
+      setHoldOpen(false);
+      setHoldReasonInput("");
+      setHoldReviewInput("");
+    }
+    setHoldSaving(false);
+  }
+
+  async function handleReleaseHold() {
+    setHoldSaving(true);
+    await patch({ holdReason: null, holdReviewAt: null }, "Tahanan proses dilepas");
+    setHoldSaving(false);
+  }
+
+  // Ekspektasi gaji (ide 6): kosong = null.
+  async function handleSaveSalary() {
+    const raw = salaryInput.trim().replace(/[^0-9]/g, "");
+    const value = raw === "" ? null : Number(raw);
+    if (value != null && (!Number.isFinite(value) || value < 0)) {
+      toast.error("Angka gaji tidak valid.");
+      return;
+    }
+    setSalarySaving(true);
+    const updated = await patch(
+      { expectedSalary: value },
+      value != null ? "Ekspektasi gaji disimpan" : "Ekspektasi gaji dikosongkan"
+    );
+    if (updated) setSalaryEditing(false);
+    setSalarySaving(false);
+  }
+
+  // Masa berlaku dokumen (ide 13): patch merge per fileId (null = hapus).
+  async function handleDocExpiry(fileId: string, value: string) {
+    setDocExpiryBusy(fileId);
+    await patch(
+      { docExpiries: { [fileId]: value === "" ? null : value } },
+      value ? "Masa berlaku dokumen disimpan" : "Masa berlaku dokumen dihapus"
+    );
+    setDocExpiryBusy(null);
+  }
+
+  // Undo penolakan (ide 14): POST undo-reject {reason ≤300 wajib}.
+  async function handleUndoReject() {
+    const reason = undoReason.trim();
+    if (!reason) {
+      toast.error("Isi alasan pembatalan penolakan.");
+      return;
+    }
+    if (reason.length > 300) {
+      toast.error("Alasan maksimal 300 karakter.");
+      return;
+    }
+    setUndoSaving(true);
+    try {
+      const updated = await apiPost<Application>(
+        `/api/admin/applications/${app.id}/undo-reject`,
+        { reason }
+      );
+      toast.success("Penolakan dibatalkan");
+      setUndoConfirmOpen(false);
+      setUndoReason("");
+      setUndoUnlocked(false); // kunci kembali terpasang setelah aksi
+      onSaved(updated);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setUndoSaving(false);
+    }
+  }
+
+  // Do-not-Hire: lepas (OWNER, pola kunci) & tandai baru (PUT {key, reason}).
+  async function handleDnhRemove() {
+    if (!dnhMatch || dnhSaving) return;
+    setDnhSaving(true);
+    try {
+      await apiDelete(
+        `/api/admin/donothire?key=${encodeURIComponent(dnhMatch.key)}&confirm=YA`
+      );
+      toast.success("Do-not-Hire dilepas");
+      setDnhRemoveOpen(false);
+      setDnhUnlock(false);
+      setDnhEntries((prev) => prev.filter((e) => e.key !== dnhMatch.key));
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDnhSaving(false);
+    }
+  }
+
+  async function handleDnhAdd(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const reason = dnhReasonInput.trim();
+    if (!reason) {
+      toast.error("Isi alasan Do-not-Hire.");
+      return;
+    }
+    if (reason.length > 300) {
+      toast.error("Alasan maksimal 300 karakter.");
+      return;
+    }
+    const key = app.email ? app.email.toLowerCase() : phoneDigits;
+    if (!key) return;
+    setDnhSaving(true);
+    try {
+      await apiPut("/api/admin/donothire", { key, reason });
+      toast.success("Pelamar ditandai Do-not-Hire");
+      setDnhAddOpen(false);
+      setDnhReasonInput("");
+      setDnhEntries((prev) => [
+        ...prev.filter((e) => e.key !== key),
+        { key, reason, by: session?.name ?? "-", at: new Date().toISOString() },
+      ]);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDnhSaving(false);
+    }
+  }
+
+  // Gabungkan duplikat (ide 12): target = [id] di URL, sumber = lamaran ini.
+  async function openMergePanel() {
+    const next = !mergeOpen;
+    setMergeOpen(next);
+    if (!next) return;
+    setMergeTargetId("");
+    setMergeLoading(true);
+    try {
+      const rows = await apiGet<Application[]>("/api/admin/applications");
+      const email = app.email.toLowerCase();
+      setMergeCandidates(
+        rows.filter(
+          (r) =>
+            r.id !== app.id &&
+            (r.email ?? "").toLowerCase() === email &&
+            !r.mergedIntoId &&
+            !r.deletedAt &&
+            r.status !== "ACCEPTED" &&
+            r.status !== "COMPLETED"
+        )
+      );
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setMergeLoading(false);
+    }
+  }
+
+  async function handleMerge() {
+    if (!mergeTargetId || mergeSaving) return;
+    setMergeSaving(true);
+    try {
+      const res = await apiPost<{ ok: boolean; target: Application }>(
+        `/api/admin/applications/${mergeTargetId}/merge`,
+        { sourceId: app.id }
+      );
+      toast.success("Lamaran digabungkan");
+      setMergeConfirmOpen(false);
+      setMergeOpen(false);
+      onSaved(res.target);
+      if (onNavigate && res.target.id !== app.id) onNavigate(res.target.id);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setMergeSaving(false);
+    }
+  }
+
+  function scrollToCandidateQuestions() {
+    document
+      .getElementById("nr24-candidate-questions")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   /* ----------------------------- Sesi wawancara ----------------------------- */

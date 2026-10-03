@@ -82,7 +82,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
     const { id } = await params;
 
-    const body: unknown = await req.json().catch(() => null);
+    const body: unknown = await _req.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json({ error: "Data tidak valid." }, { status: 400 });
     }
