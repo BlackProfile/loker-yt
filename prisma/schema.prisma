@@ -87,6 +87,8 @@ model Position {
   customDocs   String        @default("[]") // JSON string[] label dokumen wajib tambahan dari pelamar
   maxApplicants Int? // kuota pelamar; null = tanpa kuota
   applyOpen    Boolean       @default(true) // formulir lamaran posisi ini buka/tutup (dikendalikan per posisi)
+  // NR-24 — kolom opsional ekspektasi gaji di wizard (bisa disembunyikan per posisi)
+  showExpectedSalary Boolean @default(true)
   formSchema   String? // JSON FormSchema (Form Builder) — null = mode klasik (screeningQuestions/customDocs)
 
   // Publikasi & jadwal
@@ -161,6 +163,54 @@ model FileAsset {
   cvApplications Application[] @relation("cvFile")
   introApp       Application[] @relation("introFile")
   coverPositions Position[]    @relation("coverFile")
+  // NR-24 — dokumen internal yang diunggah admin pada lamaran
+  internalDocs   ApplicationInternalDoc[] @relation("internalDoc")
+}
+
+// NR-24 — catatan hasil panggilan telepon ke pelamar (riwayat contact attempt)
+model ApplicationCall {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  result        String      @default("DIANGGAT") // DIANGGAT | TIDAK_DIANGGAT | SALAH_SAMBUNGAN
+  summary       String      @default("")
+  actor         String      @default("Admin")
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId])
+}
+
+// NR-24 — tes/asesmen yang dikirim ke pelamar (tautan, tenggat, status, skor)
+model ApplicationAssessment {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  title         String
+  link          String?
+  note          String?
+  dueAt         DateTime?
+  status        String      @default("SENT") // SENT | SUBMITTED | LATE
+  score         Int?
+  feedback      String?
+  submittedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([applicationId])
+}
+
+// NR-24 — dokumen internal lamaran (hasilnya hanya terlihat admin, mis. hasil MCU)
+model ApplicationInternalDoc {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  name          String
+  fileId        String
+  file          FileAsset   @relation("internalDoc", fields: [fileId], references: [id], onDelete: Cascade)
+  uploadedBy    String      @default("Admin")
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId])
 }
 
 // Lamaran yang masuk dari form publik
@@ -247,6 +297,14 @@ model Application {
   snoozeUntil DateTime? // bila diisi, bot mengingatkan admin pada waktu ini lalu membersihkannya
   botFiles    String    @default("[]") // JSON {fileId,filename,mimeType,size,sentAt}[] lampiran yang dikirim admin via bot Telegram
 
+  // NR-24 — fitur per pelamar (fondasi batch 1)
+  expectedSalary Int?      // ekspektasi gaji bulanan pelamar (Rp)
+  starredBy      String    @default("[]") // JSON string[] AdminUser.id — bintang personal per admin
+  holdReason     String?   // alasan proses ditahan (HOLD)
+  holdReviewAt   DateTime? // tanggal review ulang untuk HOLD
+  docExpiries    String?   // JSON {"<fileId>": "YYYY-MM-DD"} masa berlaku dokumen extraDocs
+  mergedIntoId   String?   // bila lamaran digabung ke lamaran lain (id lamaran utama)
+
   // NR-15 — transparansi & keterlibatan pelamar di halaman Cek Status
   stageHistory       String    @default("[]") // JSON {status,at}[] — riwayat tahap yang dilewati (urut waktu)
   candidateSeenAt    DateTime? // read receipt: terakhir pelamar membuka status lamaran ini
@@ -264,6 +322,11 @@ model Application {
   slotBooking InterviewSlot[] @relation("slotBooking")
   surveys     CandidateSurvey[] @relation("surveys")
   questions   ApplicationQuestion[]
+
+  // NR-24 — riwayat telepon, tes/asesmen, dan dokumen internal per lamaran
+  calls        ApplicationCall[]
+  assessments  ApplicationAssessment[]
+  internalDocs ApplicationInternalDoc[]
 
   interviews       Interview[]
   createdAt        DateTime   @default(now())
