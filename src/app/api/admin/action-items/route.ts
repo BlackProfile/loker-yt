@@ -1,8 +1,10 @@
 // GET /api/admin/action-items — daftar hal yang butuh tindakan admin (semua role):
 // lamaran belum ditinjau > 3 hari, permintaan reschedule, offer menunggu jawaban
 // (dengan urgensi deadline), wawancara selesai tanpa skor, onboarding belum lengkap,
-// lamaran duplikat yang perlu dicek, dan tahap pipeline yang melebihi batas
-// kapasitas (wipOver — NR-19).
+// lamaran duplikat yang perlu dicek, tahap pipeline yang melebihi batas
+// kapasitas (wipOver — NR-19), lamaran snooze yang mendekati jatuh tempo
+// tindak lanjut (followupDue — NR-24) dan HOLD yang mendekati jadwal review
+// ulang (holdReviewDue — NR-24).
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
@@ -14,6 +16,7 @@ export const dynamic = "force-dynamic";
 
 const SCORE_SLA_DAYS = 3; // wawancara selesai > 3 hari tanpa skor -> perlu tindakan
 const REVIEW_SLA_DAYS = 3; // lamaran baru belum ditinjau > 3 hari -> perlu tindakan
+const DUE_SOON_DAYS = 3; // NR-24: snooze/review HOLD <= 3 hari lagi -> masuk daftar due
 
 // Perluasan respons untuk Pusat Tugas (Task 20-a) — field tambahan di atas kontrak bawaan.
 type SimpleApplicationItem = {
@@ -55,7 +58,9 @@ export async function GET() {
     }
 
     const reviewCutoff = new Date(Date.now() - REVIEW_SLA_DAYS * 24 * 60 * 60 * 1000);
-    const [rescheduleRows, offerRows, unscoredRows, onboardingRows, staleNewRows, duplicateRows] = await Promise.all([
+    // NR-24 — jendela "mendekati jatuh tempo": sekarang sampai 3 hari ke depan.
+    const dueSoonCutoff = new Date(Date.now() + DUE_SOON_DAYS * 24 * 60 * 60 * 1000);
+    const [rescheduleRows, offerRows, unscoredRows, onboardingRows, staleNewRows, duplicateRows, followupRows, holdReviewRows] = await Promise.all([
       db.interview.findMany({
         where: { status: "RESCHEDULE_REQUESTED" },
         orderBy: { scheduledAt: "asc" },
@@ -109,6 +114,33 @@ export async function GET() {
         take: 20,
         select: { id: true, name: true, createdAt: true, position: { select: { title: true } } },
       }),
+      // NR-24 — lamaran yang di-snooze dan mendekati/jatuh tempo tindak lanjut.
+      db.application.findMany({
+        where: { deletedAt: null, snoozeUntil: { not: null, lte: dueSoonCutoff } },
+        orderBy: { snoozeUntil: "asc" },
+        take: 20,
+        select: {
+          id: true,
+          name: true,
+          trackingCode: true,
+          snoozeUntil: true,
+          position: { select: { title: true } },
+        },
+      }),
+      // NR-24 — lamaran HOLD dengan jadwal review ulang mendekati/terlewat.
+      db.application.findMany({
+        where: { deletedAt: null, holdReviewAt: { not: null, lte: dueSoonCutoff } },
+        orderBy: { holdReviewAt: "asc" },
+        take: 20,
+        select: {
+          id: true,
+          name: true,
+          trackingCode: true,
+          holdReason: true,
+          holdReviewAt: true,
+          position: { select: { title: true } },
+        },
+      }),
     ]);
 
     const body: ExtendedActionItemsResponse = {
@@ -159,6 +191,22 @@ export async function GET() {
         name: row.name,
         positionTitle: row.position?.title ?? null,
         createdAt: row.createdAt.toISOString(),
+      })),
+      // NR-24 — tindak lanjut snooze & review HOLD yang mendekati jatuh tempo.
+      followupDue: followupRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        trackingCode: row.trackingCode,
+        snoozeUntil: row.snoozeUntil ? row.snoozeUntil.toISOString() : null,
+        positionTitle: row.position?.title ?? null,
+      })),
+      holdReviewDue: holdReviewRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        trackingCode: row.trackingCode,
+        holdReason: row.holdReason,
+        holdReviewAt: row.holdReviewAt ? row.holdReviewAt.toISOString() : null,
+        positionTitle: row.position?.title ?? null,
       })),
     };
 

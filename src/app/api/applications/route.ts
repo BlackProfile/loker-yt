@@ -215,6 +215,23 @@ export async function POST(req: NextRequest) {
     const utmCampaign = asOptionalString(fields.utmCampaign)?.slice(0, 60) ?? null;
     // Referrer: URL halaman saat pelamar mengirim (dikirim client bila ada; null bila tidak).
     const referrer = asOptionalString(fields.referrer)?.slice(0, 300) ?? null;
+    // NR-24 — ekspektasi gaji bulanan (opsional): abaikan bila bukan angka valid.
+    // Diterima sebagai string (multipart & JSON dinormalisasi sama) lalu divalidasi ketat.
+    let expectedSalary: number | null = null;
+    {
+      const rawSalary = asTrimmedString(fields.expectedSalary);
+      if (rawSalary) {
+        const parsed = Number(rawSalary);
+        if (
+          Number.isFinite(parsed) &&
+          Number.isInteger(parsed) &&
+          parsed >= 0 &&
+          parsed <= 1_000_000_000
+        ) {
+          expectedSalary = parsed;
+        }
+      }
+    }
 
     // Rate limit per IP (Task 27): maks 5 submit per jam — dipersona sebagai error biasa.
     const nowMs = Date.now();
@@ -605,6 +622,8 @@ export async function POST(req: NextRequest) {
         komuterPlan,
         shiftPref,
         startDatePref,
+        // NR-24 — ekspektasi gaji bulanan pelamar (null bila tidak diisi/tidak valid).
+        expectedSalary,
         // Task 27: pencatatan persetujuan privasi + penanda perubahan tahap awal.
         consentAt: consent ? now : null,
         stageUpdatedAt: now,
@@ -652,6 +671,47 @@ export async function POST(req: NextRequest) {
       }
     } catch (duplicateError) {
       console.error("[POST /api/applications] deteksi duplikat gagal:", duplicateError);
+    }
+
+    // NR-24 — Peringatan Do-not-Hire (fire-and-forget): bila email ATAU telepon pelamar
+    // terdaftar pada Setting "doNotHire" (JSON map {key: {reason, by, at}}), buat
+    // NotificationItem + ActivityLog DNH_WARNING. Kunci map memakai bentuk normal:
+    // email lowercase ATAU nomor telepon digit saja. KEGAGALAN DI SINI TIDAK PERNAH
+    // menggagalkan submit (dibungkus try/catch penuh).
+    try {
+      const dnhSetting = await db.setting.findUnique({ where: { key: "doNotHire" } });
+      if (dnhSetting) {
+        const parsed: unknown = JSON.parse(dnhSetting.value);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const map = parsed as Record<string, unknown>;
+          const candidateKeys = [email.toLowerCase(), phone.replace(/\D/g, "")].filter((k) => k.length > 0);
+          const matchedKey = candidateKeys.find((key) => Object.prototype.hasOwnProperty.call(map, key));
+          if (matchedKey) {
+            const entry = (
+              map[matchedKey] && typeof map[matchedKey] === "object" ? map[matchedKey] : {}
+            ) as Record<string, unknown>;
+            const reason = typeof entry.reason === "string" && entry.reason.trim() ? entry.reason.trim() : "alasan tidak dicatat";
+            await db.notificationItem.create({
+              data: {
+                title: "Peringatan Do-not-Hire",
+                body: `${created.name} (${created.email}) melamar ${position.title} — terdaftar Do-not-Hire: ${reason}`,
+                category: "APPLICATION",
+                applicationId: created.id,
+              },
+            });
+            await db.activityLog.create({
+              data: {
+                applicationId: created.id,
+                actor: "Sistem",
+                action: "DNH_WARNING",
+                detail: `Pelamar terdaftar Do-not-Hire (${reason})`,
+              },
+            });
+          }
+        }
+      }
+    } catch (dnhError) {
+      console.error("[POST /api/applications] cek Do-not-Hire gagal:", dnhError);
     }
 
     // Pipeline latar belakang: AI screening -> transkripsi ASR -> notifikasi webhook.
