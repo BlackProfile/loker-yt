@@ -1,0 +1,69 @@
+{
+  "testStart": "2026-10-03T15:26:44.790Z",
+  "apps": [
+    {
+      "id": "cmus1l9c1000bl2urfmzbslxm",
+      "status": "NEW",
+      "rejectionReason": null,
+      "rejectionNote": null,
+      "rejectedAt": null,
+      "mergedIntoId": null,
+      "isDuplicate": false,
+      "tags": "[]",
+      "cvFileId": null,
+      "introFileId": null,
+      "extraDocs": "[]",
+      "botFiles": "[]",
+      "docExpiries": null,
+      "offerStatus": null,
+      "stageHistory": "[]",
+      "stageUpdatedAt": null
+    },
+    {
+      "id": "cmus1l9c3000dl2urpib6cuqg",
+      "status": "REVIEWED",
+      "rejectionReason": null,
+      "rejectionNote": null,
+      "rejectedAt": null,
+      "mergedIntoId": null,
+      "isDuplicate": false,
+      "tags": "[\"desain\",\"detailis\"]",
+      "cvFileId": null,
+      "introFileId": null,
+      "extraDocs": "[]",
+      "botFiles": "[]",
+      "docExpiries": null,
+      "offerStatus": null,
+      "stageHistory": "[]",
+      "stageUpdatedAt": null
+    },
+    {
+      "id": "cmus1l9c8000hl2urmrky8fg2",
+      "status": "ACCEPTED",
+      "rejectionReason": null,
+      "rejectionNote": null,
+      "rejectedAt": null,
+      "mergedIntoId": null,
+      "isDuplicate": false,
+      "tags": "[\"sosial media\",\"komunitas\"]",
+      "cvFileId": null,
+      "introFileId": null,
+      "extraDocs": "[]",
+      "botFiles": "[]",
+      "docExpiries": null,
+      "offerStatus": null,
+      "stageHistory": "[]",
+      "stageUpdatedAt": null
+    }
+  ],
+  "settings": [],
+  "dewiComments": 0,
+  "dewiQuestions": 0,
+  "tempAppId": "cmusjou9o0002l2smuxj30xbj",
+  "testFileAssetId": "cmusjou9k0000l2sm966aupl1",
+  "testQuestionId": "cmusjou9t0008l2smen3cwc2j",
+  "testCommentIds": [
+    "cmusjou9q0004l2sms45l6t3n",
+    "cmusjou9r0006l2sm5f3osj4q"
+  ]
+}

@@ -48,6 +48,7 @@ import {
   UserCheck,
   Users,
   Video,
+  Wallet,
   Workflow,
   X,
   Zap,
@@ -252,6 +253,8 @@ type IntakeState = {
   showIntroField: boolean;
   showPortfolioField: boolean;
   showSocialField: boolean;
+  // NR-24 — kolom opsional ekspektasi gaji di formulir lamaran
+  showExpectedSalary: boolean;
 };
 
 function buildIntakeState(p: Position): IntakeState {
@@ -269,6 +272,7 @@ function buildIntakeState(p: Position): IntakeState {
     showIntroField: p.showIntroField !== false,
     showPortfolioField: p.showPortfolioField !== false,
     showSocialField: p.showSocialField !== false,
+    showExpectedSalary: p.showExpectedSalary !== false, // NR-24 — default true
   };
 }
 
@@ -369,6 +373,9 @@ export function PositionIntakePage({
             form.requirePortfolio || form.showPortfolioField;
           payload.showSocialField = form.showSocialField;
         }
+        // NR-24 — dikirim SELALU di payload penerimaan (berlaku untuk semua
+        // mode formulir, klasik maupun skema/Form Builder).
+        payload.showExpectedSalary = form.showExpectedSalary;
         return payload;
       }}
     >
@@ -685,6 +692,29 @@ export function PositionIntakePage({
               })}
             </div>
           </div>
+        </div>
+      </FormSection>
+
+      {/* NR-24 — kolom ekspektasi gaji wizard. Section TERPISAH di luar kondisi
+          schemaActive agar tampil di SEMUA mode formulir (klasik & skema). */}
+      <FormSection
+        id="ekspektasi-gaji"
+        icon={Wallet}
+        title="Kolom Ekspektasi Gaji"
+        hint="Kolom opsional ekspektasi gaji bulanan pada formulir lamaran."
+      >
+        <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+          <div>
+            <p className="text-sm font-medium">Tampilkan ekspektasi gaji</p>
+            <p className="text-xs text-muted-foreground">
+              Tampilkan kolom opsional ekspektasi gaji di formulir lamaran.
+            </p>
+          </div>
+          <Switch
+            checked={form.showExpectedSalary}
+            onCheckedChange={(checked) => set("showExpectedSalary", checked)}
+            aria-label="Tampilkan kolom opsional ekspektasi gaji di formulir lamaran"
+          />
         </div>
       </FormSection>
           </>

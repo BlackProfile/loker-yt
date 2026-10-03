@@ -9,6 +9,12 @@ import { PrismaClient } from "@prisma/client";
 const db = new PrismaClient();
 
 async function main() {
+  // Bersihkan sisa setup sebelumnya yang gagal di tengah jalan (idempoten).
+  const leftovers = await db.application.findMany({ where: { name: "Uji NR24A2" }, select: { id: true } });
+  for (const row of leftovers) await db.application.delete({ where: { id: row.id } });
+  await db.fileAsset.deleteMany({ where: { filename: "nr24a2-test-cv.txt" } });
+  await db.applicationQuestion.deleteMany({ where: { question: { contains: "portofolio tambahan" } } });
+
   const dewi = await db.application.findFirst({
     where: { email: "dewi.lestari@mail.com", deletedAt: null },
     include: { _count: { select: { comments: true, questions: true } } },
@@ -83,10 +89,10 @@ async function main() {
 
   // 4. Dua komentar pada lamaran uji (dihitung pindah saat merge).
   const c1 = await db.comment.create({
-    data: { applicationId: temp.id, author: "Uji Setup", body: "Komentar uji 1 — akan pindah saat merge" },
+    data: { applicationId: temp.id, authorName: "Uji Setup", authorRole: "HR", body: "Komentar uji 1 — akan pindah saat merge" },
   });
   const c2 = await db.comment.create({
-    data: { applicationId: temp.id, author: "Uji Setup", body: "Komentar uji 2 — akan pindah saat merge" },
+    data: { applicationId: temp.id, authorName: "Uji Setup", authorRole: "HR", body: "Komentar uji 2 — akan pindah saat merge" },
   });
   snapshot.testCommentIds = [c1.id, c2.id];
 
