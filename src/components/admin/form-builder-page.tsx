@@ -407,35 +407,74 @@ function SectionCard({
             onClick={() => onMove(1)}
             disabled={!canMutate || index === totalSections - 1}
           />
-          {isBuiltin ? (
+          {isCore ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span
-                  className="inline-flex size-8 items-center justify-center text-muted-foreground/60"
-                  aria-label={lockHint}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "size-8 shrink-0",
+                    locked
+                      ? "text-muted-foreground/70 hover:text-foreground"
+                      : "border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400",
+                  )}
+                  onClick={onToggleLock}
+                  disabled={!canMutate}
+                  aria-label={locked ? "Buka kunci bagian" : "Kunci bagian"}
                 >
-                  <Lock className="size-3.5" aria-hidden="true" />
-                </span>
+                  {locked ? (
+                    <Lock className="size-3.5" aria-hidden="true" />
+                  ) : (
+                    <LockOpen className="size-3.5" aria-hidden="true" />
+                  )}
+                </Button>
               </TooltipTrigger>
-              <TooltipContent className="max-w-60">{lockHint}</TooltipContent>
+              <TooltipContent className="max-w-60">
+                {locked
+                  ? "Terkunci — bagian inti tidak bisa dihapus. Klik untuk membuka kunci."
+                  : "Kunci terbuka — bagian bisa dihapus. Klik untuk mengunci kembali."}
+              </TooltipContent>
             </Tooltip>
-          ) : (
-            <IconButton
-              icon={Trash2}
-              label="Hapus bagian"
-              onClick={onRemove}
-              disabled={!canMutate}
-            />
-          )}
+          ) : null}
+          <IconButton
+            icon={Trash2}
+            label={locked ? "Buka kunci dulu untuk menghapus" : "Hapus bagian"}
+            onClick={() => setConfirmRemove(true)}
+            disabled={!canMutate || locked}
+          />
         </div>
       </div>
 
-      {/* Isi khusus bagian bawaan */}
+      {/* Isi khusus bagian inti — semuanya bisa diedit (NR-23) */}
       {section.kind === "biodata" ? (
         <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
-          <CoreItemRow label="Nama Lengkap" required />
-          <CoreItemRow label="Email" required hint="Dipakai kirim update &amp; deteksi duplikat" />
-          <CoreItemRow label="Nomor WhatsApp">
+          <CoreItemRow
+            id={`core-name-${section.id}`}
+            label={section.nameLabel ?? ""}
+            defaultLabel={FORM_CORE_ITEM_DEFAULTS.name}
+            onLabelChange={(value) => onPatch({ nameLabel: value || undefined })}
+            disabled={!canMutate}
+            required
+            requiredHint="Selalu wajib — identitas pelamar di setiap lamaran."
+          />
+          <CoreItemRow
+            id={`core-email-${section.id}`}
+            label={section.emailLabel ?? ""}
+            defaultLabel={FORM_CORE_ITEM_DEFAULTS.email}
+            onLabelChange={(value) => onPatch({ emailLabel: value || undefined })}
+            disabled={!canMutate}
+            required
+            requiredHint="Selalu wajib — dipakai kirim update & deteksi lamaran ganda."
+          />
+          <CoreItemRow
+            id={`core-wa-${section.id}`}
+            label={section.waLabel ?? ""}
+            defaultLabel={FORM_CORE_ITEM_DEFAULTS.wa}
+            onLabelChange={(value) => onPatch({ waLabel: value || undefined })}
+            disabled={!canMutate}
+          >
             <Switch
               checked={isWaRequired(section)}
               onCheckedChange={(checked) => onPatch({ waRequired: checked })}
@@ -450,7 +489,13 @@ function SectionCard({
 
       {section.kind === "experience" ? (
         <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
-          <CoreItemRow label="Ceritakan pengalamanmu">
+          <CoreItemRow
+            id={`core-experience-${section.id}`}
+            label={section.experienceLabel ?? ""}
+            defaultLabel={FORM_CORE_ITEM_DEFAULTS.experience}
+            onLabelChange={(value) => onPatch({ experienceLabel: value || undefined })}
+            disabled={!canMutate}
+          >
             <Switch
               checked={isExperienceEnabled(section)}
               onCheckedChange={(checked) => onPatch({ experienceEnabled: checked })}
@@ -458,8 +503,22 @@ function SectionCard({
               aria-label="Aktifkan pertanyaan pengalaman"
             />
             <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
+            <Switch
+              checked={isExperienceRequired(section)}
+              onCheckedChange={(checked) => onPatch({ experienceRequired: checked })}
+              disabled={!canMutate || !isExperienceEnabled(section)}
+              className="data-[state=checked]:bg-rose-600"
+              aria-label="Pengalaman wajib diisi"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
           </CoreItemRow>
-          <CoreItemRow label="Alasan bergabung">
+          <CoreItemRow
+            id={`core-motivation-${section.id}`}
+            label={section.motivationLabel ?? ""}
+            defaultLabel={FORM_CORE_ITEM_DEFAULTS.motivation}
+            onLabelChange={(value) => onPatch({ motivationLabel: value || undefined })}
+            disabled={!canMutate}
+          >
             <Switch
               checked={isMotivationEnabled(section)}
               onCheckedChange={(checked) => onPatch({ motivationEnabled: checked })}
@@ -467,17 +526,31 @@ function SectionCard({
               aria-label="Aktifkan pertanyaan alasan bergabung"
             />
             <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
+            <Switch
+              checked={isMotivationRequired(section)}
+              onCheckedChange={(checked) => onPatch({ motivationRequired: checked })}
+              disabled={!canMutate || !isMotivationEnabled(section)}
+              className="data-[state=checked]:bg-rose-600"
+              aria-label="Alasan bergabung wajib diisi"
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
           </CoreItemRow>
           <p className="text-xs text-muted-foreground">
-            Wajib saat aktif. Matikan keduanya dan biarkan tanpa pertanyaan tambahan agar langkah
-            ini dilewati di wizard.
+            Matikan keduanya dan biarkan tanpa pertanyaan tambahan agar langkah ini dilewati di
+            wizard. Saklar Wajib bisa dimatikan agar pertanyaannya jadi opsional.
           </p>
         </div>
       ) : null}
 
       {section.kind === "files" ? (
         <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
-          <CoreItemRow label="CV (PDF, maks 5 MB)">
+          <CoreItemRow
+            id={`core-cv-${section.id}`}
+            label={section.cvLabel ?? ""}
+            defaultLabel={FORM_CORE_ITEM_DEFAULTS.cv}
+            onLabelChange={(value) => onPatch({ cvLabel: value || undefined })}
+            disabled={!canMutate}
+          >
             <Switch
               checked={isCvEnabled(section)}
               onCheckedChange={(checked) => onPatch({ cvEnabled: checked })}
@@ -494,7 +567,13 @@ function SectionCard({
             />
             <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
           </CoreItemRow>
-          <CoreItemRow label="Audio/Video perkenalan (maks 10 MB)">
+          <CoreItemRow
+            id={`core-intro-${section.id}`}
+            label={section.introLabel ?? ""}
+            defaultLabel={FORM_CORE_ITEM_DEFAULTS.intro}
+            onLabelChange={(value) => onPatch({ introLabel: value || undefined })}
+            disabled={!canMutate}
+          >
             <Switch
               checked={isIntroEnabled(section)}
               onCheckedChange={(checked) => onPatch({ introEnabled: checked })}
@@ -511,7 +590,13 @@ function SectionCard({
             />
             <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
           </CoreItemRow>
-          <CoreItemRow label="Link Portofolio">
+          <CoreItemRow
+            id={`core-portfolio-${section.id}`}
+            label={section.portfolioLabel ?? ""}
+            defaultLabel={FORM_CORE_ITEM_DEFAULTS.portfolio}
+            onLabelChange={(value) => onPatch({ portfolioLabel: value || undefined })}
+            disabled={!canMutate}
+          >
             <Switch
               checked={isPortfolioEnabled(section)}
               onCheckedChange={(checked) => onPatch({ portfolioEnabled: checked })}
@@ -569,6 +654,34 @@ function SectionCard({
         <Plus className="size-4" aria-hidden="true" />
         Tambah pertanyaan
       </Button>
+
+      {/* Konfirmasi hapus — pengaman kedua setelah kunci (anti-hapus-sengaja) */}
+      <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Hapus bagian "{section.title.trim() || "tanpa judul"}"?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Bagian dihapus dari draf saat kamu menekan "Simpan &amp; Terapkan" — sebelum
+              disimpan, kamu masih bisa membatalknya. Pertanyaan di dalamnya harus dipindahkan
+              atau dihapus dulu.
+              {section.kind === "biodata"
+                ? " Identitas (nama & email) tetap dikumpulkan wizard dengan label bawaan bila bagian ini dihapus."
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onRemove}
+              className="bg-rose-600 text-white hover:bg-rose-700"
+            >
+              Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
