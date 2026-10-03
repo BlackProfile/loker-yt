@@ -478,6 +478,7 @@ export type Application = {
   holdReviewAt: string | null; // tanggal review ulang untuk HOLD (ISO)
   docExpiries: Record<string, string>; // {fileId: "YYYY-MM-DD"} masa berlaku dokumen extraDocs
   mergedIntoId: string | null; // id lamaran utama bila lamaran ini digabung
+  snoozeUntil: string | null; // tanggal tindak lanjut (dipakai juga snooze bot Telegram & cron lonceng)
 
   createdAt: string;
 };

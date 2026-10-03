@@ -584,6 +584,7 @@ export function serializeApplication(record: ApplicationRecord): Application {
     holdReviewAt: record.holdReviewAt ? record.holdReviewAt.toISOString() : null,
     docExpiries: parseDocExpiries(record.docExpiries),
     mergedIntoId: record.mergedIntoId ?? null,
+    snoozeUntil: record.snoozeUntil ? record.snoozeUntil.toISOString() : null,
 
     createdAt: record.createdAt.toISOString(),
   };

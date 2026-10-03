@@ -1216,6 +1216,9 @@ export function ApplicationsTab() {
 
       <ApplicationDetailDialog
         application={detail}
+        navIds={navIds}
+        navIndex={detail ? navIds.indexOf(detail.id) : -1}
+        onNavigate={openDetailById}
         onOpenChange={(open) => {
           if (!open) setDetail(null);
         }}
