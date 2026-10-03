@@ -1658,7 +1658,12 @@ export function ApplicationDetailDialog({
   const [undoSaving, setUndoSaving] = useState(false);
 
   // NR-24-b — Do-not-Hire (match email/telepon) + penggabungan duplikat.
-  const [dnhEntries, setDnhEntries] = useState<DoNotHireEntry[]>([]);
+  // entries disimpan bersama appId-nya agar tidak sempat cocok salah kandidat
+  // saat fetch DNH masih berjalan setelah berganti pelamar.
+  const [dnhData, setDnhData] = useState<{ appId: string; entries: DoNotHireEntry[] }>({
+    appId: "",
+    entries: [],
+  });
   const [dnhUnlock, setDnhUnlock] = useState(false);
   const [dnhRemoveOpen, setDnhRemoveOpen] = useState(false);
   const [dnhSaving, setDnhSaving] = useState(false);
@@ -1857,10 +1862,10 @@ export function ApplicationDetailDialog({
     let cancelled = false;
     apiGet<{ entries: DoNotHireEntry[] }>("/api/admin/donothire")
       .then((res) => {
-        if (!cancelled) setDnhEntries(res.entries ?? []);
+        if (!cancelled) setDnhData({ appId: applicationId, entries: res.entries ?? [] });
       })
       .catch(() => {
-        if (!cancelled) setDnhEntries([]);
+        if (!cancelled) setDnhData({ appId: applicationId, entries: [] });
       });
     return () => {
       cancelled = true;
@@ -1981,6 +1986,7 @@ export function ApplicationDetailDialog({
 
   // Do-not-Hire: match email (lowercase) atau telepon digit-only dengan daftar DNH.
   const phoneDigits = (app.phone ?? "").replace(/[^0-9]/g, "");
+  const dnhEntries = dnhData.appId === app.id ? dnhData.entries : [];
   const dnhMatch =
     dnhEntries.find(
       (e) =>
@@ -2246,7 +2252,11 @@ export function ApplicationDetailDialog({
       toast.success("Do-not-Hire dilepas");
       setDnhRemoveOpen(false);
       setDnhUnlock(false);
-      setDnhEntries((prev) => prev.filter((e) => e.key !== dnhMatch.key));
+      setDnhData((prev) =>
+        prev.appId === app.id
+          ? { ...prev, entries: prev.entries.filter((e) => e.key !== dnhMatch.key) }
+          : prev
+      );
     } catch (err) {
       reportError(err);
     } finally {
@@ -2273,10 +2283,17 @@ export function ApplicationDetailDialog({
       toast.success("Pelamar ditandai Do-not-Hire");
       setDnhAddOpen(false);
       setDnhReasonInput("");
-      setDnhEntries((prev) => [
-        ...prev.filter((e) => e.key !== key),
-        { key, reason, by: session?.name ?? "-", at: new Date().toISOString() },
-      ]);
+      setDnhData((prev) =>
+        prev.appId === app.id
+          ? {
+              ...prev,
+              entries: [
+                ...prev.entries.filter((e) => e.key !== key),
+                { key, reason, by: session?.name ?? "-", at: new Date().toISOString() },
+              ],
+            }
+          : prev
+      );
     } catch (err) {
       reportError(err);
     } finally {
