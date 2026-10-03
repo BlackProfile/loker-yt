@@ -520,7 +520,7 @@ export function ApplicationsTable({
                     </span>
                   ))}
                 </div>
-                <div className="mt-3 flex items-center gap-2 border-t pt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
                   <label className="flex flex-1 cursor-pointer items-center gap-2 text-xs text-muted-foreground">
                     <Checkbox
                       checked={isCompared}
