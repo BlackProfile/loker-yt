@@ -253,47 +253,77 @@ function IconButton({
 }
 
 /**
- * Baris item inti bagian bawaan: label + (bila terkunci) badge "Wajib" + ikon
- * kunci + hint kecil, dengan konten kanan opsional (saklar).
+ * Baris item inti bagian (NR-23 — semuanya bisa diedit penuh kayak pertanyaan
+ * biasa): input label kustom (kosong = pakai label bawaan) + konten kanan
+ * (saklar Aktif/Wajib). Item yang wajibnya melekat pada sistem (Nama & Email)
+ * menampilkan badge "Wajib" + ikon kunci dengan alasan.
  */
 function CoreItemRow({
+  id,
   label,
+  defaultLabel,
+  onLabelChange,
+  disabled,
   required,
-  hint,
+  requiredHint,
   children,
 }: {
+  id: string;
+  /** Nilai label kustom saat ini ("" = memakai label bawaan). */
   label: string;
-  /** Item terkunci yang selalu wajib — tampilkan badge "Wajib" + ikon kunci. */
+  defaultLabel: string;
+  onLabelChange: (value: string) => void;
+  disabled?: boolean;
+  /** Item yang wajibnya mengikat sistem (Nama & Email) — tidak bisa dimatikan. */
   required?: boolean;
-  hint?: string;
+  requiredHint?: string;
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-        <p className="text-sm font-medium">{label}</p>
-        {required ? (
-          <Badge
-            variant="outline"
-            className="border-rose-200 bg-rose-50 px-1.5 text-[10px] text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
-          >
-            Wajib
-          </Badge>
-        ) : null}
-        {required ? (
-          <Lock className="size-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
-        ) : null}
-        {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 flex-1">
+        <Label className="sr-only" htmlFor={id}>
+          Label item
+        </Label>
+        <Input
+          id={id}
+          value={label}
+          onChange={(e) => onLabelChange(e.target.value)}
+          maxLength={FORM_CORE_LABEL_MAX}
+          placeholder={defaultLabel}
+          className="h-9 border-transparent bg-zinc-100/70 text-sm font-medium dark:bg-zinc-800/60"
+          disabled={disabled}
+        />
       </div>
-      {children ? <div className="flex shrink-0 items-center gap-4">{children}</div> : null}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 sm:justify-end">
+        {required ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex items-center gap-1">
+                <Badge
+                  variant="outline"
+                  className="border-rose-200 bg-rose-50 px-1.5 text-[10px] text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+                >
+                  Wajib
+                </Badge>
+                <Lock className="size-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-52">{requiredHint}</TooltipContent>
+          </Tooltip>
+        ) : null}
+        {children ? <div className="flex items-center gap-4">{children}</div> : null}
+      </div>
     </div>
   );
 }
 
 /**
- * Kartu satu bagian skema (semua jenis). Bagian bawaan tidak bisa dihapus
- * (ikon kunci + alasan) tetapi judul, deskripsi, posisi, dan isinya bisa
- * diatur; bagian kustom bisa dihapus penuh. Urutan kartu = urutan wizard.
+ * Kartu satu bagian skema (semua jenis). NR-23 — tidak ada lagi bagian
+ * "bawaan" yang dibekukan: judul, deskripsi, urutan, isi, dan label item
+ * inti semuanya bisa diedit. Penghapusan dijaga KUNCI (default terkunci):
+ * buka kunci dulu, lalu konfirmasi — agar tidak terhapus tanpa sengaja.
+ * Urutan kartu = urutan wizard.
  */
 function SectionCard({
   section,
@@ -302,6 +332,8 @@ function SectionCard({
   fields,
   canAddField,
   canMutate,
+  locked,
+  onToggleLock,
   onPatch,
   onMove,
   onRemove,
@@ -317,6 +349,9 @@ function SectionCard({
   fields: FormField[];
   canAddField: boolean;
   canMutate: boolean;
+  /** Kunci anti-hapus (bagian inti: default terkunci; bagian kustom bebas). */
+  locked: boolean;
+  onToggleLock: () => void;
   onPatch: (patch: Partial<Omit<FormSection, "id" | "kind">>) => void;
   onMove: (dir: 1 | -1) => void;
   onRemove: () => void;
@@ -326,34 +361,14 @@ function SectionCard({
   onFieldRemove: (fieldId: string) => void;
   onAddField: () => void;
 }) {
-  const isBuiltin = section.kind !== "custom";
-  const lockHint =
-    section.kind === "biodata"
-      ? "Dipakai untuk identitas, deteksi lamaran ganda, dan komunikasi — tidak bisa dihapus."
-      : "Tidak bisa dihapus — matikan isinya agar langkah ini dilewati di wizard.";
+  const isCore = section.kind !== "custom";
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   return (
     <Card className="gap-4 rounded-2xl p-5 md:p-6">
-      {/* Kepala bagian: badge jenis + judul + deskripsi + kontrol urutan */}
+      {/* Kepala bagian: judul + deskripsi + kontrol urutan/kunci/hapus */}
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-            {isBuiltin ? (
-              <Badge
-                variant="outline"
-                className="border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
-              >
-                Bawaan — {FORM_SECTION_KIND_LABELS[section.kind]}
-              </Badge>
-            ) : (
-              <Badge
-                variant="outline"
-                className="border-zinc-200 text-zinc-600 dark:border-zinc-800 dark:text-zinc-400"
-              >
-                Tambahan
-              </Badge>
-            )}
-          </div>
           <Label className="sr-only" htmlFor={`section-title-${section.id}`}>
             Judul bagian
           </Label>
