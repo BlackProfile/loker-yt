@@ -1,6 +1,7 @@
 // GET /api/admin/applications — daftar semua lamaran dengan filter & urutan opsional (semua role).
 // Query: status, positionId, q, ratingMin, tag, talentPool ("1"/"true"), hasInterview ("1"),
-//        sort ("newest" default | "oldest" | "aiScore").
+//        starred ("1" — bintang personal admin yang login), followup ("1" — snooze terisi),
+//        hold ("1" — proses ditahan), sort ("newest" default | "oldest" | "aiScore" | "followup").
 // Scope & masking: HR dengan scope posisi hanya melihat lamaran pada posisi terkait;
 // VIEWER menerima PII tersamar (phone & CV disembunyikan di level respons list).
 import { NextRequest, NextResponse } from "next/server";
@@ -26,7 +27,8 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const { where: baseWhere, orderBy, valid } = parseApplicationFilters(searchParams);
+    // userId diteruskan agar filter starred (bintang personal) tahu admin yang login.
+    const { where: baseWhere, orderBy, valid } = parseApplicationFilters(searchParams, session.id);
     if (!valid) {
       return NextResponse.json({ error: "Status tidak valid." }, { status: 400 });
     }

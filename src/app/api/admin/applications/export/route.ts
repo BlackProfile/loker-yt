@@ -117,7 +117,8 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const format = (searchParams.get("format") ?? "csv").toLowerCase();
-    const { where, orderBy, valid } = parseApplicationFilters(searchParams);
+    // userId diteruskan agar filter starred (bintang personal) tahu admin yang login.
+    const { where, orderBy, valid } = parseApplicationFilters(searchParams, session.id);
     if (!valid) {
       return NextResponse.json({ error: "Status tidak valid." }, { status: 400 });
     }

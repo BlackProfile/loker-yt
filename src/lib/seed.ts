@@ -197,6 +197,30 @@ export function parseTags(raw: string | null | undefined): string[] {
   }
 }
 
+/**
+ * NR-24 — Parse JSON {fileId: "YYYY-MM-DD"} masa berlaku dokumen (Application.docExpiries).
+ * Aman terhadap nilai rusak: kunci kosong/>64 char, nilai bukan string tanggal dilempar.
+ * Gagal parse total → objek kosong.
+ */
+export function parseDocExpiries(raw: string | null | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const cleanKey = key.trim();
+      if (!cleanKey || cleanKey.length > 64) continue;
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        result[cleanKey] = value;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
 /** Parse dokumen onboarding dari JSON string (aman terhadap nilai rusak). */
 export function parseOnboardingDocs(raw: string | null | undefined): OnboardingDoc[] {
   if (!raw) return [];
@@ -364,6 +388,8 @@ export function serializePosition(record: PositionRecordModel): Position {
     showIntroField: record.showIntroField !== false,
     showPortfolioField: record.showPortfolioField !== false,
     showSocialField: record.showSocialField !== false,
+    // NR-24 — kolom opsional ekspektasi gaji di wizard (null-safe utk DB lama)
+    showExpectedSalary: record.showExpectedSalary !== false,
     customDocs: parseRequirements(record.customDocs),
     maxApplicants: record.maxApplicants,
     applyOpen: record.applyOpen !== false,
@@ -550,6 +576,14 @@ export function serializeApplication(record: ApplicationRecord): Application {
     startConfirmedAt: record.startConfirmedAt ? record.startConfirmedAt.toISOString() : null,
     startProposedAt: record.startProposedAt ? record.startProposedAt.toISOString() : null,
     startProposedNote: record.startProposedNote ?? null,
+
+    // NR-24 — fitur per pelamar (fondasi batch 1)
+    expectedSalary: record.expectedSalary ?? null,
+    starredBy: parseTags(record.starredBy),
+    holdReason: record.holdReason ?? null,
+    holdReviewAt: record.holdReviewAt ? record.holdReviewAt.toISOString() : null,
+    docExpiries: parseDocExpiries(record.docExpiries),
+    mergedIntoId: record.mergedIntoId ?? null,
 
     createdAt: record.createdAt.toISOString(),
   };
@@ -800,9 +834,15 @@ export type ParsedApplicationFilters = {
 
 /**
  * Bangun where/orderBy untuk GET /api/admin/applications & /export dari query params:
- * status, positionId, q, ratingMin, tag, talentPool ("1"/"true"), hasInterview ("1"), sort.
+ * status, positionId, q, ratingMin, tag, talentPool ("1"/"true"), hasInterview ("1"),
+ * starred ("1" — bintang personal admin yang login, butuh userId), followup ("1" —
+ * snoozeUntil terisi), hold ("1" — proses ditahan), sort ("newest"|"oldest"|"aiScore"|"followup").
+ * userId opsional: id AdminUser yang login — hanya dipakai filter starred.
  */
-export function parseApplicationFilters(searchParams: URLSearchParams): ParsedApplicationFilters {
+export function parseApplicationFilters(
+  searchParams: URLSearchParams,
+  userId?: string
+): ParsedApplicationFilters {
   const where: Prisma.ApplicationWhereInput = {};
   let valid = true;
 
@@ -836,9 +876,31 @@ export function parseApplicationFilters(searchParams: URLSearchParams): ParsedAp
   const talentPool = searchParams.get("talentPool");
   if (talentPool === "1" || talentPool === "true") where.talentPool = true;
 
+  const starred = searchParams.get("starred");
+  if (starred === "1" || starred === "true") {
+    // Bintang personal per admin: kolom starredBy menyimpan JSON string[] AdminUser.id.
+    // Tanpa userId (sesi tidak diketahui) filter diabaikan.
+    if (userId) where.starredBy = { contains: `"${userId.replace(/"/g, "")}"` };
+  }
+
   const hasInterview = searchParams.get("hasInterview");
-  if (hasInterview === "1" || hasInterview === "true") {
+  const followup = searchParams.get("followup");
+  const wantInterview = hasInterview === "1" || hasInterview === "true";
+  const wantFollowup = followup === "1" || followup === "true";
+  // NOT mengandung satu kondisi bisa saling menimpa — gabungkan aman via OR di dalam NOT:
+  // NOT(A OR B) ≡ (NOT A) AND (NOT B), sehingga hasInterview + followup tetap keduanya berlaku.
+  if (wantInterview && wantFollowup) {
+    where.NOT = { OR: [{ interviewAt: null }, { snoozeUntil: null }] };
+  } else if (wantInterview) {
     where.NOT = { interviewAt: null };
+  } else if (wantFollowup) {
+    where.NOT = { snoozeUntil: null };
+  }
+
+  // NR-24 — lamaran yang prosesnya ditahan (HOLD).
+  const hold = searchParams.get("hold");
+  if (hold === "1" || hold === "true") {
+    where.holdReason = { not: null };
   }
 
   const sort = searchParams.get("sort") ?? "newest";
@@ -847,6 +909,9 @@ export function parseApplicationFilters(searchParams: URLSearchParams): ParsedAp
     orderBy = [{ createdAt: "asc" }, { id: "asc" }];
   } else if (sort === "aiScore") {
     orderBy = [{ aiScore: "desc" }, { createdAt: "desc" }];
+  } else if (sort === "followup") {
+    // Tindak lanjut terdekat di atas; yang belum di-snooze (null) menumpuk di bawah.
+    orderBy = [{ snoozeUntil: "asc" }, { createdAt: "desc" }];
   }
 
   return { where, orderBy, valid };
