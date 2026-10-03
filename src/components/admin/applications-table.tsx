@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,10 +12,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Eye, MessageCircle, Share2, Trash2 } from "lucide-react";
+import { Eye, MessageCircle, PauseCircle, Share2, Star, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
-import type { Application } from "@/lib/types";
+import type { Application, Position } from "@/lib/types";
 import { apiGet } from "./api";
+import { useAdminSession } from "./admin-context";
 import { formatDate, initialsOf } from "./format";
 import { StatusBadge, AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
@@ -77,8 +78,128 @@ function DuplicateBadge() {
   );
 }
 
+/** Format rupiah singkat untuk tooltip: 3500000 -> "Rp 3,5 jt". */
+function formatJutaShort(value: number): string {
+  if (value >= 1_000_000) {
+    const jt = value / 1_000_000;
+    const text = Number.isInteger(jt) ? String(jt) : jt.toFixed(1).replace(".", ",");
+    return `Rp ${text} jt`;
+  }
+  return `Rp ${new Intl.NumberFormat("id-ID").format(value)}`;
+}
+
+/** Ikon bintang amber (NR-24) — lamaran ditandai penting oleh admin yang sedang login. */
+function StarMark() {
+  return (
+    <span title="Ditandai penting oleh Anda" className="inline-flex shrink-0">
+      <Star
+        className="size-3.5 fill-amber-400 text-amber-500 dark:fill-amber-500 dark:text-amber-400"
+        aria-hidden="true"
+      />
+      <span className="sr-only">Ditandai penting</span>
+    </span>
+  );
+}
+
+/** Chip "HOLD" amber (NR-24) — proses lamaran ditahan dengan alasan tertentu. */
+function HoldBadge({ reason }: { reason: string }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+      title={`Ditahan (HOLD)${reason ? `: ${reason}` : ""}`}
+    >
+      <PauseCircle className="size-3" aria-hidden="true" />
+      HOLD
+    </span>
+  );
+}
+
+/** Chip zinc "Digabung" (NR-24) — lamaran digabung ke lamaran utama pelamar sama. */
+function MergedBadge() {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center rounded-full border border-zinc-300 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+      title="Lamaran digabung ke lamaran utama pelamar yang sama"
+    >
+      Digabung
+    </span>
+  );
+}
+
+/** Chip amber "Gaji > rentang" (NR-24) — ekspektasi melebihi salaryMax posisi. */
+function SalaryOverBadge({ expected, max }: { expected: number; max: number }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+      title={`Ekspektasi gaji ${formatJutaShort(expected)} di atas rentang wajar posisi (maks ${formatJutaShort(max)})`}
+    >
+      <Wallet className="size-3" aria-hidden="true" />
+      Gaji &gt; rentang
+    </span>
+  );
+}
+
+/**
+ * Chip meta baris nama (NR-24): duplikat, diarsip, HOLD, digabung, gaji >
+ * rentang — ditampilkan ringkas maks 2 chip, sisanya jadi "+n" (pola tags).
+ */
+function AppMetaChips({
+  app,
+  positions,
+}: {
+  app: Application;
+  positions: Position[];
+}) {
+  const chips: { key: string; node: ReactNode }[] = [];
+  if (app.isDuplicate === true) {
+    chips.push({ key: "duplicate", node: <DuplicateBadge /> });
+  }
+  if (app.archivedAt) {
+    chips.push({ key: "archived", node: <ArchivedBadge /> });
+  }
+  if (app.holdReason) {
+    chips.push({ key: "hold", node: <HoldBadge reason={app.holdReason} /> });
+  }
+  if (app.mergedIntoId) {
+    chips.push({ key: "merged", node: <MergedBadge /> });
+  }
+  if (app.expectedSalary != null) {
+    const position = app.positionId
+      ? positions.find((p) => p.id === app.positionId)
+      : positions.find((p) => p.title === app.positionTitle);
+    if (position?.salaryMax != null && app.expectedSalary > position.salaryMax) {
+      chips.push({
+        key: "salary-over",
+        node: (
+          <SalaryOverBadge expected={app.expectedSalary} max={position.salaryMax} />
+        ),
+      });
+    }
+  }
+  const shown = chips.slice(0, 2);
+  const extra = chips.length - shown.length;
+  return (
+    <>
+      {shown.map((chip) => (
+        <span key={chip.key} className="contents">
+          {chip.node}
+        </span>
+      ))}
+      {extra > 0 ? (
+        <span
+          className="inline-flex shrink-0 items-center rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-secondary-foreground"
+          title={`${extra} penanda lainnya`}
+        >
+          +{extra}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 export function ApplicationsTable({
   applications,
+  positions = [],
   canMutate,
   selectedIds,
   onToggleSelect,
@@ -90,6 +211,8 @@ export function ApplicationsTable({
   onRate,
 }: {
   applications: Application[];
+  /** Daftar posisi untuk cek ekspektasi gaji vs rentang wajar (NR-24). */
+  positions?: Position[];
   canMutate: boolean;
   selectedIds: Set<string>;
   onToggleSelect: (id: string, checked: boolean) => void;
@@ -102,6 +225,15 @@ export function ApplicationsTable({
 }) {
   // Cache pesan WhatsApp (body template OFFER pertama) — dimuat sekali saat pertama dipakai.
   const waTemplateRef = useRef<string | null>(null);
+
+  // NR-24 — bintang personal: hanya admin pemilik bintang yang melihat ikonnya.
+  const { session } = useAdminSession();
+  const adminId = session.id;
+
+  /** Bintang amber di samping nama bila lamaran ditandai oleh admin ini. */
+  function starMark(app: Application): ReactNode {
+    return adminId && app.starredBy.includes(adminId) ? <StarMark /> : null;
+  }
 
   const allSelected =
     applications.length > 0 &&
@@ -199,8 +331,9 @@ export function ApplicationsTable({
                       <div className="min-w-0">
                         <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
                           <span className="truncate">{app.name}</span>
-                          {app.isDuplicate === true ? <DuplicateBadge /> : null}
-                          {app.archivedAt ? <ArchivedBadge /> : null}
+                          {starMark(app)}
+                          {/* NR-24 — chip meta ringkas: duplikat/diarsip/HOLD/digabung/gaji (maks 2 + "+n") */}
+                          <AppMetaChips app={app} positions={positions} />
                         </p>
                         <p className="truncate text-xs text-muted-foreground">
                           {app.email}
@@ -342,8 +475,9 @@ export function ApplicationsTable({
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
                       <span className="truncate">{app.name}</span>
-                      {app.isDuplicate === true ? <DuplicateBadge /> : null}
-                      {app.archivedAt ? <ArchivedBadge /> : null}
+                      {starMark(app)}
+                      {/* NR-24 — chip meta ringkas: duplikat/diarsip/HOLD/digabung/gaji (maks 2 + "+n") */}
+                      <AppMetaChips app={app} positions={positions} />
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {app.email}

@@ -193,6 +193,14 @@ const id = {
       source: "Dari mana kamu tahu lowongan ini?",
       sourcePh: "Pilih sumber (opsional)",
     },
+    // NR-24 — ekspektasi gaji (opsional; disembunyikan bila posisi menyetel
+    // showExpectedSalary = false). previewLabel dipakai baris pratinjau.
+    salary: {
+      label: "Ekspektasi Gaji (opsional)",
+      help:
+        "Per bulan, dalam Rupiah — membantu tim menyiapkan penawaran yang sesuai.",
+      previewLabel: "Ekspektasi Gaji",
+    },
     errors: {
       name: "Nama lengkap wajib diisi.",
       emailRequired: "Email wajib diisi.",
@@ -830,6 +838,7 @@ type idDictShape = {
       source: string;
       sourcePh: string;
     };
+    salary: { label: string; help: string; previewLabel: string };
     errors: {
       name: string;
       emailRequired: string;
@@ -1460,6 +1469,14 @@ const en: Dict = {
         "Example: I want to grow with the creative team and contribute to content that benefits many people.",
       source: "How did you hear about this opening?",
       sourcePh: "Choose a source (optional)",
+    },
+    // NR-24 — optional salary expectation (hidden when the position sets
+    // showExpectedSalary = false). previewLabel is used by the preview row.
+    salary: {
+      label: "Salary Expectation (optional)",
+      help:
+        "Monthly, in Rupiah — helps us prepare a fitting offer.",
+      previewLabel: "Salary Expectation",
     },
     errors: {
       name: "Full name is required.",

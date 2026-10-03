@@ -234,6 +234,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** NR-24 — bersihkan input ekspektasi gaji: digit murni saja, maksimal 9 digit
+ * (999.999.999 — di bawah batas server 1.000.000.000). */
+function sanitizeSalaryInput(raw: string): string {
+  return raw.replace(/\D/g, "").slice(0, 9);
+}
+
 /** Salin jawaban form yang bisa diserialisasi — berkas (File) tidak ikut. */
 function serializableFormAnswers(
   answers: FormAnswers,
@@ -813,6 +819,8 @@ type StoredDraft = {
   values?: Partial<Record<keyof FormValues, unknown>>;
   positionId?: unknown;
   formAnswers?: Record<string, unknown>;
+  // NR-24 — ekspektasi gaji (string digit murni) ikut disimpan di draft.
+  expectedSalaryInput?: unknown;
   savedAt?: unknown;
 };
 
@@ -863,6 +871,9 @@ export function ApplyWizard({
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   // Sumber pelamar ("dari mana tahu lowongan ini") — opsional.
   const [source, setSource] = useState("");
+  // NR-24 — ekspektasi gaji bulanan (opsional): disimpan sebagai string digit
+  // murni (sanitizeSalaryInput); kosong = tidak dikirim ke server.
+  const [expectedSalaryInput, setExpectedSalaryInput] = useState("");
   // Mode tutup rekrutmen (Setting "site" via /api/public/site) — saat aktif,
   // tombol kirim di langkah akhir dinonaktifkan dan pengiriman diblokir.
   const [recruitmentClosed, setRecruitmentClosed] = useState(false);
@@ -884,6 +895,20 @@ export function ApplyWizard({
   const selectedPosition = positions.find((p) => p.id === positionId);
   const screeningQuestions = selectedPosition?.screeningQuestions ?? [];
   const customDocs = selectedPosition?.customDocs ?? [];
+
+  // NR-24 — kolom ekspektasi gaji tampil bila posisi tidak menyembunyikannya
+  // (showExpectedSalary default true; posisi lama dari API publik juga true).
+  const showExpectedSalaryField = selectedPosition?.showExpectedSalary !== false;
+  // Input berisi digit murni hasil sanitasi — parseInt selalu menghasilkan
+  // integer 0..999999999. 0 dianggap kosong (tidak dikirim / tanpa baris).
+  const expectedSalaryNumber = expectedSalaryInput
+    ? Number.parseInt(expectedSalaryInput, 10)
+    : 0;
+  // Format Indonesia: "Rp 3.500.000" (Intl.NumberFormat("id-ID")).
+  const expectedSalaryFormatted =
+    expectedSalaryNumber > 0
+      ? `Rp ${new Intl.NumberFormat("id-ID").format(expectedSalaryNumber)}`
+      : "";
 
   // NR-4 — langkah Info Kehadiran hanya untuk posisi non-remote (ONSITE/HYBRID).
   // Posisi REMOTE tidak mendapat langkah/field tambahan apa pun.
@@ -1162,6 +1187,11 @@ export function ApplyWizard({
           positionId:
             typeof json.positionId === "string" ? json.positionId : undefined,
           formAnswers: isRecord(data.formAnswers) ? data.formAnswers : undefined,
+          // NR-24 — ekspektasi gaji ikut dipulihkan bila ada di draft tautan.
+          expectedSalaryInput:
+            typeof data.expectedSalaryInput === "string"
+              ? data.expectedSalaryInput
+              : undefined,
         });
         setLinkRestoreNote({ ok: true, message: "Draft dari tautan dimuat." });
       })
@@ -1185,7 +1215,9 @@ export function ApplyWizard({
   useEffect(() => {
     if (submittedRef.current || draftDismissedRef.current) return;
     const hasContent =
-      VALUE_KEYS.some((key) => values[key].trim().length > 0) || positionId;
+      VALUE_KEYS.some((key) => values[key].trim().length > 0) ||
+      positionId ||
+      expectedSalaryInput.trim().length > 0;
     if (!hasContent) return;
     // Jawaban form ikut disimpan — kecuali berkas (File tidak bisa diserialisasi).
     const serializableAnswers = serializableFormAnswers(formAnswers);
@@ -1197,6 +1229,9 @@ export function ApplyWizard({
             values,
             positionId,
             formAnswers: serializableAnswers,
+            // NR-24 — ekspektasi gaji ikut tersimpan agar tidak hilang saat
+            // pindah langkah / muat ulang halaman.
+            expectedSalaryInput,
             savedAt: Date.now(),
           }),
         );
@@ -1205,7 +1240,7 @@ export function ApplyWizard({
       }
     }, AUTOSAVE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [values, positionId, formAnswers]);
+  }, [values, positionId, formAnswers, expectedSalaryInput]);
 
   // Pelacakan drop-off langkah wizard (Task 27): fire-and-forget ke
   // /api/public/track-step — seluruh kegagalan diabaikan agar tidak mengganggu UI.
@@ -2414,6 +2449,7 @@ export function ApplyWizard({
     setConfirmOpen(false);
     setDirection(1);
     setSource("");
+    setExpectedSalaryInput("");
     setScreeningAnswers({});
     setFormAnswers({});
     setFormErrors({});
@@ -2437,6 +2473,12 @@ export function ApplyWizard({
       if (typeof raw === "string") restored[key] = raw;
     }
     setValues(restored);
+    // NR-24 — ekspektasi gaji dipulihkan (disanitasi ulang) bila ada di draft.
+    setExpectedSalaryInput(
+      typeof target.expectedSalaryInput === "string"
+        ? sanitizeSalaryInput(target.expectedSalaryInput)
+        : "",
+    );
     draftDismissedRef.current = false;
     // Posisi tujuan pemulihan: posisi draf bila masih valid & tidak terkunci.
     const draftPositionId =
@@ -2503,6 +2545,8 @@ export function ApplyWizard({
           data: JSON.stringify({
             values,
             formAnswers: serializableFormAnswers(formAnswers),
+            // NR-24 — ekspektasi gaji ikut terkirim dalam tautan draft.
+            expectedSalaryInput,
           }),
         }),
       });
