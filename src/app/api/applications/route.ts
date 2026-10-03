@@ -11,10 +11,13 @@ import { generateTrackingCode, generateUniqueTrackingCode } from "@/lib/tracking
 import { parseScreeningQuestions, parseStringRecord, parseRequirements } from "@/lib/seed";
 import {
   FORM_LIMITS,
+  coreItemLabel,
   isAllowedFormFile,
   isExperienceEnabled,
+  isExperienceRequired,
   isFormSchemaActive,
   isMotivationEnabled,
+  isMotivationRequired,
   isWaRequired,
   normalizeFormSchema,
   parseFormSchema,
@@ -321,6 +324,11 @@ export async function POST(req: NextRequest) {
       schemaActive && experienceSection ? isExperienceEnabled(experienceSection) : true;
     const motivationEnabled =
       schemaActive && experienceSection ? isMotivationEnabled(experienceSection) : true;
+    // NR-23 — "Wajib" pengalaman/motivasi kini per item (default true = perilaku lama).
+    const experienceRequired =
+      schemaActive && experienceSection ? isExperienceRequired(experienceSection) : true;
+    const motivationRequired =
+      schemaActive && experienceSection ? isMotivationRequired(experienceSection) : true;
 
     // Nomor WhatsApp: wajib sesuai konfigurasi bagian Data Diri; bila diisi
     // (atau wajib), formatnya tetap divalidasi.
@@ -331,11 +339,17 @@ export async function POST(req: NextRequest) {
     if (waRequired && phoneDigits.length === 0) {
       return NextResponse.json({ error: "Nomor telepon/WhatsApp wajib diisi." }, { status: 400 });
     }
-    if (experienceEnabled && experience.length < 10) {
-      return NextResponse.json({ error: "Ceritakan pengalamanmu minimal 10 karakter." }, { status: 400 });
+    if (experienceEnabled && experienceRequired && experience.length < 10) {
+      const label = experienceSection
+        ? coreItemLabel(experienceSection, "experience")
+        : "Ceritakan pengalamanmu";
+      return NextResponse.json({ error: `"${label}" minimal 10 karakter.` }, { status: 400 });
     }
-    if (motivationEnabled && motivation.length < 10) {
-      return NextResponse.json({ error: "Ceritakan motivasimu minimal 10 karakter." }, { status: 400 });
+    if (motivationEnabled && motivationRequired && motivation.length < 10) {
+      const label = experienceSection
+        ? coreItemLabel(experienceSection, "motivation")
+        : "Alasan bergabung";
+      return NextResponse.json({ error: `"${label}" minimal 10 karakter.` }, { status: 400 });
     }
 
     // Cek kuota pelamar (lamaran non-ditolak) bila posisi memakai kuota.
