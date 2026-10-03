@@ -42,28 +42,44 @@ import {
   CalendarPlus,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   ClipboardList,
   Clock,
   Copy,
+  ExternalLink,
   Eye,
   FileDown,
   FileText,
+  FolderLock,
   Globe,
   Handshake,
+  HelpCircle,
+  History,
+  Inbox,
   Link2,
   ListChecks,
   Loader2,
+  Lock,
+  LockOpen,
+  Mail,
   MailPlus,
   MapPin,
   Megaphone,
   MessageCircle,
   MessageSquareText,
+  Pencil,
+  PauseCircle,
+  Phone,
   Send,
   Share2,
+  ShieldAlert,
+  Star,
   StickyNote,
   Tag,
   Trash2,
+  Upload,
   UserX,
   Users,
   Video,
@@ -78,7 +94,15 @@ import {
   REJECTION_REASON_LABELS,
   ROLE_LABELS,
   SHIFT_PREF_LABELS,
+  STATUS_LABELS,
   type Application,
+  type ApplicationHistoryItem,
+  type ApplicationStatus,
+  type Assessment,
+  type CallLog,
+  type DoNotHireEntry,
+  type InboxItem,
+  type InternalDoc,
   type Interview,
   type Position,
   type RejectionReason,
@@ -95,7 +119,7 @@ import {
 } from "@/lib/form-schema";
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
-import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "./api";
+import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, apiPut } from "./api";
 import {
   actionLabel,
   actorBadgeClass,
@@ -131,6 +155,87 @@ function InfoItem({ label, children }: { label: string; children: ReactNode }) {
       <div className="mt-0.5 text-sm break-words">{children}</div>
     </div>
   );
+}
+
+/* ----------------------- NR-24-b — helper fitur per pelamar ----------------------- */
+
+const rupiahFmt = new Intl.NumberFormat("id-ID", {
+  style: "currency",
+  currency: "IDR",
+  maximumFractionDigits: 0,
+});
+
+/** Format angka rupiah tanpa desimal, mis. 3500000 -> "Rp 3.500.000". */
+function formatRupiah(value: number): string {
+  return rupiahFmt.format(value);
+}
+
+/** Konversi nilai <input type="date"> "YYYY-MM-DD" -> ISO akhir hari Jakarta (UTC+7). */
+function dateToEndOfDayIso(value: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const d = new Date(`${value}T23:59:59+07:00`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Konversi ISO -> "YYYY-MM-DD" zona lokal (untuk nilai <input type="date">). */
+function isoToDateInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Selisih hari (integer) dari hari ini ke "YYYY-MM-DD"; negatif berarti sudah lewat. */
+function daysUntil(dateStr: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!m) return null;
+  const target = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  return Number.isNaN(diff) ? null : diff;
+}
+
+const CALL_RESULT_LABELS: Record<CallLog["result"], string> = {
+  DIANGGAT: "Dianggat",
+  TIDAK_DIANGGAT: "Tidak Dianggat",
+  SALAH_SAMBUNGAN: "Salah Sambungan",
+};
+
+/** Warna chip hasil panggilan: DIANGGAT emerald, TIDAK_DIANGGAT rose, SALAH_SAMBUNGAN zinc. */
+function callResultChipClass(result: CallLog["result"]): string {
+  switch (result) {
+    case "DIANGGAT":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400";
+    case "TIDAK_DIANGGAT":
+      return "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400";
+    default:
+      return "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-300";
+  }
+}
+
+const ASSESSMENT_STATUS_META: Record<
+  Assessment["status"],
+  { label: string; cls: string }
+> = {
+  SENT: {
+    label: "Dikirim",
+    cls: "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-300",
+  },
+  SUBMITTED: {
+    label: "Dikumpul",
+    cls: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400",
+  },
+  LATE: {
+    label: "Terlambat",
+    cls: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400",
+  },
+};
+
+/** Label status riwayat lamaran untuk kartu riwayat (fallback teks mentah). */
+function historyStatusLabel(status: string): string {
+  return STATUS_LABELS[status as ApplicationStatus] ?? status;
 }
 
 /* --------------------- Jawaban Formulir (Form Builder, Task 30) --------------------- */

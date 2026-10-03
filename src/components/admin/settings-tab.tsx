@@ -82,6 +82,7 @@ import {
   Smartphone,
   Sparkles,
   Stethoscope,
+  Tag,
   Trash2,
   TrendingUp,
   Users,
@@ -1789,6 +1790,181 @@ function CandidateEmailsCard() {
   );
 }
 
+// ------------------------------- Daftar Tag (NR-24) -------------------------------
+
+const TAG_LIBRARY_MAX_ITEMS = 30;
+const TAG_LIBRARY_MAX_LEN = 30;
+
+/**
+ * Kartu mandiri "Daftar Tag" (NR-24): pustaka tag yang tersedia sebagai sugesti
+ * saat menandai pelamar. GET/PUT /api/admin/tags ({ tags: string[] }) — simpan
+ * langsung per perubahan (tanpa tombol simpan utama). OWNER|HR bisa mengedit,
+ * VIEWER hanya melihat.
+ */
+function TagsCard() {
+  const { role } = useAdminSession();
+  const canEdit = role === "OWNER" || role === "HR";
+  const [tags, setTags] = useState<string[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [input, setInput] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await apiGet<{ tags: string[] }>("/api/admin/tags");
+      setTags(data.tags);
+      setLoadFailed(false);
+    } catch {
+      // Kartu pelengkap — tampil kosong bila gagal, tetap bisa dicoba lagi.
+      setLoadFailed(true);
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function persist(next: string[]) {
+    if (!canEdit || saving) return;
+    setSaving(true);
+    try {
+      const data = await apiPut<{ tags: string[] }>("/api/admin/tags", {
+        tags: next,
+      });
+      setTags(data.tags);
+      toast.success("Daftar tag disimpan");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function addTag() {
+    const tag = input.trim().slice(0, TAG_LIBRARY_MAX_LEN);
+    if (!tag) return;
+    if (tags.length >= TAG_LIBRARY_MAX_ITEMS) {
+      toast.error(`Maksimal ${TAG_LIBRARY_MAX_ITEMS} tag.`);
+      return;
+    }
+    if (tags.some((t) => t.toLowerCase() === tag.toLowerCase())) {
+      toast.error("Tag dengan nama itu sudah ada.");
+      return;
+    }
+    setInput("");
+    void persist([...tags, tag]);
+  }
+
+  function removeTag(tag: string) {
+    void persist(tags.filter((t) => t !== tag));
+  }
+
+  return (
+    <CollapsibleCard
+      id="daftar-tag"
+      icon={Tag}
+      title="Daftar Tag"
+      description={
+        loaded && !loadFailed
+          ? `${tags.length} tag tersimpan sebagai sugesti penandaan pelamar.`
+          : "Pustaka tag untuk penandaan pelamar."
+      }
+    >
+      {!loaded ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          Memuat daftar tag...
+        </div>
+      ) : loadFailed ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            Daftar tag tidak tersedia saat ini.
+          </p>
+          <Button variant="outline" size="sm" className="h-9" onClick={() => void load()}>
+            <RefreshCw className="size-4" aria-hidden="true" />
+            Coba Lagi
+          </Button>
+        </div>
+      ) : (
+        <>
+          {tags.length === 0 ? (
+            <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+              Belum ada tag tersimpan.
+            </p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {tags.map((tag) => (
+                <li
+                  key={tag}
+                  className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
+                >
+                  <span className="truncate">{tag}</span>
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      className="ml-0.5 shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-rose-600"
+                      onClick={() => removeTag(tag)}
+                      disabled={saving}
+                      aria-label={`Hapus tag ${tag}`}
+                    >
+                      <X className="size-3" aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {canEdit ? (
+            <div className="flex items-center gap-2">
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addTag();
+                  }
+                }}
+                placeholder="Tag baru, mis. Potensial"
+                maxLength={TAG_LIBRARY_MAX_LEN}
+                className="h-10 flex-1"
+                aria-label="Nama tag baru"
+              />
+              <Button
+                variant="outline"
+                className="h-10 shrink-0"
+                onClick={addTag}
+                disabled={saving || tags.length >= TAG_LIBRARY_MAX_ITEMS}
+              >
+                {saving ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Plus className="size-4" aria-hidden="true" />
+                )}
+                Tambah
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Hanya pemilik situs atau HR yang dapat mengubah daftar tag.
+            </p>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Tag tersedia sebagai sugesti saat menandai pelamar. Maksimal{" "}
+            {TAG_LIBRARY_MAX_ITEMS} tag, masing-masing hingga {TAG_LIBRARY_MAX_LEN}{" "}
+            karakter.
+          </p>
+        </>
+      )}
+    </CollapsibleCard>
+  );
+}
+
 export function SettingsTab() {
   const [site, setSite] = useState<SiteContent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2565,6 +2741,9 @@ export function SettingsTab() {
 
       {/* Retensi Data (privasi — hapus otomatis lamaran lama) */}
       <RetentionCard />
+
+      {/* Daftar Tag (NR-24 — pustaka sugesti tag pelamar, simpan langsung per aksi) */}
+      <TagsCard />
 
       {/* Tampilan Halaman Publik (visibilitas tiap bagian) */}
       <SectionVisibilityCard sections={site.sections} onChange={updateSection} />

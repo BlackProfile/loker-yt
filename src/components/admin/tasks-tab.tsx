@@ -294,6 +294,86 @@ export function TasksTab() {
             )}
           </TaskGroup>
 
+          {/* NR-24 — tindak lanjut snooze jatuh tempo (snoozeUntil ≤ 3 hari / lewat) */}
+          <TaskGroup
+            icon={Clock}
+            title="Tindak Lanjut Jatuh Tempo"
+            description="Lamaran yang di-snooze sudah waktunya dihubungi kembali."
+            count={followups.length}
+            tone="amber"
+          >
+            {followups.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Tidak ada.</p>
+            ) : (
+              <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
+                {followups.map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex flex-wrap items-center gap-2 rounded-xl border p-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{row.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {row.positionTitle ?? "Tanpa posisi"}
+                        {row.trackingCode ? ` · ${row.trackingCode}` : ""}
+                      </p>
+                    </div>
+                    <DueChip date={row.snoozeUntil} label="Jatuh tempo" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => openDetail(row.id, row.name)}
+                    >
+                      <Eye className="size-3.5" aria-hidden="true" />
+                      Buka Detail
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TaskGroup>
+
+          {/* NR-24 — review ulang lamaran HOLD yang jatuh tempo */}
+          <TaskGroup
+            icon={PauseCircle}
+            title="Review HOLD"
+            description="Proses lamaran ditahan — saatnya ditinjau ulang."
+            count={holdReviews.length}
+            tone="amber"
+          >
+            {holdReviews.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Tidak ada.</p>
+            ) : (
+              <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
+                {holdReviews.map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 p-2.5 dark:border-amber-900"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{row.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {row.positionTitle ?? "Tanpa posisi"}
+                        {row.holdReason ? ` · alasan: ${row.holdReason}` : ""}
+                      </p>
+                    </div>
+                    <DueChip date={row.holdReviewAt} label="Review" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => openDetail(row.id, row.name)}
+                    >
+                      <Eye className="size-3.5" aria-hidden="true" />
+                      Buka Detail
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TaskGroup>
+
           {/* Offer menunggu jawaban (mendekati / lewat deadline) */}
           <TaskGroup
             icon={Handshake}
