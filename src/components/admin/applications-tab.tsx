@@ -423,6 +423,27 @@ export function ApplicationsTab() {
     [applications]
   );
 
+  // NR-24-b: fondasi navigasi dialog detail — urutan id sesuai daftar yang
+  // TAMPIL (hasil semua filter, urutan sort aktif). Orchestrator cukup
+  // menambahkan 3 baris ini ke <ApplicationDetailDialog ... />:
+  // navIds={navIds} navIndex={navIndex} onNavigate={openDetailById}
+  const navIds = useMemo(
+    () => displayedApplications.map((a) => a.id),
+    [displayedApplications]
+  );
+
+  /**
+   * Buka detail berdasarkan id (target onNavigate): cari di daftar yang tampil
+   * dulu, lalu fallback ke seluruh daftar yang dimuat (mis. dibuka dari
+   * notifikasi/kandidat di luar filter aktif).
+   */
+  function openDetailById(id: string) {
+    const app =
+      displayedApplications.find((a) => a.id === id) ??
+      applications.find((a) => a.id === id);
+    if (app) setDetail(app);
+  }
+
   function toggleSelectAll(checked: boolean) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -880,6 +901,31 @@ export function ApplicationsTab() {
             />
             Ada Jadwal Wawancara
           </label>
+          {/* NR-24 — filter per pelamar (server-side, gabung AND dengan lainnya) */}
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+            <Switch
+              checked={starredOnly}
+              onCheckedChange={setStarredOnly}
+              aria-label="Filter lamaran ditandai"
+            />
+            Ditandai
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+            <Switch
+              checked={followupOnly}
+              onCheckedChange={setFollowupOnly}
+              aria-label="Filter lamaran perlu tindak lanjut"
+            />
+            Tindak Lanjut
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+            <Switch
+              checked={holdOnly}
+              onCheckedChange={setHoldOnly}
+              aria-label="Filter lamaran ditahan (HOLD)"
+            />
+            Ditahan (HOLD)
+          </label>
           {hasActiveFilter ? (
             <Button
               variant="outline"
@@ -923,6 +969,7 @@ export function ApplicationsTab() {
       ) : view === "table" ? (
         <ApplicationsTable
           applications={displayedApplications}
+          positions={positions}
           canMutate={canMutate}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}

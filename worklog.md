@@ -2607,3 +2607,25 @@ Work Log:
 Stage Summary:
 - NR-24-a1 selesai: fondasi per-pelamar siap dipakai batch berikutnya — DB (6 kolom + 3 tabel calls/assessments/internalDocs), kontrak tipe tunggal (CallLog/Assessment/InternalDoc/InboxItem/ApplicationHistoryItem/DoNotHireEntry + field Application/Position + DUPLICATE + followupDue/holdReviewDue), serialisasi & filter (starred/followup/hold/sort=followup), PATCH beraudit (salary/star/HOLD/docExpiries), peringatan Do-not-Hire saat submit (never-fail), lonceng tindak lanjut cron dengan dedupe, dan showExpectedSalary menyeluruh (create/PATCH/duplicate/serialize/publik).
 - File berubah: prisma/schema.prisma, src/lib/{types,seed,position-input,defaults}.ts, src/app/api/admin/applications/route.ts, src/app/api/admin/applications/export/route.ts, src/app/api/admin/applications/[id]/route.ts, src/app/api/applications/route.ts, src/app/api/admin/action-items/route.ts, src/app/api/cron/reminders/route.ts, src/app/api/admin/positions/route.ts, src/app/api/admin/positions/[id]/duplicate/route.ts (+.zscripts/nr24a1-*.ts, nr24a1-test.sh, cleanup-nr24a1.ts).
+
+---
+Task ID: NR-24-d
+Agent: frontend-styling-expert
+Task: Wizard — kolom ekspektasi gaji opsional per posisi (batch "fitur per pelamar" NR-24): input di langkah Pratinjau (mode skema & klasik), payload submit, baris pratinjau, draft, kunci string ID/EN.
+
+Work Log:
+- Baca worklog NR-23 + NR-24-a1 (konvensi & fondasi: Position.showExpectedSalary default true, POST /api/applications menerima expectedSalary string→int 0..1e9, mengabaikan non-valid). Verifikasi route (fields.expectedSalary dari multipart dinormalisasi sama) & types.ts (showExpectedSalary sudah final).
+- Catatan lokasi file string: task menyebut src/lib/strings.ts — file yang benar di proyek ini adalah src/components/landing/strings.ts (kamus LANGS/Dict yang dipakai seluruh landing & wizard); kunci ditambahkan di sana, mengikuti pola apply.* existing.
+- strings.ts: grup BARU apply.salary {label, help, previewLabel} di 3 tempat — dict id, tipe Dict (apply.salary: {label,help,previewLabel}: string), dict en. ID: "Ekspektasi Gaji (opsional)" / "Per bulan, dalam Rupiah — membantu tim menyiapkan penawaran yang sesuai." / "Ekspektasi Gaji". EN: "Salary Expectation (optional)" / "Monthly, in Rupiah — helps us prepare a fitting offer." / "Salary Expectation".
+- apply-wizard.tsx:
+  - Helper modul sanitizeSalaryInput (strip non-digit, maks 9 digit → 999.999.999, di bawah batas server 1e9).
+  - State expectedSalaryInput (string, terpisah dari FormValues sesuai spec); computed: showExpectedSalaryField = selectedPosition?.showExpectedSalary !== false (posisi lama/tanpa flag tetap tampil; tidak ada posisi terpilih pun tampil), expectedSalaryNumber (parseInt digit; 0 = dianggap kosong), expectedSalaryFormatted = `Rp ${Intl.NumberFormat("id-ID").format(n)}`.
+  - Langkah Pratinjau (KEDUA mode — blok bersama di atas kartu pratinjau, setelah banner intro): kartu ringan (rounded-xl border bg-muted/30 p-4) berisi Label htmlFor="apply-expected-salary" + Input h-11 (44px sentuh) type="text" inputMode="numeric" autoComplete="off" dengan prefix "Rp" absolut (pl-10, pointer-events-none aria-hidden) + placeholder "3.500.000" + teks bantuan t.apply.salary.help. Tidak masuk validasi langkah mana pun (selalu opsional).
+  - Baris pratinjau "Ekspektasi Gaji — Rp X" (PreviewRow, gaya existing) HANYA bila kolom tampil & terisi (>0): mode klasik di kartu Data Diri setelah baris Posisi; mode skema di cabang biodata renderSchemaPreviewSection (termasuk fallback pseudo-biodata NR-23 sehingga selalu ada kartu tujuan).
+  - doSubmit: fd.append("expectedSalary", String(n)) hanya bila showExpectedSalaryField && n > 0 — kosong/tersembunyi = tanpa field (server mengabaikan non-valid, aman).
+  - Draft: StoredDraft += expectedSalaryInput?; autosave localStorage menyertakan field (+deps effect, hasContent ikut menghitungnya); applyDraftToForm memulihkan (disanitasi ulang); tautan draft email ikut mengirim & memulihkan field yang sama; resetForm mengosongkan. Nilai sengaja TIDAK direset saat ganti posisi (data level pelamar; tidak pernah terkirim untuk posisi yang menyembunyikan kolom karena submit teregating flag).
+- bun run lint: 0 error/warning. tsc --noEmit: 0 error di kedua file tersentuh (error tsc pre-existing di file lain tidak disentuh). Tidak menguji browser (verifikasi oleh orchestrator); tidak menyentuh file lain.
+
+Stage Summary:
+- NR-24-d selesai: wizard kini punya kolom opsional "Ekspektasi Gaji (opsional)" di langkah Pratinjau untuk KEDUA mode (skema & klasik), tampil hanya bila position.showExpectedSalary !== false, nilai disanitasi digit maks 9, ikut draft localStorage & tautan email, dan dikirim sebagai expectedSalary (integer) hanya bila terisi >0. Pratinjau menampilkan baris "Ekspektasi Gaji — Rp X" (format id-ID) hanya bila terisi. Kolom selalu opsional — validasi langkah lain tidak berubah.
+- File berubah: src/components/landing/apply-wizard.tsx, src/components/landing/strings.ts (kunci baru: apply.salary.label / apply.salary.help / apply.salary.previewLabel, ID+EN+tipe Dict).

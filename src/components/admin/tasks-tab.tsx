@@ -12,12 +12,14 @@ import {
   AlertCircle,
   CalendarClock,
   ClipboardCheck,
+  Clock,
   Copy,
   Eye,
   Gauge,
   Handshake,
   Inbox,
   Loader2,
+  PauseCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { ActionItemsResponse, Application } from "@/lib/types";
@@ -57,6 +59,35 @@ function offerUrgency(deadline: string | null): { label: string; urgent: boolean
   const days = Math.ceil(ms / 86_400_000);
   if (days <= 2) return { label: `Sisa ${days} hari`, urgent: true };
   return { label: `Batas ${formatDate(deadline)}`, urgent: false };
+}
+
+/**
+ * Chip tanggal jatuh tempo (NR-24): merah bila sudah lewat, amber bila ≤ 3
+ * hari lagi, zinc outline bila masih jauh. Tanpa tanggal tampil "-".
+ */
+function DueChip({ date, label }: { date: string | null; label?: string }) {
+  if (!date) {
+    return <span className="shrink-0 text-xs text-muted-foreground">-</span>;
+  }
+  const ms = new Date(date).getTime() - Date.now();
+  const valid = !Number.isNaN(ms);
+  const overdue = valid && ms < 0;
+  const soon = valid && ms >= 0 && ms <= 3 * 86_400_000;
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+        overdue
+          ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400"
+          : soon
+            ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+            : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+      )}
+    >
+      {label ? `${label} ` : ""}
+      {formatDate(date)}
+    </span>
+  );
 }
 
 function TaskGroup({
@@ -167,6 +198,9 @@ export function TasksTab() {
   const reschedules = items?.rescheduleRequests ?? [];
   const unscored = items?.unscoredInterviews ?? [];
   const wipOver = items?.wipOver ?? [];
+  // NR-24 — tindak lanjut snooze & review HOLD yang mendekati/jatuh tempo.
+  const followups = items?.followupDue ?? [];
+  const holdReviews = items?.holdReviewDue ?? [];
 
   const totalCount =
     staleNew.length +
@@ -174,7 +208,9 @@ export function TasksTab() {
     offers.length +
     reschedules.length +
     unscored.length +
-    wipOver.length;
+    wipOver.length +
+    followups.length +
+    holdReviews.length;
 
   return (
     <div className="flex flex-col gap-4">
