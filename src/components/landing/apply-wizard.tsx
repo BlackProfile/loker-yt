@@ -38,13 +38,17 @@ import {
   type ShiftPref,
 } from "@/lib/types";
 import {
+  CORE_ITEM_DEFAULT_LABELS,
   FORM_LIMITS,
   coreItemLabel,
   defaultBiodataSection,
   formatAnswerValue,
   isAllowedFormFile,
+  coreItem,
+  coreItemLabel,
   isCvEnabled,
   isCvRequired,
+  isEmailRequired,
   isExperienceEnabled,
   isExperienceRequired,
   isFormSchemaActive,
@@ -57,6 +61,7 @@ import {
   isWaRequired,
   sectionFields,
   sectionHasStep,
+  type CoreItemKey,
   type FormField,
   type FormSection,
 } from "@/lib/form-schema";
@@ -1311,15 +1316,16 @@ export function ApplyWizard({
   };
 
   /**
-   * Validasi langkah Data Diri (biodata). Nomor WhatsApp wajib hanya bila
-   * konfigurasi bagian biodata skema mengaturnya wajib (mode klasik selalu
-   * wajib); bila opsional tapi diisi, formatnya tetap divalidasi (≥8 digit).
+   * Validasi langkah Data Diri (biodata). Nomor WhatsApp & email wajib hanya
+   * bila konfigurasi bagian biodata skema mengaturnya wajib (mode klasik
+   * selalu wajib); bila opsional tapi diisi, formatnya tetap divalidasi.
    */
-  function validateStep1(waRequired: boolean): FormErrors {
+  function validateStep1(waRequired: boolean, emailRequired = true): FormErrors {
     const next: FormErrors = {};
     if (!values.name.trim()) next.name = t.apply.errors.name;
-    if (!values.email.trim()) next.email = t.apply.errors.emailRequired;
-    else if (!EMAIL_RE.test(values.email.trim())) next.email = t.apply.errors.emailInvalid;
+    if (!values.email.trim()) {
+      if (emailRequired) next.email = t.apply.errors.emailRequired;
+    } else if (!EMAIL_RE.test(values.email.trim())) next.email = t.apply.errors.emailInvalid;
     if (!values.phone.trim()) {
       if (waRequired) next.phone = t.apply.errors.phoneRequired;
     } else if (values.phone.replace(/\D/g, "").length < 8) {
@@ -1337,19 +1343,16 @@ export function ApplyWizard({
 
   /**
    * Validasi langkah Pengalaman (experience). Dua pertanyaan inti hanya
-   * diwajibkan ≥10 karakter bila flag bagian skema mengaktifkannya (mode
-   * klasik selalu aktif). Screening & portofolio wajib hanya mode klasik —
+   * diwajibkan ≥10 karakter bila flag bagian skema mengaktifkan DAN
+   * mengatakannya wajib (NR-26 — item bisa dibuat opsional; mode klasik
+   * selalu aktif & wajib). Screening & portofolio wajib hanya mode klasik —
    * mode skema memakai langkah dinamis & bagian Berkas.
    */
   function validateStep2(opts: {
     experienceEnabled: boolean;
     motivationEnabled: boolean;
-    /** NR-23 — wajib per item (default true); false = pertanyaan opsional. */
     experienceRequired?: boolean;
     motivationRequired?: boolean;
-    /** Label kustom bagian skema — bila diisi, pesan galat memakai label ini. */
-    experienceLabel?: string;
-    motivationLabel?: string;
   }): FormErrors {
     const next: FormErrors = {};
     if (
@@ -1357,21 +1360,13 @@ export function ApplyWizard({
       (opts.experienceRequired ?? true) &&
       values.experience.trim().length < MIN_TEXT_LENGTH
     )
-      next.experience = opts.experienceLabel
-        ? lang === "en"
-          ? `"${opts.experienceLabel}" must be at least 10 characters.`
-          : `"${opts.experienceLabel}" minimal 10 karakter.`
-        : t.apply.errors.experience;
+      next.experience = t.apply.errors.experience;
     if (
       opts.motivationEnabled &&
       (opts.motivationRequired ?? true) &&
       values.motivation.trim().length < MIN_TEXT_LENGTH
     )
-      next.motivation = opts.motivationLabel
-        ? lang === "en"
-          ? `"${opts.motivationLabel}" must be at least 10 characters.`
-          : `"${opts.motivationLabel}" minimal 10 karakter.`
-        : t.apply.errors.motivation;
+      next.motivation = t.apply.errors.motivation;
     // Pertanyaan screening wajib milik posisi terpilih — mode klasik saja
     // (skema aktif menggantikan screening dengan langkah dinamis).
     if (!schema) {
@@ -1567,7 +1562,10 @@ export function ApplyWizard({
     let introMissing = false;
     switch (entry.section.kind) {
       case "biodata":
-        Object.assign(valueErrors, validateStep1(isWaRequired(entry.section)));
+        Object.assign(
+          valueErrors,
+          validateStep1(isWaRequired(entry.section), isEmailRequired(entry.section)),
+        );
         break;
       case "experience":
         Object.assign(
@@ -1577,8 +1575,6 @@ export function ApplyWizard({
             motivationEnabled: isMotivationEnabled(entry.section),
             experienceRequired: isExperienceRequired(entry.section),
             motivationRequired: isMotivationRequired(entry.section),
-            experienceLabel: coreItemLabel(entry.section, "experience"),
-            motivationLabel: coreItemLabel(entry.section, "motivation"),
           }),
         );
         break;
