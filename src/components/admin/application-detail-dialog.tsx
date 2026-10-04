@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -105,6 +105,7 @@ import {
   type ApplicationStatus,
   type Assessment,
   type CallLog,
+  type DoNotHireEntry,
   type HoldReason,
   type InboxItem,
   type Interview,
@@ -125,7 +126,7 @@ import {
 import type { HiddenUiKey } from "@/lib/hidden-ui"; // NR-22 — kunci blok UI tersembunyi per posisi
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
-import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, jsonInit } from "./api";
+import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, apiPut, jsonInit } from "./api";
 import {
   actionLabel,
   actorBadgeClass,
@@ -964,6 +965,44 @@ export function ApplicationDetailDialog({
   // Email pengingat offer PENDING (NR-15, idea 6).
   const [remindSending, setRemindSending] = useState(false);
 
+  /* ------------------ NR-24-b — state fitur per pelamar ------------------ */
+  // Suggesi tag (cache sekali per mount).
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  const tagsFetchedRef = useRef(false);
+  // Do-not-Hire (ide 7): daftar + panel tambah/lepas (pola kunci).
+  const [dnhData, setDnhData] = useState<{ appId: string; entries: DoNotHireEntry[] }>({
+    appId: "",
+    entries: [],
+  });
+  const [dnhAddOpen, setDnhAddOpen] = useState(false);
+  const [dnhRemoveOpen, setDnhRemoveOpen] = useState(false);
+  const [dnhUnlock, setDnhUnlock] = useState(false);
+  const [dnhReasonInput, setDnhReasonInput] = useState("");
+  const [dnhSaving, setDnhSaving] = useState(false);
+  // Tindak lanjut (ide 4): panel snooze + tanggal + nilai lokal hasil PATCH.
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [snoozeDate, setSnoozeDate] = useState("");
+  const [snoozeSaving, setSnoozeSaving] = useState(false);
+  const [snoozeLocal, setSnoozeLocal] = useState<string | null>(null);
+  // Tahan proses (ide 8): panel HOLD.
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [holdReasonInput, setHoldReasonInput] = useState("");
+  const [holdReviewInput, setHoldReviewInput] = useState("");
+  const [holdSaving, setHoldSaving] = useState(false);
+  // Ekspektasi gaji (ide 6) + bintang personal (ide 2).
+  const [salaryEditing, setSalaryEditing] = useState(false);
+  const [starSaving, setStarSaving] = useState(false);
+  // Undo penolakan (ide 14): panel konfirmasi + pola kunci.
+  const [undoConfirmOpen, setUndoConfirmOpen] = useState(false);
+  const [undoUnlocked, setUndoUnlocked] = useState(false);
+  // Gabungkan duplikat (ide 12): panel pilih target + konfirmasi.
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [mergeSaving, setMergeSaving] = useState(false);
+  const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [mergeCandidates, setMergeCandidates] = useState<Application[]>([]);
+
   // Anonimisasi data pelamar (NR-19, ide 7 — hak hapus data).
   const [anonymizeConfirmOpen, setAnonymizeConfirmOpen] = useState(false);
   const [anonymizing, setAnonymizing] = useState(false);
@@ -1776,7 +1815,7 @@ export function ApplicationDetailDialog({
       setMergeConfirmOpen(false);
       setMergeOpen(false);
       onSaved(res.target);
-      if (onNavigate && res.target.id !== app.id) onNavigate(res.target.id);
+      if (onNavigate && res.target.id !== app.id) onNavigate(res.target);
     } catch (err) {
       reportError(err);
     } finally {
