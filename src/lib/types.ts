@@ -492,46 +492,6 @@ export type Application = {
 
 /* ------------------------ NR-24 — fitur per pelamar (kontrak) ------------------------ */
 
-/** Satu entri riwayat panggilan telepon ke pelamar (ApplicationCall). */
-export type CallLog = {
-  id: string;
-  result: "DIANGGAT" | "TIDAK_DIANGGAT" | "SALAH_SAMBUNGAN";
-  summary: string;
-  actor: string;
-  createdAt: string;
-};
-
-/** Satu tes/asesmen yang dikirim ke pelamar (ApplicationAssessment). */
-export type Assessment = {
-  id: string;
-  title: string;
-  link: string | null;
-  note: string | null;
-  dueAt: string | null;
-  status: "SENT" | "SUBMITTED" | "LATE";
-  score: number | null;
-  feedback: string | null;
-  createdAt: string;
-  submittedAt: string | null;
-};
-
-/** Satu dokumen internal lamaran (ApplicationInternalDoc) — hanya terlihat admin. */
-export type InternalDoc = {
-  id: string;
-  name: string;
-  fileId: string;
-  uploadedBy: string;
-  createdAt: string;
-};
-
-/** Item kotak masuk gabungan (email, pertanyaan pelamar, atau hasil panggilan). */
-export type InboxItem = {
-  kind: "EMAIL" | "QUESTION" | "CALL";
-  at: string;
-  from: string;
-  title: string;
-  body: string;
-  answered?: boolean;
 };
 
 /** Ringkasan satu lamaran milik pelamar yang sama (daftar riwayat lamaran). */
