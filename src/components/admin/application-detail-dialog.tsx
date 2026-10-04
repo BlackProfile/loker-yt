@@ -1423,28 +1423,6 @@ export function ApplicationDetailDialog({
   // Tindak lanjut yang ditampilkan: prioritas hasil aksi sesi ini, fallback nilai dari app.
   const snoozeUntilDisplay = snoozeLocal ?? readSnoozeUntil(app);
 
-  // Ekspektasi gaji vs rentang gaji posisi (salaryMin/salaryMax).
-  const expectedSalary = app.expectedSalary;
-  const salaryMin = pos?.salaryMin ?? null;
-  const salaryMax = pos?.salaryMax ?? null;
-  const salaryBadge =
-    expectedSalary != null && (salaryMin != null || salaryMax != null)
-      ? salaryMax != null && expectedSalary > salaryMax
-        ? {
-            label: "Di atas rentang",
-            cls: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400",
-          }
-        : salaryMin != null && expectedSalary < salaryMin
-          ? {
-              label: "Di bawah rentang",
-              cls: "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-300",
-            }
-          : {
-              label: "Sesuai rentang",
-              cls: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400",
-            }
-      : null;
-
   // Undo penolakan: hanya bila ditolak bukan karena menarik diri dan belum digabung.
   const canUndoReject =
     app.status === "REJECTED" &&
