@@ -986,7 +986,6 @@ export function ApplicationsTab() {
           canMutate={canMutate}
           currentUserId={session.id}
           onToggleStar={handleToggleStar}
-          positions={positions}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
