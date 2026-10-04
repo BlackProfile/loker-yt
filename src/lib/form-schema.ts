@@ -17,6 +17,12 @@
 //   Semua bagian tetap bisa diedit: judul, deskripsi, posisi, dan isi itemnya
 //   (WA wajib/tidak, pengalaman & motivasi aktif/tidak, CV/intro/portofolio
 //   aktif & wajib/tidak). Bagian yang isinya kosong otomatis dilewati wizard.
+// - NR-26 — item inti bagian bawaan kini bisa diedit "seperti biasa": label,
+//   placeholder, teks bantuan, dan status wajib (nama tetap wajib — identitas;
+//   email WA/pengalaman/motivasi bisa dibuat opsional). Semua kustomisasi
+//   disimpan di `section.core` (peta per item inti, kunci hanya ditulis bila
+//   beda dari bawaan) dan dihormati wizard publik, validasi server, serta
+//   dialog detail admin. Slot berkas tetap memakai flag cvRequired/dll.
 // - Kolom Application tetap: name/email/phone (biodata), experience/motivation
 //   (pengalaman), cvFileId/introFileId/portfolioUrl (berkas), formAnswers
 //   (semua pertanyaan kustom di bagian mana pun, kunci fieldId stabil).
@@ -156,6 +162,89 @@ export const BIODATA_SECTION_ID = "sec_biodata";
 export const EXPERIENCE_SECTION_ID = "sec_experience";
 export const FILES_SECTION_ID = "sec_files";
 
+/* ------------------- NR-26 — kustomisasi item inti bawaan ------------------- */
+
+/** Kunci seluruh item inti bagian bawaan (nama stabil, tersimpan di JSON). */
+export const CORE_ITEM_KEYS = [
+  "name",
+  "email",
+  "wa",
+  "experience",
+  "motivation",
+  "cv",
+  "intro",
+  "portfolio",
+] as const;
+
+export type CoreItemKey = (typeof CORE_ITEM_KEYS)[number];
+
+/**
+ * Kustomisasi satu item inti (NR-26). Semua properti opsional — yang tidak ada
+ * berarti memakai perilaku/teks bawaan. `required` hanya dipakai item yang
+ * boleh dibuat opsional (email/experience/motivation); slot berkas memakai
+ * flag cvRequired/introRequired/portfolioRequired dan WA memakai waRequired.
+ * Hanya `required: false` yang pernah disimpan (nilai bawaan = wajib).
+ */
+export type CoreItemOverride = {
+  label?: string;
+  placeholder?: string;
+  helpText?: string;
+  required?: boolean;
+};
+
+export type CoreOverrides = Partial<Record<CoreItemKey, CoreItemOverride>>;
+
+/** Item inti milik tiap jenis bagian bawaan (urutan tampil di builder). */
+export const CORE_SECTION_ITEM_KEYS: Record<
+  Exclude<FormSectionKind, "custom">,
+  CoreItemKey[]
+> = {
+  biodata: ["name", "email", "wa"],
+  experience: ["experience", "motivation"],
+  files: ["cv", "intro", "portfolio"],
+};
+
+/** Label bawaan item inti — fallback bila admin tidak menimpanya. */
+export const CORE_ITEM_DEFAULT_LABELS: Record<CoreItemKey, string> = {
+  name: "Nama Lengkap",
+  email: "Email",
+  wa: "Nomor WhatsApp",
+  experience: "Pengalaman Kamu",
+  motivation: "Alasan Bergabung",
+  cv: "CV (PDF, maks 5 MB)",
+  intro: "Audio/Video Perkenalan (maks 10 MB)",
+  portfolio: "Link Portofolio / Video",
+};
+
+/**
+ * Baca kustomisasi satu item inti — aman untuk data rusak (selalu objek).
+ * Bagian kustom tidak punya item inti (mengembalikan {}).
+ */
+export function coreItem(section: FormSection, key: CoreItemKey): CoreItemOverride {
+  if (section.kind === "custom" || !section.core) return {};
+  const item = section.core[key];
+  return item && typeof item === "object" ? item : {};
+}
+
+/** Label efektif satu item inti: timpaan admin atau label bawaan. */
+export function coreItemLabel(section: FormSection, key: CoreItemKey): string {
+  const override = coreItem(section, key);
+  return override.label && override.label.trim() ? override.label.trim() : CORE_ITEM_DEFAULT_LABELS[key];
+}
+
+/**
+ * Apakah item inti menimpa label/placeholder/teks bantuan? Dipakai builder
+ * untuk menampilkan tombol "pulihkan bawaan" per item.
+ */
+export function coreItemOverridden(section: FormSection, key: CoreItemKey): boolean {
+  const override = coreItem(section, key);
+  return Boolean(
+    (override.label && override.label.trim()) ||
+      (override.placeholder && override.placeholder.trim()) ||
+      (override.helpText && override.helpText.trim()),
+  );
+}
+
 export type FormSection = {
   id: string;
   kind: FormSectionKind;
@@ -195,6 +284,10 @@ export type FormSection = {
   // membawa flag ini (biodata selalu hadir, kustom dihapus fisik). Saat
   // false/undefined kunci dihilangkan dari JSON agar tetap ramping.
   removed?: boolean;
+
+  // NR-26 — kustomisasi item inti bagian bawaan (label/placeholder/teks
+  // bantuan/status wajib per item). Tidak ada = semua memakai teks bawaan.
+  core?: CoreOverrides;
 };
 
 /** Bagian bawaan (bukan tambahan kustom). Dipakai builder untuk membedakan aturan hapus. */
@@ -325,6 +418,22 @@ export function isPortfolioEnabled(section: FormSection): boolean {
 
 export function isPortfolioRequired(section: FormSection): boolean {
   return isPortfolioEnabled(section) && section.portfolioRequired === true;
+}
+
+// NR-26 — status wajib item inti yang boleh dibuat opsional. Bawaan = wajib
+// (perilaku lama); hanya `required: false` yang tersimpan di section.core.
+// Nama selalu wajib (identitas pelamar) sehingga tidak punya getter.
+
+export function isEmailRequired(section: FormSection): boolean {
+  return section.kind !== "biodata" || coreItem(section, "email").required !== false;
+}
+
+export function isExperienceRequired(section: FormSection): boolean {
+  return section.kind === "experience" && coreItem(section, "experience").required !== false;
+}
+
+export function isMotivationRequired(section: FormSection): boolean {
+  return section.kind === "experience" && coreItem(section, "motivation").required !== false;
 }
 
 /** Semua field milik satu bagian (urut sesuai array fields). */
@@ -474,7 +583,47 @@ function normalizeSectionFlags(section: FormSection, raw: Record<string, unknown
     section.portfolioEnabled = raw.portfolioEnabled !== false;
     section.portfolioRequired = section.portfolioEnabled && raw.portfolioRequired === true;
   }
+  // NR-26 — kustomisasi item inti: dinormalisasi di titik temu parse &
+  // sanitasi agar JSON tersimpan selalu bersih (kunci asing dibuang,
+  // teks dipotong sesuai batas, nama dipaksa tetap wajib).
+  const core = normalizeCoreOverrides(section.kind, raw.core);
+  if (core) section.core = core;
   return section;
+}
+
+/**
+ * NR-26 — normalisasi peta kustomisasi item inti dari input mentah (parse
+ * maupun sanitasi). Kunci yang bukan item inti milik jenis bagian ini
+ * dibuang; teks ditrim & dipotong sesuai batas; `required` hanya dipertahankan
+ * sebagai false (nilai bawaan = wajib) dan nama tidak pernah opsional.
+ * Hasil kosong = undefined (JSON tetap ramping).
+ */
+function normalizeCoreOverrides(
+  kind: FormSectionKind,
+  rawCore: unknown,
+): CoreOverrides | undefined {
+  if (kind === "custom") return undefined;
+  if (!rawCore || typeof rawCore !== "object" || Array.isArray(rawCore)) return undefined;
+  const allowed = CORE_SECTION_ITEM_KEYS[kind];
+  const source = rawCore as Record<string, unknown>;
+  const out: CoreOverrides = {};
+  for (const key of allowed) {
+    const value = source[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const item = value as Record<string, unknown>;
+    const override: CoreItemOverride = {};
+    const label = typeof item.label === "string" ? item.label.trim().slice(0, FORM_LIMITS.labelMax) : "";
+    if (label) override.label = label;
+    const placeholder =
+      typeof item.placeholder === "string" ? item.placeholder.trim().slice(0, FORM_LIMITS.placeholderMax) : "";
+    if (placeholder) override.placeholder = placeholder;
+    const helpText =
+      typeof item.helpText === "string" ? item.helpText.trim().slice(0, FORM_LIMITS.helpMax) : "";
+    if (helpText) override.helpText = helpText;
+    if (key !== "name" && item.required === false) override.required = false;
+    if (Object.keys(override).length > 0) out[key] = override;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** Parse skema dari kolom DB — toleran terhadap data rusak (null bila tidak layak). */
