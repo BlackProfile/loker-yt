@@ -126,6 +126,7 @@ import type { HiddenUiKey } from "@/lib/hidden-ui"; // NR-22 — kunci blok UI t
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
 import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, jsonInit } from "./api";
+import { AdminConfetti } from "./confetti"; // NR-28 (item 10) — confetti DITERIMA
 import {
   actionLabel,
   actorBadgeClass,
@@ -891,6 +892,8 @@ export function ApplicationDetailDialog({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // NR-28 (item 10) — tembakkan confetti saat status DITERIMA tersimpan sukses.
+  const [celebrate, setCelebrate] = useState(false);
 
   // Editor tags & rating.
   const [tagInput, setTagInput] = useState("");
@@ -1005,6 +1008,7 @@ export function ApplicationDetailDialog({
     setSaving(false);
     setDeleting(false);
     setConfirmOpen(false);
+    setCelebrate(false);
     setRubricValues(application.rubricScores ?? {});
     setCheckedItems(application.checklistState ?? []);
     setSessions([]);
@@ -1400,7 +1404,15 @@ export function ApplicationDetailDialog({
       );
       toast.success("Perubahan disimpan");
       onSaved(updated);
-      onOpenChange(false);
+      if (app.status !== "ACCEPTED" && updated.status === "ACCEPTED") {
+        // NR-28 (item 10) — keputusan DITERIMA: tembakkan confetti lalu tunda
+        // penutupan dialog selama confetti tampil (murni presentasi — urutan
+        // dan isi permintaan tidak berubah). Reset terjadi saat dialog ditutup.
+        setCelebrate(true);
+        window.setTimeout(() => onOpenChange(false), 2500);
+      } else {
+        onOpenChange(false);
+      }
     } catch (err) {
       reportError(err);
     } finally {
@@ -2168,7 +2180,17 @@ export function ApplicationDetailDialog({
   );
 
   return (
-    <Dialog open onOpenChange={onOpenChange}>
+    <>
+      {/* NR-28 (item 10) — confetti di luar Dialog supaya tidak ikut transform
+          animasi dialog; hilang otomatis saat dialog ditutup (fire direset). */}
+      <AdminConfetti fire={celebrate} />
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) setCelebrate(false);
+          onOpenChange(open);
+        }}
+      >
       <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2 pr-6 text-lg font-bold">
@@ -4270,5 +4292,6 @@ export function ApplicationDetailDialog({
         />
       </DialogContent>
     </Dialog>
+    </>
   );
 }

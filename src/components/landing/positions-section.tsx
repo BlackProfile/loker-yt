@@ -1,18 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Briefcase,
   Check,
   ChevronDown,
   Eye,
   Flame,
-  FolderOpen,
   Laptop,
   MapPin,
   Pin,
-  SearchX,
+  RotateCw,
   Sparkles,
   Timer,
   Users,
@@ -38,6 +37,7 @@ import {
   Container,
   FadeIn,
 } from "@/components/landing/primitives";
+import { EmptyJobsState } from "@/components/landing/empty-jobs";
 import {
   fillTemplate,
   isPastIso,
@@ -68,19 +68,18 @@ type StatusChip = {
   Icon: LucideIcon;
 };
 
-/** Badge featured (Pin "Unggulan") + chip status otomatis, maks 3 chip + "+n". */
+/** Badge featured (Pin "Unggulan") + chip status otomatis, maks 3 chip + "+n".
+ * NR-28-A: chip kuota dipindah ke meter kuota di badan kartu (lihat QuotaMeter
+ * pada PositionCard) agar informasi kuota tampil satu kali dan lebih visual. */
 function PositionBadges({
   position,
-  stats,
   className,
 }: {
   position: Position;
-  stats?: PositionPublicStats;
   className?: string;
 }) {
   const { t } = useLang();
 
-  const remaining = stats?.remainingQuota ?? null;
   const chips: StatusChip[] = [
     ...(position.urgent
       ? [
@@ -109,26 +108,6 @@ function PositionBadges({
             label: t.positions.segeraDitutup,
             className: CHIP_ORANGE,
             Icon: Timer,
-          },
-        ]
-      : []),
-    ...(remaining === 0
-      ? [
-          {
-            key: "quota-full",
-            label: t.positions.kuotaPenuh,
-            className: CHIP_ZINC,
-            Icon: Users,
-          },
-        ]
-      : []),
-    ...(remaining !== null && remaining > 0 && remaining <= 3
-      ? [
-          {
-            key: "quota-low",
-            label: fillTemplate(t.positions.sisaKuota, { n: remaining }),
-            className: CHIP_AMBER,
-            Icon: Users,
           },
         ]
       : []),
@@ -223,6 +202,8 @@ function PositionCard({
   onOpenPosition: (slug: string) => void;
 }) {
   const { t, lang } = useLang();
+  // Animasi meter kuota dihentikan bila pengguna memilih reduce-motion.
+  const reduceMotion = useReducedMotion();
 
   // Konten dua bahasa: saat lang "en" dan versi EN terisi (non-kosong),
   // pakai versi EN; selain itu fallback ke versi Indonesia.
@@ -239,6 +220,14 @@ function PositionCard({
 
   const remaining = stats?.remainingQuota ?? null;
   const quotaFull = remaining === 0;
+  // NR-28-A — meter kuota: server menghitung remainingQuota = maxApplicants -
+  // lamaran aktif, sehingga total kuota efektif = lamaran aktif + sisa.
+  const quotaApps = stats?.applications ?? 0;
+  const quotaTotal = remaining !== null ? quotaApps + remaining : null;
+  const quotaFilledPct =
+    quotaTotal !== null && quotaTotal > 0
+      ? Math.min(100, Math.round((quotaApps / quotaTotal) * 100))
+      : 0;
   const closed = position.closesAt ? isPastIso(position.closesAt) : false;
   const formClosed = position.applyOpen === false;
   const applyDisabled = quotaFull || closed || formClosed;
@@ -275,7 +264,7 @@ function PositionCard({
             {position.department}
           </Badge>
           <h3 className="mt-3 text-lg font-semibold">{displayTitle}</h3>
-          <PositionBadges position={position} stats={stats} className="mt-2" />
+          <PositionBadges position={position} className="mt-2" />
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <WorkModeBadge position={position} />
             <Badge variant="secondary">{position.type}</Badge>
@@ -342,6 +331,47 @@ function PositionCard({
 
         {position.closesAt && !closed ? (
           <DeadlineCountdownCompact deadline={position.closesAt} />
+        ) : null}
+
+        {/* NR-28-A — meter kuota posisi: bar terisi (gradasi rose→amber) + chip
+            "Sisa X kuota" (zinc) / "Kuota penuh" (rose). Hanya tampil bila
+            posisi memiliki batas kuota (total kuota efektif > 0). Animasi lebar
+            bar dimatikan saat reduce-motion. */}
+        {quotaTotal !== null && quotaTotal > 0 ? (
+          <div
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={quotaFilledPct}
+            aria-label={
+              quotaFull
+                ? t.positions.kuotaPenuh
+                : fillTemplate(t.positions.sisaKuota, { n: remaining ?? 0 })
+            }
+            className="space-y-1.5"
+          >
+            {quotaFull ? (
+              <Badge variant="outline" className={cn("gap-1", ROSE_BADGE)}>
+                <Users className="h-3 w-3" aria-hidden="true" />
+                {t.positions.kuotaPenuh}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className={cn("gap-1", CHIP_ZINC)}>
+                <Users className="h-3 w-3" aria-hidden="true" />
+                {fillTemplate(t.positions.sisaKuota, { n: remaining ?? 0 })}
+              </Badge>
+            )}
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-rose-600 to-amber-500"
+                initial={false}
+                animate={{ width: `${quotaFilledPct}%` }}
+                transition={
+                  reduceMotion ? { duration: 0 } : { duration: 0.5, ease: "easeOut" }
+                }
+              />
+            </div>
+          </div>
         ) : null}
 
         <div className="mt-auto flex items-center justify-between gap-3 border-t pt-4">
@@ -623,17 +653,21 @@ export function PositionsSection({
         </FadeIn>
 
         {positions.length === 0 ? (
-          <FadeIn className="mt-10">
-            <Card className="items-center gap-3 rounded-2xl p-10 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
-                <FolderOpen className="h-6 w-6" aria-hidden="true" />
-              </div>
-              <p className="font-semibold">{t.positions.emptyTitle}</p>
-              <p className="text-sm text-muted-foreground">
-                {t.positions.emptyBody}
-              </p>
-            </Card>
-          </FadeIn>
+          <EmptyJobsState
+            className="mt-10"
+            title={t.positions.emptyTitle}
+            description={t.positions.emptyBody}
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.location.reload()}
+              >
+                <RotateCw className="h-4 w-4" aria-hidden="true" />
+                {t.status.interview.reload}
+              </Button>
+            }
+          />
         ) : (
           <>
             <FadeIn className="mt-8">
@@ -722,22 +756,18 @@ export function PositionsSection({
             </FadeIn>
 
             {filtered.length === 0 ? (
-              <FadeIn className="mt-8">
-                <Card className="items-center gap-3 rounded-2xl p-10 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                    <SearchX className="h-6 w-6" aria-hidden="true" />
-                  </div>
-                  <p className="font-semibold">{t.positions.filterEmptyTitle}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {t.positions.filterEmptyBody}
-                  </p>
-                  {hasActiveFilters ? (
+              <EmptyJobsState
+                className="mt-8"
+                title={t.positions.filterEmptyTitle}
+                description={t.positions.filterEmptyBody}
+                action={
+                  hasActiveFilters ? (
                     <Button variant="outline" size="sm" onClick={resetFilters}>
                       {t.positions.resetFilter}
                     </Button>
-                  ) : null}
-                </Card>
-              </FadeIn>
+                  ) : undefined
+                }
+              />
             ) : (
               <motion.div
                 layout

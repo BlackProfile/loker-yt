@@ -1331,15 +1331,17 @@ export function ApplicationsTab() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Dialog tolak massal */}
-      <Dialog open={bulkRejectOpen} onOpenChange={setBulkRejectOpen}>
-        <DialogContent className="rounded-2xl sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Tolak {selectedIds.size} lamaran?</DialogTitle>
-            <DialogDescription>
+      {/* NR-28 (item 13): konfirmasi tolak massal memakai AlertDialog — aksi
+          berbahaya dengan semantik alert (Esc/overlay tidak menutup diam-diam
+          tanpa pilihan eksplisit), alasan tetap wajib sesuai kontrak API. */}
+      <AlertDialog open={bulkRejectOpen} onOpenChange={setBulkRejectOpen}>
+        <AlertDialogContent className="rounded-2xl sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Tolak {selectedIds.size} lamaran?</AlertDialogTitle>
+            <AlertDialogDescription>
               Semua lamaran terpilih akan berstatus Ditolak dengan alasan yang sama.
-            </DialogDescription>
-          </DialogHeader>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="bulk-reject-reason">Alasan Penolakan</Label>
@@ -1380,20 +1382,17 @@ export function ApplicationsTab() {
               />
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setBulkRejectOpen(false)}
-              disabled={bulkWorking}
-              className="h-11 sm:h-9"
-            >
-              Batal
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => void handleBulkReject()}
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel disabled={bulkWorking}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // Cegah penutupan otomatis agar state loading terlihat sampai
+                // permintaan selesai (pola sama dengan konfirmasi hapus massal).
+                e.preventDefault();
+                void handleBulkReject();
+              }}
               disabled={bulkWorking || !bulkRejectReason}
-              className="h-11 active:scale-[0.99] sm:h-9"
+              className="h-11 bg-rose-600 text-white hover:bg-rose-700 active:scale-[0.99] sm:h-10"
             >
               {bulkWorking ? (
                 <>
@@ -1403,10 +1402,10 @@ export function ApplicationsTab() {
               ) : (
                 `Tolak ${selectedIds.size} Lamaran`
               )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Dialog atur tag massal */}
       <Dialog open={bulkTagOpen} onOpenChange={setBulkTagOpen}>

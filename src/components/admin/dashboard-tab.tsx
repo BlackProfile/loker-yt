@@ -796,8 +796,12 @@ export function DashboardTab() {
         </motion.div>
       </motion.div>
 
+      {/* Bento dasbor (NR-28 item 11) — grid 3 kolom di lg: grafik utama
+          lg:col-span-2 disusul Corong Rekrutmen, lalu Aktivitas Terbaru
+          lg:col-span-2 berdampingan dengan Distribusi Status. Mobile tetap 1 kolom. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       {/* Grafik tren 30 hari */}
-      <Card className="rounded-2xl p-6">
+      <Card className="rounded-2xl p-6 lg:col-span-2">
         <CardTitle className="text-base">Tren Lamaran 30 Hari</CardTitle>
         <CardDescription className="mt-1">
           Jumlah lamaran masuk per hari dalam sebulan terakhir.
@@ -847,6 +851,61 @@ export function DashboardTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* Corong Rekrutmen (NR-28 item 9) — bar animasi per tahap seleksi */}
+      <RecruitmentFunnel />
+
+      {/* Aktivitas Terbaru (NR-28 item 8) — feed log dengan refresh live;
+          klik baris membuka dialog detail lamaran bila log membawa id lamaran */}
+      <RecentActivityFeed
+        className="lg:col-span-2"
+        onOpenApplication={(id) => void openAppById(id)}
+      />
+
+      {/* Bar distribusi status */}
+      <Card className="rounded-2xl p-6">
+        <CardTitle className="text-base">Distribusi Status Lamaran</CardTitle>
+        <CardDescription className="mt-1">
+          Proporsi lamaran berdasarkan tahapan seleksi.
+        </CardDescription>
+        <CardContent className="mt-4 px-0">
+          {loading ? (
+            <Skeleton className="h-3 w-full rounded-full" />
+          ) : total > 0 ? (
+            <div
+              className="flex h-3 w-full overflow-hidden rounded-full"
+              role="img"
+              aria-label="Bar distribusi tahap lamaran"
+            >
+              {segments.map((s) => (
+                <div
+                  key={s.bucket}
+                  className={statusBarColor(s.bucket)}
+                  style={{ width: `${s.pct}%` }}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Belum ada data lamaran.</p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
+            {segments.map((s) => (
+              <span
+                key={s.bucket}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+              >
+                <span
+                  className={`size-2 rounded-full ${statusBarColor(s.bucket)}`}
+                  aria-hidden="true"
+                />
+                {s.label}
+                <span className="font-medium text-foreground">{s.value}</span>
+              </span>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      </div>
 
       {/* Perbandingan Lowongan */}
       <Card className="rounded-2xl p-6">
@@ -1028,50 +1087,6 @@ export function DashboardTab() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Bar distribusi status */}
-      <Card className="rounded-2xl p-6">
-        <CardTitle className="text-base">Distribusi Status Lamaran</CardTitle>
-        <CardDescription className="mt-1">
-          Proporsi lamaran berdasarkan tahapan seleksi.
-        </CardDescription>
-        <CardContent className="mt-4 px-0">
-          {loading ? (
-            <Skeleton className="h-3 w-full rounded-full" />
-          ) : total > 0 ? (
-            <div
-              className="flex h-3 w-full overflow-hidden rounded-full"
-              role="img"
-              aria-label="Bar distribusi tahap lamaran"
-            >
-              {segments.map((s) => (
-                <div
-                  key={s.bucket}
-                  className={statusBarColor(s.bucket)}
-                  style={{ width: `${s.pct}%` }}
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Belum ada data lamaran.</p>
-          )}
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
-            {segments.map((s) => (
-              <span
-                key={s.bucket}
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-              >
-                <span
-                  className={`size-2 rounded-full ${statusBarColor(s.bucket)}`}
-                  aria-hidden="true"
-                />
-                {s.label}
-                <span className="font-medium text-foreground">{s.value}</span>
-              </span>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Lamaran terbaru */}
       <Card className="gap-0 rounded-2xl py-6">

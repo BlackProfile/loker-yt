@@ -367,9 +367,9 @@ export function ApplicationsTable({
                 ? positionById.get(app.positionId) ?? null
                 : null;
               const dueDocs = expiringDocs(app);
+              // NR-28 (item 12): hover halus + group utk reveal aksi sekunder.
+              // transition-colors & hover dasar sudah ada di TableRow (ui/table).
               return (
-                {/* NR-28 (item 12): hover halus + group utk reveal aksi sekunder.
-                    transition-colors & hover dasar sudah ada di TableRow (ui/table). */}
                 <TableRow
                   key={app.id}
                   data-state={isSelected ? "selected" : undefined}
