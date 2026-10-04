@@ -105,7 +105,6 @@ import {
   type ApplicationStatus,
   type Assessment,
   type CallLog,
-  type DoNotHireEntry,
   type HoldReason,
   type InboxItem,
   type Interview,
@@ -126,7 +125,7 @@ import {
 import type { HiddenUiKey } from "@/lib/hidden-ui"; // NR-22 — kunci blok UI tersembunyi per posisi
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
-import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, apiPut, jsonInit } from "./api";
+import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, jsonInit } from "./api";
 import {
   actionLabel,
   actorBadgeClass,
@@ -666,9 +665,9 @@ function CandidateQuestions({
 /* ------------------ NR-24-b — Kotak Masuk Terpadu (ide 10) ------------------ */
 
 const INBOX_KIND_META: Record<InboxItem["kind"], { icon: typeof Mail; label: string }> = {
-  EMAIL: { icon: Mail, label: "Email" },
-  QUESTION: { icon: HelpCircle, label: "Pertanyaan" },
-  CALL: { icon: Phone, label: "Panggilan" },
+  email: { icon: Mail, label: "Email" },
+  question: { icon: HelpCircle, label: "Pertanyaan" },
+  call: { icon: Phone, label: "Panggilan" },
 };
 
 // Thread gabungan (email, pertanyaan pelamar, panggilan) untuk satu pelamar.
@@ -750,15 +749,17 @@ function UnifiedInboxSection({
       ) : (
         <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
           {items.map((item, i) => {
-            const meta = INBOX_KIND_META[item.kind] ?? INBOX_KIND_META.EMAIL;
+            const meta = INBOX_KIND_META[item.kind] ?? INBOX_KIND_META.email;
             const Icon = meta.icon;
-            const key = `${item.at}-${i}`;
+            const key = item.id ?? `${item.at}-${i}`;
             const isOpen = expanded.includes(key);
             return (
               <div key={key} className="flex flex-col gap-1 rounded-lg bg-muted/50 p-2.5">
                 <div className="flex flex-wrap items-center gap-2">
                   <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="text-xs font-semibold">{item.from}</span>
+                  <span className="text-xs font-semibold">
+                    {item.direction === "out" ? "Tim Lumina" : "Pelamar"}
+                  </span>
                   <span className="text-xs text-muted-foreground">· {meta.label}</span>
                   <span className="ml-auto text-[11px] text-muted-foreground">
                     {formatShortDateTime(item.at)}
@@ -1354,10 +1355,7 @@ export function ApplicationDetailDialog({
   /* --------------------- NR-24-b — nilai turunan fitur per pelamar --------------------- */
 
   // Bintang personal: session.id milik admin aktif ada di app.starredBy.
-  const isStarred = session ? app.starredBy.includes(session.id) : false;
-
-  // Tindak lanjut yang ditampilkan: prioritas hasil aksi sesi ini, fallback nilai dari app.
-  const snoozeUntilDisplay = snoozeLocal ?? readSnoozeUntil(app);
+  const isStarred = session ? (app.starredBy ?? []).includes(session.id) : false;
 
   // Undo penolakan: hanya bila ditolak bukan karena menarik diri dan belum digabung.
   const canUndoReject =
