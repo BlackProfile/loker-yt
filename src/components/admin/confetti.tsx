@@ -46,7 +46,6 @@ export function AdminConfetti({ fire }: { fire: boolean }) {
       drift: ((i * 37) % 160) - 80,
     }));
     // burstId sengaja menjadi dep agar tiap pemicu menghasilkan pola baru.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [burstId, visible, reduced]);
 
   if (!visible || particles.length === 0) return null;
