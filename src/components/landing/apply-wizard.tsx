@@ -38,7 +38,6 @@ import {
   type ShiftPref,
 } from "@/lib/types";
 import {
-  CORE_ITEM_DEFAULT_LABELS,
   FORM_LIMITS,
   coreItemLabel,
   defaultBiodataSection,
@@ -1905,11 +1904,6 @@ export function ApplyWizard({
 
   /**
    * Blok unggah CV — dipakai langkah Berkas klasik DAN bagian Berkas skema
-   * (markup & state sama persis; hanya tanda wajib/opsional yang mengikuti
-   * parameter: kolom posisi di mode klasik, flag bagian Berkas di mode skema).
-   */
-  /**
-   * Blok unggah CV — dipakai langkah Berkas klasik DAN bagian Berkas skema
    * (markup & state sama persis). NR-26: labelOverride = kustomisasi label
    * dari bagian Berkas skema (bila admin menimpanya).
    */
@@ -1991,10 +1985,6 @@ export function ApplyWizard({
     );
   }
 
-  /**
-   * Blok unggah audio/video perkenalan — dipakai langkah Berkas klasik DAN
-   * bagian Berkas skema (markup & state sama persis).
-   */
   /**
    * Blok unggah audio/video perkenalan — dipakai langkah Berkas klasik DAN
    * bagian Berkas skema (markup & state sama persis). NR-26: labelOverride =

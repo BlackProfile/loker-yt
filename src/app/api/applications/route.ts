@@ -13,6 +13,8 @@ import {
   FORM_LIMITS,
   coreItemLabel,
   isAllowedFormFile,
+  coreItemLabel,
+  isEmailRequired,
   isExperienceEnabled,
   isExperienceRequired,
   isFormSchemaActive,
@@ -277,9 +279,6 @@ export async function POST(req: NextRequest) {
     if (name.length < 3) {
       return NextResponse.json({ error: "Nama minimal 3 karakter." }, { status: 400 });
     }
-    if (!EMAIL_REGEX.test(email)) {
-      return NextResponse.json({ error: "Format email tidak valid." }, { status: 400 });
-    }
     if (!positionId) {
       return NextResponse.json({ error: "Posisi wajib dipilih." }, { status: 400 });
     }
@@ -337,30 +336,31 @@ export async function POST(req: NextRequest) {
     const biodataSection = formSchema?.sections.find((s) => s.kind === "biodata");
     const waRequired = schemaActive && biodataSection ? isWaRequired(biodataSection) : true;
     const experienceSection = formSchema?.sections.find((s) => s.kind === "experience");
-    // NR-23 — mode klasik (tanpa skema aktif): pengalaman/motivasi selalu ada & wajib.
-    // Mode skema: flag bagian menentukan; bila bagian Pengalaman DIHAPUS admin,
-    // keduanya dianggap mati (tidak ada pertanyaan → tidak ada validasi).
-    const experienceEnabled = schemaActive
-      ? experienceSection
-        ? isExperienceEnabled(experienceSection)
-        : false
-      : true;
-    const motivationEnabled = schemaActive
-      ? experienceSection
-        ? isMotivationEnabled(experienceSection)
-        : false
-      : true;
-    // NR-23 — "Wajib" pengalaman/motivasi kini per item (default true = perilaku lama).
-    const experienceRequired = schemaActive
-      ? experienceSection
-        ? isExperienceRequired(experienceSection)
-        : false
-      : true;
-    const motivationRequired = schemaActive
-      ? experienceSection
-        ? isMotivationRequired(experienceSection)
-        : false
-      : true;
+    const experienceEnabled =
+      schemaActive && experienceSection ? isExperienceEnabled(experienceSection) : true;
+    const motivationEnabled =
+      schemaActive && experienceSection ? isMotivationEnabled(experienceSection) : true;
+    // NR-26 — item pengalaman/motivasi bisa dibuat opsional per posisi.
+    const experienceRequired =
+      schemaActive && experienceSection ? isExperienceRequired(experienceSection) : true;
+    const motivationRequired =
+      schemaActive && experienceSection ? isMotivationRequired(experienceSection) : true;
+
+    // NR-26 — email bisa dibuat opsional per posisi lewat kustomisasi item
+    // inti bagian Data Diri; bila terisi, formatnya tetap divalidasi.
+    const emailRequired =
+      schemaActive && biodataSection ? isEmailRequired(biodataSection) : true;
+    if (!email && emailRequired) {
+      return NextResponse.json(
+        {
+          error: `${schemaActive && biodataSection ? coreItemLabel(biodataSection, "email") : "Email"} wajib diisi.`,
+        },
+        { status: 400 },
+      );
+    }
+    if (email && !EMAIL_REGEX.test(email)) {
+      return NextResponse.json({ error: "Format email tidak valid." }, { status: 400 });
+    }
 
     // Nomor WhatsApp: wajib sesuai konfigurasi bagian Data Diri; bila diisi
     // (atau wajib), formatnya tetap divalidasi.
@@ -372,16 +372,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Nomor telepon/WhatsApp wajib diisi." }, { status: 400 });
     }
     if (experienceEnabled && experienceRequired && experience.length < 10) {
-      const label = experienceSection
-        ? coreItemLabel(experienceSection, "experience")
-        : "Ceritakan pengalamanmu";
-      return NextResponse.json({ error: `"${label}" minimal 10 karakter.` }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: `${schemaActive && experienceSection ? coreItemLabel(experienceSection, "experience") : "Pengalaman"} minimal 10 karakter.`,
+        },
+        { status: 400 },
+      );
     }
     if (motivationEnabled && motivationRequired && motivation.length < 10) {
-      const label = experienceSection
-        ? coreItemLabel(experienceSection, "motivation")
-        : "Alasan bergabung";
-      return NextResponse.json({ error: `"${label}" minimal 10 karakter.` }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: `${schemaActive && experienceSection ? coreItemLabel(experienceSection, "motivation") : "Motivasi"} minimal 10 karakter.`,
+        },
+        { status: 400 },
+      );
     }
 
     // Cek kuota pelamar (lamaran non-ditolak) bila posisi memakai kuota.
