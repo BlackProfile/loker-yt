@@ -13,7 +13,6 @@ import {
   FORM_LIMITS,
   coreItemLabel,
   isAllowedFormFile,
-  coreItemLabel,
   isEmailRequired,
   isExperienceEnabled,
   isExperienceRequired,

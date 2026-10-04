@@ -492,7 +492,6 @@ export type Application = {
 
 /* ------------------------ NR-24 — fitur per pelamar (kontrak) ------------------------ */
 
-};
 
 /** Ringkasan satu lamaran milik pelamar yang sama (daftar riwayat lamaran). */
 export type ApplicationHistoryItem = {
