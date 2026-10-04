@@ -3498,7 +3498,7 @@ export async function runTelegramActivityWatch(): Promise<number> {
       ]
         .filter(Boolean)
         .join("\n");
-      const buttons: TelegramButton[][] = app
+      const buttons: TelegramButton[][] | undefined = app
         ? [[{ text: "Lihat Kandidat", callback_data: `app:${app.id}:card` }]]
         : undefined;
       for (const chat of chats) {
@@ -3728,7 +3728,7 @@ function isTelegramAdminChat(settings: Awaited<ReturnType<typeof getAutomationSe
 async function renderStageMenu(applicationId: string): Promise<BotReply> {
   const app = await db.application.findUnique({
     where: { id: applicationId },
-    select: { name: true, trackingCode: true, status: true, position: { select: { title: true } } },
+    select: { id: true, name: true, trackingCode: true, status: true, position: { select: { title: true } } },
   });
   if (!app) return { text: "Lamaran tidak ditemukan.", buttons: [] };
   const lines = [
