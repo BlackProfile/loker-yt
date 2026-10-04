@@ -2111,6 +2111,15 @@ export function ApplyWizard({
   }
 
   /**
+   * NR-26 — label efektif item inti untuk pratinjau: timpaan admin bila ada,
+   * selain itu teks bawaan wizard. Bekerja untuk bagian skema mana pun.
+   */
+  function corePreviewLabel(section: FormSection, key: CoreItemKey, fallback: string): string {
+    const override = coreItem(section, key);
+    return override.label && override.label.trim() ? override.label.trim() : fallback;
+  }
+
+  /**
    * Kartu pratinjau per bagian skema (mode skema aktif) — isi mengikuti jenis
    * bagian: biodata (nama/email/WA/posisi/sumber), pengalaman (hanya yang
    * aktif), berkas (hanya slot aktif: nama CV, nama audio, URL portofolio),
@@ -2133,17 +2142,17 @@ export function ApplyWizard({
         {section.kind === "biodata" ? (
           <>
             <PreviewRow
-              label={nameFieldLabel}
+              label={corePreviewLabel(section, "name", t.apply.summary.name)}
               value={values.name}
               fallback={t.apply.preview.notFilled}
             />
             <PreviewRow
-              label={emailFieldLabel}
+              label={corePreviewLabel(section, "email", t.apply.summary.email)}
               value={values.email}
               fallback={t.apply.preview.notFilled}
             />
             <PreviewRow
-              label={waFieldLabel}
+              label={corePreviewLabel(section, "wa", t.apply.summary.phone)}
               value={values.phone}
               fallback={t.apply.preview.notFilled}
             />
@@ -2173,14 +2182,14 @@ export function ApplyWizard({
           <>
             {isExperienceEnabled(section) ? (
               <PreviewRow
-                label={experienceFieldLabel}
+                label={corePreviewLabel(section, "experience", t.apply.fields.experience)}
                 value={values.experience}
                 fallback={t.apply.preview.notFilled}
               />
             ) : null}
             {isMotivationEnabled(section) ? (
               <PreviewRow
-                label={motivationFieldLabel}
+                label={corePreviewLabel(section, "motivation", t.apply.fields.motivation)}
                 value={values.motivation}
                 fallback={t.apply.preview.notFilled}
               />
@@ -2197,7 +2206,7 @@ export function ApplyWizard({
               : null}
             {isPortfolioEnabled(section) ? (
               <PreviewRow
-                label={portfolioFieldLabel}
+                label={corePreviewLabel(section, "portfolio", t.apply.fields.portfolio)}
                 value={values.portfolioUrl}
                 fallback={t.apply.preview.notFilled}
               />
