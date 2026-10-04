@@ -430,27 +430,6 @@ export function ApplicationsTab() {
     [applications]
   );
 
-  // NR-24-b: fondasi navigasi dialog detail — urutan id sesuai daftar yang
-  // TAMPIL (hasil semua filter, urutan sort aktif). Orchestrator cukup
-  // menambahkan 3 baris ini ke <ApplicationDetailDialog ... />:
-  // navIds={navIds} navIndex={navIndex} onNavigate={openDetailById}
-  const navIds = useMemo(
-    () => displayedApplications.map((a) => a.id),
-    [displayedApplications]
-  );
-
-  /**
-   * Buka detail berdasarkan id (target onNavigate): cari di daftar yang tampil
-   * dulu, lalu fallback ke seluruh daftar yang dimuat (mis. dibuka dari
-   * notifikasi/kandidat di luar filter aktif).
-   */
-  function openDetailById(id: string) {
-    const app =
-      displayedApplications.find((a) => a.id === id) ??
-      applications.find((a) => a.id === id);
-    if (app) setDetail(app);
-  }
-
   function toggleSelectAll(checked: boolean) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1251,9 +1230,6 @@ export function ApplicationsTab() {
 
       <ApplicationDetailDialog
         application={detail}
-        navIds={navIds}
-        navIndex={detail ? navIds.indexOf(detail.id) : -1}
-        onNavigate={openDetailById}
         onOpenChange={(open) => {
           if (!open) setDetail(null);
         }}

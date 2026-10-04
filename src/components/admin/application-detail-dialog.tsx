@@ -101,7 +101,12 @@ import {
   SHIFT_PREF_LABELS,
   STATUS_LABELS,
   type Application,
+  type ApplicationHistoryItem,
+  type ApplicationStatus,
+  type Assessment,
+  type CallLog,
   type HoldReason,
+  type InboxItem,
   type Interview,
   type Position,
   type RejectionReason,
@@ -1197,7 +1202,12 @@ export function ApplicationDetailDialog({
     void loadSessions(true);
   });
 
-  // NR-24-b — navigasi prev/next aktif hanya bila ketiga prop terisi & daftar > 1.
+  // NR-24 fitur 1 — navigasi prev/next: urutan id diturunkan dari daftar
+  // terurut `list` yang dikirim parent; navIndex = posisi lamaran aktif.
+  const navIds = useMemo(() => (list ?? []).map((a) => a.id), [list]);
+  const navIndex = application ? navIds.indexOf(application.id) : -1;
+
+  // Navigasi aktif bila daftar punya >1 entri & lamaran aktif ada di dalamnya.
   const navActive =
     Array.isArray(navIds) &&
     navIds.length > 1 &&
@@ -1221,14 +1231,14 @@ export function ApplicationDetailDialog({
       }
       if (document.querySelector('[role="alertdialog"]')) return;
       if (sessionDetail || sessionCreateOpen) return;
-      if (!navIds || typeof navIndex !== "number" || typeof onNavigate !== "function") return;
       const next = e.key === "ArrowRight" ? navIndex + 1 : navIndex - 1;
-      if (next < 0 || next >= navIds.length) return;
-      onNavigate(navIds[next]);
+      const nextApp = next >= 0 && next < navIds.length ? list?.[next] : undefined;
+      if (!nextApp || typeof onNavigate !== "function") return;
+      onNavigate(nextApp);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navActive, application, navIds, navIndex, onNavigate, sessionDetail, sessionCreateOpen]);
+  }, [navActive, application, list, navIds, navIndex, onNavigate, sessionDetail, sessionCreateOpen]);
 
   // NR-24-b — suggesi tag: cache sekali per mount dialog.
   useEffect(() => {
@@ -2549,7 +2559,10 @@ export function ApplicationDetailDialog({
                   size="icon"
                   className="size-11 sm:size-9"
                   disabled={navIndex <= 0}
-                  onClick={() => onNavigate?.(navIds[navIndex - 1])}
+                  onClick={() => {
+                    const prevApp = list?.[navIndex - 1];
+                    if (prevApp) onNavigate?.(prevApp);
+                  }}
                   aria-label="Lamaran sebelumnya"
                 >
                   <ChevronLeft className="size-4" aria-hidden="true" />
@@ -2562,7 +2575,10 @@ export function ApplicationDetailDialog({
                   size="icon"
                   className="size-11 sm:size-9"
                   disabled={navIndex >= navIds.length - 1}
-                  onClick={() => onNavigate?.(navIds[navIndex + 1])}
+                  onClick={() => {
+                    const nextApp = list?.[navIndex + 1];
+                    if (nextApp) onNavigate?.(nextApp);
+                  }}
                   aria-label="Lamaran berikutnya"
                 >
                   <ChevronRight className="size-4" aria-hidden="true" />
