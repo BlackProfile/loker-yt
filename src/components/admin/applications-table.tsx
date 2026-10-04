@@ -253,7 +253,6 @@ export function ApplicationsTable({
   canMutate,
   currentUserId,
   onToggleStar,
-  positions,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
@@ -271,8 +270,6 @@ export function ApplicationsTable({
   currentUserId: string;
   /** NR-24 fitur 2: toggle bintang personal (state optimistik di induk). */
   onToggleStar: (app: Application) => void;
-  /** NR-24 fitur 6: daftar posisi — untuk chip ekspektasi gaji vs rentang. */
-  positions: Position[];
   selectedIds: Set<string>;
   onToggleSelect: (id: string, checked: boolean) => void;
   onToggleSelectAll: (checked: boolean) => void;
