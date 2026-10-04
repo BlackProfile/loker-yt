@@ -542,21 +542,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           : { actor: session.name, action: "HOLD_CLEAR", detail: "Tahan proses dilepas" }
       );
     }
-    if (updateData.snoozeUntil !== undefined) {
-      const oldSnooze = existing.snoozeUntil ? existing.snoozeUntil.toISOString() : null;
-      const newSnooze = updateData.snoozeUntil ? updateData.snoozeUntil.toISOString() : null;
-      if (oldSnooze !== newSnooze) {
-        logs.push(
-          updateData.snoozeUntil
-            ? {
-                actor: session.name,
-                action: "FOLLOWUP_SET",
-                detail: `Tindak lanjut dijadwalkan ${formatDateTimeId(updateData.snoozeUntil)}`,
-              }
-            : { actor: session.name, action: "FOLLOWUP_CLEARED", detail: "Tanggal tindak lanjut dihapus" }
-        );
-      }
-    }
+    // snoozeUntil (snooze bot Telegram) dikelola langsung oleh bot via db —
+    // bukan bagian dari PATCH admin, sehingga tidak perlu log di sini.
     if (updateData.holdReviewAt !== undefined) {
       const oldReview = existing.holdReviewAt ? existing.holdReviewAt.toISOString() : null;
       const newReview = updateData.holdReviewAt ? updateData.holdReviewAt.toISOString() : null;

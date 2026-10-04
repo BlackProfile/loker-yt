@@ -634,7 +634,7 @@ export async function POST(req: NextRequest) {
         shiftPref,
         startDatePref,
         // NR-24 — ekspektasi gaji bulanan pelamar (null bila tidak diisi/tidak valid).
-        expectedSalary,
+        salaryExpectation: expectedSalary,
         // Task 27: pencatatan persetujuan privasi + penanda perubahan tahap awal.
         consentAt: consent ? now : null,
         stageUpdatedAt: now,

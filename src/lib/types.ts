@@ -674,6 +674,7 @@ export type TrackSummary = {
 // Sukses: daftar SEMUA lamaran aktif milik email tersebut (multi-lamaran sekali login).
 export type TrackAuthResponse = {
   ok: boolean;
+  error?: string; // pesan galat ramah (bila ok=false)
   applications?: TrackSummary[];
   lockedForSec?: number; // sisa detik kunci lockout (bila ok=false karena lockout)
   // NR-15 — "Apa yang Berubah" sejak kunjungan terakhir, dipetakan per kode lamaran.

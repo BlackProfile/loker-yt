@@ -329,31 +329,30 @@ export function TasksTab() {
             icon={Clock}
             title="Tindak Lanjut Jatuh Tempo"
             description="Lamaran yang di-snooze sudah waktunya dihubungi kembali."
-            count={followups.length}
+            count={followUps.length}
             tone="amber"
           >
-            {followups.length === 0 ? (
+            {followUps.length === 0 ? (
               <p className="text-sm text-muted-foreground">Tidak ada.</p>
             ) : (
               <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
-                {followups.map((row) => (
+                {followUps.map((row) => (
                   <div
-                    key={row.id}
+                    key={row.applicationId}
                     className="flex flex-wrap items-center gap-2 rounded-xl border p-2.5"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{row.name}</p>
                       <p className="truncate text-xs text-muted-foreground">
                         {row.positionTitle ?? "Tanpa posisi"}
-                        {row.trackingCode ? ` · ${row.trackingCode}` : ""}
                       </p>
                     </div>
-                    <DueChip date={row.snoozeUntil} label="Jatuh tempo" />
+                    <DueChip date={row.dueAt} label="Jatuh tempo" />
                     <Button
                       variant="outline"
                       size="sm"
                       className="h-8"
-                      onClick={() => openDetail(row.id, row.name)}
+                      onClick={() => openDetail(row.applicationId, row.name)}
                     >
                       <Eye className="size-3.5" aria-hidden="true" />
                       Buka Detail
@@ -378,7 +377,7 @@ export function TasksTab() {
               <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
                 {holdReviews.map((row) => (
                   <div
-                    key={row.id}
+                    key={row.applicationId}
                     className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 p-2.5 dark:border-amber-900"
                   >
                     <div className="min-w-0 flex-1">
@@ -388,12 +387,12 @@ export function TasksTab() {
                         {row.holdReason ? ` · alasan: ${row.holdReason}` : ""}
                       </p>
                     </div>
-                    <DueChip date={row.holdReviewAt} label="Review" />
+                    <DueChip date={row.reviewAt} label="Review" />
                     <Button
                       variant="outline"
                       size="sm"
                       className="h-8"
-                      onClick={() => openDetail(row.id, row.name)}
+                      onClick={() => openDetail(row.applicationId, row.name)}
                     >
                       <Eye className="size-3.5" aria-hidden="true" />
                       Buka Detail

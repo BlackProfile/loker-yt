@@ -82,6 +82,7 @@ import {
   Smartphone,
   Sparkles,
   Stethoscope,
+  Tag,
   Tags,
   Trash2,
   TrendingUp,

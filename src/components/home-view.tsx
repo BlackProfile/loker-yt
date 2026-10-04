@@ -306,7 +306,7 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
         />
       )}
       {/* Indikator kecil status realtime saat offline (anti-bingung tanpa mengganggu). */}
-      {!realtimeUp && view !== "admin" && view !== "mini" ? (
+      {!realtimeUp && view !== "admin" ? (
         <div className="pointer-events-none fixed bottom-3 left-1/2 z-40 -translate-x-1/2">
           <span className="rounded-full border bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur">
             Mode hemat — pembaruan otomatis terbatas
