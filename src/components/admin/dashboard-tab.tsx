@@ -84,6 +84,13 @@ import {
 } from "./status-badge";
 import { ApplicationDetailDialog } from "./application-detail-dialog";
 import { CountUp, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion-primitives";
+import {
+  RecentActivityFeed,
+  RecruitmentFunnel,
+  Sparkline,
+  TrendHint,
+  weeklyTrend,
+} from "./dashboard-widgets";
 import { cn } from "@/lib/utils";
 
 type StatCardConfig = {
@@ -92,6 +99,8 @@ type StatCardConfig = {
   icon: LucideIcon;
   iconWrap: string;
   strip: string;
+  /** NR-28 item 6 — sparkline 7 hari; hanya bila deret harian tersedia di data. */
+  spark?: "cumulative" | "arrivals";
 };
 
 // SLA per tahap (GET /api/admin/sla) — lamaran aktif yang lama diam di satu tahap.
@@ -119,8 +128,10 @@ type AnnouncementItem = {
 };
 
 const STAT_CARDS: StatCardConfig[] = [
-  { key: "total", label: "Total Pelamar", icon: Users, iconWrap: "bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400", strip: "border-t-rose-500" },
-  { key: "NEW", label: "Baru", icon: Inbox, iconWrap: "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400", strip: "border-t-amber-400" },
+  // Deret harian yang tersedia hanya lamaran masuk (overview.daily) — sparkline
+  // dipasang pada kartu Total (garis kumulatif) dan Baru (lamaran per hari).
+  { key: "total", label: "Total Pelamar", icon: Users, iconWrap: "bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400", strip: "border-t-rose-500", spark: "cumulative" },
+  { key: "NEW", label: "Baru", icon: Inbox, iconWrap: "bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400", strip: "border-t-amber-400", spark: "arrivals" },
   { key: "REVIEWED", label: "Ditinjau", icon: Eye, iconWrap: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300", strip: "border-t-zinc-400" },
   { key: "INTERVIEW", label: "Wawancara", icon: CalendarClock, iconWrap: "bg-orange-100 text-orange-600 dark:bg-orange-950 dark:text-orange-400", strip: "border-t-orange-500" },
   { key: "ACCEPTED", label: "Diterima", icon: CheckCircle2, iconWrap: "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400", strip: "border-t-emerald-500" },
@@ -384,6 +395,15 @@ export function DashboardTab() {
     .filter((s) => s.value > 0);
 
   const daily = overview?.daily ?? [];
+
+  // NR-28 item 6 — turunkan deret 7 hari dari data grafik yang SUDAH ter-fetch
+  // (tanpa API call baru). Kartu "Baru" = lamaran per hari; kartu "Total
+  // Pelamar" = garis kumulatif yang berakhir tepat di angka stats.total.
+  const last7Arrivals = daily.slice(-7).map((d) => d.count);
+  let runningTotal = Math.max(0, total - last7Arrivals.reduce((a, b) => a + b, 0));
+  const cumulative7 = last7Arrivals.map((c) => (runningTotal += c));
+  // Tren 7 hari vs 7 hari sebelumnya (sama untuk Total & Baru — pertumbuhan total = lamaran masuk).
+  const trend7 = weeklyTrend(daily);
 
   const compareData = posStats.map((row) => ({
     title: shortTitle(row.title),
@@ -713,6 +733,15 @@ export function DashboardTab() {
                   <p className="mt-1.5 text-xs font-medium text-muted-foreground">
                     {card.label}
                   </p>
+                  {/* NR-28 item 6 — sparkline + tren 7 hari (hanya kartu dengan deret harian) */}
+                  {card.spark && daily.length > 0 ? (
+                    <div className="mt-2 flex items-end justify-between gap-2">
+                      <Sparkline
+                        values={card.spark === "cumulative" ? cumulative7 : last7Arrivals}
+                      />
+                      <TrendHint pct={trend7.pct} />
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
             </motion.div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -161,6 +162,8 @@ export function ApplicationsTab() {
   const [deleteTarget, setDeleteTarget] = useState<Application | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  // NR-28 (item 13): hormati reduced motion pada animasi bulk bar.
+  const reducedMotion = useReducedMotion();
 
   // Deteksi duplikat: id lamaran ganda (fitur Task 20-a) untuk badge kanban.
   const [duplicateIds, setDuplicateIds] = useState<Set<string>>(new Set());
@@ -531,7 +534,8 @@ export function ApplicationsTab() {
       toast.success(successMessage.replace("{n}", String(res.affected)));
       setSelectedIds(new Set());
       setBulkStatus("");
-      await loadApplications();
+      // Refresh senyap (tanpa skeleton) agar baris terlihat berubah mulus.
+      await loadApplications(true);
     } catch (err) {
       reportError(err);
     } finally {
@@ -1008,145 +1012,166 @@ export function ApplicationsTab() {
         />
       )}
 
-      {/* Bulk bar */}
-      {canMutate && selectedIds.size > 0 ? (
-        <Reveal
-          slideY={8}
-          duration={0.2}
-          className="sticky bottom-4 z-20"
-        >
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/95 p-3 backdrop-blur dark:border-rose-900 dark:bg-rose-950/90">
-          <span className="text-sm font-semibold">
-            {selectedIds.size} dipilih
-          </span>
-          <Select value={bulkStatus || "bulk-empty"} onValueChange={setBulkStatus}>
-            <SelectTrigger
-              className="h-9 w-full rounded-lg bg-background sm:w-48"
-              aria-label="Ubah tahap terpilih"
+      {/* NR-28 (item 13): bar aksi massal melayang di bawah layar. Posisi
+          terpusat (setara fixed left-1/2 -translate-x-1/2) dicapai dengan
+          flex justify-center agar tidak bentrok dengan transform
+          framer-motion. Mobile: melebar penuh + jarak aman safe-area.
+          Animasi slide-up via AnimatePresence; reduced motion = fade saja. */}
+      <AnimatePresence>
+        {canMutate && selectedIds.size > 0 ? (
+          <div
+            key="bulk-bar"
+            className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-4 sm:pb-4"
+          >
+            <motion.div
+              initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 24 }}
+              animate={reducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 24 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="pointer-events-auto w-full sm:w-auto sm:max-w-[calc(100vw-2rem)]"
             >
-              <SelectValue placeholder="Ubah tahap ke..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="bulk-empty" disabled>
-                Ubah tahap ke...
-              </SelectItem>
-              {bulkStageOptions.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {stageLabel(s)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            size="sm"
-            className="h-9 active:scale-[0.99]"
-            disabled={!bulkStatus || bulkWorking}
-            onClick={() =>
-              void runBulk(
-                { ids: Array.from(selectedIds), action: "status", status: bulkStatus },
-                "{n} lamaran diperbarui"
-              )
-            }
-          >
-            {bulkWorking ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : null}
-            Terapkan
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 bg-background"
-            disabled={bulkWorking}
-            onClick={() =>
-              void runBulk(
-                { ids: Array.from(selectedIds), action: "talentPool", talentPool: true },
-                "{n} lamaran masuk Talent Pool"
-              )
-            }
-          >
-            Talent Pool
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 bg-background"
-            disabled={bulkWorking}
-            onClick={() => {
-              setTagChips([]);
-              setTagInput("");
-              setBulkTagOpen(true);
-            }}
-          >
-            <Tag className="size-4" aria-hidden="true" />
-            Atur Tag
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 bg-background"
-            disabled={bulkWorking}
-            onClick={() =>
-              void runBulk(
-                { ids: Array.from(selectedIds), action: "archive" },
-                "{n} lamaran diarsipkan"
-              )
-            }
-          >
-            <Archive className="size-4" aria-hidden="true" />
-            Arsipkan
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 bg-background"
-            disabled={bulkWorking}
-            onClick={() =>
-              void runBulk(
-                { ids: Array.from(selectedIds), action: "unarchive" },
-                "{n} lamaran dikeluarkan dari arsip"
-              )
-            }
-          >
-            <ArchiveRestore className="size-4" aria-hidden="true" />
-            Batalkan Arsip
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 border-rose-200 bg-background text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
-            disabled={bulkWorking}
-            onClick={() => setBulkRejectOpen(true)}
-          >
-            <XCircle className="size-4" aria-hidden="true" />
-            Tolak
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            className="h-9"
-            disabled={bulkWorking}
-            onClick={() => setBulkDeleteOpen(true)}
-          >
-            <Trash2 className="size-4" aria-hidden="true" />
-            Hapus
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9"
-            onClick={() => setSelectedIds(new Set())}
-            disabled={bulkWorking}
-          >
-            Bersihkan pilihan
-          </Button>
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/95 p-3 shadow-lg backdrop-blur dark:border-rose-900 dark:bg-rose-950/90">
+                <span className="text-sm font-semibold">
+                  {selectedIds.size} lamaran dipilih
+                </span>
+                <Select value={bulkStatus || "bulk-empty"} onValueChange={setBulkStatus}>
+                  <SelectTrigger
+                    className="h-9 w-full rounded-lg bg-background sm:w-48"
+                    aria-label="Ubah tahap terpilih"
+                  >
+                    <SelectValue placeholder="Ubah tahap ke..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bulk-empty" disabled>
+                      Ubah tahap ke...
+                    </SelectItem>
+                    {bulkStageOptions.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {stageLabel(s)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  className="h-9 active:scale-[0.99]"
+                  disabled={!bulkStatus || bulkWorking}
+                  onClick={() =>
+                    void runBulk(
+                      { ids: Array.from(selectedIds), action: "status", status: bulkStatus },
+                      "{n} lamaran diperbarui"
+                    )
+                  }
+                >
+                  {bulkWorking ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : null}
+                  Terapkan
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 bg-background"
+                  disabled={bulkWorking}
+                  onClick={() =>
+                    void runBulk(
+                      { ids: Array.from(selectedIds), action: "talentPool", talentPool: true },
+                      "{n} lamaran masuk Talent Pool"
+                    )
+                  }
+                >
+                  Talent Pool
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 bg-background"
+                  disabled={bulkWorking}
+                  onClick={() => {
+                    setTagChips([]);
+                    setTagInput("");
+                    setBulkTagOpen(true);
+                  }}
+                >
+                  <Tag className="size-4" aria-hidden="true" />
+                  Atur Tag
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 bg-background"
+                  disabled={bulkWorking}
+                  onClick={() =>
+                    void runBulk(
+                      { ids: Array.from(selectedIds), action: "archive" },
+                      "{n} lamaran diarsipkan"
+                    )
+                  }
+                >
+                  <Archive className="size-4" aria-hidden="true" />
+                  Arsipkan
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 bg-background"
+                  disabled={bulkWorking}
+                  onClick={() =>
+                    void runBulk(
+                      { ids: Array.from(selectedIds), action: "unarchive" },
+                      "{n} lamaran dikeluarkan dari arsip"
+                    )
+                  }
+                >
+                  <ArchiveRestore className="size-4" aria-hidden="true" />
+                  Batalkan Arsip
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 border-rose-200 bg-background text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                  disabled={bulkWorking}
+                  onClick={() => setBulkRejectOpen(true)}
+                >
+                  <XCircle className="size-4" aria-hidden="true" />
+                  Tolak
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-9"
+                  disabled={bulkWorking}
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  <Trash2 className="size-4" aria-hidden="true" />
+                  Hapus
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9"
+                  onClick={() => setSelectedIds(new Set())}
+                  disabled={bulkWorking}
+                >
+                  Batal
+                </Button>
+              </div>
+            </motion.div>
           </div>
-        </Reveal>
-      ) : null}
+        ) : null}
+      </AnimatePresence>
 
-      {/* Bar perbandingan melayang */}
+      {/* Bar perbandingan melayang — naik di atas bulk bar (desktop) dan
+          disembunyikan di mobile saat seleksi massal aktif agar tidak tumpuk. */}
       {comparedApps.length > 0 && !compareOpen ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
+        <div
+          className={cn(
+            "pointer-events-none fixed inset-x-0 z-30 flex justify-center px-4",
+            canMutate && selectedIds.size > 0
+              ? "bottom-4 max-sm:hidden sm:bottom-44"
+              : "bottom-4"
+          )}
+        >
           <Reveal
             slideY={10}
             duration={0.25}
