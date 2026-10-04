@@ -379,9 +379,18 @@ export function isExperienceEnabled(section: FormSection): boolean {
   );
 }
 
-/** Wajib hanya berlaku saat itemnya aktif — default true (perilaku lama). */
+/**
+ * NR-26 — status wajib item inti kini dibaca dari section.core (editor item
+ * inti di Form Builder). Gerbang enabled (NR-23) tetap dihormati: item yang
+ * dimatikan/di-hash selalu dianggap tidak wajib. Nama selalu wajib (identitas
+ * pelamar) sehingga tidak punya getter.
+ */
+export function isEmailRequired(section: FormSection): boolean {
+  return section.kind !== "biodata" || coreItem(section, "email").required !== false;
+}
+
 export function isExperienceRequired(section: FormSection): boolean {
-  return isExperienceEnabled(section) && section.experienceRequired !== false;
+  return isExperienceEnabled(section) && coreItem(section, "experience").required !== false;
 }
 
 export function isMotivationEnabled(section: FormSection): boolean {
@@ -393,7 +402,7 @@ export function isMotivationEnabled(section: FormSection): boolean {
 }
 
 export function isMotivationRequired(section: FormSection): boolean {
-  return isMotivationEnabled(section) && section.motivationRequired !== false;
+  return isMotivationEnabled(section) && coreItem(section, "motivation").required !== false;
 }
 
 export function isCvEnabled(section: FormSection): boolean {
@@ -418,22 +427,6 @@ export function isPortfolioEnabled(section: FormSection): boolean {
 
 export function isPortfolioRequired(section: FormSection): boolean {
   return isPortfolioEnabled(section) && section.portfolioRequired === true;
-}
-
-// NR-26 — status wajib item inti yang boleh dibuat opsional. Bawaan = wajib
-// (perilaku lama); hanya `required: false` yang tersimpan di section.core.
-// Nama selalu wajib (identitas pelamar) sehingga tidak punya getter.
-
-export function isEmailRequired(section: FormSection): boolean {
-  return section.kind !== "biodata" || coreItem(section, "email").required !== false;
-}
-
-export function isExperienceRequired(section: FormSection): boolean {
-  return section.kind === "experience" && coreItem(section, "experience").required !== false;
-}
-
-export function isMotivationRequired(section: FormSection): boolean {
-  return section.kind === "experience" && coreItem(section, "motivation").required !== false;
 }
 
 /** Semua field milik satu bagian (urut sesuai array fields). */
