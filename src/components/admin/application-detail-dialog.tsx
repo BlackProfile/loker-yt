@@ -111,6 +111,7 @@ import {
   type VideoNote,
 } from "@/lib/types";
 import {
+  coreItemLabel,
   isExperienceEnabled,
   isFormSchemaActive,
   isMotivationEnabled,
@@ -1966,6 +1967,26 @@ export function ApplicationDetailDialog({
       app.motivation.trim() === ""
     ) && !isHidden("experience"); // NR-22 — blok pengalaman bisa disembunyikan per posisi
 
+  // NR-26 — label item inti (email/WA/pengalaman/motivasi) mengikuti
+  // kustomisasi bagian di Form Builder; tanpa kustomisasi = teks bawaan.
+  const biodataSectionForLabels = formSchemaActive
+    ? (formSchema?.sections.find((s) => s.kind === "biodata") ?? null)
+    : null;
+  const emailCoreLabel = biodataSectionForLabels
+    ? coreItemLabel(biodataSectionForLabels, "email")
+    : "Email";
+  const waCoreLabel = biodataSectionForLabels
+    ? coreItemLabel(biodataSectionForLabels, "wa")
+    : "WhatsApp";
+  const experienceCoreLabel =
+    formSchemaActive && experienceSection
+      ? coreItemLabel(experienceSection, "experience")
+      : "Pengalaman";
+  const motivationCoreLabel =
+    formSchemaActive && experienceSection
+      ? coreItemLabel(experienceSection, "motivation")
+      : "Alasan Bergabung";
+
   const rubricCriteria = pos?.rubricCriteria ?? [];
   const checklistTemplate = pos?.checklistTemplate ?? [];
   const noteTemplates = pos?.noteTemplates ?? [];
@@ -3309,15 +3330,15 @@ export function ApplicationDetailDialog({
 
             {/* Info grid */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <InfoItem label="Email">
+              <InfoItem label={emailCoreLabel}>
                 <a
                   href={`mailto:${app.email}`}
                   className="hover:text-rose-600 underline-offset-2 hover:underline"
                 >
-                  {app.email}
+                  {app.email || "-"}
                 </a>
               </InfoItem>
-              <InfoItem label="WhatsApp">
+              <InfoItem label={waCoreLabel}>
                 <a
                   href={waHref(app.phone)}
                   target="_blank"
@@ -3888,13 +3909,13 @@ export function ApplicationDetailDialog({
             {showExperienceBlock ? (
               <div className="flex flex-col gap-4">
                 <div>
-                  <h4 className="mb-1 text-sm font-semibold">Pengalaman</h4>
+                  <h4 className="mb-1 text-sm font-semibold">{experienceCoreLabel}</h4>
                   <p className="text-sm whitespace-pre-line text-muted-foreground">
                     {app.experience || "-"}
                   </p>
                 </div>
                 <div>
-                  <h4 className="mb-1 text-sm font-semibold">Alasan Bergabung</h4>
+                  <h4 className="mb-1 text-sm font-semibold">{motivationCoreLabel}</h4>
                   <p className="text-sm whitespace-pre-line text-muted-foreground">
                     {app.motivation || "-"}
                   </p>

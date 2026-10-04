@@ -402,8 +402,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Cooldown lamar ulang: posisi dapat membatasi jeda minimal setelah melamar (mis. setelah ditolak).
+    // NR-26 — hanya dicek bila email terisi (email kini bisa opsional); tanpa
+    // ini, email kosong bisa mencocokkan lamaran lain yang juga tanpa email.
     const cooldownDays = position.reapplyCooldownDays ?? 0;
-    if (cooldownDays > 0) {
+    if (cooldownDays > 0 && email) {
       const cutoff = new Date(now.getTime() - cooldownDays * 24 * 60 * 60 * 1000);
       const recent = await db.application.findFirst({
         where: { positionId: position.id, email, createdAt: { gt: cutoff } },
@@ -652,19 +654,27 @@ export async function POST(req: NextRequest) {
     // Deteksi duplikat (fitur Task 20-a): email ATAU telepon sama dengan lamaran
     // lain pada POSISI YANG SAMA dalam 90 hari terakhir -> tandai isDuplicate +
     // simpan id lamaran pertama. Dibungkus try/catch: kegagalan deteksi tidak
-    // pernah menggagalkan submit.
+    // pernah menggagalkan submit. NR-26 — hanya identifier yang BENAR-BENAR
+    // terisi yang ikut dicocokkan (email/WA bisa opsional; string kosong tidak
+    // boleh dicocokkan ke lamaran lain yang juga kosong).
+    const dupIdentifiers = [{ email }, { phone }].filter(
+      (cond) => Object.values(cond)[0],
+    );
     try {
       const dupCutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-      const original = await db.application.findFirst({
-        where: {
-          id: { not: created.id },
-          positionId: created.positionId,
-          createdAt: { gte: dupCutoff },
-          OR: [{ email }, { phone }],
-        },
-        orderBy: { createdAt: "asc" },
-        select: { id: true, trackingCode: true },
-      });
+      const original =
+        dupIdentifiers.length > 0
+          ? await db.application.findFirst({
+              where: {
+                id: { not: created.id },
+                positionId: created.positionId,
+                createdAt: { gte: dupCutoff },
+                OR: dupIdentifiers,
+              },
+              orderBy: { createdAt: "asc" },
+              select: { id: true, trackingCode: true },
+            })
+          : null;
       if (original) {
         await db.application.update({
           where: { id: created.id },
@@ -687,16 +697,19 @@ export async function POST(req: NextRequest) {
     // telepon sama dengan lamaran lain yang ditandai do-not-hire -> tandai
     // isDuplicate sebagai sinyal peringatan bagi admin + catat log
     // DO_NOT_HIRE_MATCH. Dibungkus try/catch: kegagalan deteksi tidak pernah
-    // menggagalkan submit.
+    // menggagalkan submit. NR-26 — identifier kosong tidak dicocokkan.
     try {
-      const flagged = await db.application.findFirst({
-        where: {
-          doNotHire: true,
-          deletedAt: null,
-          OR: [{ email }, { phone }],
-        },
-        select: { id: true, trackingCode: true, doNotHireReason: true },
-      });
+      const flagged =
+        dupIdentifiers.length > 0
+          ? await db.application.findFirst({
+              where: {
+                doNotHire: true,
+                deletedAt: null,
+                OR: dupIdentifiers,
+              },
+              select: { id: true, trackingCode: true, doNotHireReason: true },
+            })
+          : null;
       if (flagged) {
         const reason = (flagged.doNotHireReason ?? "").slice(0, 150);
         await db.application.update({
