@@ -69,12 +69,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  FORM_CORE_ITEM_DEFAULTS,
-  FORM_CORE_LABEL_MAX,
+  CORE_ITEM_DEFAULT_LABELS,
   FORM_FIELD_TYPES,
   FORM_FIELD_TYPE_LABELS,
   FORM_LIMITS,
   FORM_SCHEMA_VERSION,
+  FORM_SECTION_KIND_LABELS,
+  coreItem,
+  coreItemLabel,
+  coreItemOverridden,
   defaultBiodataSection,
   defaultExperienceSection,
   defaultFilesSection,
@@ -82,6 +85,7 @@ import {
   isChoiceType,
   isCvEnabled,
   isCvRequired,
+  isEmailRequired,
   isExperienceEnabled,
   isExperienceRequired,
   isIntroEnabled,
@@ -93,6 +97,9 @@ import {
   isWaRequired,
   newFormId,
   normalizeFormSchema,
+  type CoreItemKey,
+  type CoreItemOverride,
+  type CoreOverrides,
   type FormAnswerValue,
   type FormField,
   type FormFieldType,
@@ -212,6 +219,9 @@ function editableFingerprint(schema: FormSchema | null): string {
       portfolioEnabled: s.kind === "files" ? s.portfolioEnabled !== false : null,
       portfolioRequired:
         s.kind === "files" ? s.portfolioEnabled !== false && s.portfolioRequired === true : null,
+      // NR-26 — kustomisasi item inti ikut menandai perubahan (dibandingkan
+      // apa adanya; pembersihan kunci kosong terjadi di patchCoreItem).
+      core: s.core ?? null,
     })),
     fields: schema?.fields ?? [],
   };
@@ -262,66 +272,148 @@ function IconButton({
 }
 
 /**
- * Baris item inti bagian (NR-23 — semuanya bisa diedit penuh kayak pertanyaan
- * biasa): input label kustom (kosong = pakai label bawaan) + konten kanan
- * (saklar Aktif/Wajib). Item yang wajibnya melekat pada sistem (Nama & Email)
- * menampilkan badge "Wajib" + ikon kunci dengan alasan.
+ * Kartu satu item inti bagian bawaan (NR-26) — bisa diedit "seperti biasa":
+ * label, placeholder, teks bantuan, status wajib (bila boleh opsional), dan
+ * saklar Aktif (slot pengalaman/motivasi/berkas). Tombol pulihkan memuncul
+ * kembali seluruh teks bawaan item. Nama selalu wajib (identitas pelamar).
  */
-function CoreItemRow({
-  id,
-  label,
-  defaultLabel,
-  onLabelChange,
-  disabled,
-  required,
-  requiredHint,
-  children,
+function CoreItemCard({
+  section,
+  itemKey,
+  canMutate,
+  onPatchCoreItem,
+  enabled,
+  canDisable = false,
+  onToggleEnabled,
+  required = true,
+  requiredLocked = false,
+  onRequiredChange,
+  showTextConfig = false,
+  formatHint,
+  hint,
 }: {
-  id: string;
-  /** Nilai label kustom saat ini ("" = memakai label bawaan). */
-  label: string;
-  defaultLabel: string;
-  onLabelChange: (value: string) => void;
-  disabled?: boolean;
-  /** Item yang wajibnya mengikat sistem (Nama & Email) — tidak bisa dimatikan. */
+  section: FormSection;
+  itemKey: CoreItemKey;
+  canMutate: boolean;
+  onPatchCoreItem: (key: CoreItemKey, patch: Partial<CoreItemOverride>) => void;
+  /** Status saklar Aktif (hanya slot yang bisa dimatikan). */
+  enabled?: boolean;
+  canDisable?: boolean;
+  onToggleEnabled?: (checked: boolean) => void;
+  /** Status wajib efektif; bawaan true (perilaku lama). */
   required?: boolean;
-  requiredHint?: string;
-  children?: ReactNode;
+  /** Item yang tidak boleh opsional (Nama) — tampil badge Wajib + ikon kunci. */
+  requiredLocked?: boolean;
+  onRequiredChange?: (checked: boolean) => void;
+  /** Tampilkan editor placeholder + teks bantuan (item teks). */
+  showTextConfig?: boolean;
+  /** Petunjuk format statis (slot berkas — tidak bisa diganti admin). */
+  formatHint?: string;
+  hint?: string;
 }) {
+  const defaultLabel = CORE_ITEM_DEFAULT_LABELS[itemKey];
+  const label = coreItemLabel(section, itemKey);
+  const override = coreItem(section, itemKey);
+  const overridden =
+    coreItemOverridden(section, itemKey) ||
+    (!requiredLocked && override.required === false);
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0 flex-1">
-        <Label className="sr-only" htmlFor={id}>
-          Label item
+    <div className="flex flex-col gap-3 rounded-xl border bg-background p-3.5 shadow-xs">
+      <div className="flex items-center gap-1.5">
+        <Label className="sr-only" htmlFor={`core-label-${itemKey}`}>
+          Label item {defaultLabel}
         </Label>
         <Input
-          id={id}
+          id={`core-label-${itemKey}`}
           value={label}
-          onChange={(e) => onLabelChange(e.target.value)}
-          maxLength={FORM_CORE_LABEL_MAX}
+          onChange={(e) => onPatchCoreItem(itemKey, { label: e.target.value })}
+          maxLength={FORM_LIMITS.labelMax}
           placeholder={defaultLabel}
-          className="h-9 border-transparent bg-zinc-100/70 text-sm font-medium dark:bg-zinc-800/60"
-          disabled={disabled}
+          disabled={!canMutate}
+          className="h-10 flex-1"
         />
-      </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 sm:justify-end">
-        {required ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex items-center gap-1">
-                <Badge
-                  variant="outline"
-                  className="border-rose-200 bg-rose-50 px-1.5 text-[10px] text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
-                >
-                  Wajib
-                </Badge>
-                <Lock className="size-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-52">{requiredHint}</TooltipContent>
-          </Tooltip>
+        {overridden ? (
+          <IconButton
+            icon={RotateCcw}
+            label={`Pulihkan bawaan item ${defaultLabel}`}
+            onClick={() =>
+              onPatchCoreItem(itemKey, { label: "", placeholder: "", helpText: "", required: undefined })
+            }
+            disabled={!canMutate}
+          />
         ) : null}
-        {children ? <div className="flex items-center gap-4">{children}</div> : null}
+      </div>
+      {showTextConfig ? (
+        <div className="grid gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40 sm:grid-cols-2">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor={`core-ph-${itemKey}`} className="text-xs text-muted-foreground">
+              Placeholder (opsional)
+            </Label>
+            <Input
+              id={`core-ph-${itemKey}`}
+              value={override.placeholder ?? ""}
+              onChange={(e) => onPatchCoreItem(itemKey, { placeholder: e.target.value })}
+              maxLength={FORM_LIMITS.placeholderMax}
+              placeholder="Teks samaran di kolom jawaban"
+              className="h-9"
+              disabled={!canMutate}
+              aria-label={`Placeholder item ${defaultLabel}`}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor={`core-help-${itemKey}`} className="text-xs text-muted-foreground">
+              Teks bantuan (opsional)
+            </Label>
+            <Input
+              id={`core-help-${itemKey}`}
+              value={override.helpText ?? ""}
+              onChange={(e) => onPatchCoreItem(itemKey, { helpText: e.target.value })}
+              maxLength={FORM_LIMITS.helpMax}
+              placeholder="Petunjuk kecil di bawah pertanyaan"
+              className="h-9"
+              disabled={!canMutate}
+              aria-label={`Teks bantuan item ${defaultLabel}`}
+            />
+          </div>
+        </div>
+      ) : formatHint ? (
+        <p className="text-xs text-muted-foreground">{formatHint}</p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-4">
+        {canDisable ? (
+          <>
+            <Switch
+              checked={enabled === true}
+              onCheckedChange={(checked) => onToggleEnabled?.(checked)}
+              disabled={!canMutate}
+              aria-label={`Aktifkan item ${defaultLabel}`}
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
+          </>
+        ) : null}
+        {requiredLocked ? (
+          <>
+            <Badge
+              variant="outline"
+              className="border-rose-200 bg-rose-50 px-1.5 text-[10px] text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+            >
+              Wajib
+            </Badge>
+            <Lock className="size-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+          </>
+        ) : onRequiredChange ? (
+          <>
+            <Switch
+              checked={required}
+              onCheckedChange={onRequiredChange}
+              disabled={!canMutate || (canDisable && enabled === false)}
+              className="data-[state=checked]:bg-rose-600"
+              aria-label={`${defaultLabel} wajib diisi`}
+            />
+            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
+          </>
+        ) : null}
+        {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
       </div>
     </div>
   );
@@ -384,6 +476,25 @@ function SectionCard({
     section.kind === "biodata"
       ? "Selalu tersedia untuk identitas, deteksi lamaran ganda, dan komunikasi — tidak bisa dihapus."
       : "";
+
+  /**
+   * NR-26 — perbarui kustomisasi satu item inti. Kunci yang tidak lagi
+   * membawa nilai (teks kosong, required kembali wajib) dibuang supaya JSON
+   * tetap ramping; peta kosong menghapus `core` dari bagian sepenuhnya.
+   */
+  function patchCoreItem(key: CoreItemKey, patch: Partial<CoreItemOverride>) {
+    const merged = { ...coreItem(section, key), ...patch };
+    const cleaned: CoreItemOverride = {};
+    if (merged.label && merged.label.trim()) cleaned.label = merged.label;
+    if (merged.placeholder && merged.placeholder.trim()) cleaned.placeholder = merged.placeholder;
+    if (merged.helpText && merged.helpText.trim()) cleaned.helpText = merged.helpText;
+    if (merged.required === false) cleaned.required = false;
+    const core: CoreOverrides = { ...(section.core ?? {}) };
+    if (Object.keys(cleaned).length === 0) delete core[key];
+    else core[key] = cleaned;
+    const nextKeys = Object.keys(core);
+    onPatch({ core: nextKeys.length > 0 ? core : undefined });
+  }
 
   return (
     <Card className="gap-4 rounded-2xl p-5 md:p-6">
@@ -536,179 +647,120 @@ function SectionCard({
         </div>
       ) : null}
 
-      {/* Isi khusus bagian bawaan */}
+      {/* Isi khusus bagian bawaan — NR-26: setiap item inti kini kartu editor
+          penuh (label, placeholder, teks bantuan, status wajib) seperti
+          pertanyaan kustom; slot pengalaman/motivasi/berkas tetap punya
+          saklar Aktif dan WA/CV/intro/portofolio tetap memakai flag lama. */}
       {section.kind === "biodata" ? (
         <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
-          <CoreItemRow
-            id={`core-name-${section.id}`}
-            label={section.nameLabel ?? ""}
-            defaultLabel={FORM_CORE_ITEM_DEFAULTS.name}
-            onLabelChange={(value) => onPatch({ nameLabel: value || undefined })}
-            disabled={!canMutate}
-            required
-            requiredHint="Selalu wajib — identitas pelamar di setiap lamaran."
+          <CoreItemCard
+            section={section}
+            itemKey="name"
+            canMutate={canMutate}
+            onPatchCoreItem={patchCoreItem}
+            requiredLocked
+            showTextConfig
+            hint="Identitas pelamar — selalu wajib."
           />
-          <CoreItemRow
-            id={`core-email-${section.id}`}
-            label={section.emailLabel ?? ""}
-            defaultLabel={FORM_CORE_ITEM_DEFAULTS.email}
-            onLabelChange={(value) => onPatch({ emailLabel: value || undefined })}
-            disabled={!canMutate}
-            required
-            requiredHint="Selalu wajib — dipakai kirim update & deteksi lamaran ganda."
+          <CoreItemCard
+            section={section}
+            itemKey="email"
+            canMutate={canMutate}
+            onPatchCoreItem={patchCoreItem}
+            showTextConfig
+            required={isEmailRequired(section)}
+            onRequiredChange={(checked) => patchCoreItem("email", { required: checked ? undefined : false })}
+            hint="Dipakai kirim update & deteksi lamaran ganda."
           />
-          <CoreItemRow
-            id={`core-wa-${section.id}`}
-            label={section.waLabel ?? ""}
-            defaultLabel={FORM_CORE_ITEM_DEFAULTS.wa}
-            onLabelChange={(value) => onPatch({ waLabel: value || undefined })}
-            disabled={!canMutate}
-          >
-            <Switch
-              checked={isWaRequired(section)}
-              onCheckedChange={(checked) => onPatch({ waRequired: checked })}
-              disabled={!canMutate}
-              className="data-[state=checked]:bg-rose-600"
-              aria-label="Wajib diisi"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Wajib diisi</Label>
-          </CoreItemRow>
+          <CoreItemCard
+            section={section}
+            itemKey="wa"
+            canMutate={canMutate}
+            onPatchCoreItem={patchCoreItem}
+            showTextConfig
+            required={isWaRequired(section)}
+            onRequiredChange={(checked) => onPatch({ waRequired: checked })}
+          />
           <p className="text-xs text-muted-foreground">
             Bagian Data Diri selalu tersedia untuk identitas pelamar &amp; deteksi lamaran ganda —
-            tidak bisa dihapus.
+            tidak bisa dihapus. Item opsional boleh dikosongkan pelamar.
           </p>
         </div>
       ) : null}
 
       {section.kind === "experience" ? (
         <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
-          <CoreItemRow
-            id={`core-experience-${section.id}`}
-            label={section.experienceLabel ?? ""}
-            defaultLabel={FORM_CORE_ITEM_DEFAULTS.experience}
-            onLabelChange={(value) => onPatch({ experienceLabel: value || undefined })}
-            disabled={!canMutate}
-          >
-            <Switch
-              checked={isExperienceEnabled(section)}
-              onCheckedChange={(checked) => onPatch({ experienceEnabled: checked })}
-              disabled={!canMutate}
-              aria-label="Aktifkan pertanyaan pengalaman"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
-            <Switch
-              checked={isExperienceRequired(section)}
-              onCheckedChange={(checked) => onPatch({ experienceRequired: checked })}
-              disabled={!canMutate || !isExperienceEnabled(section)}
-              className="data-[state=checked]:bg-rose-600"
-              aria-label="Pengalaman wajib diisi"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
-          </CoreItemRow>
-          <CoreItemRow
-            id={`core-motivation-${section.id}`}
-            label={section.motivationLabel ?? ""}
-            defaultLabel={FORM_CORE_ITEM_DEFAULTS.motivation}
-            onLabelChange={(value) => onPatch({ motivationLabel: value || undefined })}
-            disabled={!canMutate}
-          >
-            <Switch
-              checked={isMotivationEnabled(section)}
-              onCheckedChange={(checked) => onPatch({ motivationEnabled: checked })}
-              disabled={!canMutate}
-              aria-label="Aktifkan pertanyaan alasan bergabung"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
-            <Switch
-              checked={isMotivationRequired(section)}
-              onCheckedChange={(checked) => onPatch({ motivationRequired: checked })}
-              disabled={!canMutate || !isMotivationEnabled(section)}
-              className="data-[state=checked]:bg-rose-600"
-              aria-label="Alasan bergabung wajib diisi"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
-          </CoreItemRow>
+          <CoreItemCard
+            section={section}
+            itemKey="experience"
+            canMutate={canMutate}
+            onPatchCoreItem={patchCoreItem}
+            canDisable
+            enabled={isExperienceEnabled(section)}
+            onToggleEnabled={(checked) => onPatch({ experienceEnabled: checked })}
+            required={isExperienceRequired(section)}
+            onRequiredChange={(checked) => patchCoreItem("experience", { required: checked ? undefined : false })}
+            showTextConfig
+          />
+          <CoreItemCard
+            section={section}
+            itemKey="motivation"
+            canMutate={canMutate}
+            onPatchCoreItem={patchCoreItem}
+            canDisable
+            enabled={isMotivationEnabled(section)}
+            onToggleEnabled={(checked) => onPatch({ motivationEnabled: checked })}
+            required={isMotivationRequired(section)}
+            onRequiredChange={(checked) => patchCoreItem("motivation", { required: checked ? undefined : false })}
+            showTextConfig
+          />
           <p className="text-xs text-muted-foreground">
             Matikan keduanya dan biarkan tanpa pertanyaan tambahan agar langkah ini dilewati di
-            wizard. Saklar Wajib bisa dimatikan agar pertanyaannya jadi opsional.
+            wizard. Item opsional boleh dikosongkan pelamar.
           </p>
         </div>
       ) : null}
 
       {section.kind === "files" ? (
         <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
-          <CoreItemRow
-            id={`core-cv-${section.id}`}
-            label={section.cvLabel ?? ""}
-            defaultLabel={FORM_CORE_ITEM_DEFAULTS.cv}
-            onLabelChange={(value) => onPatch({ cvLabel: value || undefined })}
-            disabled={!canMutate}
-          >
-            <Switch
-              checked={isCvEnabled(section)}
-              onCheckedChange={(checked) => onPatch({ cvEnabled: checked })}
-              disabled={!canMutate}
-              aria-label="Aktifkan CV"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
-            <Switch
-              checked={isCvRequired(section)}
-              onCheckedChange={(checked) => onPatch({ cvRequired: checked })}
-              disabled={!canMutate || !isCvEnabled(section)}
-              className="data-[state=checked]:bg-rose-600"
-              aria-label="CV wajib diisi"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
-          </CoreItemRow>
-          <CoreItemRow
-            id={`core-intro-${section.id}`}
-            label={section.introLabel ?? ""}
-            defaultLabel={FORM_CORE_ITEM_DEFAULTS.intro}
-            onLabelChange={(value) => onPatch({ introLabel: value || undefined })}
-            disabled={!canMutate}
-          >
-            <Switch
-              checked={isIntroEnabled(section)}
-              onCheckedChange={(checked) => onPatch({ introEnabled: checked })}
-              disabled={!canMutate}
-              aria-label="Aktifkan perkenalan audio/video"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
-            <Switch
-              checked={isIntroRequired(section)}
-              onCheckedChange={(checked) => onPatch({ introRequired: checked })}
-              disabled={!canMutate || !isIntroEnabled(section)}
-              className="data-[state=checked]:bg-rose-600"
-              aria-label="Perkenalan wajib diisi"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
-          </CoreItemRow>
-          <CoreItemRow
-            id={`core-portfolio-${section.id}`}
-            label={section.portfolioLabel ?? ""}
-            defaultLabel={FORM_CORE_ITEM_DEFAULTS.portfolio}
-            onLabelChange={(value) => onPatch({ portfolioLabel: value || undefined })}
-            disabled={!canMutate}
-          >
-            <Switch
-              checked={isPortfolioEnabled(section)}
-              onCheckedChange={(checked) => onPatch({ portfolioEnabled: checked })}
-              disabled={!canMutate}
-              aria-label="Aktifkan portofolio"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Aktif</Label>
-            <Switch
-              checked={isPortfolioRequired(section)}
-              onCheckedChange={(checked) => onPatch({ portfolioRequired: checked })}
-              disabled={!canMutate || !isPortfolioEnabled(section)}
-              className="data-[state=checked]:bg-rose-600"
-              aria-label="Portofolio wajib diisi"
-            />
-            <Label className="text-xs font-normal text-muted-foreground">Wajib</Label>
-          </CoreItemRow>
+          <CoreItemCard
+            section={section}
+            itemKey="cv"
+            canMutate={canMutate}
+            onPatchCoreItem={patchCoreItem}
+            canDisable
+            enabled={isCvEnabled(section)}
+            onToggleEnabled={(checked) => onPatch({ cvEnabled: checked })}
+            required={isCvRequired(section)}
+            onRequiredChange={(checked) => onPatch({ cvRequired: checked })}
+            formatHint="PDF, maks 5 MB — dipakai screening AI & arsip."
+          />
+          <CoreItemCard
+            section={section}
+            itemKey="intro"
+            canMutate={canMutate}
+            onPatchCoreItem={patchCoreItem}
+            canDisable
+            enabled={isIntroEnabled(section)}
+            onToggleEnabled={(checked) => onPatch({ introEnabled: checked })}
+            required={isIntroRequired(section)}
+            onRequiredChange={(checked) => onPatch({ introRequired: checked })}
+            formatHint="Audio (mp3/wav/m4a) atau video pendek — maks 10 MB."
+          />
+          <CoreItemCard
+            section={section}
+            itemKey="portfolio"
+            canMutate={canMutate}
+            onPatchCoreItem={patchCoreItem}
+            canDisable
+            enabled={isPortfolioEnabled(section)}
+            onToggleEnabled={(checked) => onPatch({ portfolioEnabled: checked })}
+            required={isPortfolioRequired(section)}
+            onRequiredChange={(checked) => onPatch({ portfolioRequired: checked })}
+            formatHint="Tautan Behance, Dribbble, Drive, atau YouTube."
+          />
           <p className="text-xs text-muted-foreground">
-            CV dipakai screening AI &amp; arsip — matikan hanya jika memang tidak perlu. Matikan
-            semua slot &amp; tanpa pertanyaan agar langkah dilewati.
+            Matikan semua slot &amp; tanpa pertanyaan agar langkah dilewati.
           </p>
         </div>
       ) : null}
