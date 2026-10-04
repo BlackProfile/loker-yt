@@ -201,30 +201,6 @@ export function parseTags(raw: string | null | undefined): string[] {
   }
 }
 
-/**
- * NR-24 — Parse JSON {fileId: "YYYY-MM-DD"} masa berlaku dokumen (Application.docExpiries).
- * Aman terhadap nilai rusak: kunci kosong/>64 char, nilai bukan string tanggal dilempar.
- * Gagal parse total → objek kosong.
- */
-export function parseDocExpiries(raw: string | null | undefined): Record<string, string> {
-  if (!raw) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const result: Record<string, string> = {};
-    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-      const cleanKey = key.trim();
-      if (!cleanKey || cleanKey.length > 64) continue;
-      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        result[cleanKey] = value;
-      }
-    }
-    return result;
-  } catch {
-    return {};
-  }
-}
-
 /** Parse dokumen onboarding dari JSON string (aman terhadap nilai rusak). */
 export function parseOnboardingDocs(raw: string | null | undefined): OnboardingDoc[] {
   if (!raw) return [];
