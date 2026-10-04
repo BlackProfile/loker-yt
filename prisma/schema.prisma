@@ -142,6 +142,9 @@ model Position {
   // Rencana ronde wawancara bawaan: JSON {round,name,mode?,platform?,durationMin?,interviewers?[]}[]
   roundPlan String @default("[]")
 
+  // NR-22 — UI tersembunyi per posisi: JSON string[] kunci blok (lihat src/lib/hidden-ui.ts)
+  hiddenUi String @default("[]")
+
   // Tong sampah (soft delete) — null = aktif
   deletedAt DateTime?
 

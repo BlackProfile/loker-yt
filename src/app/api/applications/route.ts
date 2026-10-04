@@ -476,8 +476,14 @@ export async function POST(req: NextRequest) {
       const cleaned = validated.cleaned as Record<string, FormAnswerValue>;
 
       // Berkas field formulir: ukuran, format, lalu simpan sebagai FileAsset.
+      // NR-23 — field di bagian yang dihapus (tombstone removed=true) dilewati:
+      // bagian itu tidak muncul di wizard sehingga pelamar tidak mengunggahnya.
+      const deadSectionIds = new Set(
+        formSchema.sections.filter((s) => s.removed === true).map((s) => s.id),
+      );
       for (const field of formSchema.fields) {
         if (field.type !== "file") continue;
+        if (deadSectionIds.has(field.sectionId)) continue;
         const file = formFieldFiles.get(field.id) ?? null;
         if (!file) {
           if (field.required) {

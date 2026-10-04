@@ -33,6 +33,7 @@ import {
   Check,
   ClipboardCheck,
   ClipboardList,
+  EyeOff,
   FileText,
   Inbox,
   ListChecks,
@@ -75,6 +76,7 @@ import {
   stageLabel,
 } from "@/lib/stages";
 import { isFormSchemaActive } from "@/lib/form-schema";
+import { HIDDEN_UI_OPTIONS, type HiddenUiKey } from "@/lib/hidden-ui"; // NR-22
 import { apiPatch } from "./api";
 import { isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
@@ -733,6 +735,7 @@ type SelectionState = {
   stageCategories: Record<string, StageCategory>;
   stageNotes: Record<string, string>; // NR-15: penjelasan per tahap untuk halaman status pelamar
   stageWipLimits: Record<string, string>; // NR-19: batas kapasitas per tahap (string dari input angka; "" = tanpa batas)
+  hiddenUi: string[]; // NR-22: blok UI yang disembunyikan di dialog detail lamaran
   aiCriteria: string;
   autoShortlistScore: string;
   autoShortlistStage: string; // "" = nonaktif
@@ -755,6 +758,7 @@ function buildSelectionState(p: Position): SelectionState {
         )
       : {},
     aiCriteria: p.aiCriteria ?? "",
+    hiddenUi: [...p.hiddenUi], // NR-22
     autoShortlistScore: p.autoShortlistScore == null ? "" : String(p.autoShortlistScore),
     autoShortlistStage: p.autoShortlistStage ?? "",
     assignmentTitle: p.assignment.title ?? "",
@@ -781,6 +785,13 @@ export function PositionSelectionPage({
 
   const set = <K extends keyof SelectionState>(key: K, value: SelectionState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  // NR-22 — aktif/nonaktifkan penyembunyian satu blok di dialog detail lamaran.
+  const toggleHiddenUi = (key: HiddenUiKey, hidden: boolean) =>
+    setForm((f) => ({
+      ...f,
+      hiddenUi: hidden ? [...f.hiddenUi, key] : f.hiddenUi.filter((k) => k !== key),
+    }));
 
   const cleanedStages = useMemo(
     () => form.stages.map((s) => s.trim()).filter(Boolean),
@@ -876,6 +887,7 @@ export function PositionSelectionPage({
         stageCategories: form.stageCategories,
         stageNotes: cleanStageNotes,
         stageWipLimits: cleanStageWipLimits,
+        hiddenUi: form.hiddenUi, // NR-22
         aiCriteria: form.aiCriteria.trim() || null,
         autoShortlistScore:
           form.autoShortlistScore.trim() === "" ? null : Number(form.autoShortlistScore),
@@ -1240,6 +1252,40 @@ export function PositionSelectionPage({
             placeholder="mis. Portofolio kuat, cek di wawancara"
             hint="Klik cepat saat menulis catatan pada lamaran"
           />
+        </div>
+      </FormSection>
+
+      {/* NR-22 — tampilan dialog detail lamaran untuk posisi ini */}
+      <FormSection
+        id="tampilan"
+        icon={EyeOff}
+        title="Tampilan Detail Lamaran"
+        hint="Blok yang disembunyikan tidak tampil saat admin membuka detail lamaran posisi ini (default: semua tampil)."
+      >
+        <div className="flex flex-col gap-1.5">
+          <Label>Blok yang Disembunyikan</Label>
+          {HIDDEN_UI_OPTIONS.map((opt) => {
+            const hidden = form.hiddenUi.includes(opt.key);
+            return (
+              <div
+                key={opt.key}
+                className="flex items-center justify-between gap-3 rounded-lg border p-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{opt.label}</p>
+                  <p className="text-xs text-muted-foreground">{opt.hint}</p>
+                </div>
+                <Switch
+                  checked={hidden}
+                  onCheckedChange={(checked) => toggleHiddenUi(opt.key, checked)}
+                  aria-label={hidden ? `Tampilkan kembali ${opt.label}` : `Sembunyikan ${opt.label}`}
+                />
+              </div>
+            );
+          })}
+          <p className="text-xs text-muted-foreground">
+            Posisi operasional non-kreatif biasanya menyembunyikan Panel AI dan Portofolio.
+          </p>
         </div>
       </FormSection>
           </>

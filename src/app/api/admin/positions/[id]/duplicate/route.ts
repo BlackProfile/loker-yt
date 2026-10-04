@@ -70,6 +70,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
         publishAt: existing.publishAt,
 
+        // NR-22: skema formulir & blok UI tersembunyi ikut disalin ke salinan
+        formSchema: existing.formSchema,
+        hiddenUi: existing.hiddenUi,
+
         stages: existing.stages,
         aiCriteria: existing.aiCriteria,
         autoShortlistScore: existing.autoShortlistScore,

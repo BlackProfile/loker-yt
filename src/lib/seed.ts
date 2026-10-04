@@ -7,6 +7,7 @@ import type {
   AdminUser as AdminUserRecordModel,
 } from "@prisma/client";
 import { db } from "@/lib/db";
+import { parseHiddenUi } from "@/lib/hidden-ui"; // NR-22 — blok UI tersembunyi per posisi
 import { parsePositionStageNotes } from "@/lib/stage-notes";
 import { parseStageWipLimits } from "@/lib/wip-limits";
 import {
@@ -412,6 +413,8 @@ export function serializePosition(record: PositionRecordModel): Position {
     stageNotes: parsePositionStageNotes(record.stageNotes),
     // NR-19 — batas kapasitas per tahap pipeline (WIP limit)
     stageWipLimits: parseStageWipLimits(record.stageWipLimits),
+    // NR-22 — blok UI yang disembunyikan di dialog detail lamaran posisi ini
+    hiddenUi: parseHiddenUi(record.hiddenUi),
     aiCriteria: record.aiCriteria,
     autoShortlistScore: record.autoShortlistScore,
     autoShortlistStage: record.autoShortlistStage,

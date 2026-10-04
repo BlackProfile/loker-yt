@@ -13,6 +13,7 @@ import {
   parseFormSchema,
   sanitizeFormSchemaInput,
 } from "@/lib/form-schema";
+import { parseHiddenUi } from "@/lib/hidden-ui"; // NR-22
 import {
   INTERVIEW_MODES,
   INTERVIEW_PLATFORMS,
@@ -89,6 +90,7 @@ export type PositionFields = {
   stageCategories?: string; // JSON Record<tahap kustom, StageCategory>; "{}" = pakai heuristik bawaan
   stageNotes?: string; // JSON Record<tahap, teks penjelasan untuk pelamar>; "{}" = tanpa override
   stageWipLimits?: string; // NR-19 JSON Record<tahap, maxKandidat>; "{}" = tanpa batas kapasitas
+  hiddenUi?: string[] | string | null; // NR-22 blok UI disembunyikan; JSON string[] saat disimpan
   aiCriteria?: string | null;
   autoShortlistScore?: number | null;
   autoShortlistStage?: string | null;
@@ -643,6 +645,23 @@ export async function sanitizePositionInput(
   if (!stageWipLimits.ok) return stageWipLimits;
   if (stageWipLimits.value !== undefined) f.stageWipLimits = stageWipLimits.value;
 
+  // NR-22 UI tersembunyi per posisi: array kunci valid -> JSON string (kunci tak
+  // dikenal dibuang via parseHiddenUi); string diparse ulang lalu di-stringify.
+  // null/undefined pada mode update = nilai lama dibiarkan (field tidak dikirim,
+  // konsisten field opsional lain) — bila ingin mengosongkan, kirim [].
+  // Mode create default "[]".
+  if (data.hiddenUi !== undefined && data.hiddenUi !== null) {
+    const rawList = Array.isArray(data.hiddenUi)
+      ? data.hiddenUi.filter((v): v is string => typeof v === "string")
+      : typeof data.hiddenUi === "string"
+        ? parseHiddenUi(data.hiddenUi)
+        : null;
+    if (rawList === null) return err("Konfigurasi tampilan lamaran tidak valid.");
+    f.hiddenUi = JSON.stringify(parseHiddenUi(JSON.stringify(rawList)));
+  } else if (create) {
+    f.hiddenUi = "[]";
+  }
+
   const aiCriteria = sanitizeNullableText(data.aiCriteria, "Kriteria AI", 600);
   if (!aiCriteria.ok) return aiCriteria;
   if (aiCriteria.value !== undefined) f.aiCriteria = aiCriteria.value;
@@ -902,6 +921,15 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.stageCategories !== undefined) out.stageCategories = f.stageCategories;
   if (f.stageNotes !== undefined) out.stageNotes = f.stageNotes;
   if (f.stageWipLimits !== undefined) out.stageWipLimits = f.stageWipLimits;
+  // NR-22 blok UI tersembunyi — hasil sanitasi sudah JSON string (null = "[]").
+  if (f.hiddenUi !== undefined) {
+    out.hiddenUi =
+      f.hiddenUi === null
+        ? "[]"
+        : typeof f.hiddenUi === "string"
+          ? f.hiddenUi
+          : JSON.stringify(f.hiddenUi);
+  }
   if (f.aiCriteria !== undefined) out.aiCriteria = f.aiCriteria;
   if (f.autoShortlistScore !== undefined) out.autoShortlistScore = f.autoShortlistScore;
   if (f.autoShortlistStage !== undefined) out.autoShortlistStage = f.autoShortlistStage;

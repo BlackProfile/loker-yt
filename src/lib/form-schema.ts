@@ -7,11 +7,16 @@
 // - Seluruh bagian (Data Diri, Pengalaman, Berkas, dan bagian tambahan) hidup di
 //   `Position.formSchema` (JSON string) sebagai `sections` berurutan bebas.
 //   Urutan wizard publik = urutan sections di skema (Pratinjau selalu terakhir).
-// - NR-23 — TIDAK ada lagi perlakuan khusus "bawaan": badge dihapus, semua item
-//   inti bisa diedit (label disimpan per bagian), dan SEMUA bagian bisa dihapus
-//   setelah membuka kunci (anti-hapus-sengaja). Bila bagian Data Diri dihapus,
-//   wizard tetap mengumpulkan identitas (nama & email) dengan label bawaan.
-// - Bagian yang isinya kosong otomatis dilewati wizard.
+// - NR-23 — bagian bawaan Pengalaman & Berkas bisa "dihapus" lewat mode kunci
+//   (konfirmasi mengetik "kunci" di builder) memakai batu nisan (tombstone):
+//   section TETAP tersimpan di array dengan `removed: true` sehingga bisa
+//   dipulihkan ke posisi aslinya. Bagian bertombstone tidak menghasilkan langkah
+//   wizard, getter isinya dianggap mati, dan field di dalamnya tidak divalidasi.
+//   Bagian bawaan TIDAK bisa dihapus secara fisik; Biodata tidak bisa dihapus
+//   sama sekali (dibutuhkan untuk identitas, duplikat, dan komunikasi).
+//   Semua bagian tetap bisa diedit: judul, deskripsi, posisi, dan isi itemnya
+//   (WA wajib/tidak, pengalaman & motivasi aktif/tidak, CV/intro/portofolio
+//   aktif & wajib/tidak). Bagian yang isinya kosong otomatis dilewati wizard.
 // - Kolom Application tetap: name/email/phone (biodata), experience/motivation
 //   (pengalaman), cvFileId/introFileId/portfolioUrl (berkas), formAnswers
 //   (semua pertanyaan kustom di bagian mana pun, kunci fieldId stabil).
@@ -141,8 +146,7 @@ export type FormField = {
   max?: number; // number & rating (rating = skala 1..max)
 };
 
-/** Jenis bagian: tiga inti (biodata/experience/files) + kustom. Semua bisa dihapus
- * setelah membuka kunci; identitas (nama & email) tetap selalu dikumpulkan wizard. */
+/** Jenis bagian: tiga bawaan + kustom. Bawaan bisa disembunyikan (tombstone NR-23), kustom bisa dihapus fisik. */
 export type FormSectionKind = "biodata" | "experience" | "files" | "custom";
 
 export const FORM_SECTION_KINDS: FormSectionKind[] = ["biodata", "experience", "files", "custom"];
@@ -185,38 +189,17 @@ export type FormSection = {
   introRequired?: boolean;
   portfolioEnabled?: boolean;
   portfolioRequired?: boolean;
+
+  // NR-23 — batu nisan bagian bawaan — true = dihapus via mode kunci, masih
+  // tersimpan agar bisa dipulihkan. Hanya kind experience/files yang boleh
+  // membawa flag ini (biodata selalu hadir, kustom dihapus fisik). Saat
+  // false/undefined kunci dihilangkan dari JSON agar tetap ramping.
+  removed?: boolean;
 };
 
-/** Batas panjang label kustom item inti (konsisten dgn judul bagian). */
-export const FORM_CORE_LABEL_MAX = 60;
-
-/** Label bawaan item inti — satu sumber untuk builder, wizard, pratinjau, dan pesan server. */
-export const FORM_CORE_ITEM_DEFAULTS = {
-  name: "Nama Lengkap",
-  email: "Email",
-  wa: "Nomor WhatsApp",
-  experience: "Ceritakan pengalamanmu",
-  motivation: "Alasan bergabung",
-  cv: "CV (PDF, maks 5 MB)",
-  intro: "Audio/Video perkenalan (maks 10 MB)",
-  portfolio: "Link Portofolio",
-} as const;
-
-export type FormCoreItemKey = keyof typeof FORM_CORE_ITEM_DEFAULTS;
-
-/** Label efektif item inti: kustom admin bila diisi, selain itu label bawaan. */
-export function coreItemLabel(section: FormSection, key: FormCoreItemKey): string {
-  const override =
-    key === "name" ? section.nameLabel :
-    key === "email" ? section.emailLabel :
-    key === "wa" ? section.waLabel :
-    key === "experience" ? section.experienceLabel :
-    key === "motivation" ? section.motivationLabel :
-    key === "cv" ? section.cvLabel :
-    key === "intro" ? section.introLabel :
-    section.portfolioLabel;
-  const trimmed = override?.trim();
-  return trimmed ? trimmed : FORM_CORE_ITEM_DEFAULTS[key];
+/** Bagian bawaan (bukan tambahan kustom). Dipakai builder untuk membedakan aturan hapus. */
+export function isBuiltinSection(section: FormSection): boolean {
+  return section.kind !== "custom";
 }
 
 export type RetiredFormField = { id: string; label: string };
@@ -291,8 +274,16 @@ export function isWaRequired(section: FormSection): boolean {
   return section.kind !== "biodata" || section.waRequired !== false;
 }
 
+// NR-23 — getter di bawah menganggap bagian bertombstone (removed=true) mati
+// total: wizard tidak menampilkan langkahnya, jadi isi apa pun di dalamnya
+// (flag aktif/wajib) harus dianggap tidak berlaku di semua konsumen.
+
 export function isExperienceEnabled(section: FormSection): boolean {
-  return section.kind !== "experience" || section.experienceEnabled !== false;
+  return (
+    section.kind === "experience" &&
+    section.removed !== true &&
+    section.experienceEnabled !== false
+  );
 }
 
 /** Wajib hanya berlaku saat itemnya aktif — default true (perilaku lama). */
@@ -301,7 +292,11 @@ export function isExperienceRequired(section: FormSection): boolean {
 }
 
 export function isMotivationEnabled(section: FormSection): boolean {
-  return section.kind !== "experience" || section.motivationEnabled !== false;
+  return (
+    section.kind === "experience" &&
+    section.removed !== true &&
+    section.motivationEnabled !== false
+  );
 }
 
 export function isMotivationRequired(section: FormSection): boolean {
@@ -309,7 +304,7 @@ export function isMotivationRequired(section: FormSection): boolean {
 }
 
 export function isCvEnabled(section: FormSection): boolean {
-  return section.kind !== "files" || section.cvEnabled !== false;
+  return section.kind === "files" && section.removed !== true && section.cvEnabled !== false;
 }
 
 export function isCvRequired(section: FormSection): boolean {
@@ -317,7 +312,7 @@ export function isCvRequired(section: FormSection): boolean {
 }
 
 export function isIntroEnabled(section: FormSection): boolean {
-  return section.kind !== "files" || section.introEnabled !== false;
+  return section.kind === "files" && section.removed !== true && section.introEnabled !== false;
 }
 
 export function isIntroRequired(section: FormSection): boolean {
@@ -325,7 +320,7 @@ export function isIntroRequired(section: FormSection): boolean {
 }
 
 export function isPortfolioEnabled(section: FormSection): boolean {
-  return section.kind !== "files" || section.portfolioEnabled !== false;
+  return section.kind === "files" && section.removed !== true && section.portfolioEnabled !== false;
 }
 
 export function isPortfolioRequired(section: FormSection): boolean {
@@ -340,9 +335,11 @@ export function sectionFields(schema: FormSchema, sectionId: string): FormField[
 /**
  * Apakah bagian ini menghasilkan satu langkah wizard publik?
  * Bagian bawaan yang seluruh isinya dimatikan dan tanpa pertanyaan tambahan
- * dilewati (tidak muncul di wizard).
+ * dilewati (tidak muncul di wizard). Bagian bertombstone (NR-23, removed=true)
+ * juga tidak menghasilkan langkah — field lamanya tetap tersimpan di skema.
  */
 export function sectionHasStep(schema: FormSchema, section: FormSection): boolean {
+  if (section.removed === true) return false;
   const fields = sectionFields(schema, section.id);
   switch (section.kind) {
     case "biodata":
@@ -369,7 +366,12 @@ export function filesConfigFromSchema(schema: FormSchema): {
   requirePortfolio: boolean;
 } {
   const files = schema.sections.find((s) => s.kind === "files");
-  if (!files) return { requireCv: false, requireIntro: false, requirePortfolio: false };
+  // NR-23 — bagian Berkas yang dihapus (tombstone) menyinkronkan kolom posisi
+  // ke false: slot isinya dianggap mati walau flag lama masih tersimpan untuk
+  // keperluan pemulihan.
+  if (!files || files.removed === true) {
+    return { requireCv: false, requireIntro: false, requirePortfolio: false };
+  }
   return {
     requireCv: isCvRequired(files),
     requireIntro: isIntroRequired(files),
@@ -441,8 +443,20 @@ function parseSectionKind(value: unknown, id: string): FormSectionKind {
   return "custom";
 }
 
-/** Flag boolean satu bagian dinormalisasi eksplisit (tanpa undefined). */
+/**
+ * Flag boolean satu bagian dinormalisasi eksplisit (tanpa undefined).
+ * NR-23 — flag tombstone `removed` dipertahankan HANYA untuk bagian bawaan
+ * Pengalaman & Berkas: biodata tidak pernah boleh dihapus (identitas & deteksi
+ * duplikat), dan bagian kustom tetap dihapus fisik — flag dari klien untuk
+ * keduanya dibuang di sini (satu titik untuk parse & sanitasi).
+ */
 function normalizeSectionFlags(section: FormSection, raw: Record<string, unknown>): FormSection {
+  if (
+    (section.kind === "experience" || section.kind === "files") &&
+    raw.removed === true
+  ) {
+    section.removed = true;
+  }
   if (section.kind === "biodata") {
     section.waRequired = raw.waRequired !== false;
   }
@@ -585,15 +599,34 @@ export function normalizeFormSchema(
   filesFallback?: { requireCv?: boolean; requireIntro?: boolean; requirePortfolio?: boolean },
 ): FormSchema | null {
   if (!schema) return null;
-  // NR-23 — skema v2 dipercaya apa adanya: bagian inti (termasuk Data Diri)
-  // boleh dihapus admin, jadi TIDAK ada penyisipan paksa lagi. Penyusunan ulang
-  // hanya untuk sisa skema v1 yang belum punya sections.
-  if (schema.version >= FORM_SCHEMA_VERSION) {
-    return schema;
+  // NR-23 — batu nisan tidak dihidupkan ulang: bagian bawaan yang ADA di array
+  // (meski removed=true) dianggap hadir, jadi tidak pernah disisipkan ulang.
+  // Pengecualian biodata: flag removed pada biodata (data rusak) dibuang agar
+  // fungsi ini tidak pernah mengembalikan biodata yang "hilang".
+  const hasBiodataTombstone = schema.sections.some(
+    (s) => s.kind === "biodata" && s.removed === true,
+  );
+  const clean: FormSchema = hasBiodataTombstone
+    ? {
+        ...schema,
+        sections: schema.sections.map((s) =>
+          s.kind === "biodata" ? { ...s, removed: undefined } : s,
+        ),
+      }
+    : schema;
+  const hasKind = (kind: FormSectionKind) => clean.sections.some((s) => s.kind === kind);
+  if (
+    clean.version >= FORM_SCHEMA_VERSION &&
+    hasKind("biodata") &&
+    hasKind("experience") &&
+    hasKind("files")
+  ) {
+    return clean;
   }
 
-  // Rakit ulang (khusus skema v1): sisipkan bagian inti yang hilang, pertahankan bagian lain.
-  const taken = new Set(schema.sections.map((s) => s.id));
+  // Rakit ulang: sisipkan bagian bawaan yang hilang, pertahankan bagian lain
+  // (termasuk tombstone Pengalaman/Berkas — tetap di posisi array-nya).
+  const taken = new Set(clean.sections.map((s) => s.id));
   const freeId = (base: string): string => {
     let id = base;
     let i = 2;
@@ -602,25 +635,28 @@ export function normalizeFormSchema(
     return id;
   };
 
-  const firstOfKind = (kind: FormSectionKind) => schema.sections.find((s) => s.kind === kind);
+  const firstOfKind = (kind: FormSectionKind) => clean.sections.find((s) => s.kind === kind);
   const biodata = firstOfKind("biodata") ?? defaultBiodataSection();
   if (!firstOfKind("biodata")) biodata.id = freeId(BIODATA_SECTION_ID);
   const experience = firstOfKind("experience") ?? defaultExperienceSection();
   if (!firstOfKind("experience")) experience.id = freeId(EXPERIENCE_SECTION_ID);
+  // filesFallback hanya dipakai saat bagian Berkas BENAR-BENAR tidak ada
+  // (migrasi v1) — tombstone Berkas tetap membawa flag lamanya untuk pemulihan
+  // dan TIDAK pernah diisi ulang dari kolom posisi yang mungkin basi.
   const files = firstOfKind("files") ?? defaultFilesSection(filesFallback);
   if (!firstOfKind("files")) files.id = freeId(FILES_SECTION_ID);
 
   const bawaanIds = new Set([biodata.id, experience.id, files.id]);
   // Duplikat bagian bawaan yang tersisa (data rusak) diturunkan jadi bagian kustom.
-  const others = schema.sections
+  const others = clean.sections
     .filter((s) => !bawaanIds.has(s.id))
     .map((s) => (s.kind === "custom" ? s : { ...s, kind: "custom" as const }));
 
   return {
     version: FORM_SCHEMA_VERSION,
     sections: [biodata, experience, ...others, files],
-    fields: schema.fields,
-    retiredFields: schema.retiredFields,
+    fields: clean.fields,
+    retiredFields: clean.retiredFields,
   };
 }
 
@@ -739,9 +775,12 @@ export type FormSchemaSanitizeResult =
  * Sanitasi input skema dari admin (PUT /form atau PATCH posisi).
  * - null/""  -> null (kembali ke mode klasik)
  * - objek    -> JSON string v2 yang sudah bersih (version dipaksa 2)
- * Bagian inti boleh ADA maupun TIDAK (admin bebas menghapus lewat kunci) dan
- * urutan bagian dari klien dipertahankan apa adanya; maksimal satu bagian per
- * jenis inti. Retired fields otomatis
+ * Ketiga bagian bawaan dijamin ada (disisipkan otomatis bila klien lupa),
+ * urutan bagian dari klien dipertahankan apa adanya. NR-23: tombstone
+ * (`removed: true`) dipertahankan untuk Pengalaman & Berkas — bagian yang ada
+ * tapi bertombstone TETAP dianggap hadir (aturan "hanya boleh satu" lolos dan
+ * tidak disisipkan ulang); biodata selalu hadir tanpa tombstone, bagian
+ * kustom dihapus fisik (flag removed-nya dibuang). Retired fields otomatis
  * digabung dari previousSchemaRaw (field lama yang hilang dipindah ke makam,
  * bukan dihapus, agar jawaban lama tetap terbaca).
  */
@@ -818,10 +857,12 @@ export function sanitizeFormSchemaInput(
     if (labelError) return { ok: false, error: labelError };
   }
 
-  // NR-23 — TIDAK ada lagi jaminan "biodata di depan, pengalaman setelahnya,
-  // berkas di akhir": admin bebas menghapus/mengurutkan bagian (identitas nama
-  // & email tetap selalu dikumpulkan wizard dengan label bawaan bila bagian
-  // Data Diri dihapus). Urutan dikirim apa adanya.
+  // Jaminan bawaan: biodata di depan, pengalaman setelahnya, berkas di akhir.
+  // NR-23 — bagian bawaan bertombstone tetap dihitung hadir (ada di array),
+  // jadi blok ini hanya menyisipkan bila kind-nya benar-benar tidak ada.
+  if (!seenKinds.has("biodata")) sections.unshift(defaultBiodataSection());
+  if (!seenKinds.has("experience")) sections.splice(1, 0, defaultExperienceSection());
+  if (!seenKinds.has("files")) sections.push(defaultFilesSection());
 
   // Fields
   if (!Array.isArray(obj.fields)) return { ok: false, error: "Pertanyaan formulir harus berupa daftar." };
@@ -980,6 +1021,12 @@ export function validateFormAnswers(
 ): FormAnswersValidateResult {
   const LIMIT = FORM_LIMITS;
   if (raw == null) raw = {};
+  // NR-23 — field milik bagian yang dihapus (tombstone removed=true) tidak
+  // divalidasi: bagian itu tidak muncul di wizard sehingga pelamar tidak punya
+  // jawabannya. Jawaban lama yang tersimpan tetap terbaca di tab Jawaban.
+  const deadSections = new Set(
+    schema.sections.filter((s) => s.removed === true).map((s) => s.id),
+  );
   if (typeof raw === "string") {
     try {
       raw = JSON.parse(raw);
@@ -995,6 +1042,7 @@ export function validateFormAnswers(
 
   for (const field of schema.fields) {
     if (field.type === "file") continue; // ditangani route (upload)
+    if (deadSections.has(field.sectionId)) continue; // NR-23 — bagian dihapus
     const value = input[field.id];
     const empty = value == null || value === "" || (Array.isArray(value) && value.length === 0);
 

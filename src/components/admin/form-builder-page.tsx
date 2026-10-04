@@ -61,6 +61,7 @@ import {
   Lock,
   LockOpen,
   Plus,
+  RotateCcw,
   Settings2,
   Sparkles,
   Trash2,
@@ -77,6 +78,7 @@ import {
   defaultBiodataSection,
   defaultExperienceSection,
   defaultFilesSection,
+  isBuiltinSection,
   isChoiceType,
   isCvEnabled,
   isCvRequired,
@@ -184,10 +186,10 @@ function insertCustomSection(sections: FormSection[], section: FormSection): For
 
 /**
  * Fingerprint kanonik bagian + pertanyaan — dasar perbandingan "dirty"
- * (retiredFields diurus server). Urutan bagian, judul, deskripsi, label item
- * inti, dan SEMUA flag ikut diperhitungkan; flag dibaca lewat semantik getter
- * (aman untuk properti yang belum terisi) agar bentuk tersimpan tidak memicu
- * false-positive.
+ * (retiredFields diurus server). Urutan bagian, judul, deskripsi, SEMUA
+ * flag bawaan, dan batu nisan bagian bawaan (NR-23 `removed`) ikut
+ * diperhitungkan; flag dibaca lewat semantik getter (aman untuk properti
+ * yang belum terisi) agar bentuk tersimpan tidak memicu false-positive.
  */
 function editableFingerprint(schema: FormSchema | null): string {
   const canonical = {
@@ -197,15 +199,7 @@ function editableFingerprint(schema: FormSchema | null): string {
       title: s.title,
       description: s.description ?? null,
       titleEn: s.titleEn ?? null,
-      // NR-23 — label kustom item inti ikut fingerprint.
-      nameLabel: s.nameLabel ?? null,
-      emailLabel: s.emailLabel ?? null,
-      waLabel: s.waLabel ?? null,
-      experienceLabel: s.experienceLabel ?? null,
-      motivationLabel: s.motivationLabel ?? null,
-      cvLabel: s.cvLabel ?? null,
-      introLabel: s.introLabel ?? null,
-      portfolioLabel: s.portfolioLabel ?? null,
+      removed: s.removed === true,
       waRequired: s.kind === "biodata" ? s.waRequired !== false : null,
       experienceEnabled: s.kind === "experience" ? s.experienceEnabled !== false : null,
       experienceRequired: s.kind === "experience" ? s.experienceRequired !== false : null,
@@ -334,10 +328,11 @@ function CoreItemRow({
 }
 
 /**
- * Kartu satu bagian skema (semua jenis). NR-23 — tidak ada lagi bagian
- * "bawaan" yang dibekukan: judul, deskripsi, urutan, isi, dan label item
- * inti semuanya bisa diedit. Penghapusan dijaga KUNCI (default terkunci):
- * buka kunci dulu, lalu konfirmasi — agar tidak terhapus tanpa sengaja.
+ * Kartu satu bagian skema (semua jenis). Bagian bawaan Pengalaman/Berkas bisa
+ * "dihapus" via mode kunci NR-23: tombol hapus membuka panel inline (tanpa
+ * dialog) tempat admin mengetik "kunci" untuk membuka proteksi — konfirmasi
+ * hanya menandai batu nisan `removed: true` (bisa dipulihkan). Biodata tetap
+ * terkunci penuh (identitas & deteksi duplikat). Bagian kustom dihapus fisik.
  * Urutan kartu = urutan wizard.
  */
 function SectionCard({
@@ -352,6 +347,7 @@ function SectionCard({
   onPatch,
   onMove,
   onRemove,
+  onRemoveBuiltin,
   onFieldChange,
   onFieldMove,
   onFieldDuplicate,
@@ -370,14 +366,24 @@ function SectionCard({
   onPatch: (patch: Partial<Omit<FormSection, "id" | "kind">>) => void;
   onMove: (dir: 1 | -1) => void;
   onRemove: () => void;
+  /** NR-23 — tandai bagian bawaan sebagai dihapus (tombstone, bisa dipulihkan). */
+  onRemoveBuiltin: () => void;
   onFieldChange: (fieldId: string, patch: Partial<FormField>) => void;
   onFieldMove: (fieldId: string, dir: 1 | -1) => void;
   onFieldDuplicate: (fieldId: string) => void;
   onFieldRemove: (fieldId: string) => void;
   onAddField: () => void;
 }) {
-  const isCore = section.kind !== "custom";
-  const [confirmRemove, setConfirmRemove] = useState(false);
+  const isBuiltin = isBuiltinSection(section);
+  // NR-23 — mode kunci: hanya Pengalaman & Berkas (biodata tak terhapus).
+  const kunciDeletable = isBuiltin && (section.kind === "experience" || section.kind === "files");
+  const [kunciOpen, setKunciOpen] = useState(false);
+  const [kunciInput, setKunciInput] = useState("");
+  const kunciMatch = kunciInput.trim() === "kunci";
+  const lockHint =
+    section.kind === "biodata"
+      ? "Selalu tersedia untuk identitas, deteksi lamaran ganda, dan komunikasi — tidak bisa dihapus."
+      : "";
 
   return (
     <Card className="gap-4 rounded-2xl p-5 md:p-6">
@@ -422,7 +428,17 @@ function SectionCard({
             onClick={() => onMove(1)}
             disabled={!canMutate || index === totalSections - 1}
           />
-          {isCore ? (
+          {kunciDeletable ? (
+            <IconButton
+              icon={Trash2}
+              label="Hapus bagian bawaan (mode kunci)"
+              onClick={() => {
+                setKunciOpen((open) => !open);
+                setKunciInput("");
+              }}
+              disabled={!canMutate}
+            />
+          ) : isBuiltin ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -462,7 +478,65 @@ function SectionCard({
         </div>
       </div>
 
-      {/* Isi khusus bagian inti — semuanya bisa diedit (NR-23) */}
+      {/* NR-23 — panel kunci inline (tanpa dialog): konfirmasi penghapusan bagian
+          bawaan dengan mengetik "kunci". Konfirmasi hanya menandai tombstone —
+          bagian tetap tersimpan dan bisa dipulihkan di daftar bawah. */}
+      {kunciDeletable && kunciOpen ? (
+        <div
+          className="flex flex-col gap-2.5 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40"
+          role="group"
+          aria-label="Konfirmasi penghapusan bagian bawaan"
+        >
+          <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+            Bagian bawaan dilindungi. Ketik &quot;kunci&quot; untuk membuka proteksi penghapusan.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={kunciInput}
+              onChange={(e) => setKunciInput(e.target.value)}
+              maxLength={20}
+              placeholder='Ketik "kunci"'
+              aria-label="Ketik kunci untuk membuka proteksi penghapusan"
+              autoComplete="off"
+              className="h-9 w-44"
+              disabled={!canMutate}
+            />
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="h-9"
+              onClick={() => {
+                setKunciOpen(false);
+                setKunciInput("");
+                onRemoveBuiltin();
+              }}
+              disabled={!canMutate || !kunciMatch}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+              Hapus Bagian
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9"
+              onClick={() => {
+                setKunciOpen(false);
+                setKunciInput("");
+              }}
+            >
+              Batal
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Bagian tidak hilang permanen — tersimpan sebagai batu nisan dan bisa dipulihkan dari
+            daftar bagian bawaan yang dihapus.
+          </p>
+        </div>
+      ) : null}
+
+      {/* Isi khusus bagian bawaan */}
       {section.kind === "biodata" ? (
         <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
           <CoreItemRow
@@ -499,6 +573,10 @@ function SectionCard({
             />
             <Label className="text-xs font-normal text-muted-foreground">Wajib diisi</Label>
           </CoreItemRow>
+          <p className="text-xs text-muted-foreground">
+            Bagian Data Diri selalu tersedia untuk identitas pelamar &amp; deteksi lamaran ganda —
+            tidak bisa dihapus.
+          </p>
         </div>
       ) : null}
 
@@ -1127,22 +1205,21 @@ export function FormBuilderPage({
     }));
   }
 
-  /** Buka/tutup kunci anti-hapus satu bagian inti (per sesi edit). */
-  function toggleCoreLock(sectionId: string) {
-    setUnlockedCoreIds((prev) =>
-      prev.includes(sectionId)
-        ? prev.filter((id) => id !== sectionId)
-        : [...prev, sectionId],
-    );
-  }
-
+  /**
+   * NR-23 — pindahkan bagian pada urutan TAMPIL (bagian bertombstone tidak
+   * dihitung) tetapi array penuh tetap memuat tombstone di posisinya: slot
+   * non-tombstone diisi ulang sesuai urutan baru, tombstone menahan tempat.
+   */
   function moveSection(sectionId: string, dir: 1 | -1) {
     setDraft((prev) => {
-      const index = prev.sections.findIndex((s) => s.id === sectionId);
-      const target = index + dir;
-      if (index < 0 || target < 0 || target >= prev.sections.length) return prev;
-      const sections = [...prev.sections];
-      [sections[index], sections[target]] = [sections[target], sections[index]];
+      const visible = prev.sections.filter((s) => !s.removed);
+      const vIndex = visible.findIndex((s) => s.id === sectionId);
+      const vTarget = vIndex + dir;
+      if (vIndex < 0 || vTarget < 0 || vTarget >= visible.length) return prev;
+      const newVisible = [...visible];
+      [newVisible[vIndex], newVisible[vTarget]] = [newVisible[vTarget], newVisible[vIndex]];
+      let cursor = 0;
+      const sections = prev.sections.map((s) => (s.removed ? s : newVisible[cursor++]));
       return { ...prev, sections };
     });
   }
@@ -1170,6 +1247,38 @@ export function FormBuilderPage({
       return;
     }
     setDraft((prev) => ({ ...prev, sections: prev.sections.filter((s) => s.id !== sectionId) }));
+  }
+
+  /**
+   * NR-23 — hapus bagian bawaan (Pengalaman/Berkas) via mode kunci: TIDAK
+   * dihapus fisik, hanya ditandai tombstone `removed: true` agar bisa
+   * dipulihkan. Biodata tidak pernah lewat sini. Sama seperti hapus kustom,
+   * bagian yang masih memuat pertanyaan ditolak (pertanyaan wajib di bagian
+   * yang tak terlihat bisa menggagalkan submit pelamar).
+   */
+  function tombstoneSection(sectionId: string) {
+    const section = draft.sections.find((s) => s.id === sectionId);
+    if (!section || !isBuiltinSection(section) || section.kind === "biodata") return;
+    if (draft.fields.some((f) => f.sectionId === sectionId)) {
+      toast.error("Bagian masih berisi pertanyaan. Hapus atau pindahkan pertanyaannya dulu.");
+      return;
+    }
+    setDraft((prev) => ({
+      ...prev,
+      sections: prev.sections.map((s) => (s.id === sectionId ? { ...s, removed: true } : s)),
+    }));
+    toast.success(`Bagian "${section.title}" dihapus — dapat dipulihkan di daftar bagian bawaan.`);
+  }
+
+  /** NR-23 — pulihkan bagian bawaan bertombstone ke posisi aslinya. */
+  function restoreSection(sectionId: string) {
+    const section = draft.sections.find((s) => s.id === sectionId);
+    if (!section || section.removed !== true) return;
+    setDraft((prev) => ({
+      ...prev,
+      sections: prev.sections.map((s) => (s.id === sectionId ? { ...s, removed: undefined } : s)),
+    }));
+    toast.success(`Bagian "${section.title}" dipulihkan ke posisi aslinya.`);
   }
 
   function updateField(fieldId: string, patch: Partial<FormField>) {
@@ -1473,6 +1582,13 @@ export function FormBuilderPage({
   const csvUrl = `/api/admin/positions/${position.id}/form-responses?format=csv`;
   const totalFields = draft.fields.length;
   const customCount = customSectionCount(draft);
+  // NR-23 — kartu bagian hanya menampilkan bagian aktif (bukan tombstone);
+  // batu nisan bagian bawaan muncul di area "Bagian bawaan yang dihapus".
+  const visibleSections = useMemo(() => draft.sections.filter((s) => !s.removed), [draft.sections]);
+  const removedBuiltinSections = useMemo(
+    () => draft.sections.filter((s) => s.removed === true && isBuiltinSection(s)),
+    [draft.sections],
+  );
 
   /* ---------------------------------- Render ---------------------------------- */
 
@@ -1583,12 +1699,12 @@ export function FormBuilderPage({
             </div>
           ) : (
             <>
-              {draft.sections.map((section, sectionIndex) => (
+              {visibleSections.map((section, sectionIndex) => (
                 <Reveal key={section.id} delay={Math.min(sectionIndex * 0.04, 0.2)}>
                   <SectionCard
                     section={section}
                     index={sectionIndex}
-                    totalSections={draft.sections.length}
+                    totalSections={visibleSections.length}
                     fields={draft.fields.filter((f) => f.sectionId === section.id)}
                     canAddField={totalFields < FORM_LIMITS.maxFields}
                     canMutate={canMutate}
@@ -1597,6 +1713,7 @@ export function FormBuilderPage({
                     onPatch={(patch) => updateSection(section.id, patch)}
                     onMove={(dir) => moveSection(section.id, dir)}
                     onRemove={() => removeSection(section.id)}
+                    onRemoveBuiltin={() => tombstoneSection(section.id)}
                     onFieldChange={updateField}
                     onFieldMove={moveField}
                     onFieldDuplicate={duplicateField}
@@ -1605,6 +1722,47 @@ export function FormBuilderPage({
                   />
                 </Reveal>
               ))}
+
+              {/* NR-23 — makam bagian bawaan: tombstone tetap tersimpan di skema
+                  agar bisa dipulihkan; pulihkan mengembalikan flag removed dan
+                  bagian kembali ke posisi array aslinya. */}
+              {removedBuiltinSections.length > 0 ? (
+                <div
+                  className="flex flex-col gap-2.5 rounded-xl border border-dashed border-amber-300 bg-amber-50/50 p-4 dark:border-amber-900 dark:bg-amber-950/20"
+                  aria-label="Bagian bawaan yang dihapus"
+                >
+                  <p className="text-sm font-medium">Bagian bawaan yang dihapus</p>
+                  {removedBuiltinSections.map((section) => (
+                    <div
+                      key={section.id}
+                      className="flex flex-wrap items-center justify-between gap-2"
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        <span className="truncate text-sm">{section.title}</span>
+                        <Badge
+                          variant="outline"
+                          className="border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                        >
+                          Bawaan — {FORM_SECTION_KIND_LABELS[section.kind]}
+                        </Badge>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shrink-0"
+                        onClick={() => restoreSection(section.id)}
+                        disabled={!canMutate}
+                      >
+                        <RotateCcw className="size-3.5" aria-hidden="true" />
+                        Pulihkan
+                      </Button>
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground">Dipulihkan ke posisi aslinya.</p>
+                </div>
+              ) : null}
 
               <div className="flex flex-wrap items-center gap-3">
                 <Button

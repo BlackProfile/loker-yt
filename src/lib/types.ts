@@ -331,6 +331,9 @@ export type Position = {
   // Rencana ronde wawancara bawaan (opsional — tidak semua API menyertakan)
   roundPlan?: RoundPlanTemplate[];
 
+  // NR-22 — blok UI yang disembunyikan untuk posisi ini (kunci dari HIDDEN_UI_OPTIONS)
+  hiddenUi: string[];
+
   // Konten dua bahasa (opsional) — dipakai publik bila lang aktif "en"
   // dan field terisi (non-kosong); selain itu fallback ke versi Indonesia.
   titleEn: string | null;
