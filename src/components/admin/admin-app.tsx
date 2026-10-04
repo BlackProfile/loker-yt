@@ -6,9 +6,9 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import { useTheme } from "next-themes";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -27,6 +27,7 @@ import {
   FileBarChart,
   FileText,
   Handshake,
+  Keyboard,
   LayoutDashboard,
   ListChecks,
   Loader2,
@@ -61,7 +62,6 @@ import { ApiError, apiGet, apiPost } from "./api";
 import { roleBadgeClass } from "./format";
 import { useLiveRefresh } from "./use-live-refresh";
 import { AdminSessionProvider } from "./admin-context";
-import { Reveal } from "./motion-primitives";
 import { LoginCard } from "./login-card";
 import { DashboardTab } from "./dashboard-tab";
 import { PipelineTab } from "./pipeline-tab";
@@ -81,6 +81,7 @@ import { DataTab } from "./data-tab";
 import { NotificationBell } from "./notification-bell";
 import { AdminAskWidget } from "./admin-ask-widget";
 import { CommandPalette } from "./command-palette";
+import { ShortcutOverlay } from "./shortcut-overlay";
 
 type Phase = "checking" | "login" | "ready";
 
@@ -149,14 +150,11 @@ const NAV_GROUPS: NavGroupDef[] = [
 
 const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 
-// Konten tab masuk dengan fade + slide horizontal halus (x: 12, 0.2s).
-function TabReveal({ children }: { children: ReactNode }) {
-  return (
-    <Reveal slideX={12} duration={0.2}>
-      {children}
-    </Reveal>
-  );
-}
+// NR-28 (item 5): transisi antar-tab memakai AnimatePresence mode="wait" +
+// motion.div per tab aktif (lihat <main> pada AdminApp) — konten tab lama
+// keluar dulu sebelum tab baru masuk, dengan pola unmount yang sama seperti
+// sebelumnya (kondisional per tab), sehingga state/dialog tidak berubah cara
+// hidupnya. TabReveal lama digantikan pendekatan ini.
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -517,6 +515,10 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   // Command palette (Ctrl+K / Cmd+K) — juga dibuka dari tombol pencarian header.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Overlay pintasan keyboard (tombol "?" / ikon Keyboard di header).
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // NR-28 (item 5): hormati preferensi reduced motion pada transisi tab.
+  const reducedMotion = useReducedMotion();
 
   // Deep-link ?kandidat=<trackingCode> — tombol "Tinjau di Dashboard" pada
   // pesan bot Telegram. Diproses SEKALI per mount (guard ref) dan hanya setelah
