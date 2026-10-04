@@ -3,13 +3,15 @@
 // Pusat Tugas (Task 20-a): satu halaman yang mengelompokkan semua hal yang butuh
 // tindakan admin, dengan hitungan per kategori dan aksi cepat "Buka Detail".
 // Sumber data: GET /api/admin/action-items (termasuk field perluasan
-// staleNewApplications & duplicateApplications) + daftar lamaran untuk membuka
-// detail kandidat. Auto-refresh via useLiveRefresh (event realtime).
+// staleNewApplications, duplicateApplications, followUpsDue, holdReviewsDue,
+// assessmentsDue) + daftar lamaran untuk membuka detail kandidat.
+// Auto-refresh via useLiveRefresh (event realtime).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertCircle,
+  Bell,
   CalendarClock,
   ClipboardCheck,
   Clock,
@@ -20,10 +22,16 @@ import {
   Inbox,
   Loader2,
   PauseCircle,
+  Timer,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { ActionItemsResponse, Application } from "@/lib/types";
-import { formatDate, formatShortDateTime } from "./format";
+import {
+  HOLD_REASON_LABELS,
+  type ActionItemsResponse,
+  type Application,
+  type HoldReason,
+} from "@/lib/types";
+import { daysUntil, formatDate, formatDateTime, formatRelative, formatShortDateTime } from "./format";
 import { apiGet } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
@@ -50,6 +58,27 @@ type ExtendedActionItems = ActionItemsResponse & {
 
 // NR-19 — item tahap melebihi batas kapasitas (wipOver dari ActionItemsResponse).
 type WipOverItem = NonNullable<ActionItemsResponse["wipOver"]>[number];
+
+// NR-24 — tindak lanjut (snooze) jatuh tempo.
+type FollowUpItem = NonNullable<ActionItemsResponse["followUpsDue"]>[number];
+// NR-24 — review lamaran HOLD jatuh tempo.
+type HoldReviewItem = NonNullable<ActionItemsResponse["holdReviewsDue"]>[number];
+// NR-24 — tugas uji mendekati/lewat tenggat.
+type AssessmentDueItem = NonNullable<ActionItemsResponse["assessmentsDue"]>[number];
+
+// Label alasan HOLD yang aman terhadap nilai tak dikenal/null.
+function holdReasonLabel(reason: string | null): string {
+  if (reason && reason in HOLD_REASON_LABELS) {
+    return HOLD_REASON_LABELS[reason as HoldReason];
+  }
+  return "Alasan lain";
+}
+
+// Tenggat dianggap mendesak bila hari ini, lewat, atau tersisa <= 2 hari.
+function dueIsUrgent(value: string): boolean {
+  const days = daysUntil(value);
+  return days !== null && days <= 2;
+}
 
 function offerUrgency(deadline: string | null): { label: string; urgent: boolean } | null {
   if (!deadline) return null;
@@ -198,9 +227,9 @@ export function TasksTab() {
   const reschedules = items?.rescheduleRequests ?? [];
   const unscored = items?.unscoredInterviews ?? [];
   const wipOver = items?.wipOver ?? [];
-  // NR-24 — tindak lanjut snooze & review HOLD yang mendekati/jatuh tempo.
-  const followups = items?.followupDue ?? [];
-  const holdReviews = items?.holdReviewDue ?? [];
+  const followUps = items?.followUpsDue ?? [];
+  const holdReviews = items?.holdReviewsDue ?? [];
+  const assessmentsDue = items?.assessmentsDue ?? [];
 
   const totalCount =
     staleNew.length +
@@ -209,8 +238,9 @@ export function TasksTab() {
     reschedules.length +
     unscored.length +
     wipOver.length +
-    followups.length +
-    holdReviews.length;
+    followUps.length +
+    holdReviews.length +
+    assessmentsDue.length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -582,6 +612,145 @@ export function TasksTab() {
                     >
                       {row.count}/{row.limit}
                     </Badge>
+                  </div>
+                ))}
+              </div>
+            </TaskGroup>
+          ) : null}
+
+          {/* NR-24 — tindak lanjut (snooze) jatuh tempo */}
+          {followUps.length > 0 ? (
+            <TaskGroup
+              icon={Bell}
+              title="Tindak Lanjut Jatuh Tempo"
+              description="Pengingat tindak lanjut yang jatuh tempo — hubungi kembali kandidat."
+              count={followUps.length}
+              tone="amber"
+            >
+              <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
+                {followUps.map((row: FollowUpItem) => (
+                  <div
+                    key={row.applicationId}
+                    className="flex flex-wrap items-center gap-2 rounded-xl border p-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{row.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {row.positionTitle ?? "Tanpa posisi"} &middot; jatuh tempo{" "}
+                        <span
+                          className={cn(
+                            dueIsUrgent(row.dueAt) && "font-medium text-amber-600 dark:text-amber-400"
+                          )}
+                        >
+                          {formatDateTime(row.dueAt)} ({formatRelative(row.dueAt)})
+                        </span>
+                      </p>
+                    </div>
+                    <Badge className="shrink-0 rounded-full border-transparent bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
+                      Tindak lanjut
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => openDetail(row.applicationId, row.name)}
+                    >
+                      <Eye className="size-3.5" aria-hidden="true" />
+                      Buka Detail
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </TaskGroup>
+          ) : null}
+
+          {/* NR-24 — review lamaran HOLD jatuh tempo */}
+          {holdReviews.length > 0 ? (
+            <TaskGroup
+              icon={PauseCircle}
+              title="Review Lamaran Ditahan"
+              description="Lamaran HOLD yang saatnya ditinjau kembali sesuai jadwal review."
+              count={holdReviews.length}
+              tone="amber"
+            >
+              <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
+                {holdReviews.map((row: HoldReviewItem) => (
+                  <div
+                    key={row.applicationId}
+                    className="flex flex-wrap items-center gap-2 rounded-xl border p-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{row.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {row.positionTitle ?? "Tanpa posisi"} &middot; {holdReasonLabel(row.holdReason)}{" "}
+                        &middot; Review:{" "}
+                        <span
+                          className={cn(
+                            dueIsUrgent(row.reviewAt) && "font-medium text-amber-600 dark:text-amber-400"
+                          )}
+                        >
+                          {formatDateTime(row.reviewAt)} ({formatRelative(row.reviewAt)})
+                        </span>
+                      </p>
+                    </div>
+                    <Badge className="shrink-0 rounded-full border-transparent bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
+                      HOLD
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => openDetail(row.applicationId, row.name)}
+                    >
+                      <Eye className="size-3.5" aria-hidden="true" />
+                      Buka Detail
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </TaskGroup>
+          ) : null}
+
+          {/* NR-24 — tugas uji mendekati/lewat tenggat */}
+          {assessmentsDue.length > 0 ? (
+            <TaskGroup
+              icon={Timer}
+              title="Tugas Uji Mendekati Tenggat"
+              description="Tugas uji yang belum dikumpul dan tenggatnya dekat atau sudah lewat."
+              count={assessmentsDue.length}
+              tone="amber"
+            >
+              <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
+                {assessmentsDue.map((row: AssessmentDueItem) => (
+                  <div
+                    key={row.assessmentId}
+                    className="flex flex-wrap items-center gap-2 rounded-xl border p-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{row.title}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {row.name} &middot; {row.positionTitle ?? "Tanpa posisi"} &middot; tenggat{" "}
+                        <span
+                          className={cn(
+                            dueIsUrgent(row.dueAt) && "font-medium text-amber-600 dark:text-amber-400"
+                          )}
+                        >
+                          {formatDateTime(row.dueAt)} ({formatRelative(row.dueAt)})
+                        </span>
+                      </p>
+                    </div>
+                    <Badge className="shrink-0 rounded-full border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                      Tugas uji
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => openDetail(row.applicationId, row.name)}
+                    >
+                      <Eye className="size-3.5" aria-hidden="true" />
+                      Buka Detail
+                    </Button>
                   </div>
                 ))}
               </div>

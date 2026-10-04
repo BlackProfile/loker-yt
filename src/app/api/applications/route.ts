@@ -673,45 +673,37 @@ export async function POST(req: NextRequest) {
       console.error("[POST /api/applications] deteksi duplikat gagal:", duplicateError);
     }
 
-    // NR-24 — Peringatan Do-not-Hire (fire-and-forget): bila email ATAU telepon pelamar
-    // terdaftar pada Setting "doNotHire" (JSON map {key: {reason, by, at}}), buat
-    // NotificationItem + ActivityLog DNH_WARNING. Kunci map memakai bentuk normal:
-    // email lowercase ATAU nomor telepon digit saja. KEGAGALAN DI SINI TIDAK PERNAH
-    // menggagalkan submit (dibungkus try/catch penuh).
+    // Peringatan do-not-hire (NR-24, fitur 15): lamaran baru dengan email ATAU
+    // telepon sama dengan lamaran lain yang ditandai do-not-hire -> tandai
+    // isDuplicate sebagai sinyal peringatan bagi admin + catat log
+    // DO_NOT_HIRE_MATCH. Dibungkus try/catch: kegagalan deteksi tidak pernah
+    // menggagalkan submit.
     try {
-      const dnhSetting = await db.setting.findUnique({ where: { key: "doNotHire" } });
-      if (dnhSetting) {
-        const parsed: unknown = JSON.parse(dnhSetting.value);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          const map = parsed as Record<string, unknown>;
-          const candidateKeys = [email.toLowerCase(), phone.replace(/\D/g, "")].filter((k) => k.length > 0);
-          const matchedKey = candidateKeys.find((key) => Object.prototype.hasOwnProperty.call(map, key));
-          if (matchedKey) {
-            const entry = (
-              map[matchedKey] && typeof map[matchedKey] === "object" ? map[matchedKey] : {}
-            ) as Record<string, unknown>;
-            const reason = typeof entry.reason === "string" && entry.reason.trim() ? entry.reason.trim() : "alasan tidak dicatat";
-            await db.notificationItem.create({
-              data: {
-                title: "Peringatan Do-not-Hire",
-                body: `${created.name} (${created.email}) melamar ${position.title} — terdaftar Do-not-Hire: ${reason}`,
-                category: "APPLICATION",
-                applicationId: created.id,
-              },
-            });
-            await db.activityLog.create({
-              data: {
-                applicationId: created.id,
-                actor: "Sistem",
-                action: "DNH_WARNING",
-                detail: `Pelamar terdaftar Do-not-Hire (${reason})`,
-              },
-            });
-          }
-        }
+      const flagged = await db.application.findFirst({
+        where: {
+          doNotHire: true,
+          deletedAt: null,
+          OR: [{ email }, { phone }],
+        },
+        select: { id: true, trackingCode: true, doNotHireReason: true },
+      });
+      if (flagged) {
+        const reason = (flagged.doNotHireReason ?? "").slice(0, 150);
+        await db.application.update({
+          where: { id: created.id },
+          data: { isDuplicate: true },
+        });
+        await db.activityLog.create({
+          data: {
+            applicationId: created.id,
+            actor: "Sistem",
+            action: "DO_NOT_HIRE_MATCH",
+            detail: `Cocok dengan bendera do-not-hire pada ${flagged.trackingCode ?? flagged.id} — alasan: ${reason}`,
+          },
+        });
       }
-    } catch (dnhError) {
-      console.error("[POST /api/applications] cek Do-not-Hire gagal:", dnhError);
+    } catch (doNotHireError) {
+      console.error("[POST /api/applications] deteksi do-not-hire gagal:", doNotHireError);
     }
 
     // Pipeline latar belakang: AI screening -> transkripsi ASR -> notifikasi webhook.

@@ -471,14 +471,18 @@ export type Application = {
   startProposedAt?: string | null; // usulan tanggal mulai baru dari pelamar
   startProposedNote?: string | null; // catatan singkat dari pelamar
 
-  // NR-24 — fitur per pelamar (fondasi batch 1)
-  expectedSalary: number | null; // ekspektasi gaji bulanan pelamar (Rp)
-  starredBy: string[]; // AdminUser.id yang menandai lamaran ini penting (bintang personal)
-  holdReason: string | null; // alasan proses ditahan (HOLD)
-  holdReviewAt: string | null; // tanggal review ulang untuk HOLD (ISO)
-  docExpiries: Record<string, string>; // {fileId: "YYYY-MM-DD"} masa berlaku dokumen extraDocs
-  mergedIntoId: string | null; // id lamaran utama bila lamaran ini digabung
-  snoozeUntil: string | null; // tanggal tindak lanjut (dipakai juga snooze bot Telegram & cron lonceng)
+  // NR-24 — fitur per pelamar
+  starredBy?: string[]; // adminId yang menandai bintang (personal per admin)
+  followUpAt?: string | null; // tanggal tindak lanjut (snooze)
+  salaryExpectation?: number | null; // ekspektasi gaji bulanan (rupiah)
+  holdAt?: string | null; // saat ditahan HOLD
+  holdReason?: HoldReason | null; // kode alasan hold
+  holdNote?: string | null; // catatan hold
+  holdReviewAt?: string | null; // tanggal review kembali
+  docExpiries?: DocExpiry[]; // masa berlaku dokumen (SIM/KTP/surat sehat)
+  doNotHire?: boolean; // bendera do-not-hire
+  doNotHireReason?: string | null; // alasan do-not-hire
+  mergedIntoId?: string | null; // lamaran digabung ke lamaran utama
 
   createdAt: string;
 };
@@ -776,21 +780,149 @@ export type ActionItemsResponse = {
     count: number;
     limit: number;
   }[];
-  followupDue: { // NR-24 — lamaran di-snooze yang mendekati/jatuh tempo tindak lanjut
-    id: string;
+  followUpsDue?: { // NR-24 tanggal tindak lanjut (snooze) jatuh tempo
+    applicationId: string;
     name: string;
-    trackingCode: string | null;
-    snoozeUntil: string | null;
     positionTitle: string | null;
+    dueAt: string;
   }[];
-  holdReviewDue: { // NR-24 — lamaran HOLD yang mendekati/jatuh tempo review ulang
-    id: string;
+  holdReviewsDue?: { // NR-24 tanggal review lamaran HOLD jatuh tempo
+    applicationId: string;
     name: string;
-    trackingCode: string | null;
+    positionTitle: string | null;
     holdReason: string | null;
-    holdReviewAt: string | null;
-    positionTitle: string | null;
+    reviewAt: string;
   }[];
+  assessmentsDue?: { // NR-24 tugas uji mendekati/lewat tenggat belum dikumpul
+    assessmentId: string;
+    applicationId: string;
+    name: string;
+    positionTitle: string | null;
+    title: string;
+    dueAt: string;
+  }[];
+};
+
+/* ------------------------------ NR-24 — fitur per pelamar ------------------------------ */
+
+// Kode alasan HOLD — diperlukan saat menahan lamaran (fitur 8).
+export type HoldReason = "SLOT_PENUH" | "TUNGGU_KEPUTUSAN" | "MENUNGGU_DOKUMEN" | "LAINNYA";
+export const HOLD_REASONS: HoldReason[] = [
+  "SLOT_PENUH",
+  "TUNGGU_KEPUTUSAN",
+  "MENUNGGU_DOKUMEN",
+  "LAINNYA",
+];
+export const HOLD_REASON_LABELS: Record<HoldReason, string> = {
+  SLOT_PENUH: "Slot kuota penuh",
+  TUNGGU_KEPUTUSAN: "Menunggu keputusan manajemen",
+  MENUNGGU_DOKUMEN: "Menunggu dokumen pelamar",
+  LAINNYA: "Alasan lain",
+};
+
+// Satu entri masa berlaku dokumen pelamar (fitur 13) — SIM A/KTP/surat sehat.
+export type DocExpiry = { id: string; label: string; expiresAt: string };
+
+// Hasil GET /api/admin/applications/[id]/related — riwayat melamar + peringatan.
+export type RelatedApplicationsResponse = {
+  /** Semua lamaran lain dengan email/WA sama (riwayat melamar, fitur 7). */
+  previous: {
+    id: string;
+    trackingCode: string;
+    name: string;
+    status: string;
+    positionTitle: string | null;
+    createdAt: string;
+    doNotHire: boolean;
+    mergedIntoId: string | null;
+  }[];
+  /** Bila ada lamaran lain do-not-hire dengan email/WA sama (fitur 15). */
+  doNotHireWarning: { id: string; reason: string | null; createdAt: string } | null;
+  /** Bila ada lamaran lain dengan nama + WA sama (duplikat tersangka, fitur 12). */
+  duplicateSuspects: {
+    id: string;
+    trackingCode: string;
+    name: string;
+    status: string;
+    positionTitle: string | null;
+    createdAt: string;
+  }[];
+};
+
+// Tugas uji (fitur 5).
+export type Assessment = {
+  id: string;
+  applicationId: string;
+  title: string;
+  note: string | null;
+  dueAt: string;
+  status: "DIKIRIM" | "DIKUMPUL" | "TERLAMBAT";
+  resultScore: number | null; // 0-100
+  resultNote: string | null;
+  submittedFileId: string | null;
+  submittedFileName: string | null;
+  completedAt: string | null;
+  createdAt: string;
+};
+
+// Log panggilan telepon (fitur 9).
+export type CallOutcome = "DIANGKAT" | "TIDAK_DIANGKAT" | "JADWAL_ULANG" | "NOMOR_SALAH";
+export const CALL_OUTCOMES: CallOutcome[] = [
+  "DIANGKAT",
+  "TIDAK_DIANGKAT",
+  "JADWAL_ULANG",
+  "NOMOR_SALAH",
+];
+export const CALL_OUTCOME_LABELS: Record<CallOutcome, string> = {
+  DIANGKAT: "Diangkat",
+  TIDAK_DIANGKAT: "Tidak diangkat",
+  JADWAL_ULANG: "Minta jadwal ulang",
+  NOMOR_SALAH: "Nomor tidak aktif",
+};
+export type CallLog = {
+  id: string;
+  applicationId: string;
+  outcome: CallOutcome;
+  note: string | null;
+  actor: string;
+  createdAt: string;
+};
+
+// Dokumen internal khusus admin (fitur 11) — tidak pernah tampil di halaman status.
+export type InternalDoc = {
+  id: string;
+  applicationId: string;
+  label: string;
+  fileId: string;
+  uploadedBy: string;
+  createdAt: string;
+};
+
+// Item inbox terpadu (fitur 10): gabungan email keluar, tanya-jawab pelamar, log panggilan.
+export type InboxItem = {
+  id: string;
+  kind: "email" | "question" | "call";
+  /** "out" = dari tim admin ke pelamar; "in" = dari pelamar. */
+  direction: "in" | "out";
+  at: string;
+  title: string;
+  body: string | null;
+  /** Bila masih menunggu balasan admin (pertanyaan tanpa jawaban). */
+  unanswered: boolean;
+};
+
+// Definisi satu tag berwarna milik tim (fitur 3) — dikelola di tab Pengaturan.
+export type TagDef = { name: string; color: string };
+// Palet warna tag terbatas (tanpa biru/ungu sesuai desain sistem).
+export const TAG_COLORS = ["rose", "amber", "emerald", "teal", "orange", "zinc"] as const;
+export type TagColor = (typeof TAG_COLORS)[number];
+export const TAG_COLOR_CLASSES: Record<string, string> = {
+  rose: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400",
+  amber: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-400",
+  emerald: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400",
+  teal: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-400",
+  orange: "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-400",
+  zinc: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
 
 // POST /api/applications -> sukses

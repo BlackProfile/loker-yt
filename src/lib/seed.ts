@@ -64,6 +64,9 @@ import {
   type ShiftSystem,
   type KomuterPlan,
   type ShiftPref,
+  type DocExpiry,
+  type HoldReason,
+  HOLD_REASONS,
 } from "@/lib/types";
 
 /* ---------------------------------- Serialisasi ---------------------------------- */
@@ -493,6 +496,54 @@ export function parseVideoNotes(raw: string | null | undefined): VideoNote[] {
   }
 }
 
+/** Parse JSON masa berlaku dokumen (NR-24) — {id,label,expiresAt}[], aman terhadap data rusak. */
+export function parseDocExpiries(raw: string | null | undefined): DocExpiry[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const items: DocExpiry[] = [];
+    for (const item of parsed) {
+      const obj = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+      const label = typeof obj.label === "string" ? obj.label.trim().slice(0, 60) : "";
+      const expiresAt = typeof obj.expiresAt === "string" ? obj.expiresAt : "";
+      if (!label || !expiresAt || Number.isNaN(new Date(expiresAt).getTime())) continue;
+      items.push({
+        id: typeof obj.id === "string" && obj.id.trim() ? obj.id.trim().slice(0, 40) : `d${items.length}`,
+        label,
+        expiresAt: new Date(expiresAt).toISOString(),
+      });
+    }
+    return items.slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
+/** Parse JSON bintang personal (NR-24) — string[] adminId. */
+export function parseStarredBy(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return [
+      ...new Set(
+        parsed
+          .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+          .map((v) => v.trim())
+      ),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+/** Validasi kode alasan HOLD (NR-24) — null bila tak dikenal. */
+export function sanitizeHoldReason(value: string | null | undefined): HoldReason | null {
+  if (!value) return null;
+  return (HOLD_REASONS as string[]).includes(value) ? (value as HoldReason) : null;
+}
+
 /** Ubah record Prisma Application (include relasi) menjadi tipe `Application` v3. */
 export function serializeApplication(record: ApplicationRecord): Application {
   const status = record.status && record.status.trim().length > 0 ? record.status.trim() : "NEW";
@@ -577,14 +628,18 @@ export function serializeApplication(record: ApplicationRecord): Application {
     startProposedAt: record.startProposedAt ? record.startProposedAt.toISOString() : null,
     startProposedNote: record.startProposedNote ?? null,
 
-    // NR-24 — fitur per pelamar (fondasi batch 1)
-    expectedSalary: record.expectedSalary ?? null,
-    starredBy: parseTags(record.starredBy),
-    holdReason: record.holdReason ?? null,
+    // NR-24 — fitur per pelamar
+    starredBy: parseStarredBy(record.starredBy),
+    followUpAt: record.followUpAt ? record.followUpAt.toISOString() : null,
+    salaryExpectation: record.salaryExpectation ?? null,
+    holdAt: record.holdAt ? record.holdAt.toISOString() : null,
+    holdReason: sanitizeHoldReason(record.holdReason),
+    holdNote: record.holdNote,
     holdReviewAt: record.holdReviewAt ? record.holdReviewAt.toISOString() : null,
     docExpiries: parseDocExpiries(record.docExpiries),
-    mergedIntoId: record.mergedIntoId ?? null,
-    snoozeUntil: record.snoozeUntil ? record.snoozeUntil.toISOString() : null,
+    doNotHire: record.doNotHire,
+    doNotHireReason: record.doNotHireReason,
+    mergedIntoId: record.mergedIntoId,
 
     createdAt: record.createdAt.toISOString(),
   };

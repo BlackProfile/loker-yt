@@ -297,13 +297,22 @@ model Application {
   snoozeUntil DateTime? // bila diisi, bot mengingatkan admin pada waktu ini lalu membersihkannya
   botFiles    String    @default("[]") // JSON {fileId,filename,mimeType,size,sentAt}[] lampiran yang dikirim admin via bot Telegram
 
-  // NR-24 — fitur per pelamar (fondasi batch 1)
-  expectedSalary Int?      // ekspektasi gaji bulanan pelamar (Rp)
-  starredBy      String    @default("[]") // JSON string[] AdminUser.id — bintang personal per admin
-  holdReason     String?   // alasan proses ditahan (HOLD)
-  holdReviewAt   DateTime? // tanggal review ulang untuk HOLD
-  docExpiries    String?   // JSON {"<fileId>": "YYYY-MM-DD"} masa berlaku dokumen extraDocs
-  mergedIntoId   String?   // bila lamaran digabung ke lamaran lain (id lamaran utama)
+  // NR-24 — fitur per pelamar
+  starredBy         String    @default("[]") // JSON string[] adminId — bintang personal per admin
+  followUpAt        DateTime? // tanggal tindak lanjut (snooze) — muncul di Pusat Tugas saat jatuh tempo
+  salaryExpectation Int? // ekspektasi gaji bulanan (rupiah) — dibandingkan dengan rentang gaji posisi
+  holdAt            DateTime? // saat lamaran ditahan (HOLD)
+  holdReason        String? // kode alasan hold: SLOT_PENUH | TUNGGU_KEPUTUSAN | MENUNGGU_DOKUMEN | LAINNYA
+  holdNote          String? // catatan tambahan hold
+  holdReviewAt      DateTime? // tanggal review kembali — masuk Pusat Tugas saat jatuh tempo
+  docExpiries       String    @default("[]") // JSON {id,label,expiresAt}[] — masa berlaku dokumen (SIM/KTP/surat sehat)
+  doNotHire         Boolean   @default(false) // bendera do-not-hire — lamaran baru dengan email/WA sama otomatis diberi peringatan
+  doNotHireReason   String? // alasan do-not-hire (wajib saat memasang & melepas — pola kunci)
+  mergedIntoId      String? // id lamaran utama bila lamaran ini digabungkan sebagai duplikat
+
+  assessments  Assessment[]
+  callLogs     CallLog[]
+  internalDocs InternalDoc[]
 
   // NR-15 — transparansi & keterlibatan pelamar di halaman Cek Status
   stageHistory       String    @default("[]") // JSON {status,at}[] — riwayat tahap yang dilewati (urut waktu)
@@ -620,4 +629,50 @@ model MonthlyReport {
   month     String   @unique // format "YYYY-MM"
   data      String // JSON snapshot statistik
   createdAt DateTime @default(now())
+}
+
+// NR-24 — Tugas uji / assessment tracker per lamaran (mis. uji剪辑样片, tes berkendara).
+model Assessment {
+  id              String      @id @default(cuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  title           String // judul tugas uji
+  note            String? // instruksi tambahan untuk pelamar
+  dueAt           DateTime // tenggat pengumpulan
+  status          String      @default("DIKIRIM") // DIKIRIM | DIKUMPUL | TERLAMBAT
+  resultScore     Int? // nilai akhir 0-100 (dipakai bersama rubrik saat keputusan)
+  resultNote      String? // catatan hasil penilaian
+  submittedFileId String? // file hasil karya pelamar (FileAsset)
+  completedAt     DateTime? // saat dikumpulkan/dinilai
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([applicationId])
+}
+
+// NR-24 — Log panggilan telepon per lamaran (saluran utama posisi on-site: Supir, POS, PRT).
+model CallLog {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  outcome       String // DIANGKAT | TIDAK_DIANGKAT | JADWAL_ULANG | NOMOR_SALAH
+  note          String? // ringkasan percakapan
+  actor         String // nama admin yang mencatat
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId])
+}
+
+// NR-24 — Dokumen internal khusus admin per lamaran (KTP, kontrak draft, hasil backcheck).
+// Tidak pernah tampil di halaman status pelamar — terisolasi dari semua respons publik.
+model InternalDoc {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  label         String // nama dokumen (mis. "KTP", "Kontrak draft")
+  fileId        String // id FileAsset hasil unggahan
+  uploadedBy    String // nama admin pengunggah
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId])
 }

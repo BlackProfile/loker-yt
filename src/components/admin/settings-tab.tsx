@@ -82,7 +82,7 @@ import {
   Smartphone,
   Sparkles,
   Stethoscope,
-  Tag,
+  Tags,
   Trash2,
   TrendingUp,
   Users,
@@ -96,6 +96,8 @@ import { toast } from "sonner";
 import {
   BENEFIT_ICONS,
   ROLE_LABELS,
+  TAG_COLORS,
+  TAG_COLOR_CLASSES,
   TELEGRAM_ALERT_KEYS,
   TELEGRAM_ALERT_LABELS,
   type FaqItem,
@@ -104,6 +106,7 @@ import {
   type SectionKey,
   type SiteContent,
   type Subscriber,
+  type TagColor,
   type TeamMember,
 } from "@/lib/types";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api";
@@ -111,7 +114,9 @@ import { copyText, formatDateTime, formatRelative, formatShortDateTime } from ".
 import { useAdminSession } from "./admin-context";
 import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
 import { CollapsibleCard } from "./collapsible-card";
+import { useTagDefs } from "./use-tag-defs";
 import { Reveal } from "./motion-primitives";
+import { cn } from "@/lib/utils";
 
 // Peta ikon lucide untuk benefit (fallback Sparkles).
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -1540,6 +1545,186 @@ function ReportEmailScheduleCard() {
 }
 
 // ---------------------------------------------------------------------------
+// Tag Tim (NR-24, fitur 3) — kelola daftar tag berwarna milik tim untuk
+// menandai lamaran. Sumber data: hook useTagDefs (GET/PUT /api/admin/tag-defs).
+// Simpan langsung setiap aksi (tambah/hapus) — sederhana dan andal.
+// VIEWER hanya dapat melihat daftar (read-only).
+// ---------------------------------------------------------------------------
+
+const TAG_COLOR_LABELS: Record<TagColor, string> = {
+  rose: "Rose",
+  amber: "Amber",
+  emerald: "Emerald",
+  teal: "Teal",
+  orange: "Orange",
+  zinc: "Zinc",
+};
+
+function TeamTagsCard() {
+  const { canMutate, reportError } = useAdminSession();
+  const { tagDefs, save } = useTagDefs();
+  const [name, setName] = useState("");
+  const [color, setColor] = useState<TagColor>("rose");
+  const [saving, setSaving] = useState(false);
+
+  async function addTag() {
+    if (!canMutate || saving) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.error("Nama tag wajib diisi.");
+      return;
+    }
+    if (trimmed.length > 24) {
+      toast.error("Nama tag maksimal 24 karakter.");
+      return;
+    }
+    if (tagDefs.some((t) => t.name.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error(`Tag "${trimmed}" sudah terdaftar.`);
+      return;
+    }
+    setSaving(true);
+    try {
+      await save([...tagDefs, { name: trimmed, color }]);
+      setName("");
+      setColor("rose");
+      toast.success("Daftar tag disimpan");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeTag(index: number) {
+    if (!canMutate || saving) return;
+    setSaving(true);
+    try {
+      await save(tagDefs.filter((_, i) => i !== index));
+      toast.success("Daftar tag disimpan");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <CollapsibleCard
+      id="tag-tim"
+      icon={Tags}
+      title="Tag Tim"
+      description={`${tagDefs.length} tag berwarna untuk menandai lamaran dengan cepat.`}
+    >
+      <div className="flex flex-col gap-4">
+        {/* Daftar tag tersimpan sebagai chip berwarna + tombol hapus */}
+        {tagDefs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Belum ada tag. Tambahkan mis. "Prioritas" atau "Menunggu Dokumen".
+          </p>
+        ) : (
+          <ul className="flex flex-wrap gap-2" aria-label="Daftar tag tim">
+            {tagDefs.map((tag, index) => (
+              <li
+                key={`${tag.name}-${index}`}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium",
+                  TAG_COLOR_CLASSES[tag.color] ?? TAG_COLOR_CLASSES.zinc
+                )}
+              >
+                {tag.name}
+                {canMutate ? (
+                  <button
+                    type="button"
+                    onClick={() => void removeTag(index)}
+                    disabled={saving}
+                    aria-label={`Hapus tag ${tag.name}`}
+                    className="-mr-1 rounded-full p-0.5 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  >
+                    <X className="size-3" aria-hidden="true" />
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Form tambah tag (OWNER/HR saja) */}
+        {canMutate ? (
+          <form
+            className="flex flex-col gap-3 sm:flex-row sm:items-end"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void addTag();
+            }}
+          >
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <Label htmlFor="f-tag-name">Nama tag baru</Label>
+              <Input
+                id="f-tag-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={24}
+                placeholder="mis. Prioritas, Menunggu Dokumen"
+                aria-describedby="f-tag-name-hint"
+                className="h-10"
+                disabled={saving}
+              />
+              <p id="f-tag-name-hint" className="text-xs text-muted-foreground">
+                1-24 karakter.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5 sm:w-44">
+              <Label htmlFor="f-tag-color">Warna</Label>
+              <Select
+                value={color}
+                onValueChange={(v) => setColor(v as TagColor)}
+                disabled={saving}
+              >
+                <SelectTrigger id="f-tag-color" className="h-10" aria-label="Warna tag baru">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TAG_COLORS.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "inline-block size-3 shrink-0 rounded-full border border-black/10 dark:border-white/20",
+                            TAG_COLOR_CLASSES[c]
+                          )}
+                          aria-hidden="true"
+                        />
+                        {TAG_COLOR_LABELS[c]}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" className="h-10 w-fit" disabled={saving || !name.trim()}>
+              {saving ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Plus className="size-4" aria-hidden="true" />
+              )}
+              Tambah
+            </Button>
+          </form>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Hanya OWNER/HR yang dapat mengubah daftar tag.
+          </p>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          Tag muncul sebagai chip berwarna di daftar lamaran dan dialog detail.
+        </p>
+      </div>
+    </CollapsibleCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Email Kandidat — template otomatis saat status lamaran berubah (OWNER saja).
 // ---------------------------------------------------------------------------
 
@@ -2424,6 +2609,9 @@ export function SettingsTab() {
           </Button>
         </div>
       </CollapsibleCard>
+
+      {/* Tag Tim (NR-24 — kelola daftar tag berwarna lamaran, OWNER/HR) */}
+      <TeamTagsCard />
 
       {/* Benefit */}
       <CollapsibleCard

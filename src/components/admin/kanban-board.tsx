@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Copy, GripVertical, Loader2, Sparkles } from "lucide-react";
+import { Copy, GripVertical, Loader2, PauseCircle, Sparkles, Star } from "lucide-react";
 import { toast } from "sonner";
 import type { Application, StageKey } from "@/lib/types";
 import {
@@ -27,8 +27,9 @@ import {
 } from "@/lib/stages";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { apiGet, apiPost } from "./api";
+import { apiGet, apiPatch, apiPost } from "./api";
 import { formatRelative, initialsOf } from "./format";
+import { useAdminSession } from "./admin-context";
 import { AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 import { useLiveRefresh } from "./use-live-refresh";
@@ -118,9 +119,31 @@ function KanbanCard({
       id: app.id,
       disabled: !canMutate,
     });
+  const { session, reportError } = useAdminSession();
 
   // Ringkasan AI: dibuat on-demand dari kartu (fitur Task 20-a).
   const [aiWorking, setAiWorking] = useState(false);
+
+  // NR-24 fitur 2 — bintang penting personal per admin (tampilkan & toggle dari kartu).
+  const starred = Boolean(session && app.starredBy?.includes(session.id));
+
+  async function handleToggleStar() {
+    if (!session || !canMutate) return;
+    const next = starred
+      ? app.starredBy?.filter((id) => id !== session.id) ?? []
+      : [...(app.starredBy ?? []), session.id];
+    onUpdated?.({ ...app, starredBy: next }); // optimistik
+    try {
+      const updated = await apiPatch<Application>(`/api/admin/applications/${app.id}`, {
+        star: !starred,
+      });
+      onUpdated?.(updated);
+    } catch (err) {
+      onUpdated?.(app); // revert
+      reportError(err);
+      toast.error("Gagal mengubah tanda bintang.");
+    }
+  }
 
   async function handleSummarize() {
     if (aiWorking || app.aiSummary) return;
@@ -176,6 +199,25 @@ function KanbanCard({
             {app.positionTitle ?? "Tanpa posisi"}
           </p>
         </div>
+        {canMutate && session ? (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleToggleStar();
+            }}
+            aria-pressed={starred}
+            aria-label={starred ? `Hapus tanda bintang dari ${app.name}` : `Tandai ${app.name} penting`}
+            title={starred ? "Hapus tanda bintang" : "Tandai penting"}
+            className={cn(
+              "inline-flex size-7 shrink-0 items-center justify-center rounded-md outline-none transition-colors hover:bg-amber-50 focus-visible:ring-2 focus-visible:ring-ring/50 dark:hover:bg-amber-950/40",
+              starred ? "text-amber-500" : "text-muted-foreground/50 hover:text-amber-500"
+            )}
+          >
+            <Star className={cn("size-4", starred && "fill-amber-400 text-amber-400")} aria-hidden="true" />
+          </button>
+        ) : null}
         {canMutate ? (
           <GripVertical
             className="size-4 shrink-0 text-muted-foreground/40"
@@ -186,6 +228,20 @@ function KanbanCard({
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <AiScoreBadge score={app.aiScore} />
         <DomisiliChip domisili={app.domisili} komuterPlan={app.komuterPlan} />
+        {app.holdAt ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                className="cursor-help border-amber-200 bg-amber-100 px-1.5 py-0 text-[10px] text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+              >
+                <PauseCircle className="size-3" aria-hidden="true" />
+                Ditahan
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>Alur lamaran ditahan sementara</TooltipContent>
+          </Tooltip>
+        ) : null}
         {duplicate ? (
           <Tooltip>
             <TooltipTrigger asChild>

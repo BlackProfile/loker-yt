@@ -1,86 +1,119 @@
-// NR-24 — Kotak masuk gabungan per pelamar.
-// GET /api/admin/applications/[id]/inbox — gabungkan email keluar, pertanyaan pelamar,
-// dan log panggilan menjadi satu thread urut terbaru (semua role admin).
-// Respons: { items: InboxItem[], unanswered: number } — unanswered = pertanyaan tanpa jawaban.
-import { NextRequest, NextResponse } from "next/server";
+// /api/admin/applications/[id]/inbox — inbox terpadu satu lamaran (NR-24, fitur 10).
+// Thread gabungan 50 item terbaru dari tiga sumber:
+//   - EmailOutbox milik lamaran  -> kind "email", direction "out" (subject + body apa adanya).
+//   - ApplicationQuestion        -> kind "question", direction "in"; bila terjawab,
+//                                   item balasan direction "out" ("Jawaban tim").
+//   - CallLog                    -> kind "call", direction "out".
+// hasUnanswered = item terbaru di thread adalah pertanyaan pelamar yang belum dijawab
+// (menunggu balasan admin).
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
-import type { InboxItem } from "@/lib/types";
+import { CALL_OUTCOMES, CALL_OUTCOME_LABELS, type CallOutcome, type InboxItem } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
-const NOT_FOUND = { error: "Lamaran tidak ditemukan" };
+const NOT_FOUND = { error: "Lamaran tidak ditemukan." };
 
-const BODY_MAX = 600;
+const THREAD_LIMIT = 50;
 
-const CALL_RESULT_LABELS: Record<string, string> = {
-  DIANGGAT: "Dianggat",
-  TIDAK_DIANGGAT: "Tidak dianggat",
-  SALAH_SAMBUNGAN: "Salah sambungan",
-};
+function outcomeLabel(outcome: string): string {
+  return (CALL_OUTCOMES as string[]).includes(outcome)
+    ? CALL_OUTCOME_LABELS[outcome as CallOutcome]
+    : outcome;
+}
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getSession();
     if (!session) {
       return NextResponse.json(UNAUTHORIZED, { status: 401 });
     }
     const { id } = await params;
-
-    const existing = await db.application.findUnique({ where: { id }, select: { id: true } });
-    if (!existing) {
+    const application = await db.application.findUnique({ where: { id }, select: { id: true } });
+    if (!application) {
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
     const [emails, questions, calls] = await Promise.all([
-      db.emailOutbox.findMany({ where: { applicationId: id }, orderBy: { createdAt: "desc" } }),
-      db.applicationQuestion.findMany({ where: { applicationId: id }, orderBy: { createdAt: "desc" } }),
-      db.applicationCall.findMany({ where: { applicationId: id }, orderBy: { createdAt: "desc" } }),
+      db.emailOutbox.findMany({
+        where: { applicationId: id },
+        orderBy: { createdAt: "desc" },
+        take: THREAD_LIMIT,
+      }),
+      db.applicationQuestion.findMany({
+        where: { applicationId: id },
+        orderBy: { createdAt: "desc" },
+        take: THREAD_LIMIT,
+      }),
+      db.callLog.findMany({
+        where: { applicationId: id },
+        orderBy: { createdAt: "desc" },
+        take: THREAD_LIMIT,
+      }),
     ]);
 
     const items: InboxItem[] = [];
 
-    for (const mail of emails) {
+    for (const email of emails) {
       items.push({
-        kind: "EMAIL",
-        at: mail.createdAt.toISOString(),
-        from: "Lumina Studio",
-        title: mail.subject,
-        body: mail.body.slice(0, BODY_MAX),
+        id: email.id,
+        kind: "email",
+        direction: "out",
+        at: email.createdAt.toISOString(),
+        title: email.subject,
+        body: email.body,
+        unanswered: false,
       });
     }
 
-    for (const question of questions) {
+    for (const q of questions) {
+      const answered = Boolean(q.answer && q.answer.trim().length > 0);
       items.push({
-        kind: "QUESTION",
-        at: question.createdAt.toISOString(),
-        from: question.askedBy,
+        id: q.id,
+        kind: "question",
+        direction: "in",
+        at: q.createdAt.toISOString(),
         title: "Pertanyaan pelamar",
-        body: question.answer
-          ? `${question.question}\n\nJawaban (${question.answeredBy ?? "Admin"}): ${question.answer}`
-          : question.question,
-        answered: Boolean(question.answer),
+        body: q.question,
+        unanswered: !answered,
       });
+      if (answered) {
+        items.push({
+          id: `${q.id}-answer`,
+          kind: "question",
+          direction: "out",
+          // ApplicationQuestion tidak punya kolom updatedAt — pakai answeredAt ?? createdAt.
+          at: (q.answeredAt ?? q.createdAt).toISOString(),
+          title: "Jawaban tim",
+          body: q.answer ?? "",
+          unanswered: false,
+        });
+      }
     }
 
     for (const call of calls) {
       items.push({
-        kind: "CALL",
+        id: call.id,
+        kind: "call",
+        direction: "out",
         at: call.createdAt.toISOString(),
-        from: call.actor,
-        title: `Log panggilan — ${CALL_RESULT_LABELS[call.result] ?? call.result}`,
-        body: call.summary || "-",
+        title: `Panggilan: ${outcomeLabel(call.outcome)}`,
+        body: call.note,
+        unanswered: false,
       });
     }
 
-    // Urut terbaru di atas.
-    items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    items.sort((a, b) => b.at.localeCompare(a.at));
+    const thread = items.slice(0, THREAD_LIMIT);
 
-    const unanswered = questions.filter((q) => !q.answer).length;
-    return NextResponse.json({ items, unanswered });
+    const latest = thread[0];
+    const hasUnanswered = Boolean(latest && latest.direction === "in" && latest.unanswered);
+
+    return NextResponse.json({ ok: true, items: thread, hasUnanswered });
   } catch (error) {
     console.error("[GET /api/admin/applications/[id]/inbox]", error);
-    return NextResponse.json({ error: "Gagal memuat kotak masuk." }, { status: 500 });
+    return NextResponse.json({ error: "Gagal memuat inbox. Coba lagi nanti." }, { status: 500 });
   }
 }

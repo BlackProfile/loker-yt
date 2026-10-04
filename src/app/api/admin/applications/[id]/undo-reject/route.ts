@@ -1,23 +1,19 @@
-// NR-24 — Batalkan penolakan lamaran (undo reject).
-// POST /api/admin/applications/[id]/undo-reject — (OWNER/HR) body {reason}.
-// Lamaran kembali ke tahap terakhir sebelum REJECTED (fallback NEW) sesuai stageHistory;
-// kolom penolakan dikosongkan, email status + webhook dikirim, semua tercatat di ActivityLog.
+// POST /api/admin/applications/[id]/undo-reject — batalkan penolakan (NR-24, fitur 14).
+// Pola kunci: UI dua langkah (buka kunci -> alasan wajib) dan server wajib menerima
+// `reason` (minimal 4 karakter). Status kembali ke tahap sebelum ditolak (dari
+// stageHistory), kolom penolakan dibersihkan, dan semuanya tercatat di timeline.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { APPLICATION_INCLUDE, serializeApplication } from "@/lib/seed";
-import { appendStageHistory, parseStageHistory } from "@/lib/stage-history";
+import { parseStageHistory, STAGE_HISTORY_MAX } from "@/lib/stage-history";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
-import { emitWebhook } from "@/lib/webhooks";
-import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
 
 export const dynamic = "force-dynamic";
 
 const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
 const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
 const NOT_FOUND = { error: "Lamaran tidak ditemukan" };
-
-const REASON_MAX = 300;
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -30,60 +26,82 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const { id } = await params;
 
-    const existing = await db.application.findUnique({ where: { id } });
-    if (!existing || existing.deletedAt) {
+    const body: unknown = await req.json().catch(() => null);
+    const data = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+    const reason = typeof data.reason === "string" ? data.reason.trim() : "";
+    if (reason.length < 4) {
+      return NextResponse.json(
+        { error: "Alasan pembatalan penolakan wajib diisi (minimal 4 karakter)." },
+        { status: 400 }
+      );
+    }
+
+    const app = await db.application.findUnique({
+      where: { id },
+      include: { position: { select: { stageCategories: true } } },
+    });
+    if (!app) {
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
-    if (existing.status !== "REJECTED") {
-      return NextResponse.json({ error: "Lamaran tidak sedang ditolak." }, { status: 400 });
-    }
-    if (existing.rejectionReason === "MENARIK_DIRI") {
+    // Validasi: lamaran harus sedang berada di tahap final Ditolak
+    // (bawaan REJECTED atau tahap kustom berkategori REJECTED).
+    const stageCategories = (() => {
+      try {
+        const parsed: unknown = JSON.parse(app.position?.stageCategories || "{}");
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, string>)
+          : {};
+      } catch {
+        return {};
+      }
+    })();
+    const isRejected =
+      app.status === "REJECTED" || stageCategories[app.status] === "REJECTED";
+    if (!isRejected) {
       return NextResponse.json(
-        { error: "Penolakan karena pelamar menarik diri tidak bisa dibatalkan." },
+        { error: "Lamaran tidak sedang berstatus Ditolak." },
         { status: 400 }
       );
     }
-    if (existing.mergedIntoId) {
-      return NextResponse.json({ error: "Lamaran sudah digabung." }, { status: 400 });
-    }
-
-    const body: unknown = await req.json().catch(() => null);
-    if (!body || typeof body !== "object" || Array.isArray(body)) {
-      return NextResponse.json({ error: "Data tidak valid." }, { status: 400 });
-    }
-    const data = body as Record<string, unknown>;
-    const reason = typeof data.reason === "string" ? data.reason.trim() : "";
-    if (!reason) {
-      return NextResponse.json({ error: "Alasan pembatalan wajib diisi." }, { status: 400 });
-    }
-    if (reason.length > REASON_MAX) {
+    if (app.hiredAt) {
       return NextResponse.json(
-        { error: `Alasan pembatalan maksimal ${REASON_MAX} karakter.` },
-        { status: 400 }
+        { error: "Lamaran ini sudah menjadi karyawan aktif dan tidak dapat dibatalkan." },
+        { status: 409 }
       );
     }
 
-    // Tahap tujuan: entri TERAKHIR pada stageHistory yang bukan REJECTED (fallback NEW).
-    const history = parseStageHistory(existing.stageHistory);
-    let targetStatus = "NEW";
+    // Tahap tujuan: entri stageHistory tepat sebelum entri terakhir yang bernilai
+    // tahap ditolak saat ini. Bila tidak ada riwayat, kembali ke tahap Baru.
+    const history = parseStageHistory(app.stageHistory);
+    let target = "NEW";
     for (let i = history.length - 1; i >= 0; i--) {
-      if (history[i].status !== "REJECTED") {
-        targetStatus = history[i].status;
+      if (history[i].status === app.status && i > 0) {
+        const prev = history[i - 1].status;
+        // Jangan kembali ke tahap final lain (Diterima/Ditolak) — jatuh ke Baru.
+        const prevIsFinal =
+          prev === "ACCEPTED" ||
+          prev === "REJECTED" ||
+          stageCategories[prev] === "ACCEPTED" ||
+          stageCategories[prev] === "REJECTED";
+        target = prevIsFinal ? "NEW" : prev;
         break;
       }
     }
 
-    const now = new Date();
     const updated = await db.application.update({
       where: { id },
       data: {
-        status: targetStatus,
+        status: target,
+        stageUpdatedAt: new Date(),
+        stageHistory: JSON.stringify(
+          [...parseStageHistory(app.stageHistory), { status: target, at: new Date().toISOString() }].slice(
+            -STAGE_HISTORY_MAX
+          )
+        ),
         rejectionReason: null,
         rejectionNote: null,
         rejectedAt: null,
-        stageUpdatedAt: now,
-        stageHistory: appendStageHistory(existing.stageHistory, targetStatus, existing.status),
       },
       include: APPLICATION_INCLUDE,
     });
@@ -92,33 +110,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: {
         applicationId: id,
         actor: session.name,
-        action: "UNDO_REJECT",
-        detail: `Penolakan dibatalkan: ${reason}`,
+        action: "REJECT_UNDO",
+        detail: `Penolakan dibatalkan — kembali ke tahap "${target}". Alasan: ${reason.slice(0, 300)}`,
       },
     });
 
-    // Webhook keluar: tahap berubah dari REJECTED ke tahap pemulihan — fire-and-forget.
-    void emitWebhook("application.stage_changed", {
-      id,
-      name: existing.name,
-      from: "REJECTED",
-      to: targetStatus,
-    });
-    // Email otomatis ke kandidat (pola sama dengan PATCH lamaran) — fire-and-forget.
-    void sendCandidateStatusEmail({
-      applicationId: id,
-      name: existing.name,
-      email: existing.email,
-      trackingCode: existing.trackingCode,
-      toStatus: targetStatus,
-      positionTitle: updated.position?.title ?? null,
-      origin: req.headers.get("origin") ?? undefined,
-    });
-
     void emitRealtime(REALTIME_EVENTS.applications);
-    return NextResponse.json(serializeApplication(updated));
+    return NextResponse.json({ ok: true, application: serializeApplication(updated) });
   } catch (error) {
     console.error("[POST /api/admin/applications/[id]/undo-reject]", error);
-    return NextResponse.json({ error: "Gagal membatalkan penolakan. Coba lagi nanti." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Gagal membatalkan penolakan. Coba lagi nanti." },
+      { status: 500 }
+    );
   }
 }

@@ -92,6 +92,22 @@ export function localInputToIso(value: string): string | null {
   return d.toISOString();
 }
 
+// NR-24 — format angka rupiah ringkas, mis. 4500000 -> "Rp 4.500.000".
+// Bila null/undefined/tidak valid mengembalikan "-".
+export function formatRupiah(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
+}
+
+// NR-24 — jumlah hari sampai tanggal kedaluwarsa (negatif = sudah lewat).
+export function daysUntil(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  return Math.round((startOfDay(d) - startOfDay(new Date())) / 86_400_000);
+}
+
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";

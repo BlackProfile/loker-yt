@@ -39,11 +39,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AudioLines,
+  Ban,
+  Banknote,
+  CalendarClock,
   CalendarPlus,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  CirclePause,
   ClipboardCheck,
   ClipboardList,
   Clock,
@@ -52,7 +56,7 @@ import {
   Eye,
   FileDown,
   FileText,
-  FolderLock,
+  Flag,
   Globe,
   Handshake,
   HelpCircle,
@@ -74,12 +78,11 @@ import {
   Phone,
   Send,
   Share2,
-  ShieldAlert,
   Star,
   StickyNote,
   Tag,
   Trash2,
-  Upload,
+  Undo2,
   UserX,
   Users,
   Video,
@@ -88,6 +91,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  HOLD_REASONS,
+  HOLD_REASON_LABELS,
   KOMUTER_PLAN_LABELS,
   POSITION_TYPES,
   REJECTION_REASONS,
@@ -96,13 +101,7 @@ import {
   SHIFT_PREF_LABELS,
   STATUS_LABELS,
   type Application,
-  type ApplicationHistoryItem,
-  type ApplicationStatus,
-  type Assessment,
-  type CallLog,
-  type DoNotHireEntry,
-  type InboxItem,
-  type InternalDoc,
+  type HoldReason,
   type Interview,
   type Position,
   type RejectionReason,
@@ -119,15 +118,18 @@ import {
 } from "@/lib/form-schema";
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
-import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, apiPut } from "./api";
+import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, jsonInit } from "./api";
 import {
   actionLabel,
   actorBadgeClass,
   copyText,
+  daysUntil,
   formatDate,
   formatDateTime,
   formatRelative,
+  formatRupiah,
   formatShortDateTime,
+  isoToLocalInput,
   localInputToIso,
   normalizeUrl,
   waHref,
@@ -137,6 +139,15 @@ import { RatingStars } from "./rating-stars";
 import { AiPanel } from "./ai-panel";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
+import { useTagDefs } from "./use-tag-defs";
+import {
+  AssessmentSection,
+  CallLogSection,
+  DocExpirySection,
+  InboxSection,
+  InternalDocsSection,
+  RelatedSection,
+} from "./detail-nr24-sections";
 import {
   InterviewSessionDialog,
   InterviewStatusChip,
@@ -1542,20 +1553,23 @@ export function ApplicationDetailDialog({
   onOpenChange,
   onSaved,
   onDeleted,
-  // NR-24-b — navigasi prev/next antar lamaran (opsional; tidak memecahkan pemakai lain).
-  navIds,
-  navIndex,
+  list,
   onNavigate,
+  onListRefresh,
 }: {
   application: Application | null;
   onOpenChange: (open: boolean) => void;
   onSaved: (app: Application) => void;
   onDeleted: (id: string) => void;
-  navIds?: string[];
-  navIndex?: number;
-  onNavigate?: (id: string) => void;
+  /** NR-24 fitur 1 — daftar terurut untuk navigasi prev/next & keyboard (opsional). */
+  list?: Application[];
+  /** NR-24 — navigasi ke lamaran lain (dipakai prev/next & riwayat melamar). */
+  onNavigate?: (app: Application) => void;
+  /** NR-24 — segarkan daftar di parent setelah merge/undo-reject/do-not-hire. */
+  onListRefresh?: () => void;
 }) {
-  const { session, role, canMutate, reportError } = useAdminSession();
+  const { session, canMutate, reportError } = useAdminSession();
+  const { tagDefs, colorClassOf } = useTagDefs();
   const [editStatus, setEditStatus] = useState<StageKey>("NEW");
   const [editNotes, setEditNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1633,49 +1647,36 @@ export function ApplicationDetailDialog({
   const [videoNoteText, setVideoNoteText] = useState("");
   const [videoNotesSaving, setVideoNotesSaving] = useState(false);
 
-  // NR-24-b — bintang personal, tindak lanjut, tahan proses, gaji, dokumen kedaluwarsa.
-  const [starSaving, setStarSaving] = useState(false);
-  const [snoozeOpen, setSnoozeOpen] = useState(false);
-  const [snoozeDate, setSnoozeDate] = useState("");
-  const [snoozeSaving, setSnoozeSaving] = useState(false);
-  // snoozeUntil belum ada di tipe Application (kontrak NR-24-a1) — pelacak lokal
-  // agar chip tampil benar setelah diatur/dihapus dalam sesi ini.
-  const [snoozeLocal, setSnoozeLocal] = useState<string | null>(null);
-  const [holdOpen, setHoldOpen] = useState(false);
-  const [holdReasonInput, setHoldReasonInput] = useState("");
-  const [holdReviewInput, setHoldReviewInput] = useState("");
-  const [holdSaving, setHoldSaving] = useState(false);
-  const [salaryEditing, setSalaryEditing] = useState(false);
+  // NR-24 — bintang personal (fitur 2).
+  const [starBusy, setStarBusy] = useState(false);
+
+  // NR-24 — ekspektasi gaji (fitur 6).
   const [salaryInput, setSalaryInput] = useState("");
   const [salarySaving, setSalarySaving] = useState(false);
-  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
-  const [docExpiryBusy, setDocExpiryBusy] = useState<string | null>(null);
 
-  // NR-24-b — undo penolakan (pola kunci ala NR-23).
-  const [undoUnlocked, setUndoUnlocked] = useState(false);
-  const [undoConfirmOpen, setUndoConfirmOpen] = useState(false);
+  // NR-24 — tindak lanjut / snooze (fitur 4).
+  const [followUpInput, setFollowUpInput] = useState("");
+  const [followUpSaving, setFollowUpSaving] = useState(false);
+
+  // NR-24 — HOLD (fitur 8).
+  const [holdPanelOpen, setHoldPanelOpen] = useState(false);
+  const [holdReason, setHoldReason] = useState<HoldReason | "">("");
+  const [holdNote, setHoldNote] = useState("");
+  const [holdReview, setHoldReview] = useState("");
+  const [holdSaving, setHoldSaving] = useState(false);
+
+  // NR-24 — undo reject berkunci (fitur 14).
+  const [undoUnlock, setUndoUnlock] = useState(false);
   const [undoReason, setUndoReason] = useState("");
   const [undoSaving, setUndoSaving] = useState(false);
+  const [undoError, setUndoError] = useState<string | null>(null);
 
-  // NR-24-b — Do-not-Hire (match email/telepon) + penggabungan duplikat.
-  // entries disimpan bersama appId-nya agar tidak sempat cocok salah kandidat
-  // saat fetch DNH masih berjalan setelah berganti pelamar.
-  const [dnhData, setDnhData] = useState<{ appId: string; entries: DoNotHireEntry[] }>({
-    appId: "",
-    entries: [],
-  });
-  const [dnhUnlock, setDnhUnlock] = useState(false);
+  // NR-24 — bendera do-not-hire (fitur 15).
+  const [dnhPanelOpen, setDnhPanelOpen] = useState(false);
+  const [dnhReason, setDnhReason] = useState("");
   const [dnhRemoveOpen, setDnhRemoveOpen] = useState(false);
+  const [dnhRemoveReason, setDnhRemoveReason] = useState("");
   const [dnhSaving, setDnhSaving] = useState(false);
-  const [dnhAddOpen, setDnhAddOpen] = useState(false);
-  const [dnhReasonInput, setDnhReasonInput] = useState("");
-  const [mergeOpen, setMergeOpen] = useState(false);
-  const [mergeCandidates, setMergeCandidates] = useState<Application[]>([]);
-  const [mergeLoading, setMergeLoading] = useState(false);
-  const [mergeTargetId, setMergeTargetId] = useState("");
-  const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
-  const [mergeSaving, setMergeSaving] = useState(false);
-  const tagsFetchedRef = useRef(false);
 
   // Reset form hanya saat berganti pelamar (bukan tiap update objek) agar
   // pesan penolakan/penawaran yang baru dibuat tidak ikut terhapus.
@@ -1713,36 +1714,78 @@ export function ApplicationDetailDialog({
     setVideoNoteSec("");
     setVideoNoteText("");
     setVideoNotesSaving(false);
-    // NR-24-b — reset state fitur per pelamar saat berganti kandidat.
-    setStarSaving(false);
-    setSnoozeOpen(false);
-    setSnoozeDate("");
-    setSnoozeSaving(false);
-    setSnoozeLocal(readSnoozeUntil(application));
-    setHoldOpen(false);
-    setHoldReasonInput("");
-    setHoldReviewInput("");
-    setHoldSaving(false);
-    setSalaryEditing(false);
-    setSalaryInput("");
+    setStarBusy(false);
+    setSalaryInput(application.salaryExpectation != null ? String(application.salaryExpectation) : "");
     setSalarySaving(false);
-    setDocExpiryBusy(null);
-    setUndoUnlocked(false);
-    setUndoConfirmOpen(false);
+    setFollowUpInput(application.followUpAt ? isoToLocalInput(application.followUpAt) : "");
+    setFollowUpSaving(false);
+    setHoldPanelOpen(false);
+    setHoldReason("");
+    setHoldNote("");
+    setHoldReview("");
+    setHoldSaving(false);
+    setUndoUnlock(false);
     setUndoReason("");
     setUndoSaving(false);
-    setDnhUnlock(false);
+    setUndoError(null);
+    setDnhPanelOpen(false);
+    setDnhReason("");
     setDnhRemoveOpen(false);
+    setDnhRemoveReason("");
     setDnhSaving(false);
-    setDnhAddOpen(false);
-    setDnhReasonInput("");
-    setMergeOpen(false);
-    setMergeCandidates([]);
-    setMergeLoading(false);
-    setMergeTargetId("");
-    setMergeConfirmOpen(false);
-    setMergeSaving(false);
   }, [application]);
+
+  // NR-24 fitur 1 — navigasi keyboard ArrowLeft/ArrowRight antar lamaran.
+  // Handler memakai ref aplikasi & daftar terkini agar tidak stale closure.
+  const appRef = useRef<Application | null>(application);
+  useEffect(() => {
+    appRef.current = application;
+  }, [application]);
+  const navCtxRef = useRef<{ list?: Application[]; onNavigate?: (app: Application) => void }>({
+    list,
+    onNavigate,
+  });
+  useEffect(() => {
+    navCtxRef.current = { list, onNavigate };
+  });
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+      }
+      // Jangan navigasi saat dialog konfirmasi lain atau popup (Select/Popover) terbuka.
+      if (document.querySelector('[role="alert-dialog"], [role="alertdialog"]')) return;
+      // Wrapper popper Radix juga dipakai Tooltip (boleh lewat) — blokir hanya
+      // popup interaktif: Select (listbox), Menu, Popover/Dialog.
+      const blockingPopup = [
+        ...document.querySelectorAll("[data-radix-popper-content-wrapper] > *"),
+      ].some((el) =>
+        ["listbox", "menu", "dialog", "alertdialog", "grid"].includes(
+          el.getAttribute("role") ?? ""
+        )
+      );
+      if (blockingPopup) return;
+      const { list: navList, onNavigate: nav } = navCtxRef.current;
+      const current = appRef.current;
+      if (!navList || !nav || !current) return;
+      const idx = navList.findIndex((a) => a.id === current.id);
+      const next = navList[idx + (e.key === "ArrowLeft" ? -1 : 1)];
+      if (next) nav(next);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const applicationId = application?.id ?? null;
   const positionId = application?.positionId ?? null;
@@ -1920,6 +1963,47 @@ export function ApplicationDetailDialog({
 
   // Catatan video intro urut berdasarkan detik (Task 27-e).
   const videoNotes = [...(app.videoNotes ?? [])].sort((a, b) => a.t - b.t);
+
+  /* ------------------------- NR-24 — nilai turunan ------------------------- */
+
+  // Fitur 2 — bintang personal milik admin yang sedang login.
+  const starred = app.starredBy?.includes(session.id) ?? false;
+
+  // Fitur 1 — posisi lamaran dalam daftar (navigasi prev/next).
+  const navTotal = list?.length ?? 0;
+  const navPosition = list ? list.findIndex((a) => a.id === app.id) : -1;
+  const navAvailable = Boolean(list && onNavigate && navPosition >= 0);
+
+  // Fitur 3 — tagDefs yang belum terpasang (quick-add).
+  const availableTagDefs = tagDefs.filter(
+    (td) => !app.tags.some((t) => t.toLowerCase() === td.name.toLowerCase())
+  );
+
+  // Fitur 6 — ekspektasi gaji efektif (input belum disimpan > nilai tersimpan).
+  const salaryParsed = Number(salaryInput);
+  const salaryEffective =
+    salaryInput.trim() !== "" && Number.isFinite(salaryParsed)
+      ? salaryParsed
+      : app.salaryExpectation ?? null;
+  const posSalaryMin = pos?.salaryMin ?? null;
+  const posSalaryMax = pos?.salaryMax ?? null;
+  const salaryBadge = (() => {
+    if (salaryEffective == null) return null;
+    if (posSalaryMin != null && posSalaryMax != null) {
+      if (salaryEffective >= posSalaryMin && salaryEffective <= posSalaryMax) {
+        return { cls: "emerald", label: "Sesuai rentang" };
+      }
+      if (salaryEffective > posSalaryMax) return { cls: "amber", label: "Di atas rentang" };
+      return { cls: "zinc", label: "Di bawah rentang" };
+    }
+    return { cls: "zinc", label: `Ekspektasi: ${formatRupiah(salaryEffective)}` };
+  })();
+
+  // Fitur 4 — tindak lanjut jatuh tempo (hari ini atau sudah lewat).
+  const followUpDue = (() => {
+    const d = daysUntil(app.followUpAt);
+    return d != null && d <= 0;
+  })();
 
   const rubricScoresCount = rubricCriteria.filter(
     (c) => typeof rubricValues[c] === "number"
@@ -2633,6 +2717,211 @@ export function ApplicationDetailDialog({
     setVideoNotesSaving(false);
   }
 
+  /* ------------------------- NR-24 — handler per pelamar ------------------------- */
+
+  // Fitur 1 — klik tombol prev/next di header.
+  function navigateBy(delta: number) {
+    if (!list || !onNavigate) return;
+    const next = list[navPosition + delta];
+    if (next) onNavigate(next);
+  }
+
+  // Fitur 2 — bintang personal (optimistik, rollback saat gagal).
+  async function handleToggleStar() {
+    if (starBusy) return;
+    const active = app.starredBy?.includes(session.id) ?? false;
+    const optimistic: Application = {
+      ...app,
+      starredBy: active
+        ? (app.starredBy ?? []).filter((id) => id !== session.id)
+        : [...(app.starredBy ?? []), session.id],
+    };
+    onSaved(optimistic);
+    setStarBusy(true);
+    try {
+      const updated = await apiPatch<Application>(
+        `/api/admin/applications/${app.id}`,
+        { star: !active }
+      );
+      onSaved(updated);
+    } catch (err) {
+      onSaved(app); // rollback ke kondisi pra-optimistik
+      reportError(err);
+    } finally {
+      setStarBusy(false);
+    }
+  }
+
+  // Fitur 3 — tambah tag langsung dari daftar tagDefs tim.
+  async function handleQuickAddTag(tag: string) {
+    if (tagsSaving) return;
+    if (app.tags.some((t) => t.toLowerCase() === tag.toLowerCase())) {
+      toast.error("Tag sudah ada.");
+      return;
+    }
+    setTagsSaving(true);
+    await patch({ tags: [...app.tags, tag] }, "Tag ditambahkan");
+    setTagsSaving(false);
+  }
+
+  // Fitur 4 — simpan / bersihkan tanggal tindak lanjut.
+  async function handleFollowUp(iso: string | null, message: string) {
+    if (followUpSaving) return;
+    setFollowUpSaving(true);
+    const updated = await patch({ followUpAt: iso }, message);
+    if (updated) {
+      setFollowUpInput(updated.followUpAt ? isoToLocalInput(updated.followUpAt) : "");
+    }
+    setFollowUpSaving(false);
+  }
+
+  function quickFollowUp(days: number) {
+    const target = new Date(Date.now() + days * 86_400_000);
+    setFollowUpInput(isoToLocalInput(target.toISOString()));
+    void handleFollowUp(
+      target.toISOString(),
+      `Tindak lanjut dijadwalkan ${days} hari dari sekarang`
+    );
+  }
+
+  // Fitur 6 — simpan ekspektasi gaji (null = kosongkan).
+  async function handleSaveSalary() {
+    if (salarySaving) return;
+    const parsed = Number(salaryInput);
+    const value =
+      salaryInput.trim() === "" || !Number.isFinite(parsed) ? null : Math.round(parsed);
+    if (value != null && value < 0) {
+      toast.error("Ekspektasi gaji tidak boleh negatif.");
+      return;
+    }
+    setSalarySaving(true);
+    const updated = await patch(
+      { salaryExpectation: value },
+      value != null ? "Ekspektasi gaji disimpan" : "Ekspektasi gaji dikosongkan"
+    );
+    if (updated) {
+      setSalaryInput(updated.salaryExpectation != null ? String(updated.salaryExpectation) : "");
+    }
+    setSalarySaving(false);
+  }
+
+  // Fitur 8 — pasang / lepas HOLD.
+  async function handleHoldSave() {
+    if (holdSaving) return;
+    if (!holdReason) {
+      toast.error("Pilih alasan menahan lamaran.");
+      return;
+    }
+    setHoldSaving(true);
+    const updated = await patch(
+      {
+        holdReason,
+        holdNote: holdNote.trim() || undefined,
+        holdReviewAt: holdReview ? localInputToIso(holdReview) : undefined,
+      },
+      "Lamaran ditahan (HOLD)"
+    );
+    if (updated) {
+      setHoldPanelOpen(false);
+      setHoldReason("");
+      setHoldNote("");
+      setHoldReview("");
+    }
+    setHoldSaving(false);
+  }
+
+  async function handleHoldClear() {
+    if (holdSaving) return;
+    setHoldSaving(true);
+    const updated = await patch({ holdClear: true }, "Proses dilanjutkan");
+    if (updated) setHoldPanelOpen(false);
+    setHoldSaving(false);
+  }
+
+  // Fitur 14 — batalkan penolakan (berkunci: klik 1 membuka kunci, alasan wajib).
+  async function handleUndoReject() {
+    if (undoSaving) return;
+    const reason = undoReason.trim();
+    if (!reason) {
+      toast.error("Alasan pembatalan wajib diisi.");
+      return;
+    }
+    setUndoSaving(true);
+    setUndoError(null);
+    try {
+      const res = await apiPost<{ ok: boolean; application: Application }>(
+        `/api/admin/applications/${app.id}/undo-reject`,
+        { reason }
+      );
+      toast.success("Penolakan dibatalkan");
+      setUndoUnlock(false);
+      setUndoReason("");
+      onSaved(res.application);
+      onListRefresh?.();
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 400 || err.status === 409)) {
+        // Pesan validasi dari server ditampilkan inline.
+        setUndoError(err.message);
+      } else {
+        reportError(err);
+      }
+    } finally {
+      setUndoSaving(false);
+    }
+  }
+
+  // Fitur 15 — pasang bendera do-not-hire.
+  async function handleDnhSet() {
+    if (dnhSaving) return;
+    const reason = dnhReason.trim();
+    if (!reason) {
+      toast.error("Alasan wajib diisi.");
+      return;
+    }
+    setDnhSaving(true);
+    try {
+      const res = await apiPost<{ ok: boolean; application: Application }>(
+        `/api/admin/applications/${app.id}/do-not-hire`,
+        { reason }
+      );
+      toast.success("Bendera do-not-hire dipasang");
+      setDnhPanelOpen(false);
+      setDnhReason("");
+      onSaved(res.application);
+      onListRefresh?.();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDnhSaving(false);
+    }
+  }
+
+  // Fitur 15 — lepas bendera do-not-hire (DELETE dengan body {reason}).
+  async function handleDnhRemove() {
+    if (dnhSaving) return;
+    const reason = dnhRemoveReason.trim();
+    if (!reason) {
+      toast.error("Alasan pencabutan wajib diisi.");
+      return;
+    }
+    setDnhSaving(true);
+    try {
+      const res = await apiFetch<{ ok: boolean; application: Application }>(
+        `/api/admin/applications/${app.id}/do-not-hire`,
+        jsonInit("DELETE", { reason })
+      );
+      toast.success("Bendera do-not-hire dilepas");
+      setDnhRemoveOpen(false);
+      setDnhRemoveReason("");
+      onSaved(res.application);
+      onListRefresh?.();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDnhSaving(false);
+    }
+  }
+
   /* ----------------------------- Cetak dokumen (Task 27-e) ----------------------------- */
 
   // Buka jendela cetak berisi dokumen HTML siap A4, lalu picu dialog print browser.
@@ -2837,7 +3126,57 @@ export function ApplicationDetailDialog({
       <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2 pr-6 text-lg font-bold">
+            {/* NR-24 fitur 2 — bintang personal */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => void handleToggleStar()}
+                  disabled={!canMutate || starBusy}
+                  aria-label="Tandai penting"
+                  aria-pressed={starred}
+                  className="outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Star
+                    className={cn(
+                      "size-5 transition-colors",
+                      starred
+                        ? "fill-amber-400 text-amber-500"
+                        : "text-muted-foreground hover:text-amber-500"
+                    )}
+                    aria-hidden="true"
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Tandai penting</TooltipContent>
+            </Tooltip>
             <span>{app.name}</span>
+            {/* NR-24 fitur 1 — navigasi prev/next antar lamaran dalam daftar */}
+            {navAvailable ? (
+              <span className="inline-flex items-center gap-0.5 text-xs font-normal text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() => navigateBy(-1)}
+                  disabled={navPosition <= 0}
+                  aria-label="Lamaran sebelumnya"
+                  className="inline-flex size-6 items-center justify-center rounded-md outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-40"
+                >
+                  <ChevronLeft className="size-3.5" aria-hidden="true" />
+                </button>
+                <span className="whitespace-nowrap tabular-nums">
+                  {navPosition + 1} dari {navTotal}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigateBy(1)}
+                  disabled={navPosition >= navTotal - 1}
+                  aria-label="Lamaran berikutnya"
+                  className="inline-flex size-6 items-center justify-center rounded-md outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-40"
+                >
+                  <ChevronRight className="size-3.5" aria-hidden="true" />
+                </button>
+              </span>
+            ) : null}
             <StatusBadge status={app.status} />
             {/* NR-24-b — navigasi antar lamaran (prev/next) bila prop navigasi tersedia */}
             {navActive && navIds && typeof navIndex === "number" ? (
@@ -2914,6 +3253,25 @@ export function ApplicationDetailDialog({
                 className="border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400"
               >
                 Talent Pool
+              </Badge>
+            ) : null}
+            {/* NR-24 — badge HOLD & do-not-hire */}
+            {app.holdAt ? (
+              <Badge
+                variant="outline"
+                className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+              >
+                <CirclePause className="size-3" aria-hidden="true" />
+                Ditahan
+              </Badge>
+            ) : null}
+            {app.doNotHire ? (
+              <Badge
+                variant="outline"
+                className="border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+              >
+                <Ban className="size-3" aria-hidden="true" />
+                Jangan diterima
               </Badge>
             ) : null}
           </DialogTitle>
@@ -3405,6 +3763,16 @@ export function ApplicationDetailDialog({
               </div>
             </div>
 
+            {/* NR-24 fitur 7/12/15 — riwayat melamar, duplikat tersangka, peringatan do-not-hire */}
+            <RelatedSection
+              key={`related-${app.id}`}
+              applicationId={app.id}
+              list={list}
+              onNavigate={onNavigate}
+              onSaved={onSaved}
+              onListRefresh={onListRefresh}
+            />
+
             {/* NR-15: read receipt — kapan terakhir pelamar membuka halaman status */}
             <div className="flex items-center gap-2 text-xs">
               <Eye className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -3824,6 +4192,10 @@ export function ApplicationDetailDialog({
               </div>
             ) : null}
 
+            {/* NR-24 fitur 11 + 13 — dokumen internal & masa berlaku dokumen */}
+            <InternalDocsSection key={`internal-docs-${app.id}`} applicationId={app.id} canMutate={canMutate} />
+            <DocExpirySection key={`doc-expiry-${app.id}`} app={app} canMutate={canMutate} onSaved={onSaved} />
+
             <Separator />
 
             {/* Jawaban screening */}
@@ -3993,6 +4365,9 @@ export function ApplicationDetailDialog({
               </div>
             ) : null}
 
+            {/* NR-24 fitur 5 — tugas uji */}
+            <AssessmentSection key={`assess-${app.id}`} applicationId={app.id} canMutate={canMutate} />
+
             {/* Checklist evaluasi */}
             {checklistTemplate.length > 0 ? (
               <div className="flex flex-col gap-2 rounded-lg border p-3">
@@ -4041,6 +4416,71 @@ export function ApplicationDetailDialog({
                 />
               </div>
 
+              {/* NR-24 fitur 6 — ekspektasi gaji vs rentang posisi */}
+              <div className="flex flex-col gap-2 rounded-lg border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Banknote className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Ekspektasi Gaji</p>
+                  {salaryBadge ? (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        salaryBadge.cls === "emerald" &&
+                          "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400",
+                        salaryBadge.cls === "amber" &&
+                          "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400",
+                        salaryBadge.cls === "zinc" &&
+                          "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+                      )}
+                    >
+                      {salaryBadge.label}
+                    </Badge>
+                  ) : null}
+                </div>
+                {canMutate ? (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        step={100000}
+                        value={salaryInput}
+                        onChange={(e) => setSalaryInput(e.target.value)}
+                        placeholder="mis. 4500000"
+                        inputMode="numeric"
+                        aria-label="Ekspektasi gaji bulanan dalam rupiah"
+                        className="h-11 w-full sm:h-9 sm:w-48"
+                        disabled={salarySaving}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() => void handleSaveSalary()}
+                        disabled={salarySaving}
+                      >
+                        {salarySaving ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : null}
+                        Simpan
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {salaryEffective != null
+                        ? `Terisi: ${formatRupiah(salaryEffective)}`
+                        : "Belum diisi"}
+                      {posSalaryMin != null || posSalaryMax != null
+                        ? ` · Rentang posisi: ${posSalaryMin != null ? formatRupiah(posSalaryMin) : "?"} – ${
+                            posSalaryMax != null ? formatRupiah(posSalaryMax) : "?"
+                          }`
+                        : ""}
+                    </p>
+                  </div>
+                ) : salaryEffective != null ? (
+                  <p className="text-sm">{formatRupiah(salaryEffective)}</p>
+                ) : null}
+              </div>
+
               <div className="flex flex-col gap-2">
                 <Label htmlFor={`tags-${app.id}`} className="text-sm">Tags</Label>
                 {app.tags.length > 0 ? (
@@ -4048,7 +4488,10 @@ export function ApplicationDetailDialog({
                     {app.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
+                          colorClassOf(tag)
+                        )}
                       >
                         {tag}
                         {canMutate ? (
@@ -4069,26 +4512,46 @@ export function ApplicationDetailDialog({
                   <p className="text-xs text-muted-foreground">Belum ada tag.</p>
                 )}
                 {canMutate ? (
-                  <form onSubmit={handleAddTag} className="flex items-center gap-2">
-                    <Input
-                      id={`tags-${app.id}`}
-                      value={tagInput}
-                      onChange={(e) => handleTagInputChange(e.target.value)}
-                      list={`tag-suggestions-${app.id}`}
-                      placeholder="Tambah tag — Enter atau koma"
-                      aria-label="Tambah tag baru"
-                      className="h-9 w-full sm:w-64"
-                      disabled={tagsSaving}
-                    />
-                    {/* NR-24-b (ide 3): datalist suggesi tag dari GET /api/admin/tags */}
-                    <datalist id={`tag-suggestions-${app.id}`}>
-                      {tagSuggestions
-                        .filter((s) => !app.tags.includes(s))
-                        .map((s) => (
-                          <option key={s} value={s} />
+                  <>
+                    <form onSubmit={handleAddTag} className="flex items-center gap-2">
+                      <Input
+                        id={`tags-${app.id}`}
+                        value={tagInput}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        placeholder="Tambah tag lalu tekan Enter"
+                        aria-label="Tambah tag baru"
+                        list={`tag-defs-${app.id}`}
+                        className="h-9 w-full sm:w-64"
+                        disabled={tagsSaving}
+                      />
+                      <datalist id={`tag-defs-${app.id}`}>
+                        {tagDefs.map((td) => (
+                          <option key={td.name} value={td.name} />
                         ))}
-                    </datalist>
-                  </form>
+                      </datalist>
+                    </form>
+                    {/* NR-24 fitur 3 — quick-add dari tagDefs yang belum terpasang */}
+                    {availableTagDefs.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">Tag cepat:</span>
+                        {availableTagDefs.map((td) => (
+                          <button
+                            key={td.name}
+                            type="button"
+                            onClick={() => void handleQuickAddTag(td.name)}
+                            disabled={tagsSaving}
+                            aria-label={`Tambah tag ${td.name}`}
+                            className={cn(
+                              "rounded-full px-2.5 py-0.5 text-xs font-medium outline-none transition-transform hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50",
+                              colorClassOf(td.name)
+                            )}
+                          >
+                            + {td.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
                 ) : null}
               </div>
 
@@ -4105,6 +4568,82 @@ export function ApplicationDetailDialog({
                   disabled={!canMutate}
                   aria-label="Tandai Talent Pool"
                 />
+              </div>
+
+              {/* NR-24 fitur 4 — tindak lanjut / snooze */}
+              <div className="flex flex-col gap-2 rounded-lg border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <CalendarClock className="size-4 text-orange-500" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Tindak Lanjut</p>
+                  {followUpDue ? (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                    >
+                      Jatuh tempo
+                    </Badge>
+                  ) : null}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {app.followUpAt
+                    ? `Dijadwalkan: ${formatDateTime(app.followUpAt)}`
+                    : "Belum dijadwalkan"}
+                </p>
+                {canMutate ? (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                    <Input
+                      type="datetime-local"
+                      value={followUpInput}
+                      onChange={(e) => setFollowUpInput(e.target.value)}
+                      aria-label="Tanggal tindak lanjut"
+                      className="h-11 w-full sm:h-9 sm:w-60"
+                      disabled={followUpSaving}
+                    />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() => quickFollowUp(3)}
+                        disabled={followUpSaving}
+                      >
+                        3 hari
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() => quickFollowUp(7)}
+                        disabled={followUpSaving}
+                      >
+                        7 hari
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() =>
+                          void handleFollowUp(
+                            localInputToIso(followUpInput),
+                            "Tindak lanjut disimpan"
+                          )
+                        }
+                        disabled={followUpSaving || !followUpInput}
+                      >
+                        Simpan
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() => void handleFollowUp(null, "Tindak lanjut dibersihkan")}
+                        disabled={followUpSaving || !app.followUpAt}
+                      >
+                        Bersihkan
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex flex-col gap-2">
@@ -4281,8 +4820,124 @@ export function ApplicationDetailDialog({
               </div>
             </div>
 
-            {/* Tolak Lamaran — NR-24-b: panel juga tampil utk REJECTED yang masih bisa di-undo */}
-            {showRejectPanel ? (
+            {/* NR-24 fitur 8 — tahan proses (HOLD) */}
+            {app.holdAt || canMutate ? (
+              <div className="flex flex-col gap-3 rounded-lg border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <CirclePause className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Tahan Proses (HOLD)</p>
+                </div>
+
+                {app.holdAt ? (
+                  <div className="flex flex-col gap-1.5 rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20">
+                    <p className="font-medium text-amber-800 dark:text-amber-300">
+                      Ditahan sejak {formatDateTime(app.holdAt)} —{" "}
+                      {app.holdReason ? HOLD_REASON_LABELS[app.holdReason] : "Tanpa alasan"}
+                    </p>
+                    {app.holdNote ? (
+                      <p className="text-muted-foreground">Catatan: {app.holdNote}</p>
+                    ) : null}
+                    {app.holdReviewAt ? (
+                      <p className="text-muted-foreground">
+                        Review: {formatDateTime(app.holdReviewAt)}
+                      </p>
+                    ) : null}
+                    {canMutate ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 w-fit sm:h-9"
+                        onClick={() => void handleHoldClear()}
+                        disabled={holdSaving}
+                      >
+                        {holdSaving ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : null}
+                        Lanjutkan Proses
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : canMutate ? (
+                  holdPanelOpen ? (
+                    <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-2.5">
+                      <Select
+                        value={holdReason || "__pilih__"}
+                        onValueChange={(v) => setHoldReason(v as HoldReason)}
+                        disabled={holdSaving}
+                      >
+                        <SelectTrigger
+                          className="h-11 w-full sm:h-10"
+                          aria-label="Alasan menahan lamaran"
+                        >
+                          <SelectValue placeholder="Pilih alasan" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__pilih__" disabled>
+                            Pilih alasan
+                          </SelectItem>
+                          {HOLD_REASONS.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {HOLD_REASON_LABELS[r]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Textarea
+                        value={holdNote}
+                        onChange={(e) => setHoldNote(e.target.value)}
+                        placeholder="Catatan (opsional)"
+                        rows={2}
+                        maxLength={500}
+                        disabled={holdSaving}
+                        aria-label="Catatan HOLD"
+                      />
+                      <Input
+                        type="datetime-local"
+                        value={holdReview}
+                        onChange={(e) => setHoldReview(e.target.value)}
+                        aria-label="Tanggal review kembali"
+                        className="h-11 w-full sm:h-9 sm:w-60"
+                        disabled={holdSaving}
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          className="h-11 w-fit bg-amber-600 text-white hover:bg-amber-700 sm:h-9"
+                          onClick={() => void handleHoldSave()}
+                          disabled={holdSaving}
+                        >
+                          {holdSaving ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          ) : null}
+                          Simpan
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-11 sm:h-9"
+                          onClick={() => setHoldPanelOpen(false)}
+                          disabled={holdSaving}
+                        >
+                          Batal
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-11 w-fit sm:h-9"
+                      onClick={() => setHoldPanelOpen(true)}
+                    >
+                      Tahan Lamaran
+                    </Button>
+                  )
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Tolak Lamaran */}
+            {canMutate ? (
               <div className="flex flex-col gap-3 rounded-lg border border-rose-200 p-3 dark:border-rose-900">
                 <div className="flex items-center gap-2">
                   <XCircle className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
@@ -4298,103 +4953,67 @@ export function ApplicationDetailDialog({
                         : ""}
                       {app.rejectionNote ? ` · ${app.rejectionNote}` : ""}
                     </p>
-                    {/* NR-24-b (ide 14) — undo penolakan dengan pola KUNCI ala NR-23:
-                        terkunci default -> buka kunci -> AlertDialog konfirmasi. */}
-                    {canUndoReject ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={() => setUndoUnlocked((v) => !v)}
-                              aria-label={
-                                undoUnlocked
-                                  ? "Kunci kembali"
-                                  : "Buka kunci untuk membatalkan penolakan"
-                              }
-                              className={cn(
-                                "flex size-8 items-center justify-center rounded-md border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
-                                undoUnlocked
-                                  ? "border-amber-300 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950"
-                                  : "text-muted-foreground hover:bg-accent"
-                              )}
-                            >
-                              {undoUnlocked ? (
-                                <LockOpen className="size-3.5" aria-hidden="true" />
-                              ) : (
-                                <Lock className="size-3.5" aria-hidden="true" />
-                              )}
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {undoUnlocked
-                              ? "Kunci kembali"
-                              : "Buka kunci dulu untuk membatalkan penolakan"}
-                          </TooltipContent>
-                        </Tooltip>
-                        <AlertDialog
-                          open={undoConfirmOpen}
-                          onOpenChange={setUndoConfirmOpen}
-                        >
+                    {/* NR-24 fitur 14 — batalkan penolakan (berkunci) */}
+                    {!undoUnlock ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 w-fit sm:h-9"
+                        onClick={() => setUndoUnlock(true)}
+                        disabled={undoSaving}
+                      >
+                        <Undo2 className="size-4" aria-hidden="true" />
+                        Batalkan Penolakan
+                      </Button>
+                    ) : (
+                      <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/20">
+                        <p className="text-sm">
+                          Batalkan penolakan menandai keputusan ini dipertimbangkan ulang.
+                          Jelaskan alasannya (wajib).
+                        </p>
+                        <Textarea
+                          value={undoReason}
+                          onChange={(e) => setUndoReason(e.target.value)}
+                          placeholder="Alasan pembatalan penolakan"
+                          rows={2}
+                          maxLength={500}
+                          disabled={undoSaving}
+                          aria-label="Alasan pembatalan penolakan"
+                        />
+                        {undoError ? (
+                          <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                            {undoError}
+                          </p>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button
-                            variant="outline"
                             size="sm"
-                            className="h-9 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
-                            disabled={!undoUnlocked || undoSaving}
-                            onClick={() => setUndoConfirmOpen(true)}
+                            className="h-11 w-fit sm:h-9"
+                            onClick={() => void handleUndoReject()}
+                            disabled={undoSaving || !undoReason.trim()}
                           >
-                            Batalkan Penolakan
+                            {undoSaving ? (
+                              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Undo2 className="size-4" aria-hidden="true" />
+                            )}
+                            Kirim Pembatalan
                           </Button>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                Batalkan penolakan {app.name}?
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Status akan kembali ke tahap sebelum penolakan dan pelamar
-                                menerima email pembaruan.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <div className="flex flex-col gap-1.5">
-                              <Label htmlFor="undo-reject-reason">
-                                Alasan pembatalan (wajib)
-                              </Label>
-                              <Textarea
-                                id="undo-reject-reason"
-                                value={undoReason}
-                                onChange={(e) => setUndoReason(e.target.value)}
-                                placeholder="mis. Pelamar melanjutkan proses setelah konfirmasi"
-                                rows={2}
-                                maxLength={300}
-                                disabled={undoSaving}
-                              />
-                            </div>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel disabled={undoSaving}>
-                                Batal
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  void handleUndoReject();
-                                }}
-                                className="bg-rose-600 text-white hover:bg-rose-700"
-                                disabled={undoSaving || !undoReason.trim()}
-                              >
-                                {undoSaving ? (
-                                  <>
-                                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                                    Membatalkan...
-                                  </>
-                                ) : (
-                                  "Ya, Batalkan Penolakan"
-                                )}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-11 sm:h-9"
+                            onClick={() => {
+                              setUndoUnlock(false);
+                              setUndoError(null);
+                            }}
+                            disabled={undoSaving}
+                          >
+                            Batal
+                          </Button>
+                        </div>
                       </div>
-                    ) : null}
+                    )}
                   </>
                 ) : (
                   <>
@@ -4460,8 +5079,8 @@ export function ApplicationDetailDialog({
                             Tolak lamaran {app.name}?
                           </AlertDialogTitle>
                           <AlertDialogDescription>
-                            Status lamaran berubah menjadi Ditolak dan tidak bisa
-                            dikembalikan ke tahap sebelumnya.
+                            Status lamaran berubah menjadi Ditolak. Pembatalan tetap
+                            dimungkinkan lewat tombol Batalkan Penolakan dengan alasan.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -4506,161 +5125,124 @@ export function ApplicationDetailDialog({
               </div>
             ) : null}
 
-            {/* NR-24-b (ide 15) — Do-not-Hire: match email lowercase / telepon digit-only */}
-            {dnhMatch || (canMutate && (app.email || app.phone)) ? (
-              <div className="flex flex-col gap-2 rounded-lg border border-rose-200 p-3 dark:border-rose-900">
-                <div className="flex flex-wrap items-center gap-2">
-                  <ShieldAlert className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-                  <p className="text-sm font-semibold">Do-not-Hire</p>
+            {/* NR-24 fitur 15 — bendera do-not-hire */}
+            {app.doNotHire || canMutate ? (
+              <div className="flex flex-col gap-3 rounded-lg border border-rose-200 bg-rose-50/40 p-3 dark:border-rose-900 dark:bg-rose-950/20">
+                <div className="flex items-center gap-2">
+                  <Flag className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                  <p className="text-sm font-semibold">Bendera Do-not-Hire</p>
                 </div>
-                {dnhMatch ? (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge
+
+                {app.doNotHire ? (
+                  <>
+                    <p className="text-sm text-rose-700 dark:text-rose-400">
+                      Ditandai jangan diterima
+                      {app.doNotHireReason ? ` — ${app.doNotHireReason}` : ""}
+                    </p>
+                    {!dnhRemoveOpen ? (
+                      <Button
                         variant="outline"
-                        className="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
+                        size="sm"
+                        className="h-11 w-fit border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:h-9 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                        onClick={() => setDnhRemoveOpen(true)}
+                        disabled={!canMutate || dnhSaving}
                       >
-                        <ShieldAlert className="size-3" aria-hidden="true" />
-                        Do-not-Hire: {dnhMatch.reason}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        Ditandai {formatDate(dnhMatch.at)}
-                        {dnhMatch.by ? ` oleh ${dnhMatch.by}` : ""}
-                      </span>
-                    </div>
-                    {role === "OWNER" ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Pola kunci NR-23: buka kunci -> tombol aktif -> AlertDialog */}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={() => setDnhUnlock((v) => !v)}
-                              aria-label={
-                                dnhUnlock
-                                  ? "Kunci kembali"
-                                  : "Buka kunci untuk melepas Do-not-Hire"
-                              }
-                              className={cn(
-                                "flex size-8 items-center justify-center rounded-md border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
-                                dnhUnlock
-                                  ? "border-amber-300 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400 dark:hover:bg-amber-950"
-                                  : "text-muted-foreground hover:bg-accent"
-                              )}
-                            >
-                              {dnhUnlock ? (
-                                <LockOpen className="size-3.5" aria-hidden="true" />
-                              ) : (
-                                <Lock className="size-3.5" aria-hidden="true" />
-                              )}
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {dnhUnlock
-                              ? "Kunci kembali"
-                              : "Buka kunci dulu untuk melepas Do-not-Hire"}
-                          </TooltipContent>
-                        </Tooltip>
-                        <AlertDialog open={dnhRemoveOpen} onOpenChange={setDnhRemoveOpen}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-9 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
-                            disabled={!dnhUnlock || dnhSaving}
-                            onClick={() => setDnhRemoveOpen(true)}
-                          >
-                            Lepas
-                          </Button>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                Lepas penandaan Do-not-Hire untuk pelamar ini?
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Pelamar dengan email/telepon ini akan bisa melamar kembali.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel disabled={dnhSaving}>Batal</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  void handleDnhRemove();
-                                }}
-                                className="bg-rose-600 text-white hover:bg-rose-700"
-                                disabled={dnhSaving}
-                              >
-                                {dnhSaving ? (
-                                  <>
-                                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                                    Melepas...
-                                  </>
-                                ) : (
-                                  "Ya, Lepas"
-                                )}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
+                        Lepas Bendera
+                      </Button>
                     ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Hanya Owner yang dapat melepas penandaan Do-not-Hire.
-                      </p>
+                      <div className="flex flex-col gap-2 rounded-md border border-rose-200 bg-background p-2.5 dark:border-rose-900">
+                        <Textarea
+                          value={dnhRemoveReason}
+                          onChange={(e) => setDnhRemoveReason(e.target.value)}
+                          placeholder="Alasan melepas bendera (wajib)"
+                          rows={2}
+                          maxLength={500}
+                          disabled={dnhSaving}
+                          aria-label="Alasan melepas bendera do-not-hire"
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            size="sm"
+                            className="h-11 w-fit sm:h-9"
+                            onClick={() => void handleDnhRemove()}
+                            disabled={dnhSaving || !dnhRemoveReason.trim()}
+                          >
+                            {dnhSaving ? (
+                              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            ) : null}
+                            Kirim Pencabutan
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-11 sm:h-9"
+                            onClick={() => {
+                              setDnhRemoveOpen(false);
+                              setDnhRemoveReason("");
+                            }}
+                            disabled={dnhSaving}
+                          >
+                            Batal
+                          </Button>
+                        </div>
+                      </div>
                     )}
-                  </div>
-                ) : canMutate && dnhAddOpen ? (
-                  <form
-                    onSubmit={handleDnhAdd}
-                    className="flex flex-wrap items-center gap-1.5"
-                  >
-                    <Input
-                      value={dnhReasonInput}
-                      onChange={(e) => setDnhReasonInput(e.target.value)}
-                      placeholder="Alasan Do-not-Hire (maks. 300)"
-                      aria-label="Alasan Do-not-Hire"
-                      maxLength={300}
-                      className="h-9 min-w-48 flex-1"
-                      disabled={dnhSaving}
-                      autoFocus
-                    />
-                    <Button
-                      type="submit"
-                      size="sm"
-                      variant="outline"
-                      className="h-9 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
-                      disabled={dnhSaving || !dnhReasonInput.trim()}
-                    >
-                      {dnhSaving ? (
-                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <ShieldAlert className="size-4" aria-hidden="true" />
-                      )}
-                      Tandai
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-9"
-                      onClick={() => setDnhAddOpen(false)}
-                      disabled={dnhSaving}
-                    >
-                      Batal
-                    </Button>
-                  </form>
+                  </>
                 ) : canMutate ? (
-                  <button
-                    type="button"
-                    className="w-fit text-xs font-medium text-rose-600 outline-none underline underline-offset-2 hover:text-rose-700 focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-rose-400"
-                    onClick={() => {
-                      setDnhReasonInput("");
-                      setDnhAddOpen(true);
-                    }}
-                  >
-                    Tandai Do-not-Hire
-                  </button>
+                  !dnhPanelOpen ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-11 w-fit border-rose-300 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:h-9 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                      onClick={() => setDnhPanelOpen(true)}
+                      disabled={dnhSaving}
+                    >
+                      <Flag className="size-4" aria-hidden="true" />
+                      Bendera Do-not-Hire
+                    </Button>
+                  ) : (
+                    <div className="flex flex-col gap-2 rounded-md border border-rose-200 bg-background p-2.5 dark:border-rose-900">
+                      <Textarea
+                        value={dnhReason}
+                        onChange={(e) => setDnhReason(e.target.value)}
+                        placeholder="Alasan menandai jangan diterima (wajib)"
+                        rows={2}
+                        maxLength={500}
+                        disabled={dnhSaving}
+                        aria-label="Alasan bendera do-not-hire"
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="h-11 w-fit sm:h-9"
+                          onClick={() => void handleDnhSet()}
+                          disabled={dnhSaving || !dnhReason.trim()}
+                        >
+                          {dnhSaving ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          ) : null}
+                          Pasang Bendera
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-11 sm:h-9"
+                          onClick={() => {
+                            setDnhPanelOpen(false);
+                            setDnhReason("");
+                          }}
+                          disabled={dnhSaving}
+                        >
+                          Batal
+                        </Button>
+                      </div>
+                    </div>
+                  )
                 ) : null}
+                <p className="text-xs text-muted-foreground">
+                  Lamaran baru dengan email/WA sama akan diberi peringatan otomatis.
+                </p>
               </div>
             ) : null}
 
@@ -4957,6 +5539,14 @@ export function ApplicationDetailDialog({
               applicationId={app.id}
               onGotoQuestions={scrollToCandidateQuestions}
             />
+
+            <Separator />
+
+            {/* NR-24 fitur 9 + 10 — riwayat panggilan & inbox terpadu */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <CallLogSection key={`calls-${app.id}`} applicationId={app.id} canMutate={canMutate} />
+              <InboxSection key={`inbox-${app.id}`} applicationId={app.id} />
+            </div>
 
             <Separator />
 

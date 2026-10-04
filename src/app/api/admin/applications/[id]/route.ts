@@ -1,6 +1,5 @@
 // PATCH  /api/admin/applications/[id] — update status/catatan/rating/tags/wawancara/talent pool/rubrik/checklist/catatan video
-//        + fitur per pelamar NR-24: ekspektasi gaji, bintang personal (starred), HOLD
-//        (holdReason/holdReviewAt), dan masa berlaku dokumen (docExpiries) (OWNER/HR).
+//        + NR-24: bintang personal, tindak lanjut (snooze), ekspektasi gaji, HOLD, masa berlaku dokumen (OWNER/HR).
 // DELETE /api/admin/applications/[id] — pindahkan lamaran ke tong sampah (soft delete, OWNER/HR).
 // Setiap perubahan dicatat ke ActivityLog. Perubahan tahap memicu webhook application.stage_changed.
 import { NextRequest, NextResponse } from "next/server";
@@ -11,12 +10,13 @@ import {
   parseDocExpiries,
   parseRequirements,
   parseScoreRecord,
+  parseStarredBy,
   parseTags,
   parseVideoNotes,
   serializeApplication,
 } from "@/lib/seed";
 import { isBuiltInStage } from "@/lib/stages";
-import { STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
+import { HOLD_REASONS, STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
@@ -59,6 +59,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     const data = body as Record<string, unknown>;
 
+    // Muat lamaran lebih awal — validasi bintang/hold memerlukan nilai lama.
+    const existing = await db.application.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json(NOT_FOUND, { status: 404 });
+    }
+
     const updateData: {
       status?: string;
       offerStatus?: string | null;
@@ -72,13 +78,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       videoNotes?: string | null;
       stageUpdatedAt?: Date;
       stageHistory?: string;
-      // NR-24 — fitur per pelamar
-      expectedSalary?: number | null;
       starredBy?: string;
+      followUpAt?: Date | null;
+      salaryExpectation?: number | null;
+      holdAt?: Date | null;
       holdReason?: string | null;
+      holdNote?: string | null;
       holdReviewAt?: Date | null;
-      docExpiries?: string | null;
-      snoozeUntil?: Date | null;
+      holdClear?: boolean;
+      docExpiries?: string;
     } = {};
     // Field yang perlu merge dengan nilai existing — dihitung setelah record diambil.
     let starredToggle: boolean | undefined;
@@ -237,122 +245,112 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       updateData.videoNotes = notes.length > 0 ? JSON.stringify(notes) : null;
     }
 
-    // NR-24 — Ekspektasi gaji bulanan (Rp): null = hapus; number = integer 0..1 miliar.
-    if (data.expectedSalary !== undefined) {
-      if (data.expectedSalary === null) {
-        updateData.expectedSalary = null;
-      } else if (
-        typeof data.expectedSalary === "number" &&
-        Number.isInteger(data.expectedSalary) &&
-        data.expectedSalary >= 0 &&
-        data.expectedSalary <= EXPECTED_SALARY_MAX
-      ) {
-        updateData.expectedSalary = data.expectedSalary;
-      } else {
-        return NextResponse.json(
-          { error: `Ekspektasi gaji harus angka bulat antara 0 dan ${EXPECTED_SALARY_MAX.toLocaleString("id-ID")}, atau null untuk menghapus.` },
-          { status: 400 }
-        );
+    if (data.star !== undefined) {
+      // Bintang personal per admin (NR-24): id admin diambil dari sesi, bukan dari body.
+      if (typeof data.star !== "boolean") {
+        return NextResponse.json({ error: "Nilai bintang tidak valid." }, { status: 400 });
       }
+      const starred = parseStarredBy(existing.starredBy);
+      const next = data.star
+        ? [...new Set([...starred, session.id])]
+        : starred.filter((sid) => sid !== session.id);
+      updateData.starredBy = JSON.stringify(next);
     }
 
-    // NR-24 — Bintang personal per admin (toggle session.id pada kolom starredBy).
-    if (data.starred !== undefined) {
-      if (typeof data.starred !== "boolean") {
-        return NextResponse.json({ error: "starred harus berupa boolean." }, { status: 400 });
-      }
-      starredToggle = data.starred;
-    }
-
-    // NR-24 — Tahan proses (HOLD): alasan singkat; string kosong = lepas tahanan.
-    if (data.holdReason !== undefined) {
-      if (data.holdReason === null) {
-        updateData.holdReason = null;
-      } else if (typeof data.holdReason === "string") {
-        const reason = data.holdReason.trim();
-        if (reason.length > HOLD_REASON_MAX) {
-          return NextResponse.json(
-            { error: `Alasan tahan proses maksimal ${HOLD_REASON_MAX} karakter.` },
-            { status: 400 }
-          );
-        }
-        updateData.holdReason = reason.length > 0 ? reason : null;
-      } else {
-        return NextResponse.json({ error: "Alasan tahan proses harus berupa teks." }, { status: 400 });
-      }
-    }
-
-    // NR-24 — Tanggal review ulang HOLD: ISO string valid atau null (hapus jadwal).
-    if (data.holdReviewAt !== undefined) {
-      if (data.holdReviewAt === null) {
-        updateData.holdReviewAt = null;
-      } else if (typeof data.holdReviewAt === "string") {
-        const parsed = new Date(data.holdReviewAt);
-        if (Number.isNaN(parsed.getTime())) {
-          return NextResponse.json({ error: "Tanggal review HOLD tidak valid." }, { status: 400 });
-        }
-        updateData.holdReviewAt = parsed;
-      } else {
-        return NextResponse.json({ error: "Tanggal review HOLD tidak valid." }, { status: 400 });
-      }
-    }
-
-    // NR-24 — Tanggal tindak lanjut (reuse snoozeUntil, sama dengan snooze bot Telegram):
-    // ISO string valid atau null (hapus). Bot Telegram & lonceng cron memakai field ini.
-    if (data.snoozeUntil !== undefined) {
-      if (data.snoozeUntil === null) {
-        updateData.snoozeUntil = null;
-      } else if (typeof data.snoozeUntil === "string") {
-        const parsed = new Date(data.snoozeUntil);
+    if (data.followUpAt !== undefined) {
+      if (data.followUpAt === null || data.followUpAt === "") {
+        updateData.followUpAt = null;
+      } else if (typeof data.followUpAt === "string") {
+        const parsed = new Date(data.followUpAt);
         if (Number.isNaN(parsed.getTime())) {
           return NextResponse.json({ error: "Tanggal tindak lanjut tidak valid." }, { status: 400 });
         }
-        updateData.snoozeUntil = parsed;
+        updateData.followUpAt = parsed;
       } else {
         return NextResponse.json({ error: "Tanggal tindak lanjut tidak valid." }, { status: 400 });
       }
     }
 
-    // NR-24 — Masa berlaku dokumen tambahan: patch {fileId: "YYYY-MM-DD" | null}.
-    // Digabung (merge) dengan map existing; null/false menghapus kunci; hasil kosong disimpan null.
-    if (data.docExpiries !== undefined) {
-      if (!data.docExpiries || typeof data.docExpiries !== "object" || Array.isArray(data.docExpiries)) {
-        return NextResponse.json(
-          { error: "Masa berlaku dokumen harus berupa objek {fileId: tanggal}." },
-          { status: 400 }
-        );
-      }
-      const patch: Record<string, string | null> = {};
-      for (const [rawKey, rawValue] of Object.entries(data.docExpiries as Record<string, unknown>)) {
-        const key = rawKey.trim();
-        if (!key || key.length > DOC_EXPIRY_KEY_MAX) {
-          return NextResponse.json(
-            { error: `ID dokumen tidak valid (maksimal ${DOC_EXPIRY_KEY_MAX} karakter).` },
-            { status: 400 }
-          );
+    if (data.salaryExpectation !== undefined) {
+      if (data.salaryExpectation === null || data.salaryExpectation === "") {
+        updateData.salaryExpectation = null;
+      } else if (typeof data.salaryExpectation === "number" && Number.isInteger(data.salaryExpectation)) {
+        if (data.salaryExpectation < 0 || data.salaryExpectation > 1_000_000_000) {
+          return NextResponse.json({ error: "Ekspektasi gaji di luar rentang wajar." }, { status: 400 });
         }
-        if (rawValue === null || rawValue === false) {
-          patch[key] = null; // hapus kunci
-        } else if (typeof rawValue === "string" && DOC_EXPIRY_DATE_RE.test(rawValue)) {
-          patch[key] = rawValue;
+        updateData.salaryExpectation = data.salaryExpectation;
+      } else {
+        return NextResponse.json({ error: "Ekspektasi gaji harus angka bulat (rupiah)." }, { status: 400 });
+      }
+    }
+
+    // HOLD (NR-24): {holdReason, holdNote?, holdReviewAt?} untuk menahan;
+    // {holdClear: true} untuk melepas. Tidak mengubah tahap pipeline.
+    if (data.holdClear === true) {
+      updateData.holdAt = null;
+      updateData.holdReason = null;
+      updateData.holdNote = null;
+      updateData.holdReviewAt = null;
+    } else if (data.holdReason !== undefined) {
+      if (typeof data.holdReason !== "string" || !(HOLD_REASONS as string[]).includes(data.holdReason)) {
+        return NextResponse.json({ error: "Alasan hold tidak valid." }, { status: 400 });
+      }
+      updateData.holdReason = data.holdReason;
+      updateData.holdAt = existing.holdAt ?? new Date();
+      if (data.holdNote !== undefined) {
+        if (data.holdNote === null || data.holdNote === "") {
+          updateData.holdNote = null;
+        } else if (typeof data.holdNote === "string") {
+          updateData.holdNote = data.holdNote.trim().slice(0, 300) || null;
         } else {
-          return NextResponse.json(
-            { error: `Tanggal masa berlaku untuk "${key.slice(0, 20)}" harus berformat YYYY-MM-DD.` },
-            { status: 400 }
-          );
+          return NextResponse.json({ error: "Catatan hold tidak valid." }, { status: 400 });
         }
       }
-      docExpiryPatch = patch;
+      if (data.holdReviewAt !== undefined) {
+        if (data.holdReviewAt === null || data.holdReviewAt === "") {
+          updateData.holdReviewAt = null;
+        } else if (typeof data.holdReviewAt === "string") {
+          const parsed = new Date(data.holdReviewAt);
+          if (Number.isNaN(parsed.getTime())) {
+            return NextResponse.json({ error: "Tanggal review hold tidak valid." }, { status: 400 });
+          }
+          updateData.holdReviewAt = parsed;
+        } else {
+          return NextResponse.json({ error: "Tanggal review hold tidak valid." }, { status: 400 });
+        }
+      }
     }
 
-    const hasMergeFields = starredToggle !== undefined || docExpiryPatch !== undefined;
-    if (Object.keys(updateData).length === 0 && !hasMergeFields) {
+    // Masa berlaku dokumen (NR-24): array {label, expiresAt} -> JSON tersanitasi.
+    if (data.docExpiries !== undefined) {
+      let raw: unknown = data.docExpiries;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          return NextResponse.json({ error: "Masa berlaku dokumen tidak valid." }, { status: 400 });
+        }
+      }
+      if (!Array.isArray(raw)) {
+        return NextResponse.json({ error: "Masa berlaku dokumen harus berupa array." }, { status: 400 });
+      }
+      const items = raw
+        .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+        .filter((item) => typeof item.label === "string" && item.label.trim())
+        .map((item, i) => ({
+          id: typeof item.id === "string" && item.id.trim() ? item.id.trim().slice(0, 40) : `d${i}`,
+          label: (item.label as string).trim().slice(0, 60),
+          expiresAt:
+            typeof item.expiresAt === "string" && !Number.isNaN(new Date(item.expiresAt).getTime())
+              ? new Date(item.expiresAt).toISOString()
+              : "",
+        }))
+        .filter((item) => item.expiresAt !== "");
+      updateData.docExpiries = JSON.stringify(items.slice(0, 20));
+    }
+
+    if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: "Tidak ada perubahan yang dikirim." }, { status: 400 });
-    }
-
-    const existing = await db.application.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
     // Merge bintang personal: tambah/hapus session.id dari JSON string[] existing.
@@ -455,6 +453,59 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         actor: session.name,
         action: "RUBRIC",
         detail: `Rubrik evaluasi diperbarui (${Object.keys(newScores ?? {}).length} kriteria dinilai)`,
+      });
+    }
+    // NR-24 — log fitur per pelamar
+    if (updateData.starredBy !== undefined && updateData.starredBy !== existing.starredBy) {
+      const nowStarred = parseStarredBy(updateData.starredBy).includes(session.id);
+      logs.push({
+        actor: session.name,
+        action: "STAR",
+        detail: nowStarred ? "Ditandai bintang (pin penting)" : "Bintang dilepas",
+      });
+    }
+    if (updateData.followUpAt !== undefined) {
+      const oldFollow = existing.followUpAt ? existing.followUpAt.toISOString() : null;
+      const newFollow = updateData.followUpAt ? updateData.followUpAt.toISOString() : null;
+      if (oldFollow !== newFollow) {
+        logs.push({
+          actor: session.name,
+          action: "FOLLOWUP",
+          detail: updateData.followUpAt
+            ? `Tindak lanjut dijadwalkan ${formatDateTimeId(updateData.followUpAt)}`
+            : "Tanggal tindak lanjut dihapus",
+        });
+      }
+    }
+    if (updateData.salaryExpectation !== undefined &&
+      updateData.salaryExpectation !== existing.salaryExpectation) {
+      const fmt = (v: number | null | undefined) =>
+        v == null ? "-" : `Rp ${v.toLocaleString("id-ID")}`;
+      logs.push({
+        actor: session.name,
+        action: "SALARY_EXPECTATION",
+        detail: `Ekspektasi gaji: ${fmt(existing.salaryExpectation)} → ${fmt(updateData.salaryExpectation)}`,
+      });
+    }
+    if (data.holdClear === true && existing.holdAt) {
+      logs.push({
+        actor: session.name,
+        action: "HOLD",
+        detail: "Tahanan lamaran dilepas (lanjut proses normal)",
+      });
+    } else if (updateData.holdReason !== undefined && updateData.holdReason !== existing.holdReason) {
+      logs.push({
+        actor: session.name,
+        action: "HOLD",
+        detail: `Lamaran ditahan (${data.holdReason})${updateData.holdReviewAt ? ` — review ${formatDateTimeId(updateData.holdReviewAt)}` : ""}`,
+      });
+    }
+    if (updateData.docExpiries !== undefined && updateData.docExpiries !== existing.docExpiries) {
+      const newDocs = parseDocExpiries(updateData.docExpiries);
+      logs.push({
+        actor: session.name,
+        action: "DOC_EXPIRY",
+        detail: `Masa berlaku dokumen diperbarui (${newDocs.length} dokumen terlacak)`,
       });
     }
     if (updateData.checklistState !== undefined && updateData.checklistState !== existing.checklistState) {

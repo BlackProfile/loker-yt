@@ -1,71 +1,50 @@
-// NR-24 — Dokumen internal lamaran (hasil MCU, dokumen HR, dll — hanya terlihat admin).
-// GET  /api/admin/applications/[id]/internal-docs — daftar dokumen urut terbaru (semua role admin).
-// POST /api/admin/applications/[id]/internal-docs — unggah dokumen baru (OWNER/HR), multipart form-data.
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { randomBytes } from "node:crypto";
+// /api/admin/applications/[id]/internal-docs — dokumen internal khusus admin per
+// lamaran (NR-24, fitur 11): KTP, kontrak draft, hasil backcheck. Terisolasi dari
+// semua respons publik — TIDAK PERNAH tampil di halaman status pelamar.
+// GET    : daftar dokumen internal (urut createdAt desc).
+// POST   : unggah dokumen multipart/form-data (field "file" wajib + "label" 1..60),
+//          maks 10MB. File disimpan sebagai FileAsset (folder uploads/ yang sama).
+// DELETE : hapus baris dokumen (?docId=) — FileAsset dibiarkan (riwayat aman).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { MAX_UPLOAD_BYTES, saveUpload } from "@/lib/upload";
 import type { InternalDoc } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
 const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
-const NOT_FOUND = { error: "Lamaran tidak ditemukan" };
+const NOT_FOUND = { error: "Lamaran tidak ditemukan." };
 
-const FILE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
-const NAME_MAX = 120;
+const LABEL_MAX = 60;
 
-function serializeDoc(row: {
+function serializeInternalDoc(row: {
   id: string;
-  name: string;
+  applicationId: string;
+  label: string;
   fileId: string;
   uploadedBy: string;
   createdAt: Date;
 }): InternalDoc {
   return {
     id: row.id,
-    name: row.name,
+    applicationId: row.applicationId,
+    label: row.label,
     fileId: row.fileId,
     uploadedBy: row.uploadedBy,
     createdAt: row.createdAt.toISOString(),
   };
 }
 
-/** Nama file aman: buang path, simpan karakter umum, batasi panjang (pola route lamaran publik). */
-function sanitizeFilename(name: string): string {
-  const base = (name.split(/[\\/]/).pop() ?? "file").trim();
-  const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-  return (cleaned || "file").slice(-80);
-}
-
-/** ID mirip cuid untuk prefiks nama file tersimpan. */
-function cuidLike(): string {
-  return `c${Date.now().toString(36)}${randomBytes(8).toString("hex")}`;
-}
-
-/** Simpan file ke folder uploads/ + catat FileAsset (pola sama dengan route lamaran publik). */
-async function saveUpload(file: File, fallbackMime: string): Promise<{ id: string }> {
-  const uploadsDir = path.join(process.cwd(), "uploads");
-  await mkdir(uploadsDir, { recursive: true });
-  const storedName = `${cuidLike()}-${sanitizeFilename(file.name)}`;
-  const absolutePath = path.join(uploadsDir, storedName);
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(absolutePath, buffer);
-
-  const asset = await db.fileAsset.create({
-    data: {
-      filename: file.name,
-      mimeType: file.type || fallbackMime,
-      size: file.size,
-      path: `uploads/${storedName}`,
-    },
-    select: { id: true },
+async function loadDocs(applicationId: string): Promise<InternalDoc[]> {
+  const rows = await db.internalDoc.findMany({
+    where: { applicationId },
+    orderBy: { createdAt: "desc" },
+    take: 200,
   });
-  return asset;
+  return rows.map(serializeInternalDoc);
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -75,20 +54,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json(UNAUTHORIZED, { status: 401 });
     }
     const { id } = await params;
-
-    const existing = await db.application.findUnique({ where: { id }, select: { id: true } });
-    if (!existing) {
+    const application = await db.application.findUnique({ where: { id }, select: { id: true } });
+    if (!application) {
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
-
-    const rows = await db.applicationInternalDoc.findMany({
-      where: { applicationId: id },
-      orderBy: { createdAt: "desc" },
-    });
-    return NextResponse.json({ docs: rows.map(serializeDoc) });
+    const docs = await loadDocs(id);
+    return NextResponse.json({ ok: true, docs });
   } catch (error) {
     console.error("[GET /api/admin/applications/[id]/internal-docs]", error);
-    return NextResponse.json({ error: "Gagal memuat dokumen internal." }, { status: 500 });
+    return NextResponse.json({ error: "Gagal memuat dokumen internal. Coba lagi nanti." }, { status: 500 });
   }
 }
 
@@ -103,8 +77,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const { id } = await params;
 
-    const existing = await db.application.findUnique({ where: { id }, select: { id: true } });
-    if (!existing) {
+    const application = await db.application.findUnique({ where: { id }, select: { id: true } });
+    if (!application) {
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
@@ -112,35 +86,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     try {
       form = await req.formData();
     } catch {
+      return NextResponse.json({ error: "Data unggahan tidak valid." }, { status: 400 });
+    }
+
+    const labelRaw = form.get("label");
+    const label = typeof labelRaw === "string" ? labelRaw.trim() : "";
+    if (label.length < 1 || label.length > LABEL_MAX) {
       return NextResponse.json(
-        { error: "Data unggahan tidak valid (harus multipart form-data)." },
+        { error: `Label dokumen wajib diisi (maksimal ${LABEL_MAX} karakter).` },
         { status: 400 }
       );
     }
 
-    const file = form.get("file");
-    if (!(file instanceof File) || file.size === 0) {
-      return NextResponse.json({ error: "Berkas wajib dipilih." }, { status: 400 });
+    const fileValue = form.get("file");
+    if (!fileValue || typeof fileValue === "string") {
+      return NextResponse.json({ error: "File dokumen wajib dipilih." }, { status: 400 });
     }
-    if (file.size > FILE_MAX_BYTES) {
-      return NextResponse.json(
-        { error: "Ukuran berkas maksimal 10 MB." },
-        { status: 400 }
-      );
+    const file = fileValue;
+    if (file.size === 0 || !file.name) {
+      return NextResponse.json({ error: "File dokumen wajib dipilih." }, { status: 400 });
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json({ error: "Ukuran file maksimal 10 MB." }, { status: 400 });
     }
 
-    const rawName = form.get("name");
-    if (rawName !== null && typeof rawName !== "string") {
-      return NextResponse.json({ error: "Nama dokumen harus berupa teks." }, { status: 400 });
-    }
-    const name = (typeof rawName === "string" && rawName.trim() ? rawName.trim() : file.name).slice(0, NAME_MAX);
-
-    // Simpan file fisik + FileAsset, lalu catat dokumen internal pada lamaran.
+    // Simpan berkas ke uploads/ + catat sebagai FileAsset (pola /api/admin/upload).
     const asset = await saveUpload(file, "application/octet-stream");
-    const created = await db.applicationInternalDoc.create({
+
+    await db.internalDoc.create({
       data: {
         applicationId: id,
-        name,
+        label,
         fileId: asset.id,
         uploadedBy: session.name,
       },
@@ -150,15 +126,59 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: {
         applicationId: id,
         actor: session.name,
-        action: "INTERNAL_DOC",
-        detail: `Dokumen internal diunggah: ${name}`,
+        action: "INTERNAL_DOC_UPLOADED",
+        detail: `Dokumen internal "${label}" diunggah`,
       },
     });
 
     void emitRealtime(REALTIME_EVENTS.applications);
-    return NextResponse.json({ doc: serializeDoc(created) }, { status: 201 });
+    const docs = await loadDocs(id);
+    return NextResponse.json({ ok: true, docs });
   } catch (error) {
     console.error("[POST /api/admin/applications/[id]/internal-docs]", error);
     return NextResponse.json({ error: "Gagal mengunggah dokumen internal. Coba lagi nanti." }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json(UNAUTHORIZED, { status: 401 });
+    }
+    if (session.role === "VIEWER") {
+      return NextResponse.json(FORBIDDEN, { status: 403 });
+    }
+    const { id } = await params;
+
+    const docId = req.nextUrl.searchParams.get("docId")?.trim() ?? "";
+    if (!docId) {
+      return NextResponse.json({ error: "ID dokumen wajib diisi." }, { status: 400 });
+    }
+    const existing = await db.internalDoc.findFirst({
+      where: { id: docId, applicationId: id },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Dokumen internal tidak ditemukan." }, { status: 404 });
+    }
+
+    // Hanya baris InternalDoc yang dihapus — FileAsset dibiarkan (riwayat aman).
+    await db.internalDoc.delete({ where: { id: docId } });
+
+    await db.activityLog.create({
+      data: {
+        applicationId: id,
+        actor: session.name,
+        action: "INTERNAL_DOC_DELETED",
+        detail: `Dokumen internal "${existing.label}" dihapus`,
+      },
+    });
+
+    void emitRealtime(REALTIME_EVENTS.applications);
+    const docs = await loadDocs(id);
+    return NextResponse.json({ ok: true, docs });
+  } catch (error) {
+    console.error("[DELETE /api/admin/applications/[id]/internal-docs]", error);
+    return NextResponse.json({ error: "Gagal menghapus dokumen internal. Coba lagi nanti." }, { status: 500 });
   }
 }

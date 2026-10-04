@@ -349,7 +349,9 @@ export function PipelineTab({
   );
 
   const positionApps = useMemo(
-    () => applications.filter((a) => a.positionId === positionId),
+    // NR-24: lamaran hasil penggabungan (mergedIntoId) sudah diarsipkan ke
+    // lamaran utamanya — tidak lagi menjadi bagian alur pipeline aktif.
+    () => applications.filter((a) => a.positionId === positionId && !a.mergedIntoId),
     [applications, positionId]
   );
 

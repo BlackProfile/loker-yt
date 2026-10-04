@@ -53,6 +53,7 @@ import {
   RotateCcw,
   Search,
   Sparkles,
+  Star,
   Table2,
   Tag,
   Trash2,
@@ -112,7 +113,7 @@ type ViewMode = "table" | "kanban";
 type SemanticSearchEntryUI = { id: string; name: string; score: number; reason: string };
 
 export function ApplicationsTab() {
-  const { canMutate, reportError } = useAdminSession();
+  const { session, canMutate, reportError } = useAdminSession();
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -128,11 +129,9 @@ export function ApplicationsTab() {
   const [tag, setTag] = useState<string>(ALL);
   const [talentPool, setTalentPool] = useState(false);
   const [hasInterview, setHasInterview] = useState(false);
-  // NR-24 — filter per pelamar server-side (gabung AND dengan filter lain):
-  // bintang personal admin login, snooze tindak lanjut, dan HOLD.
+  // Filter "Ditandai" (NR-24 fitur 2): hanya lamaran yang saya beri bintang
+  // (client-side memakai starredBy milik admin aktif).
   const [starredOnly, setStarredOnly] = useState(false);
-  const [followupOnly, setFollowupOnly] = useState(false);
-  const [holdOnly, setHoldOnly] = useState(false);
   // Filter arsip (client-side memakai field archivedAt): Semua / Aktif / Diarsip.
   const [archiveFilter, setArchiveFilter] = useState<string>("ACTIVE");
   // Filter info kehadiran (client-side, posisi on-site/hybrid): rencana komuter
@@ -243,8 +242,6 @@ export function ApplicationsTab() {
     talentPool ||
     hasInterview ||
     starredOnly ||
-    followupOnly ||
-    holdOnly ||
     archiveFilter !== "ACTIVE" ||
     komuterFilter !== ALL ||
     domisiliFilter.trim() !== "";
@@ -375,9 +372,7 @@ export function ApplicationsTab() {
     setTag(ALL);
     setTalentPool(false);
     setHasInterview(false);
-    setStarredOnly(false); // NR-24 — kembalikan ke default saat reset
-    setFollowupOnly(false);
-    setHoldOnly(false);
+    setStarredOnly(false);
     setArchiveFilter("ACTIVE");
     setKomuterFilter(ALL);
     setDomisiliFilter("");
@@ -414,8 +409,20 @@ export function ApplicationsTab() {
     if (domisiliQuery) {
       list = list.filter((a) => (a.domisili ?? "").toLowerCase().includes(domisiliQuery));
     }
+    // Filter "Ditandai" (NR-24 fitur 2): bintang bersifat personal per admin.
+    if (starredOnly) {
+      list = list.filter((a) => a.starredBy?.includes(session.id) ?? false);
+    }
     return list;
-  }, [applications, archiveFilter, isOtherStageFilter, komuterFilter, domisiliFilter]);
+  }, [
+    applications,
+    archiveFilter,
+    isOtherStageFilter,
+    komuterFilter,
+    domisiliFilter,
+    starredOnly,
+    session.id,
+  ]);
 
   // Jumlah lamaran terarsip (untuk keterangan kecil pada baris filter).
   const archivedCount = useMemo(
@@ -472,6 +479,33 @@ export function ApplicationsTab() {
   function updateAppInList(updated: Application) {
     setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
     setDetail((prev) => (prev && prev.id === updated.id ? updated : prev));
+  }
+
+  // Toggle bintang personal per admin (NR-24 fitur 2): update optimistik,
+  // PATCH {star} ke server, lalu sinkron dari respons. Revert + laporkan bila gagal.
+  function handleToggleStar(app: Application) {
+    const isStarred = app.starredBy?.includes(session.id) ?? false;
+    const previous = applications;
+    setApplications((prev) =>
+      prev.map((a) =>
+        a.id === app.id
+          ? {
+              ...a,
+              starredBy: isStarred
+                ? (a.starredBy ?? []).filter((id) => id !== session.id)
+                : [...(a.starredBy ?? []), session.id],
+            }
+          : a
+      )
+    );
+    apiPatch<Application>(`/api/admin/applications/${app.id}`, { star: !isStarred })
+      .then((updated) => {
+        updateAppInList(updated);
+      })
+      .catch((err) => {
+        setApplications(previous);
+        reportError(err);
+      });
   }
 
   async function handleRate(app: Application, rating: number) {
@@ -901,31 +935,29 @@ export function ApplicationsTab() {
             />
             Ada Jadwal Wawancara
           </label>
-          {/* NR-24 — filter per pelamar (server-side, gabung AND dengan lainnya) */}
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
-            <Switch
-              checked={starredOnly}
-              onCheckedChange={setStarredOnly}
-              aria-label="Filter lamaran ditandai"
+          {/* Toggle "Ditandai" (NR-24 fitur 2): hanya lamaran berbintang milik saya. */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={cn(
+              "h-9 rounded-xl",
+              starredOnly &&
+                "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900/60"
+            )}
+            onClick={() => setStarredOnly((v) => !v)}
+            aria-pressed={starredOnly}
+            aria-label="Hanya tampilkan lamaran yang saya tandai"
+          >
+            <Star
+              className={cn(
+                "size-4",
+                starredOnly ? "fill-amber-400 text-amber-500" : "text-muted-foreground"
+              )}
+              aria-hidden="true"
             />
             Ditandai
-          </label>
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
-            <Switch
-              checked={followupOnly}
-              onCheckedChange={setFollowupOnly}
-              aria-label="Filter lamaran perlu tindak lanjut"
-            />
-            Tindak Lanjut
-          </label>
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
-            <Switch
-              checked={holdOnly}
-              onCheckedChange={setHoldOnly}
-              aria-label="Filter lamaran ditahan (HOLD)"
-            />
-            Ditahan (HOLD)
-          </label>
+          </Button>
           {hasActiveFilter ? (
             <Button
               variant="outline"
@@ -971,6 +1003,9 @@ export function ApplicationsTab() {
           applications={displayedApplications}
           positions={positions}
           canMutate={canMutate}
+          currentUserId={session.id}
+          onToggleStar={handleToggleStar}
+          positions={positions}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
@@ -1226,6 +1261,10 @@ export function ApplicationsTab() {
         onDeleted={(id) =>
           setApplications((prev) => prev.filter((a) => a.id !== id))
         }
+        /* Navigasi antar pelamar di dalam dialog (NR-24 fitur 1). */
+        list={displayedApplications}
+        onNavigate={(app) => setDetail(app)}
+        onListRefresh={() => void loadApplications(true)}
       />
 
       {/* Konfirmasi hapus dari baris */}

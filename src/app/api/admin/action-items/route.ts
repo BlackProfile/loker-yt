@@ -1,10 +1,10 @@
 // GET /api/admin/action-items — daftar hal yang butuh tindakan admin (semua role):
 // lamaran belum ditinjau > 3 hari, permintaan reschedule, offer menunggu jawaban
 // (dengan urgensi deadline), wawancara selesai tanpa skor, onboarding belum lengkap,
-// lamaran duplikat yang perlu dicek, tahap pipeline yang melebihi batas
-// kapasitas (wipOver — NR-19), lamaran snooze yang mendekati jatuh tempo
-// tindak lanjut (followupDue — NR-24) dan HOLD yang mendekati jadwal review
-// ulang (holdReviewDue — NR-24).
+// lamaran duplikat yang perlu dicek, tahap pipeline yang melebihi batas kapasitas
+// (wipOver — NR-19), serta item NR-24: tindak lanjut jatuh tempo (followUpsDue),
+// review lamaran HOLD jatuh tempo (holdReviewsDue), dan tugas uji mendekati/lewat
+// tenggat belum dikumpul (assessmentsDue).
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
@@ -58,9 +58,10 @@ export async function GET() {
     }
 
     const reviewCutoff = new Date(Date.now() - REVIEW_SLA_DAYS * 24 * 60 * 60 * 1000);
-    // NR-24 — jendela "mendekati jatuh tempo": sekarang sampai 3 hari ke depan.
-    const dueSoonCutoff = new Date(Date.now() + DUE_SOON_DAYS * 24 * 60 * 60 * 1000);
-    const [rescheduleRows, offerRows, unscoredRows, onboardingRows, staleNewRows, duplicateRows, followupRows, holdReviewRows] = await Promise.all([
+    // NR-24 — item "jatuh tempo" dipakai utk followUpAt/holdReviewAt/assessment.dueAt:
+    // jendela 3 hari ke depan; item yang sudah lewat tenggat tetap masuk (lte).
+    const in3Days = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const [rescheduleRows, offerRows, unscoredRows, onboardingRows, staleNewRows, duplicateRows, followUpRows, holdReviewRows, dueAssessments] = await Promise.all([
       db.interview.findMany({
         where: { status: "RESCHEDULE_REQUESTED" },
         orderBy: { scheduledAt: "asc" },
@@ -114,31 +115,41 @@ export async function GET() {
         take: 20,
         select: { id: true, name: true, createdAt: true, position: { select: { title: true } } },
       }),
-      // NR-24 — lamaran yang di-snooze dan mendekati/jatuh tempo tindak lanjut.
+      // NR-24 — tindak lanjut (snooze) jatuh tempo dalam 3 hari.
       db.application.findMany({
-        where: { deletedAt: null, snoozeUntil: { not: null, lte: dueSoonCutoff } },
-        orderBy: { snoozeUntil: "asc" },
+        where: { followUpAt: { lte: in3Days, not: null }, deletedAt: null, mergedIntoId: null },
+        orderBy: { followUpAt: "asc" },
         take: 20,
-        select: {
-          id: true,
-          name: true,
-          trackingCode: true,
-          snoozeUntil: true,
-          position: { select: { title: true } },
-        },
+        select: { id: true, name: true, followUpAt: true, createdAt: true, position: { select: { title: true } } },
       }),
-      // NR-24 — lamaran HOLD dengan jadwal review ulang mendekati/terlewat.
+      // NR-24 — review lamaran HOLD jatuh tempo dalam 3 hari.
       db.application.findMany({
-        where: { deletedAt: null, holdReviewAt: { not: null, lte: dueSoonCutoff } },
+        where: {
+          holdReviewAt: { lte: in3Days, not: null },
+          holdAt: { not: null },
+          deletedAt: null,
+          mergedIntoId: null,
+        },
         orderBy: { holdReviewAt: "asc" },
         take: 20,
         select: {
           id: true,
           name: true,
-          trackingCode: true,
           holdReason: true,
           holdReviewAt: true,
+          createdAt: true,
           position: { select: { title: true } },
+        },
+      }),
+      // NR-24 — tugas uji mendekati/lewat tenggat yang belum dikumpul.
+      db.assessment.findMany({
+        where: { status: "DIKIRIM", dueAt: { lte: in3Days } },
+        orderBy: { dueAt: "asc" },
+        take: 20,
+        include: {
+          application: {
+            select: { id: true, name: true, deletedAt: true, position: { select: { title: true } } },
+          },
         },
       }),
     ]);
@@ -192,22 +203,29 @@ export async function GET() {
         positionTitle: row.position?.title ?? null,
         createdAt: row.createdAt.toISOString(),
       })),
-      // NR-24 — tindak lanjut snooze & review HOLD yang mendekati jatuh tempo.
-      followupDue: followupRows.map((row) => ({
-        id: row.id,
+      followUpsDue: followUpRows.map((row) => ({
+        applicationId: row.id,
         name: row.name,
-        trackingCode: row.trackingCode,
-        snoozeUntil: row.snoozeUntil ? row.snoozeUntil.toISOString() : null,
         positionTitle: row.position?.title ?? null,
+        dueAt: (row.followUpAt ?? row.createdAt).toISOString(),
       })),
-      holdReviewDue: holdReviewRows.map((row) => ({
-        id: row.id,
+      holdReviewsDue: holdReviewRows.map((row) => ({
+        applicationId: row.id,
         name: row.name,
-        trackingCode: row.trackingCode,
+        positionTitle: row.position?.title ?? null,
         holdReason: row.holdReason,
-        holdReviewAt: row.holdReviewAt ? row.holdReviewAt.toISOString() : null,
-        positionTitle: row.position?.title ?? null,
+        reviewAt: (row.holdReviewAt ?? row.createdAt).toISOString(),
       })),
+      assessmentsDue: dueAssessments
+        .filter((row) => row.application.deletedAt === null)
+        .map((row) => ({
+          assessmentId: row.id,
+          applicationId: row.application.id,
+          name: row.application.name,
+          positionTitle: row.application.position?.title ?? null,
+          title: row.title,
+          dueAt: row.dueAt.toISOString(),
+        })),
     };
 
     const wipOver: NonNullable<ActionItemsResponse["wipOver"]> = [];

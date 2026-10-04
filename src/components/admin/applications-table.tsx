@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,14 +12,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Eye, MessageCircle, PauseCircle, Share2, Star, Trash2, Wallet } from "lucide-react";
+import { Bell, Eye, MessageCircle, Share2, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { Application, Position } from "@/lib/types";
+import {
+  HOLD_REASON_LABELS,
+  type Application,
+  type DocExpiry,
+  type Position,
+} from "@/lib/types";
 import { apiGet } from "./api";
-import { useAdminSession } from "./admin-context";
-import { formatDate, initialsOf } from "./format";
+import { cn } from "@/lib/utils";
+import {
+  daysUntil,
+  formatDate,
+  formatRupiah,
+  formatShortDateTime,
+  initialsOf,
+} from "./format";
 import { StatusBadge, AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
+import { useTagDefs } from "./use-tag-defs";
 
 // Baris template dari /api/admin/templates (dipakai untuk pesan WhatsApp).
 type TemplateRow = {
@@ -78,122 +90,160 @@ function DuplicateBadge() {
   );
 }
 
-/** Format rupiah singkat untuk tooltip: 3500000 -> "Rp 3,5 jt". */
-function formatJutaShort(value: number): string {
-  if (value >= 1_000_000) {
-    const jt = value / 1_000_000;
-    const text = Number.isInteger(jt) ? String(jt) : jt.toFixed(1).replace(".", ",");
-    return `Rp ${text} jt`;
-  }
-  return `Rp ${new Intl.NumberFormat("id-ID").format(value)}`;
-}
-
-/** Ikon bintang amber (NR-24) — lamaran ditandai penting oleh admin yang sedang login. */
-function StarMark() {
-  return (
-    <span title="Ditandai penting oleh Anda" className="inline-flex shrink-0">
-      <Star
-        className="size-3.5 fill-amber-400 text-amber-500 dark:fill-amber-500 dark:text-amber-400"
-        aria-hidden="true"
-      />
-      <span className="sr-only">Ditandai penting</span>
-    </span>
-  );
-}
-
-/** Chip "HOLD" amber (NR-24) — proses lamaran ditahan dengan alasan tertentu. */
-function HoldBadge({ reason }: { reason: string }) {
+/** Chip/badge mini serbaguna — pola sama dengan DuplicateBadge di atas. */
+function MiniChip({
+  className,
+  title,
+  children,
+}: {
+  className: string;
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <span
-      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-400"
-      title={`Ditahan (HOLD)${reason ? `: ${reason}` : ""}`}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+        className
+      )}
+      title={title}
     >
-      <PauseCircle className="size-3" aria-hidden="true" />
-      HOLD
+      {children}
     </span>
   );
 }
 
-/** Chip zinc "Digabung" (NR-24) — lamaran digabung ke lamaran utama pelamar sama. */
-function MergedBadge() {
+/** Badge "Ditahan" (amber) untuk lamaran yang di-HOLD — NR-24 fitur 8. */
+function HoldBadge({ app }: { app: Application }) {
+  const bits: string[] = ["Lamaran ditahan"];
+  if (app.holdReason) bits.push(HOLD_REASON_LABELS[app.holdReason]);
+  if (app.holdNote?.trim()) bits.push(app.holdNote.trim());
   return (
-    <span
-      className="inline-flex shrink-0 items-center rounded-full border border-zinc-300 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
-      title="Lamaran digabung ke lamaran utama pelamar yang sama"
+    <MiniChip
+      className="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+      title={bits.join(" — ")}
     >
-      Digabung
-    </span>
+      Ditahan
+    </MiniChip>
   );
 }
 
-/** Chip amber "Gaji > rentang" (NR-24) — ekspektasi melebihi salaryMax posisi. */
-function SalaryOverBadge({ expected, max }: { expected: number; max: number }) {
+/** Badge "Do-not-hire" (rose) — pelamar tidak direkrut — NR-24 fitur 15. */
+function DoNotHireBadge({ app }: { app: Application }) {
   return (
-    <span
-      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-400"
-      title={`Ekspektasi gaji ${formatJutaShort(expected)} di atas rentang wajar posisi (maks ${formatJutaShort(max)})`}
+    <MiniChip
+      className="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400"
+      title={
+        app.doNotHireReason?.trim()
+          ? `Do-not-hire: ${app.doNotHireReason.trim()}`
+          : "Pelamar ditandai do-not-hire"
+      }
     >
-      <Wallet className="size-3" aria-hidden="true" />
-      Gaji &gt; rentang
-    </span>
+      Do-not-hire
+    </MiniChip>
   );
+}
+
+/** Badge tindak lanjut jatuh tempo (amber, ikon Bell) — NR-24 fitur 4. */
+function FollowUpBadge({ app }: { app: Application }) {
+  return (
+    <MiniChip
+      className="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+      title={`Tindak lanjut jatuh tempo — ${formatShortDateTime(app.followUpAt)}`}
+    >
+      <Bell className="size-3" aria-hidden="true" />
+      {`Tindak lanjut: ${formatShortDateTime(app.followUpAt)}`}
+    </MiniChip>
+  );
+}
+
+/** Badge dokumen mau kedaluwarsa <= 30 hari (rose) — NR-24 fitur 13. */
+function DocExpiryBadge({ docs }: { docs: DocExpiry[] }) {
+  return (
+    <MiniChip
+      className="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400"
+      title={`Dokumen mau kedaluwarsa (maks. 30 hari): ${docs
+        .map((d) => d.label)
+        .join(", ")}`}
+    >
+      {"Dokumen <30 hr"}
+    </MiniChip>
+  );
+}
+
+/** Tindak lanjut sudah jatuh tempo (hari ini atau terlewat)? NR-24 fitur 4. */
+function isFollowUpDue(app: Application): boolean {
+  if (!app.followUpAt) return false;
+  const days = daysUntil(app.followUpAt);
+  return days !== null && days <= 0;
+}
+
+/** Dokumen yang berakhir dalam 30 hari (atau sudah lewat). NR-24 fitur 13. */
+function expiringDocs(app: Application): DocExpiry[] {
+  return (app.docExpiries ?? []).filter((doc) => {
+    const days = daysUntil(doc.expiresAt);
+    return days !== null && days <= 30;
+  });
 }
 
 /**
- * Chip meta baris nama (NR-24): duplikat, diarsip, HOLD, digabung, gaji >
- * rentang — ditampilkan ringkas maks 2 chip, sisanya jadi "+n" (pola tags).
+ * Chip ekspektasi gaji pelamar vs rentang gaji posisi — NR-24 fitur 6.
+ * Sesuai = emerald, di atas = amber, di bawah / tanpa rentang = zinc.
  */
-function AppMetaChips({
-  app,
-  positions,
-}: {
-  app: Application;
-  positions: Position[];
-}) {
-  const chips: { key: string; node: ReactNode }[] = [];
-  if (app.isDuplicate === true) {
-    chips.push({ key: "duplicate", node: <DuplicateBadge /> });
+function SalaryChip({ app, position }: { app: Application; position: Position | null }) {
+  const expectation = app.salaryExpectation;
+  if (expectation == null) return null;
+  const min = position?.salaryMin ?? null;
+  const max = position?.salaryMax ?? null;
+  const expectationText = formatRupiah(expectation);
+
+  // Tanpa rentang (posisi tidak ditemukan / salaryMin & salaryMax kosong).
+  if (min == null && max == null) {
+    return (
+      <MiniChip
+        className="bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+        title={`Ekspektasi: ${expectationText}`}
+      >
+        {`Ekspektasi: ${expectationText}`}
+      </MiniChip>
+    );
   }
-  if (app.archivedAt) {
-    chips.push({ key: "archived", node: <ArchivedBadge /> });
+
+  const rangeText =
+    min != null && max != null
+      ? `rentang ${formatRupiah(min)}\u2013${formatRupiah(max)}`
+      : min != null
+        ? `rentang minimal ${formatRupiah(min)}`
+        : `rentang maksimal ${formatRupiah(max)}`;
+  const title = `Ekspektasi: ${expectationText} (${rangeText})`;
+
+  if (max != null && expectation > max) {
+    return (
+      <MiniChip
+        className="bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+        title={title}
+      >
+        Di atas rentang
+      </MiniChip>
+    );
   }
-  if (app.holdReason) {
-    chips.push({ key: "hold", node: <HoldBadge reason={app.holdReason} /> });
+  if (min != null && expectation < min) {
+    return (
+      <MiniChip
+        className="bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+        title={title}
+      >
+        Di bawah rentang
+      </MiniChip>
+    );
   }
-  if (app.mergedIntoId) {
-    chips.push({ key: "merged", node: <MergedBadge /> });
-  }
-  if (app.expectedSalary != null) {
-    const position = app.positionId
-      ? positions.find((p) => p.id === app.positionId)
-      : positions.find((p) => p.title === app.positionTitle);
-    if (position?.salaryMax != null && app.expectedSalary > position.salaryMax) {
-      chips.push({
-        key: "salary-over",
-        node: (
-          <SalaryOverBadge expected={app.expectedSalary} max={position.salaryMax} />
-        ),
-      });
-    }
-  }
-  const shown = chips.slice(0, 2);
-  const extra = chips.length - shown.length;
   return (
-    <>
-      {shown.map((chip) => (
-        <span key={chip.key} className="contents">
-          {chip.node}
-        </span>
-      ))}
-      {extra > 0 ? (
-        <span
-          className="inline-flex shrink-0 items-center rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-secondary-foreground"
-          title={`${extra} penanda lainnya`}
-        >
-          +{extra}
-        </span>
-      ) : null}
-    </>
+    <MiniChip
+      className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+      title={title}
+    >
+      Sesuai rentang
+    </MiniChip>
   );
 }
 
@@ -201,6 +251,9 @@ export function ApplicationsTable({
   applications,
   positions = [],
   canMutate,
+  currentUserId,
+  onToggleStar,
+  positions,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
@@ -214,6 +267,12 @@ export function ApplicationsTable({
   /** Daftar posisi untuk cek ekspektasi gaji vs rentang wajar (NR-24). */
   positions?: Position[];
   canMutate: boolean;
+  /** NR-24 fitur 2: id admin aktif — untuk cek starredBy milik siapa. */
+  currentUserId: string;
+  /** NR-24 fitur 2: toggle bintang personal (state optimistik di induk). */
+  onToggleStar: (app: Application) => void;
+  /** NR-24 fitur 6: daftar posisi — untuk chip ekspektasi gaji vs rentang. */
+  positions: Position[];
   selectedIds: Set<string>;
   onToggleSelect: (id: string, checked: boolean) => void;
   onToggleSelectAll: (checked: boolean) => void;
@@ -226,14 +285,13 @@ export function ApplicationsTable({
   // Cache pesan WhatsApp (body template OFFER pertama) — dimuat sekali saat pertama dipakai.
   const waTemplateRef = useRef<string | null>(null);
 
-  // NR-24 — bintang personal: hanya admin pemilik bintang yang melihat ikonnya.
-  const { session } = useAdminSession();
-  const adminId = session.id;
-
-  /** Bintang amber di samping nama bila lamaran ditandai oleh admin ini. */
-  function starMark(app: Application): ReactNode {
-    return adminId && app.starredBy.includes(adminId) ? <StarMark /> : null;
-  }
+  // NR-24 fitur 3: warna chip tag dari definisi tag tim (useTagDefs).
+  const { colorClassOf } = useTagDefs();
+  // NR-24 fitur 6: peta posisi utk chip ekspektasi gaji.
+  const positionById = useMemo(
+    () => new Map(positions.map((p) => [p.id, p])),
+    [positions]
+  );
 
   const allSelected =
     applications.length > 0 &&
@@ -284,6 +342,10 @@ export function ApplicationsTable({
                   aria-label="Pilih semua pelamar"
                 />
               </TableHead>
+              {/* Kolom bintang "Tandai penting" (NR-24 fitur 2). */}
+              <TableHead className="w-10 px-2 py-3">
+                <span className="sr-only">Ditandai</span>
+              </TableHead>
               <TableHead className="w-10 px-2 py-3 text-center text-xs">
                 Bandingkan
               </TableHead>
@@ -302,6 +364,11 @@ export function ApplicationsTable({
             {applications.map((app) => {
               const isSelected = selectedIds.has(app.id);
               const isCompared = compareIds.includes(app.id);
+              const isStarred = app.starredBy?.includes(currentUserId) ?? false;
+              const position = app.positionId
+                ? positionById.get(app.positionId) ?? null
+                : null;
+              const dueDocs = expiringDocs(app);
               return (
                 <TableRow key={app.id} data-state={isSelected ? "selected" : undefined}>
                   <TableCell className="px-4 py-3">
@@ -313,6 +380,38 @@ export function ApplicationsTable({
                       }
                       aria-label={`Pilih ${app.name}`}
                     />
+                  </TableCell>
+                  <TableCell className="px-2 py-3">
+                    <div className="flex justify-center">
+                      {canMutate ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 hover:text-amber-600 dark:hover:text-amber-400"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleStar(app);
+                          }}
+                          title="Tandai penting"
+                          aria-pressed={isStarred}
+                          aria-label={
+                            isStarred
+                              ? `Hapus tanda penting dari ${app.name}`
+                              : `Tandai penting ${app.name}`
+                          }
+                        >
+                          <Star
+                            className={cn(
+                              "size-4",
+                              isStarred
+                                ? "fill-amber-400 text-amber-500"
+                                : "text-muted-foreground/60"
+                            )}
+                            aria-hidden="true"
+                          />
+                        </Button>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="px-2 py-3">
                     <div className="flex justify-center">
@@ -329,12 +428,15 @@ export function ApplicationsTable({
                         {initialsOf(app.name)}
                       </span>
                       <div className="min-w-0">
-                        <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
-                          <span className="truncate">{app.name}</span>
-                          {starMark(app)}
-                          {/* NR-24 — chip meta ringkas: duplikat/diarsip/HOLD/digabung/gaji (maks 2 + "+n") */}
-                          <AppMetaChips app={app} positions={positions} />
-                        </p>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className="max-w-40 truncate text-sm font-semibold">
+                            {app.name}
+                          </span>
+                          {app.isDuplicate === true ? <DuplicateBadge /> : null}
+                          {app.archivedAt ? <ArchivedBadge /> : null}
+                          {app.doNotHire ? <DoNotHireBadge app={app} /> : null}
+                          {app.holdAt ? <HoldBadge app={app} /> : null}
+                        </div>
                         <p className="truncate text-xs text-muted-foreground">
                           {app.email}
                           {app.phone ? ` · ${app.phone}` : ""}
@@ -351,7 +453,11 @@ export function ApplicationsTable({
                     </div>
                   </TableCell>
                   <TableCell className="max-w-36 px-4 py-3 text-sm">
-                    {app.positionTitle ?? "-"}
+                    <div className="flex flex-col gap-1">
+                      <span className="truncate">{app.positionTitle ?? "-"}</span>
+                      {/* Chip ekspektasi gaji vs rentang posisi (NR-24 fitur 6). */}
+                      <SalaryChip app={app} position={position} />
+                    </div>
                   </TableCell>
                   <TableCell className="max-w-32 px-4 py-3">
                     {app.source ? (
@@ -383,7 +489,10 @@ export function ApplicationsTable({
                       {tagsPreview(app.tags).map((tag) => (
                         <span
                           key={tag}
-                          className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground"
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                            colorClassOf(tag)
+                          )}
                         >
                           {tag}
                         </span>
@@ -402,7 +511,12 @@ export function ApplicationsTable({
                     {formatDate(app.createdAt)}
                   </TableCell>
                   <TableCell className="px-4 py-3">
-                    <StatusBadge status={app.status} />
+                    <div className="flex flex-col items-start gap-1">
+                      <StatusBadge status={app.status} />
+                      {/* Badge NR-24: tindak lanjut jatuh tempo + dokumen mau kedaluwarsa. */}
+                      {isFollowUpDue(app) ? <FollowUpBadge app={app} /> : null}
+                      {dueDocs.length > 0 ? <DocExpiryBadge docs={dueDocs} /> : null}
+                    </div>
                   </TableCell>
                   <TableCell className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
@@ -453,6 +567,11 @@ export function ApplicationsTable({
         {applications.map((app) => {
           const isSelected = selectedIds.has(app.id);
           const isCompared = compareIds.includes(app.id);
+          const isStarred = app.starredBy?.includes(currentUserId) ?? false;
+          const position = app.positionId
+            ? positionById.get(app.positionId) ?? null
+            : null;
+          const dueDocs = expiringDocs(app);
           return (
             <Card
               key={app.id}
@@ -473,18 +592,27 @@ export function ApplicationsTable({
                     {initialsOf(app.name)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
-                      <span className="truncate">{app.name}</span>
-                      {starMark(app)}
-                      {/* NR-24 — chip meta ringkas: duplikat/diarsip/HOLD/digabung/gaji (maks 2 + "+n") */}
-                      <AppMetaChips app={app} positions={positions} />
-                    </p>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="max-w-40 truncate text-sm font-semibold">
+                        {app.name}
+                      </span>
+                      {app.isDuplicate === true ? <DuplicateBadge /> : null}
+                      {app.archivedAt ? <ArchivedBadge /> : null}
+                      {app.doNotHire ? <DoNotHireBadge app={app} /> : null}
+                      {app.holdAt ? <HoldBadge app={app} /> : null}
+                    </div>
                     <p className="truncate text-xs text-muted-foreground">
                       {app.email}
                     </p>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
                       {app.positionTitle ?? "-"} · {formatDate(app.createdAt)}
                     </p>
+                    {/* Chip ekspektasi gaji vs rentang posisi (NR-24 fitur 6). */}
+                    {app.salaryExpectation != null ? (
+                      <div className="mt-1">
+                        <SalaryChip app={app} position={position} />
+                      </div>
+                    ) : null}
                     {app.source ? (
                       <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                         <Share2 className="size-3 shrink-0" aria-hidden="true" />
@@ -500,7 +628,12 @@ export function ApplicationsTable({
                       </div>
                     ) : null}
                   </div>
-                  <StatusBadge status={app.status} />
+                  <div className="flex flex-col items-end gap-1">
+                    <StatusBadge status={app.status} />
+                    {/* Badge NR-24: tindak lanjut jatuh tempo + dokumen. */}
+                    {isFollowUpDue(app) ? <FollowUpBadge app={app} /> : null}
+                    {dueDocs.length > 0 ? <DocExpiryBadge docs={dueDocs} /> : null}
+                  </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <AiScoreBadge score={app.aiScore} />
@@ -514,7 +647,10 @@ export function ApplicationsTable({
                   {app.tags.slice(0, 2).map((tag) => (
                     <span
                       key={tag}
-                      className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground"
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                        colorClassOf(tag)
+                      )}
                     >
                       {tag}
                     </span>
@@ -529,6 +665,32 @@ export function ApplicationsTable({
                     />
                     Bandingkan
                   </label>
+                  {/* Toggle bintang personal (NR-24 fitur 2). */}
+                  {canMutate ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 shrink-0 hover:text-amber-600 dark:hover:text-amber-400"
+                      onClick={() => onToggleStar(app)}
+                      title="Tandai penting"
+                      aria-pressed={isStarred}
+                      aria-label={
+                        isStarred
+                          ? `Hapus tanda penting dari ${app.name}`
+                          : `Tandai penting ${app.name}`
+                      }
+                    >
+                      <Star
+                        className={cn(
+                          "size-5",
+                          isStarred
+                            ? "fill-amber-400 text-amber-500"
+                            : "text-muted-foreground/60"
+                        )}
+                        aria-hidden="true"
+                      />
+                    </Button>
+                  ) : null}
                   {app.phone?.trim() ? (
                     <Button
                       variant="outline"
