@@ -34,9 +34,24 @@ while true; do
     fi
 
     # 2) Push hanya jika commit lokal belum ada di remote
+    git fetch origin "$BRANCH" >/dev/null 2>&1 || true
     LOCAL=$(git rev-parse HEAD 2>/dev/null || echo "")
     REMOTE=$(git rev-parse "origin/${BRANCH}" 2>/dev/null || echo "")
     if [ -n "$LOCAL" ] && [ "$LOCAL" != "$REMOTE" ]; then
+      # Remote bisa maju sendiri (sinkron platform/sesi lain). Tanpa rebase,
+      # push gagal non-fast-forward SELAMANYA dan backup demo tidak pernah
+      # sampai ke GitHub. Rebase dengan -X theirs = utamakan versi lokal
+      # (state lokal selalu yang paling baru) saat konflik.
+      if [ -n "$REMOTE" ] && ! git merge-base --is-ancestor "$REMOTE" "$LOCAL" 2>/dev/null; then
+        log "remote diverged — git pull --rebase -X theirs"
+        if ! git pull --rebase -X theirs origin "$BRANCH" >>"$LOG" 2>&1; then
+          log "rebase gagal — dicoba ulang siklus berikutnya"
+          rotate_log
+          rmdir "$LOCK" 2>/dev/null
+          sleep "$INTERVAL"
+          continue
+        fi
+      fi
       if git push origin "$BRANCH" >/dev/null 2>>"$LOG"; then
         log "push OK -> ${LOCAL:0:7}"
       else

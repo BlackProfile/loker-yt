@@ -4,7 +4,10 @@
 # survive di sandbox (nohup polos bisa mati). Setiap 10 detik cek endpoint
 # publik; jika down, jalankan ulang `bun run dev`.
 set -u
-LOG="/home/z/my-project/dev.log"
+# Log event guard ke file khusus (dev.log ditulis `tee` non-O_APPEND — baris
+# append bisa tertimpa). Output server tetap ke dev.log.
+LOG="/home/z/my-project/dev-keepalive.log"
+SERVER_LOG="/home/z/my-project/dev.log"
 PROJECT_DIR="/home/z/my-project"
 INTERVAL=10
 
@@ -18,7 +21,7 @@ while true; do
   else
     log "dev server DOWN, menjalankan ulang..."
     cd "$PROJECT_DIR" || { log "gagal cd $PROJECT_DIR"; sleep "$INTERVAL"; continue; }
-    nohup bun run dev >> "$LOG" 2>&1 &
+    nohup bun run dev >> "$SERVER_LOG" 2>&1 &
     log "restart dipicu (pid $!)"
     sleep 15
   fi

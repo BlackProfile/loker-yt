@@ -19,7 +19,10 @@ set -u
 PROJECT_DIR="/home/z/my-project"
 DB="$PROJECT_DIR/db/custom.db"
 BAK="$PROJECT_DIR/backups/custom.db.demo-seed.bak"
-LOG="$PROJECT_DIR/dev.log"
+# Catatan: log guard TIDAK ke dev.log — `tee dev.log` (non-O_APPEND) menimpa
+# baris append secara acak. Pakai file khusus agar riwayat restore selalu terbaca.
+LOG="$PROJECT_DIR/db-guard.log"
+SERVER_LOG="$PROJECT_DIR/dev.log"
 INTERVAL=60
 
 cd "$PROJECT_DIR" || exit 1
@@ -46,7 +49,7 @@ while true; do
       # dev server sendiri agar aplikasi tidak pernah menggantung mati.
       sleep 20
       if ! curl -s --max-time 5 http://localhost:3000/api/public/site >/dev/null 2>&1; then
-        nohup bun run dev >> "$LOG" 2>&1 &
+        nohup bun run dev >> "$SERVER_LOG" 2>&1 &
         log "fallback: dev server dijalankan ulang oleh db-guard (pid $!)"
       fi
     else
