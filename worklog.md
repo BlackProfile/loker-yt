@@ -2663,3 +2663,20 @@ Stage Summary:
 - NR-22: admin bisa menyembunyikan 8 blok dialog detail per posisi dari setelan Seleksi → "Tampilan Detail Lamaran"; default semua tampil; duplicate posisi ikut menyalin konfigurasi.
 - NR-23: bagian bawaan Pengalaman & Berkas bisa dihapus lewat mode kunci (ketik "kunci") dengan tombstone yang bisa dipulihkan kapan saja; Data Diri permanen (identitas/deteksi duplikat); wizard publik otomatis melewati bagian yang dihapus.
 - State final DB: 23 posisi / 43 lamaran / hiddenUi semua "[]" / PRT memakai skema v2 hasil test (setara klasik: CV off, tanpa pengalaman removed) — backup demo-seed diperbarui.
+
+---
+Task ID: NR-25-hotfix
+Agent: Z.ai Code main (orchestrator)
+
+Task: User melapor "tetap ini masih ada fitur yang hilang". Diagnosa menemukan 2 akar masalah yang menjelaskan laporan berulang: (A) layanan pendukung mati, (B) visibilitas section halaman publik hampir semua OFF.
+
+Work Log:
+- (A) LAYANAN MATI — disebabkan pkill "bun run dev" milik orchestrator saat restart dev server (NR-25): pkill ikut membunuh mini-service realtime (:3003) & telegram-bot (:3004) plus watcher auto-push. Port scan membuktikan hanya 3000 & 81 yang listen. FIX: bash scripts/start-realtime.sh + start-telegram.sh + start-auto-push.sh → 3003 & 3003 listen kembali; realtime.log "client connected"; E2E realtime: PATCH {star:true} via API → bintang muncul di tabel Pelamar TANPA reload ("REALTIME-OK"); unstar kembali. Telegram poller hidup (health {"ok":true}; enabled mengikuti toggle situs — saat ini false, token kosong = perlu dikonfigurasi user di Pengaturan bila ingin bot aktif).
+- (B) SECTION PUBLIK OFF — Setting key "site".sections ternyata {hero:false, about:false, benefits:false, steps:false, testimonials:false, faq:false, subscribe:false, finalCta:false, chatbot:false} (hanya positions/applyForm/statusCheck true) — konten (4 FAQ, 6 benefit, 3 testimoni, hero) ada semua di Setting tapi tak dirender; diperkirakan sisa state reset DB yang ikut terbawa di backup. FIX: db.setting.update → semua 12 section true + chatbotEnabled true. E2E :81: hero/about/benefit/langkah/testimoni/FAQ/subscribe/CTA tampil; tombol chat "Buka obrolan" ada di DOM; POST /api/chat membalas daftar posisi (LLM berfungsi); recruitmentClosed false (tanpa banner tutup).
+- Audit menyeluruh: 13 tab admin lengkap; 11 endpoint kunci (applications, positions, action-items, notifications, scorecards, backups, analytics, position-stats, users, settings, interviews) semua 200.
+- BACKUP diperbarui lagi (cp db/custom.db backups/custom.db.demo-seed.bak) agar auto-restore masa depan membawa state section terlihat + 23 posisi/43 lamaran.
+- Pelajaran/protokol: (1) JANGAN pkill "bun run dev" global — matikan PID spesifik dev server saja, lalu jalankan start-realtime.sh & start-telegram.sh & start-auto-push.sh setiap restart; (2) setelah restore/reset DB, periksa Setting key "site" (sections & chatbotEnabled) — kolom ini ikut ter-reset dan bikin fitur publik "menghilang" tanpa kode hilang.
+
+Stage Summary:
+- Penyebab "fitur hilang" yang berulang: bukan kode — layanan realtime/telegram mati akibat restart orchestrator + section visibility situs yang off karena sisa reset DB. Keduanya diperbaiki dan diverifikasi E2E via :81: realtime live-refresh OK, chatbot OK, semua section publik tampil, semua tab admin & API sehat.
+- State final: 23 posisi / 43 lamaran / semua section situs ON / chatbot ON / layanan lengkap (dev :3000, realtime :3003, telegram :3004, db-guard, auto-push, semua keepalive).
