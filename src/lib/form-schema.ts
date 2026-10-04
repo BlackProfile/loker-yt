@@ -495,6 +495,45 @@ export function newFormId(prefix: string): string {
 
 /* ---------------------------------- Parser ---------------------------------- */
 
+/**
+ * Ambil label kustom item inti dari raw — trim + batas panjang; kosong = tidak
+ * diset (pakai label bawaan). strict=true mengembalikan pesan error bila melebihi
+ * batas (dipakai sanitasi server); strict=false memotong diam-diam (dipakai parser).
+ */
+function pickCoreLabels(
+  section: FormSection,
+  raw: Record<string, unknown>,
+  strict: boolean,
+): string | null {
+  const candidates: [CoreItemKey, "nameLabel" | "emailLabel" | "waLabel" | "experienceLabel" | "motivationLabel" | "cvLabel" | "introLabel" | "portfolioLabel"][] =
+    section.kind === "biodata"
+      ? [["name", "nameLabel"], ["email", "emailLabel"], ["wa", "waLabel"]]
+      : section.kind === "experience"
+        ? [["experience", "experienceLabel"], ["motivation", "motivationLabel"]]
+        : section.kind === "files"
+          ? [["cv", "cvLabel"], ["intro", "introLabel"], ["portfolio", "portfolioLabel"]]
+          : [];
+  for (const [key, prop] of candidates) {
+    const value = raw[prop];
+    if (value == null) continue;
+    if (typeof value !== "string") {
+      if (strict) return `Label item "${CORE_ITEM_DEFAULT_LABELS[key]}" harus berupa teks.`;
+      continue;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    if (trimmed.length > FORM_LIMITS.labelMax) {
+      if (strict) {
+        return `Label item "${CORE_ITEM_DEFAULT_LABELS[key]}" maksimal ${FORM_LIMITS.labelMax} karakter.`;
+      }
+      section[prop] = trimmed.slice(0, FORM_LIMITS.labelMax);
+      continue;
+    }
+    section[prop] = trimmed;
+  }
+  return null;
+}
+
 /** Jenis bagian dari input mentah: valid, atau ditebak dari id bawaan, atau kustom. */
 function parseSectionKind(value: unknown, id: string): FormSectionKind {
   if (typeof value === "string" && (FORM_SECTION_KINDS as readonly string[]).includes(value)) {
