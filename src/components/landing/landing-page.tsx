@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { motion, MotionConfig } from "framer-motion";
+import { motion, MotionConfig, useReducedMotion } from "framer-motion";
 import {
   Instagram,
   Mail,
@@ -276,6 +276,40 @@ function Navbar({
   );
 }
 
+// Ilustrasi hero (NR-28-A): kartu visual "pesawat kertas lamaran" di sisi kanan
+// hero. Hanya tampil mulai md; float pelan yang mati saat reduce-motion.
+function HeroVisual() {
+  const reduceMotion = useReducedMotion();
+
+  return (
+    <motion.div
+      className="relative hidden md:block"
+      initial={{ opacity: 0, y: 28 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
+    >
+      <motion.div
+        animate={reduceMotion ? undefined : { y: [0, -10, 0] }}
+        transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <div className="overflow-hidden rounded-3xl shadow-xl shadow-black/40 ring-1 ring-zinc-200/60 dark:ring-zinc-800">
+          {/* Hero tidak memakai next/image — <img> dengan width/height eksplisit
+              (rasio asli 1152×864) agar tidak terjadi layout shift. */}
+          <img
+            src="/images/hero-flow.png"
+            alt="Ilustrasi pesawat kertas lamaran yang terbang naik"
+            width={1152}
+            height={864}
+            loading="eager"
+            decoding="async"
+            className="h-auto w-full object-cover"
+          />
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function Hero({
   content,
   positions,
@@ -290,6 +324,8 @@ function Hero({
   recruitmentClosed: boolean;
 }) {
   const { t } = useLang();
+  // Blob gradasi hero dimatikan total saat pengguna memilih reduce-motion.
+  const reduceMotion = useReducedMotion();
 
   // Stat mode kerja count-aware (fitur non-remote): bila semua posisi remote,
   // tetap "100% Tim Remote"; bila campuran, tampilkan "X Remote · Y Di Kantor".
@@ -302,25 +338,34 @@ function Hero({
   return (
     <section className="relative overflow-hidden bg-zinc-950 text-zinc-50">
       <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
-      {/* Glow blob rose mengambang pelan (loop y + opacity, hanya transform/opacity) */}
+      {/* NR-28-A — dua blob gradasi lembut (rose & amber) mengambang sangat
+          pelan di belakang konten hero: loop ease-in-out 14-18 detik dengan
+          gerakan bolak-balik (alternate), opacity rendah, blur besar; mati
+          total saat pengguna memilih reduce-motion. */}
       <div
         aria-hidden="true"
-        className="absolute -top-32 left-1/2 h-96 w-[44rem] max-w-full -translate-x-1/2"
+        className="pointer-events-none absolute -top-32 left-1/2 h-96 w-[44rem] max-w-full -translate-x-1/2"
       >
         <motion.div
           className="h-full w-full rounded-full bg-rose-600/20 blur-3xl"
-          animate={{ y: [0, 24, 0], opacity: [0.75, 1, 0.75] }}
-          transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
+          animate={
+            reduceMotion ? undefined : { y: [0, 24, 0], opacity: [0.75, 1, 0.75] }
+          }
+          transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
         />
       </div>
       <motion.div
         aria-hidden="true"
-        className="absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-amber-500/10 blur-3xl"
-        animate={{ y: [0, -18, 0], opacity: [0.7, 1, 0.7] }}
-        transition={{ duration: 11, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
+        className="pointer-events-none absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-amber-500/10 blur-3xl"
+        animate={
+          reduceMotion ? undefined : { y: [0, -18, 0], opacity: [0.7, 1, 0.7] }
+        }
+        transition={{ duration: 14, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
       />
 
       <Container className="relative py-20 md:py-28">
+        {/* NR-28-A — dua kolom mulai md: teks hero + kartu ilustrasi di kanan. */}
+        <div className="grid items-center gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:gap-14">
         {/* Entrance berurutan: badge → judul → deskripsi → countdown → CTA → statistik */}
         <Stagger className="max-w-3xl" gap={0.09} delay={0.05}>
           <StaggerItem>
@@ -416,6 +461,9 @@ function Hero({
             </div>
           </StaggerItem>
         </Stagger>
+
+          <HeroVisual />
+        </div>
       </Container>
     </section>
   );

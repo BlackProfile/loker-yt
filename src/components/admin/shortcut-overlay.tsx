@@ -8,7 +8,7 @@
 // Komponen dikendalikan induk (admin-app) sehingga tombol ikon Keyboard di
 // header membuka overlay yang sama.
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { Keyboard } from "lucide-react";
 import {
   Dialog,
@@ -60,11 +60,8 @@ export function ShortcutOverlay({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  // Ref agar listener tidak perlu dipasang ulang saat state open berubah,
-  // sekaligus memungkinkan toggle "?" yang akurat.
-  const openRef = useRef(open);
-  openRef.current = open;
-
+  // Listener global: "?" toggle overlay. Effect bergantung pada `open` agar
+  // toggle selalu akurat tanpa perlu membaca ref saat render.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       // Hanya tombol "?" polos (Shift + /) — tanpa modifier agar tidak
@@ -73,11 +70,11 @@ export function ShortcutOverlay({
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (isTypingTarget(event.target)) return;
       event.preventDefault();
-      onOpenChange(!openRef.current);
+      onOpenChange(!open);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onOpenChange]);
+  }, [open, onOpenChange]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

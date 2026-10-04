@@ -209,12 +209,12 @@ export function RecentActivityFeed({
   const [failed, setFailed] = useState(false);
 
   const load = useCallback(async (silent = false) => {
-    if (!silent) setFailed(false);
     try {
       // Filter aksi dilakukan di sisi client karena param `action` di API
       // hanya mendukung satu nilai prefix per permintaan.
       const all = await apiGet<LogEntry[]>("/api/admin/logs?limit=200");
       setLogs(all.filter((l) => FEED_ACTIONS.has(l.action)).slice(0, 8));
+      setFailed(false);
     } catch {
       // Saat senyap, data lama dipertahankan tanpa mengganggu.
       if (!silent) setFailed(true);
@@ -357,10 +357,11 @@ export function RecruitmentFunnel({ className }: { className?: string }) {
   const [failed, setFailed] = useState(false);
 
   const load = useCallback(async (silent = false) => {
-    if (!silent) setFailed(false);
     try {
       setData(await apiGet<FunnelResponse>("/api/admin/reports/funnel"));
+      setFailed(false);
     } catch {
+      // Saat senyap, data lama dipertahankan tanpa mengganggu.
       if (!silent) setFailed(true);
     }
   }, []);
