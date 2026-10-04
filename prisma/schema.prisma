@@ -166,54 +166,6 @@ model FileAsset {
   cvApplications Application[] @relation("cvFile")
   introApp       Application[] @relation("introFile")
   coverPositions Position[]    @relation("coverFile")
-  // NR-24 — dokumen internal yang diunggah admin pada lamaran
-  internalDocs   ApplicationInternalDoc[] @relation("internalDoc")
-}
-
-// NR-24 — catatan hasil panggilan telepon ke pelamar (riwayat contact attempt)
-model ApplicationCall {
-  id            String      @id @default(cuid())
-  applicationId String
-  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  result        String      @default("DIANGGAT") // DIANGGAT | TIDAK_DIANGGAT | SALAH_SAMBUNGAN
-  summary       String      @default("")
-  actor         String      @default("Admin")
-  createdAt     DateTime    @default(now())
-
-  @@index([applicationId])
-}
-
-// NR-24 — tes/asesmen yang dikirim ke pelamar (tautan, tenggat, status, skor)
-model ApplicationAssessment {
-  id            String      @id @default(cuid())
-  applicationId String
-  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  title         String
-  link          String?
-  note          String?
-  dueAt         DateTime?
-  status        String      @default("SENT") // SENT | SUBMITTED | LATE
-  score         Int?
-  feedback      String?
-  submittedAt   DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  @@index([applicationId])
-}
-
-// NR-24 — dokumen internal lamaran (hasilnya hanya terlihat admin, mis. hasil MCU)
-model ApplicationInternalDoc {
-  id            String      @id @default(cuid())
-  applicationId String
-  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  name          String
-  fileId        String
-  file          FileAsset   @relation("internalDoc", fields: [fileId], references: [id], onDelete: Cascade)
-  uploadedBy    String      @default("Admin")
-  createdAt     DateTime    @default(now())
-
-  @@index([applicationId])
 }
 
 // Lamaran yang masuk dari form publik
@@ -334,11 +286,6 @@ model Application {
   slotBooking InterviewSlot[] @relation("slotBooking")
   surveys     CandidateSurvey[] @relation("surveys")
   questions   ApplicationQuestion[]
-
-  // NR-24 — riwayat telepon, tes/asesmen, dan dokumen internal per lamaran
-  calls        ApplicationCall[]
-  assessments  ApplicationAssessment[]
-  internalDocs ApplicationInternalDoc[]
 
   interviews       Interview[]
   createdAt        DateTime   @default(now())
