@@ -4176,6 +4176,76 @@ async function sendOfferFromBot(chatId: number, actorLabel: string): Promise<str
 
 /* ------------------------------- AI draft & compare ------------------------------- */
 
+/**
+ * Draft balasan AI untuk kandidat sesuai status lamaran saat ini.
+ * Replika logika endpoint /api/admin/applications/[id]/ai-reply (src/lib/ai.ts)
+ * supaya perintah /draft di bot tidak bergantung pada folder app/api.
+ * Return teks siap kirim, atau null bila gagal (pemanggil menangani null).
+ */
+async function generateReplyDraft(applicationId: string): Promise<string | null> {
+  try {
+    const application = await db.application.findUnique({
+      where: { id: applicationId },
+      include: { position: { select: { title: true } } },
+    });
+    if (!application) return null;
+
+    const status = application.status;
+    const statusGuide =
+      status === "ACCEPTED"
+        ? "- Diterima: ucapkan selamat dan beri undangan proses onboarding (tanpa tanggal spesifik, arahkan menyambung koordinasi selanjutnya)."
+        : status === "INTERVIEW"
+          ? "- Wawancara: undangan menindaklanjuti dengan ajukan kesediaan jadwal wawancara (minta kandidat memilih rentang waktu yang cocok)."
+          : status === "REJECTED"
+            ? "- Ditolak: sampaikan apresiasi tulus atas waktu & minatnya, beri semangat, dan ajak mendaftar lagi pada kesempatan berikutnya."
+            : "- Baru/Ditinjau: konfirmasi bahwa lamarannya sudah diterima dan sedang dalam proses seleksi, mohon menunggu kabar selanjutnya.";
+
+    const systemPrompt =
+      "Kamu adalah staf HR studio konten kreator yang menulis balasan lamaran yang hangat, profesional, dan siap dikirim.";
+    const userPrompt = [
+      "Buat draft balasan (email/WhatsApp) untuk kandidat berikut sesuai status lamarannya.",
+      "",
+      `Kandidat: ${application.name}`,
+      `Posisi: ${application.position?.title ?? "-"}`,
+      `Kode pelacakan: ${application.trackingCode ?? "-"}`,
+      `Status lamaran: ${status}`,
+      "",
+      "Panduan konten sesuai status:",
+      statusGuide,
+      "",
+      "Aturan output:",
+      "- Bahasa Indonesia, hangat dan profesional, langsung siap kirim.",
+      "- Sapa kandidat dengan namanya.",
+      "- Tanda tangan sebagai Tim HR Lumina Studio.",
+      "- Tanpa markdown (tanpa **, #, bullet), tanpa placeholder dalam kurung siku, tanpa penjelasan tambahan di luar isi pesan.",
+    ].join("\n");
+
+    const zai = await getZai();
+    const completion = (await withTimeout(
+      withZaiRetry((client) =>
+        client.chat.completions.create({
+          messages: [
+            { role: "assistant", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          thinking: { type: "disabled" },
+        }),
+      ),
+      "DraftBalasan",
+      60_000,
+    )) as { choices?: { message?: { content?: string } }[] } | null;
+    const text = (completion?.choices?.[0]?.message?.content ?? "").trim();
+    if (!text) {
+      console.error("[telegram-bot] generateReplyDraft: balasan LLM kosong");
+      return null;
+    }
+    return text;
+  } catch (error) {
+    console.error("[telegram-bot] generateReplyDraft gagal:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 /** /draft KODE — buat draft balasan AI untuk kandidat. */
 async function handleDraftCommand(token: string, chatId: number, args: string): Promise<string> {
   const settings = await getAutomationSettings();
