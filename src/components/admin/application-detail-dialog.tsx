@@ -172,16 +172,6 @@ function InfoItem({ label, children }: { label: string; children: ReactNode }) {
 
 /* ----------------------- NR-24-b — helper fitur per pelamar ----------------------- */
 
-const rupiahFmt = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
-
-/** Format angka rupiah tanpa desimal, mis. 3500000 -> "Rp 3.500.000". */
-function formatRupiah(value: number): string {
-  return rupiahFmt.format(value);
-}
 
 /** Konversi nilai <input type="date"> "YYYY-MM-DD" -> ISO akhir hari Jakarta (UTC+7). */
 function dateToEndOfDayIso(value: string): string | null {
@@ -190,25 +180,7 @@ function dateToEndOfDayIso(value: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-/** Konversi ISO -> "YYYY-MM-DD" zona lokal (untuk nilai <input type="date">). */
-function isoToDateInput(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
-/** Selisih hari (integer) dari hari ini ke "YYYY-MM-DD"; negatif berarti sudah lewat. */
-function daysUntil(dateStr: string): number | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
-  if (!m) return null;
-  const target = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diff = Math.round((target.getTime() - today.getTime()) / 86_400_000);
-  return Number.isNaN(diff) ? null : diff;
-}
 
 const CALL_RESULT_LABELS: Record<CallLog["result"], string> = {
   DIANGGAT: "Dianggat",
