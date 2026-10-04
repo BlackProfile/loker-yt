@@ -206,18 +206,21 @@ export function RecentActivityFeed({
 }) {
   // null = sedang memuat pertama; setelah itu data lama dipertahankan saat refresh senyap.
   const [logs, setLogs] = useState<LogEntry[] | null>(null);
+  const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
   const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       // Filter aksi dilakukan di sisi client karena param `action` di API
       // hanya mendukung satu nilai prefix per permintaan.
       const all = await apiGet<LogEntry[]>("/api/admin/logs?limit=200");
       setLogs(all.filter((l) => FEED_ACTIONS.has(l.action)).slice(0, 8));
-      setFailed(false);
     } catch {
-      // Saat senyap, data lama dipertahankan tanpa mengganggu.
+      // Daftar pelengkap; senyap saat gagal. Saat senyap, data lama dipertahankan.
       if (!silent) setFailed(true);
+    } finally {
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -239,7 +242,7 @@ export function RecentActivityFeed({
         </CardDescription>
       </CardHeader>
       <CardContent className="px-6">
-        {logs === null && !failed ? (
+        {loading && logs === null ? (
           <div className="flex flex-col gap-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-12 w-full rounded-lg" />
@@ -354,15 +357,18 @@ function funnelFill(key: string, isFirst: boolean): string {
 export function RecruitmentFunnel({ className }: { className?: string }) {
   const reduced = useReducedMotion();
   const [data, setData] = useState<FunnelResponse | null>(null);
+  const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
   const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       setData(await apiGet<FunnelResponse>("/api/admin/reports/funnel"));
-      setFailed(false);
     } catch {
-      // Saat senyap, data lama dipertahankan tanpa mengganggu.
+      // Kartu pelengkap; senyap saat gagal. Saat senyap, data lama dipertahankan.
       if (!silent) setFailed(true);
+    } finally {
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -375,7 +381,9 @@ export function RecruitmentFunnel({ className }: { className?: string }) {
 
   const stages = data?.stages ?? [];
   const basisCount = stages[0]?.count ?? 0;
-  const empty = failed || stages.length === 0 || basisCount === 0;
+  // Kosong: gagal muat awal, respons tanpa tahap, atau belum ada lamaran sama sekali.
+  const empty =
+    (failed && data === null) || stages.length === 0 || basisCount === 0;
 
   return (
     <Card className={cn("gap-0 rounded-2xl py-6", className)}>
@@ -389,7 +397,7 @@ export function RecruitmentFunnel({ className }: { className?: string }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="px-6">
-        {data === null && !failed ? (
+        {loading && data === null ? (
           <div className="flex flex-col gap-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="flex flex-col gap-1.5">
