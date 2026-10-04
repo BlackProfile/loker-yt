@@ -22,29 +22,36 @@ BAK="$PROJECT_DIR/backups/custom.db.demo-seed.bak"
 LOG="$PROJECT_DIR/dev.log"
 INTERVAL=60
 
+cd "$PROJECT_DIR" || exit 1
+
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [db-guard] $*" >> "$LOG"; }
 
 log "dimulai (pid $$) — memantau db/demo data (mode relatif-backup)"
 
+# Loop: CEK DULU baru sleep — cek pertama berjalan seketika saat guard start,
+# sehingga wipe yang terjadi saat boot sesi (sebelum guard hidup) dipulihkan
+# secepat mungkin, bukan menunggu INTERVAL penuh.
 while true; do
-  sleep "$INTERVAL"
   if [ ! -f "$BAK" ]; then
     log "backup tidak ditemukan ($BAK) — guard idle"
-    continue
-  fi
-  decision=$(bun "$PROJECT_DIR/scripts/guard-check.ts" 2>>"$LOG")
-  token=$(echo "$decision" | head -1)
-  case "$token" in
-    RESTORE)
+  else
+    pos=$(count position)
+    apps=$(count application)
+    if [ "$pos" -lt 10 ] && [ "$apps" -lt 10 ]; then
+      log "TERDETEKSI RESET: posisi=$pos lamaran=$apps — restore dari backup..."
       cp "$BAK" "$DB" || { log "gagal copy backup"; continue; }
       log "restore selesai, restart dev server (keepalive akan menghidupkan ulang)"
       pkill -f "next dev" 2>/dev/null || true
-      ;;
-    SKIP_STALE_BAK)
-      # alasan sudah dicatat guard-check.ts ke dev.log via stderr
-      ;;
-    *)
-      # OK — live sehat
-      ;;
-  esac
+      # Fallback: bila dev-keepalive juga mati, db-guard menghidupkan
+      # dev server sendiri agar aplikasi tidak pernah menggantung mati.
+      sleep 20
+      if ! curl -s --max-time 5 http://localhost:3000/api/public/site >/dev/null 2>&1; then
+        nohup bun run dev >> "$LOG" 2>&1 &
+        log "fallback: dev server dijalankan ulang oleh db-guard (pid $!)"
+      fi
+    else
+      log "OK: posisi=$pos lamaran=$apps"
+    fi
+  fi
+  sleep "$INTERVAL"
 done
