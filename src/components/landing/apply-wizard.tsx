@@ -840,20 +840,14 @@ type ApplyWizardProps = {
 };
 
 // NR-28-A — confetti sekali tembak untuk layar sukses wizard. Parent-nya wajib
-// `relative` (StatusConfetti memakai absolute inset-0). Tidak tampil sama
-// sekali bila pengguna memilih reduce-motion.
+// `relative` (StatusConfetti memakai absolute inset-0). Diturunkan langsung dari
+// preferensi reduce-motion (tanpa effect/setState): saat layar sukses terpasang
+// partikel dimainkan tepat satu kali, lalu diam di opasitas akhir; bila
+// pengguna memilih reduce-motion, confetti tidak dirender sama sekali.
 function SuccessConfettiBurst() {
   const reduceMotion = useReducedMotion();
-  // celebrate diaktifkan setelah mount (useEffect) agar burst dimainkan tepat
-  // satu kali setiap layar sukses muncul.
-  const [celebrate, setCelebrate] = useState(false);
 
-  useEffect(() => {
-    if (reduceMotion) return;
-    setCelebrate(true);
-  }, [reduceMotion]);
-
-  return <StatusConfetti celebrate={celebrate} />;
+  return <StatusConfetti celebrate={!reduceMotion} />;
 }
 
 export function ApplyWizard({
