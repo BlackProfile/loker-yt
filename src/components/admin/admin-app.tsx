@@ -785,6 +785,9 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
         )}
         activeTab={effectiveTab}
       />
+      {/* NR-28 (item 14): overlay pintasan keyboard — dibuka via "?" atau
+          tombol ikon Keyboard di header. */}
+      <ShortcutOverlay open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       {/* FAB "Tanya Data" — WAJIB di luar <header>: backdrop-blur pada header
           menciptakan containing block sehingga position:fixed tombol salah
           anchor (menempel di header, menutupi tombol Keluar). Di samping root
@@ -871,6 +874,16 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 >
                   <Search className="size-4" aria-hidden="true" />
                 </Button>
+                {/* NR-28 (item 14): tombol bantuan pintasan keyboard. */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 sm:size-9"
+                  onClick={() => setShortcutsOpen(true)}
+                  aria-label="Pintasan keyboard (tekan ?)"
+                >
+                  <Keyboard className="size-4" aria-hidden="true" />
+                </Button>
                 <RealtimeIndicator />
                 <ThemeToggle />
                 <NotificationBell onOpenTasks={() => setActiveTab("tasks")} />
@@ -918,85 +931,40 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
           ) : null}
 
           <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-10 sm:px-6">
-            {effectiveTab === "dashboard" ? (
-              <TabReveal>
-                <DashboardTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "tasks" ? (
-              <TabReveal>
-                <TasksTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "pipeline" ? (
-              <TabReveal>
-                <PipelineTab
-                  onNavigate={setActiveTab}
-                  deepLinkApplication={deepLinkApplication}
-                  onDeepLinkConsumed={consumeDeepLink}
-                />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "applications" ? (
-              <TabReveal>
-                <ApplicationsTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "interview" ? (
-              <TabReveal>
-                <InterviewTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "calendar" ? (
-              <TabReveal>
-                <CalendarTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "analytics" ? (
-              <TabReveal>
-                <AnalyticsTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "logs" ? (
-              <TabReveal>
-                <LogsTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "positions" && isOwnerOrHr ? (
-              <TabReveal>
-                <PositionsTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "hire" ? (
-              <TabReveal>
-                <HireTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "reports" ? (
-              <TabReveal>
-                <ReportsTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "templates" ? (
-              <TabReveal>
-                <TemplatesTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "data" && isOwner ? (
-              <TabReveal>
-                <DataTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "users" && isOwner ? (
-              <TabReveal>
-                <UsersTab />
-              </TabReveal>
-            ) : null}
-            {effectiveTab === "settings" && isOwner ? (
-              <TabReveal>
-                <SettingsTab />
-              </TabReveal>
-            ) : null}
+            {/* NR-28 (item 5): transisi antar-tab — mode="wait" membuat tab lama
+                selesai exit sebelum tab baru masuk (pola unmount sama seperti
+                sebelumnya). Reduced motion: hanya fade tanpa geser. */}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={effectiveTab}
+                initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                animate={reducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+                transition={{ duration: 0.16, ease: "easeOut" }}
+              >
+                {effectiveTab === "dashboard" ? <DashboardTab /> : null}
+                {effectiveTab === "tasks" ? <TasksTab /> : null}
+                {effectiveTab === "pipeline" ? (
+                  <PipelineTab
+                    onNavigate={setActiveTab}
+                    deepLinkApplication={deepLinkApplication}
+                    onDeepLinkConsumed={consumeDeepLink}
+                  />
+                ) : null}
+                {effectiveTab === "applications" ? <ApplicationsTab /> : null}
+                {effectiveTab === "interview" ? <InterviewTab /> : null}
+                {effectiveTab === "calendar" ? <CalendarTab /> : null}
+                {effectiveTab === "analytics" ? <AnalyticsTab /> : null}
+                {effectiveTab === "logs" ? <LogsTab /> : null}
+                {effectiveTab === "positions" && isOwnerOrHr ? <PositionsTab /> : null}
+                {effectiveTab === "hire" ? <HireTab /> : null}
+                {effectiveTab === "reports" ? <ReportsTab /> : null}
+                {effectiveTab === "templates" ? <TemplatesTab /> : null}
+                {effectiveTab === "data" && isOwner ? <DataTab /> : null}
+                {effectiveTab === "users" && isOwner ? <UsersTab /> : null}
+                {effectiveTab === "settings" && isOwner ? <SettingsTab /> : null}
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
       </div>

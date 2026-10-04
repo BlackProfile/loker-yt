@@ -28,7 +28,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiGet, apiPatch, apiPost } from "./api";
-import { formatRelative, initialsOf } from "./format";
+import { avatarToneOf, formatRelative, initialsOf } from "./format";
 import { useAdminSession } from "./admin-context";
 import { AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
@@ -190,7 +190,13 @@ function KanbanCard({
       )}
     >
       <div className="flex items-start gap-2">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-rose-100 text-[10px] font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+        {/* NR-28 (item 7): warna avatar deterministik dari nama. */}
+        <span
+          className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
+            avatarToneOf(app.name)
+          )}
+        >
           {initialsOf(app.name)}
         </span>
         <div className="min-w-0 flex-1">

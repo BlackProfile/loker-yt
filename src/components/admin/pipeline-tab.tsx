@@ -56,7 +56,7 @@ import { apiGet, apiPatch, apiPost } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { cn } from "@/lib/utils";
-import { formatDate, formatDateTime, initialsOf } from "./format";
+import { avatarToneOf, formatDate, formatDateTime, initialsOf } from "./format";
 import { Reveal } from "./motion-primitives";
 import { StatusBadge, AiScoreBadge } from "./status-badge";
 import { RatingStars } from "./rating-stars";
@@ -1298,8 +1298,12 @@ function CandidateCardShell({
 function CandidateHead({ app }: { app: Application }) {
   return (
     <div className="flex min-w-0 flex-1 items-start gap-2.5">
+      {/* NR-28 (item 7): warna avatar deterministik dari nama. */}
       <span
-        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-600 to-amber-500 text-xs font-bold text-white"
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+          avatarToneOf(app.name)
+        )}
         aria-hidden="true"
       >
         {initialsOf(app.name)}

@@ -23,6 +23,7 @@ import {
 import { apiGet } from "./api";
 import { cn } from "@/lib/utils";
 import {
+  avatarToneOf,
   daysUntil,
   formatDate,
   formatRupiah,
@@ -367,7 +368,13 @@ export function ApplicationsTable({
                 : null;
               const dueDocs = expiringDocs(app);
               return (
-                <TableRow key={app.id} data-state={isSelected ? "selected" : undefined}>
+                {/* NR-28 (item 12): hover halus + group utk reveal aksi sekunder.
+                    transition-colors & hover dasar sudah ada di TableRow (ui/table). */}
+                <TableRow
+                  key={app.id}
+                  data-state={isSelected ? "selected" : undefined}
+                  className="group md:hover:bg-zinc-50/70 md:dark:hover:bg-zinc-900/40"
+                >
                   <TableCell className="px-4 py-3">
                     <Checkbox
                       checked={isSelected}
@@ -421,7 +428,13 @@ export function ApplicationsTable({
                   </TableCell>
                   <TableCell className="max-w-56 px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+                      <span
+                        className={cn(
+                          "flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                          // NR-28 (item 7): warna avatar deterministik dari nama.
+                          avatarToneOf(app.name)
+                        )}
+                      >
                         {initialsOf(app.name)}
                       </span>
                       <div className="min-w-0">
@@ -531,7 +544,7 @@ export function ApplicationsTable({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-9 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                          className="size-9 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 md:opacity-0 md:transition-opacity md:duration-150 md:group-hover:opacity-100 md:group-focus-within:opacity-100 focus-visible:opacity-100 dark:text-emerald-400 dark:hover:bg-emerald-950"
                           onClick={() => void handleWhatsApp(app)}
                           aria-label={`Kirim WhatsApp ke ${app.name}`}
                           title="Kirim WhatsApp"
@@ -543,7 +556,7 @@ export function ApplicationsTable({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-9 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950"
+                          className="size-9 text-rose-600 hover:bg-rose-50 hover:text-rose-700 md:opacity-0 md:transition-opacity md:duration-150 md:group-hover:opacity-100 md:group-focus-within:opacity-100 focus-visible:opacity-100 dark:hover:bg-rose-950"
                           onClick={() => onDeleteRequest(app)}
                           aria-label={`Hapus lamaran ${app.name}`}
                         >
@@ -585,7 +598,13 @@ export function ApplicationsTable({
                     aria-label={`Pilih ${app.name}`}
                     className="mt-1"
                   />
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+                  <span
+                    className={cn(
+                      "flex size-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                      // NR-28 (item 7): warna avatar deterministik dari nama.
+                      avatarToneOf(app.name)
+                    )}
+                  >
                     {initialsOf(app.name)}
                   </span>
                   <div className="min-w-0 flex-1">
