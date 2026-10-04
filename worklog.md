@@ -2784,3 +2784,22 @@ Stage Summary:
 - 5 item Paket B selesai. File diubah: src/components/admin/dashboard-widgets.tsx (BARU — Sparkline, weeklyTrend, TrendHint, RecentActivityFeed, RecruitmentFunnel), src/components/admin/dashboard-tab.tsx (sparkline+tren kartu Total/Baru, pasang 2 widget, bento grid 3 kolom), src/components/admin/application-detail-dialog.tsx (confetti DITERIMA: state celebrate + delayed close 2.5 dtk + reset saat tutup/ganti pelamar).
 - Verifikasi statis: bunx tsc --noEmit -> 0 error dari 3 file milik task ini (sisa error pre-existing di scripts/mini-services/tasks-tab/settings-tab/api milik pihak lain, tidak disentuh); bunx eslint pada 3 file -> bersih.
 - Tanpa dependensi baru, tanpa API call baru untuk sparkline (diturunkan dari overview.daily), tanpa perubahan globals.css/package.json, tanpa perintah git, tanpa restart server. Semua teks UI Bahasa Indonesia, tanpa emoji, palet zinc+rose+amber (emerald/orange sebagai semantik sukses/wawancara yang sudah dipakai app), animasi menghormati prefers-reduced-motion.
+---
+Task ID: NR-28-FIX-BOT
+Agent: general-purpose
+Task: Pulihkan 9 error TS di telegram-bot.ts (korban rebase)
+
+Work Log:
+- Baca worklog (konteks rebase/telegram-bot) lalu jalankan `bunx tsc --noEmit` untuk memastikan 9 error sesuai daftar tugas (233,75; 705,132; 707,13; 714,13; 2052,64; 3500,13; 3746,35; 3750,62; 4191,23).
+- Fix 1 (233): weekKeyBangkok — options toLocaleDateString dengan `week: "numeric"` tidak dikenal lib TS Intl (ESNext Intl) tapi valid di runtime ICU; cast options `as Intl.DateTimeFormatOptions` + komentar alasan. Perilaku runtime tidak berubah.
+- Fix 2 (705): scope handleTelegramUpdate kehilangan `writeEnabled` saat rebase — pulihkan memakai `settings.telegramWriteEnabled` (settings dimuat di awal fungsi dari getAutomationSettings), konsisten dengan 5 pemakaian lain di fungsi yang sama (handleCallback, handleMediaMessage, sendHelp, handleCatatanCommand) dan tipe param terakhir handleReplyNote (boolean).
+- Fix 3 (707 & 714): dua jalur `return;` di handleTelegramUpdate (tipe return Promise<{ replies: string[] }>) diganti `return { replies }` — sama dengan semua return awal/akhir fungsi; replies sudah terisi teks yang dikirim sehingga perilaku tetap.
+- Fix 4 (2052): select query tolak cepat (callback app:{id}:reject) ditambah `id: true` — callback_data tombol alasan memakai `app:${app.id}:reject:r:${index}`; blok "pass" (select identik di baris lain) tidak disentuh karena tidak memakai app.id.
+- Fix 5 (3500): anotasi `const buttons: TelegramButton[][]` di runTelegramActivityWatch tidak bisa menerima `undefined` pada cabang tanpa application — anotasi diubah ke `TelegramButton[][] | undefined`; SendOptions.buttons memang optional (`buttons?: TelegramButton[][]`) sehingga tgSendMessage(..., { buttons }) valid tanpa mengubah nilai/payload.
+- Fix 6 (3746 & 3750): select renderStageMenu (menu Pindah Tahap) ditambah `id: true` — dipakai callback_data `app:${app.id}:stage:${index}` dan `app:${app.id}:card`.
+- Fix 7 (4191): pulihkan fungsi `generateReplyDraft(applicationId): Promise<string | null>` DI DALAM telegram-bot.ts (letak: seksi "AI draft & compare", sebelum handleDraftCommand) — replika logika src/lib/ai.ts yang dipakai route ai-reply: query application (include position.title), statusGuide per status (ACCEPTED/INTERVIEW/REJECTED/else), komposisi system+user prompt identik, panggilan getZai + withTimeout(withZaiRetry(chat.completions.create, thinking disabled), "DraftBalasan", 60_000) sesuai gaya AI lain di file ini (answerFreeQuestion/handleBandingkanCommand), return null saat kosong/gagal dengan console.error prefix [telegram-bot]. Tidak ada import dari folder app/api.
+- Verifikasi: `bunx tsc --noEmit 2>&1 | rg "telegram-bot"` -> 0 baris; `bunx eslint src/lib/telegram-bot.ts` -> bersih; sisa 41 error tsc project-wide pre-existing di file lain (tasks-tab, home-view, track-auth, dst) tidak disentuh.
+- Tidak menjalankan git, tidak restart service, hanya mengedit src/lib/telegram-bot.ts.
+
+Stage Summary:
+- 9/9 error TS di telegram-bot.ts pulih tanpa perubahan perilaku fitur: weekKeyBangkok compile via cast Intl (runtime sama), writeEnabled kembali dari settings.telegramWriteEnabled, dua jalur return mengembalikan { replies }, select tolak cepat & menu pindah tahap membawa id, buttons undefined diterima SendOptions, dan /draft KODE hidup kembali lewat generateReplyDraft lokal (z-ai-web-dev-sdk, sisi server) yang mereplikasi draft balasan AI ai-reply. File compile bersih; service menunggu restart manual oleh orchestrator.
