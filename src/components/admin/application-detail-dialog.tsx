@@ -1363,16 +1363,6 @@ export function ApplicationDetailDialog({
     app.rejectionReason !== "MENARIK_DIRI" &&
     !app.mergedIntoId;
 
-  // Do-not-Hire: match email (lowercase) atau telepon digit-only dengan daftar DNH.
-  const phoneDigits = (app.phone ?? "").replace(/[^0-9]/g, "");
-  const dnhEntries = dnhData.appId === app.id ? dnhData.entries : [];
-  const dnhMatch =
-    dnhEntries.find(
-      (e) =>
-        e.key === app.email.toLowerCase() ||
-        (phoneDigits !== "" && e.key === phoneDigits)
-    ) ?? null;
-
   // Panel Tolak Lamaran kini juga tampil untuk lamaran REJECTED yang masih
   // bisa di-undo (agar kontrol Batalkan Penolakan punya rumah).
   const showRejectPanel =
