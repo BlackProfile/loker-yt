@@ -2701,3 +2701,31 @@ Stage Summary:
 - File diubah: src/lib/form-schema.ts, src/components/admin/form-builder-page.tsx, src/components/landing/apply-wizard.tsx, src/app/api/applications/route.ts, src/components/admin/application-detail-dialog.tsx. Tanpa perubahan schema.prisma (tidak perlu restart dev server / db:push).
 - Bonus keamanan: deteksi duplikat/do-not-hire/cooldown tidak lagi mencocokkan email/WA kosong (bug laten yang makin relevan setelah email opsional).
 - State final DB: 23 posisi / 43 lamaran / skema PRT bersih tanpa core / backup demo-seed diperbarui.
+
+---
+Task ID: NR-27 (lock-in / anti-hilang)
+Agent: Z.ai Code (continuation session)
+Task: "tetapkan ini jadi aplikasi yang terbaru, supaya ga balik lagi / hilang" — kunci state terbaru + cegah reset berulang.
+
+Work Log:
+- DIAGNOSIS: DB TER-RESET LAGI saat boot sesi (~09:13) — Position/Application kosong lalu ter-isi seed dasar 5/5 oleh ensureSeeded (runSeed ter-guard count==0, bukan penyebab), AdminUser/Setting/sesi selamat. Semua daemon pelindung (dev-keepalive, db-guard, auto-push, keepalive mini-service) MATI di antara sesi — db-guard tidak sempat mencegah.
+- RESTORE: db/custom.db dipulihkan dari backups/custom.db.demo-seed.bak (verifikasi backup dulu via DATABASE_URL override: 23 posisi / 43 lamaran / Supir ada) → pkill next dev → cp → restart via dev-keepalive.
+- GUARD STACK BARU: scripts/start-all-guards.sh (idempoten: dev-keepalive → db-guard → auto-push → realtime-keepalive → telegram-keepalive; verifikasi pid via /proc cmdline) + BOOT HOOK di package.json "dev": "bash scripts/start-all-guards.sh && next dev ..." sehingga SETIAP boot sesi otomatis membawa stack pelindung penuh.
+- DB-GUARD DIPERKOKOH: cek pertama langsung tanpa sleep (wipe saat boot dipulihkan secepatnya); fallback restart dev server sendiri bila dev-keepalive mati; log pindah ke db-guard.log (dev.log ditulis tee non-O_APPEND yang menimpa baris append).
+- AUTO-PUSH DIPERBAIKI: push gagal selamanya karena non-fast-forward (remote maju sendiri — commit platform UUID) → tambah fetch + deteksi diverged + git pull --rebase -X theirs (favor lokal) sebelum push. Push kembali OK (terakhir 2d95860).
+- BACKUP: custom.db.demo-seed.bak di-refresh + snapshot bertanggal backups/auto/lumina-2026-10-04.db; keduanya git-tracked & ter-push ke GitHub (db/*.db sendiri gitignored — backup file adalah kendaraan persistensi lintas reset).
+- REPAIR KODE (kriminal dari sesi hilang: refactor NR-24 terputus meninggalkan kode setengah jadi yang DI-COMMIT → Build Error di halaman!):
+  - application-detail-dialog.tsx: hapus duplikat CallLogSection/AssessmentSection/InternalDocsSection (blok 722-1351), duplikat formatRupiah/daysUntil/rupiahFmt/isoToDateInput, duplikat handler Gen-A (handleToggleStar/handleSaveSalary/handleUndoReject/handleDnhRemove + openMergePanel/handleMerge unused), props navIds/navIndex legendaris → navigasi prev/next + keyboard kini diturunkan dari prop `list` (useMemo navIds + navIndex), hapus state lama + restore state NR-24 yang hilang lalu rakit ulang; handleDocExpiry (bentuk Record lama, API 400) dihapus; UnifiedInboxSection diadaptasi ke InboxItem Set-B (kind lowercase, direction, id); salaryBadge Gen-B (cls token emerald/amber/zinc) cocok JSX; import dibereskan (useMemo, apiPut, DoNotHireEntry, ApplicationHistoryItem, ApplicationStatus, Assessment, CallLog, InboxItem).
+  - form-schema.ts: getter is*Required lama vs NR-26 (core-based) dimerge: isExperienceRequired/isMotivationRequired kini is*Enabled(section) && coreItem(...).required !== false; isMotivationEnabled diselamatkan (nyaris ikut terhapus); parseDocExpiries Record-versi dihapus (DocExpiry[] final); pickCoreLabels di-restore dengan identifier benar (CoreItemKey, CORE_ITEM_DEFAULT_LABELS, FORM_LIMITS.labelMax) — sebelumnya menyebabkan ReferenceError runtime di /api/public/content.
+  - seed.ts: parseDocExpiries Record-versi dihapus; types.ts: Set-A (CallLog/Assessment/InternalDoc/InboxItem versi lama) dihapus, Set-B (NR-24 final: DIKIRIM/DIANGKAT/outcome/direction) jadi kontrak tunggal.
+  - applications/[id]/route.ts: cabang docExpiryPatch mati dihapus + blok log DOC_EXPIRY duplikat dihapus (bentuk Record) + log expectedSalary→salaryExpectation.
+  - applications-tab.tsx: props dialog generasi lama (navIds/navIndex/onNavigate=openDetailById) + helper unused dihapus; states followupOnly/holdOnly ditambah; duplikat prop positions di JSX dihapus.
+  - applications-table.tsx: binding `positions` ganda di props+type dihapus (satu, opsional + default).
+  - form-builder-page.tsx: state confirmRemove + toggleCoreLock direkonstruksi (dipakai AlertDialog hapus + kunci item inti).
+- VERIFIKASI: tsc --noEmit → 0 error (dari 127); bun run lint → bersih; E2E :81 agent-browser: landing render + Supir Armada Operasional tampil; login admin OWNER OK; Dasbor render (43 lamaran); dialog Detail render penuh 291 node aksesibilitas (Ekspektasi Gaji, Tugas Uji, Wawancara, Rubrik, Checklist, dokumen internal) tanpa ReferenceError; /api/public/content 200.
+- CATATAN PROSES: saat sesi berjalan terjadi "perang sync" sesaat (file berubah sendiri saat rebase auto-push menarik commit platform 4f56fdb) — sudah konvergen & stabil; pushes sukses beruntun.
+
+Stage Summary:
+- Aplikasi = versi terbaru & terkunci: 23 posisi / 43 lamaran / semua fitur NR-20..NR-26 utuh; NR-24 per-pelamar (bintang, log panggilan, tugas uji, kotak masuk, dokumen internal, masa berlaku dokumen, undo tolak, do-not-hire, merge, HOLD) tampil via detail-nr24-sections + dialog.
+- Anti-hilang 4 lapis: (1) boot hook start-all-guards di package.json "dev" — guard hidup tiap sesi; (2) db-guard restore otomatis ≤60s dari backup git-tracked yang ter-push GitHub; (3) auto-push commit+push tiap 60s dengan rebase anti-macet; (4) snapshot bertanggal di backups/auto/.
+- File utama: scripts/start-all-guards.sh (baru), scripts/db-guard.sh, scripts/auto-push.sh, scripts/dev-keepalive.sh, package.json, + perbaikan menyeluruh 10 file src.
