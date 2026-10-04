@@ -44,7 +44,6 @@ import {
   formatAnswerValue,
   isAllowedFormFile,
   coreItem,
-  coreItemLabel,
   isCvEnabled,
   isCvRequired,
   isEmailRequired,
