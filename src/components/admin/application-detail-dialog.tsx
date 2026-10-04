@@ -2266,7 +2266,7 @@ export function ApplicationDetailDialog({
                   size="icon"
                   className="size-11 sm:size-9"
                   onClick={() => void handleToggleStar()}
-                  disabled={starSaving}
+                  disabled={starBusy}
                   aria-pressed={isStarred}
                   aria-label={isStarred ? "Lepas tanda penting" : "Tandai lamaran penting"}
                 >
