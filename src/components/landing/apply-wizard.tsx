@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, ReactNode } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import {
   CheckCircle2,
@@ -65,6 +65,7 @@ import {
 } from "@/lib/form-schema";
 import type { Lang } from "@/components/landing/strings";
 import { openStatusPage } from "@/components/landing/status-check";
+import { StatusConfetti } from "@/components/landing/status/status-confetti";
 import { saveSession } from "@/lib/status-session";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -838,6 +839,23 @@ type ApplyWizardProps = {
   lockPosition?: boolean;
 };
 
+// NR-28-A — confetti sekali tembak untuk layar sukses wizard. Parent-nya wajib
+// `relative` (StatusConfetti memakai absolute inset-0). Tidak tampil sama
+// sekali bila pengguna memilih reduce-motion.
+function SuccessConfettiBurst() {
+  const reduceMotion = useReducedMotion();
+  // celebrate diaktifkan setelah mount (useEffect) agar burst dimainkan tepat
+  // satu kali setiap layar sukses muncul.
+  const [celebrate, setCelebrate] = useState(false);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    setCelebrate(true);
+  }, [reduceMotion]);
+
+  return <StatusConfetti celebrate={celebrate} />;
+}
+
 export function ApplyWizard({
   positions,
   positionId,
@@ -845,6 +863,9 @@ export function ApplyWizard({
   lockPosition = false,
 }: ApplyWizardProps) {
   const { t, lang } = useLang();
+  // NR-28-A — hormati preferensi reduce-motion: animasi bar progres, centang
+  // langkah, dan confetti dimatikan bila pengguna memilih gerakan minimal.
+  const reduceMotion = useReducedMotion();
   const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<FormErrors>({});
   const [step, setStep] = useState(0);
@@ -2617,8 +2638,11 @@ export function ApplyWizard({
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: "easeOut" }}
-        className="flex flex-col items-center justify-center gap-4 py-8 text-center"
+        className="relative flex flex-col items-center justify-center gap-4 py-8 text-center"
       >
+        {/* NR-28-A — confetti sekali tembak saat layar sukses; parent root di
+            atas sudah dibuat relative agar partikel tidak meluber. */}
+        <SuccessConfettiBurst />
         <motion.div
           initial={{ scale: 0.4, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -2636,7 +2660,15 @@ export function ApplyWizard({
         </p>
         <p className="max-w-md text-sm text-muted-foreground">{t.apply.success.body}</p>
 
-        <div className="mt-2 flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border bg-muted/40 p-5">
+        {/* NR-28-A — kartu kode lamaran muncul dengan animasi scale-in halus.
+            Tombol salin memakai navigator.clipboard.writeText + toast
+            "Kode disalin" (sudah ada sebelumnya). */}
+        <motion.div
+          initial={reduceMotion ? false : { scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 240, damping: 20, delay: 0.15 }}
+          className="mt-2 flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border bg-muted/40 p-5"
+        >
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {t.apply.success.trackingLabel}
           </p>
@@ -2655,7 +2687,7 @@ export function ApplyWizard({
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">{t.apply.success.saveNote}</p>
-        </div>
+        </motion.div>
 
         {/* Pesan balasan otomatis dari template posisi (bila diatur admin) */}
         {success.autoReply && success.autoReply.trim() ? (
@@ -2922,58 +2954,86 @@ export function ApplyWizard({
         </div>
       </div>
 
+      {/* NR-28-A — bar progres wizard: terisi seiring langkah diselesaikan,
+          gradasi rose→amber dengan animasi lebar halus (statis saat
+          reduce-motion). Bersifat dekoratif — status dibacakan lewat ol di bawah. */}
+      <div
+        aria-hidden="true"
+        className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+      >
+        <motion.div
+          className="h-full rounded-full bg-gradient-to-r from-rose-600 to-amber-500"
+          initial={false}
+          animate={{
+            width: `${Math.round((step / Math.max(1, stepLabels.length)) * 100)}%`,
+          }}
+          transition={
+            reduceMotion ? { duration: 0 } : { duration: 0.5, ease: "easeOut" }
+          }
+        />
+      </div>
+
       {/* Stepper — label langkah hanya tampil bila lebar KARTU cukup
           (@container, bukan viewport): di kolom kanan desktop yang sempit
           hanya lingkaran + garis, tanpa label agar tidak meluber keluar kartu. */}
-      <ol className="flex items-center gap-2" aria-label={t.apply.stepOf}>
-        {stepLabels.map((label, index) => {
-          const isDone = index < step;
-          const isActive = index === step;
-          return (
-            <li
-              key={`${label}-${index}`}
-              className="flex min-w-0 flex-1 items-center gap-2 last:flex-none"
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                <span
-                  aria-current={isActive ? "step" : undefined}
-                  title={label}
-                  className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition-colors",
-                    isDone &&
-                      "border-emerald-500 bg-emerald-500 text-white dark:border-emerald-400 dark:bg-emerald-400 dark:text-emerald-950",
-                    isActive && "border-primary ring-primary ring-offset-background ring-2",
-                    !isDone && !isActive && "border-border text-muted-foreground",
-                  )}
-                >
-                  {isDone ? (
-                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    index + 1
-                  )}
-                </span>
-                <span
-                  className={cn(
-                    "hidden min-w-0 truncate text-xs font-medium @xl:block",
-                    isActive ? "text-foreground" : "text-muted-foreground",
-                  )}
-                >
-                  {label}
-                </span>
-              </div>
-              {index < stepLabels.length - 1 ? (
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "h-px flex-1",
-                    index < step ? "bg-emerald-500 dark:bg-emerald-400" : "bg-border",
-                  )}
-                />
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
+      <div className="flex flex-col gap-2.5">
+        <ol className="flex items-center gap-2" aria-label={t.apply.stepOf}>
+          {stepLabels.map((label, index) => {
+            const isDone = index < step;
+            const isActive = index === step;
+            return (
+              <li
+                key={`${label}-${index}`}
+                className="flex min-w-0 flex-1 items-center gap-2 last:flex-none"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    aria-current={isActive ? "step" : undefined}
+                    title={label}
+                    className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition-colors",
+                      isDone &&
+                        "border-emerald-500 bg-emerald-500 text-white dark:border-emerald-400 dark:bg-emerald-400 dark:text-emerald-950",
+                      isActive && "border-primary ring-primary ring-offset-background ring-2",
+                      !isDone && !isActive && "border-border text-muted-foreground",
+                    )}
+                  >
+                    {isDone ? (
+                      <motion.span
+                        className="flex"
+                        initial={reduceMotion ? false : { scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ type: "spring", stiffness: 480, damping: 22 }}
+                      >
+                        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                      </motion.span>
+                    ) : (
+                      index + 1
+                    )}
+                  </span>
+                  <span
+                    className={cn(
+                      "hidden min-w-0 truncate text-xs font-medium @xl:block",
+                      isActive ? "text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    {label}
+                  </span>
+                </div>
+                {index < stepLabels.length - 1 ? (
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "h-px flex-1",
+                      index < step ? "bg-emerald-500 dark:bg-emerald-400" : "bg-border",
+                    )}
+                  />
+                ) : null}
+              </li>
+            );
+          })}
+        </ol>
+      </div>
 
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
         {/* Anti-spam honeypot (Task 27): tersembunyi dari manusia — bot pengisi
