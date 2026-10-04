@@ -115,6 +115,23 @@ export function initialsOf(name: string): string {
   return chars.join("");
 }
 
+// NR-28 (item 7) — warna avatar deterministik dari nama (hash stabil).
+// Palet tanpa biru/ungu: rose, amber, orange, emerald, zinc.
+const AVATAR_TONES = [
+  "bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300",
+  "bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300",
+  "bg-orange-100 text-orange-700 dark:bg-orange-950/70 dark:text-orange-300",
+  "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300",
+  "bg-zinc-200/80 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+];
+
+export function avatarToneOf(name: string): string {
+  let h = 0;
+  const s = (name ?? "").trim();
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return AVATAR_TONES[h % AVATAR_TONES.length];
+}
+
 export function waHref(phone: string): string {
   const digits = phone.replace(/[^0-9]/g, "");
   return `https://wa.me/${digits}`;
