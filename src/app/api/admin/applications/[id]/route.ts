@@ -515,13 +515,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     // NR-24 — log fitur per pelamar (hanya bila nilai benar-benar berubah)
-    if (updateData.expectedSalary !== undefined && updateData.expectedSalary !== existing.expectedSalary) {
+    if (updateData.salaryExpectation !== undefined && updateData.salaryExpectation !== existing.salaryExpectation) {
       logs.push({
         actor: session.name,
         action: "SALARY_EXPECTATION",
-        detail: updateData.expectedSalary === null
+        detail: updateData.salaryExpectation === null
           ? "Ekspektasi gaji dihapus"
-          : `Ekspektasi gaji diatur: Rp ${updateData.expectedSalary.toLocaleString("id-ID")}`,
+          : `Ekspektasi gaji diatur: Rp ${updateData.salaryExpectation.toLocaleString("id-ID")}`,
       });
     }
     if (updateData.starredBy !== undefined) {

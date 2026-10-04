@@ -132,6 +132,8 @@ export function ApplicationsTab() {
   // Filter "Ditandai" (NR-24 fitur 2): hanya lamaran yang saya beri bintang
   // (client-side memakai starredBy milik admin aktif).
   const [starredOnly, setStarredOnly] = useState(false);
+  const [followupOnly, setFollowupOnly] = useState(false);
+  const [holdOnly, setHoldOnly] = useState(false);
   // Filter arsip (client-side memakai field archivedAt): Semua / Aktif / Diarsip.
   const [archiveFilter, setArchiveFilter] = useState<string>("ACTIVE");
   // Filter info kehadiran (client-side, posisi on-site/hybrid): rencana komuter

@@ -472,6 +472,7 @@ function SectionCard({
   const [kunciOpen, setKunciOpen] = useState(false);
   const [kunciInput, setKunciInput] = useState("");
   const kunciMatch = kunciInput.trim() === "kunci";
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const lockHint =
     section.kind === "biodata"
       ? "Selalu tersedia untuk identitas, deteksi lamaran ganda, dan komunikasi — tidak bisa dihapus."
@@ -1215,6 +1216,12 @@ export function FormBuilderPage({
   const [discardOpen, setDiscardOpen] = useState(false);
   // NR-23 — kunci anti-hapus bagian inti: default TERKUNCI, dibuka manual per
   // sesi edit (tidak tersimpan) agar setiap muat ulang kembali terkunci.
+  // NR-26 — buka/tutup kunci edit item inti satu bagian bawaan.
+  function toggleCoreLock(id: string) {
+    setUnlockedCoreIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
   const [unlockedCoreIds, setUnlockedCoreIds] = useState<string[]>([]);
 
   useEffect(() => {
