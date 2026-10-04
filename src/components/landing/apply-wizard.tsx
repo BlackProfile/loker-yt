@@ -1908,7 +1908,12 @@ export function ApplyWizard({
    * (markup & state sama persis; hanya tanda wajib/opsional yang mengikuti
    * parameter: kolom posisi di mode klasik, flag bagian Berkas di mode skema).
    */
-  function renderCvUpload(required: boolean, labelOverride?: string) {
+  /**
+   * Blok unggah CV — dipakai langkah Berkas klasik DAN bagian Berkas skema
+   * (markup & state sama persis). NR-26: labelOverride = kustomisasi label
+   * dari bagian Berkas skema (bila admin menimpanya).
+   */
+  function renderCvUpload(required: boolean, labelOverride?: string | null) {
     return (
       <div className="flex flex-col gap-2">
         <Label htmlFor="apply-cv" className="gap-2">
@@ -1990,7 +1995,12 @@ export function ApplyWizard({
    * Blok unggah audio/video perkenalan — dipakai langkah Berkas klasik DAN
    * bagian Berkas skema (markup & state sama persis).
    */
-  function renderIntroUpload(required: boolean, labelOverride?: string) {
+  /**
+   * Blok unggah audio/video perkenalan — dipakai langkah Berkas klasik DAN
+   * bagian Berkas skema (markup & state sama persis). NR-26: labelOverride =
+   * kustomisasi label dari bagian Berkas skema.
+   */
+  function renderIntroUpload(required: boolean, labelOverride?: string | null) {
     return (
       <div className="flex flex-col gap-2">
         <Label htmlFor="apply-intro" className="gap-2">
@@ -2742,21 +2752,61 @@ export function ApplyWizard({
   const biodataWaRequired =
     schema && biodataEntry ? isWaRequired(biodataEntry.section) : true;
 
-  // NR-23 — label item inti mengikuti konfigurasi bagian (bisa diedit admin di
-  // Form Builder); mode klasik & bagian yang dihapus memakai label bawaan terjemahan.
-  const biodataCfg = schema && biodataEntry ? biodataEntry.section : null;
-  const experienceCfg = schema && experienceEntry ? experienceEntry.section : null;
-  const filesCfg = schema && filesEntry ? filesEntry.section : null;
-  const nameFieldLabel = biodataCfg ? coreItemLabel(biodataCfg, "name") : t.apply.fields.name;
-  const emailFieldLabel = biodataCfg ? coreItemLabel(biodataCfg, "email") : t.apply.fields.email;
-  const waFieldLabel = biodataCfg ? coreItemLabel(biodataCfg, "wa") : t.apply.fields.phone;
-  const experienceFieldLabel = experienceCfg
-    ? coreItemLabel(experienceCfg, "experience")
-    : t.apply.fields.experience;
-  const motivationFieldLabel = experienceCfg
-    ? coreItemLabel(experienceCfg, "motivation")
-    : t.apply.fields.motivation;
-  const portfolioFieldLabel = filesCfg ? coreItemLabel(filesCfg, "portfolio") : t.apply.fields.portfolio;
+  // NR-26 — label/placeholder/teks bantuan item inti efektif: mode skema
+  // mengikuti kustomisasi bagian (section.core); mode klasik memakai teks
+  // bawaan wizard apa adanya. Status wajib email/pengalaman/motivasi ikut.
+  const bioSec = schema ? (biodataEntry?.section ?? null) : null;
+  const nameLabel = bioSec ? coreItemLabel(bioSec, "name") : t.apply.fields.name;
+  const namePh =
+    bioSec && coreItem(bioSec, "name").placeholder
+      ? (coreItem(bioSec, "name").placeholder as string)
+      : t.apply.fields.namePh;
+  const nameHelp = bioSec ? coreItem(bioSec, "name").helpText : undefined;
+  const emailLabel = bioSec ? coreItemLabel(bioSec, "email") : t.apply.fields.email;
+  const emailPh =
+    bioSec && coreItem(bioSec, "email").placeholder
+      ? (coreItem(bioSec, "email").placeholder as string)
+      : t.apply.fields.emailPh;
+  const emailHelp = bioSec ? coreItem(bioSec, "email").helpText : undefined;
+  const emailRequired = bioSec ? isEmailRequired(bioSec) : true;
+  const waLabel = bioSec ? coreItemLabel(bioSec, "wa") : t.apply.fields.phone;
+  const waPh =
+    bioSec && coreItem(bioSec, "wa").placeholder
+      ? (coreItem(bioSec, "wa").placeholder as string)
+      : t.apply.fields.phonePh;
+  const waHelp = bioSec ? coreItem(bioSec, "wa").helpText : undefined;
+
+  const expSec = schema ? (experienceEntry?.section ?? null) : null;
+  const expLabel = expSec ? coreItemLabel(expSec, "experience") : t.apply.fields.experience;
+  const expPh =
+    expSec && coreItem(expSec, "experience").placeholder
+      ? (coreItem(expSec, "experience").placeholder as string)
+      : t.apply.fields.experiencePh;
+  const expHelp = expSec ? coreItem(expSec, "experience").helpText : undefined;
+  const expRequired = expSec ? isExperienceRequired(expSec) : true;
+  const motLabel = expSec ? coreItemLabel(expSec, "motivation") : t.apply.fields.motivation;
+  const motPh =
+    expSec && coreItem(expSec, "motivation").placeholder
+      ? (coreItem(expSec, "motivation").placeholder as string)
+      : t.apply.fields.motivationPh;
+  const motHelp = expSec ? coreItem(expSec, "motivation").helpText : undefined;
+  const motRequired = expSec ? isMotivationRequired(expSec) : true;
+
+  // NR-26 — label slot berkas dari kustomisasi bagian Berkas (bila admin
+  // menimpanya); null = pakai teks bawaan wizard (perilaku lama).
+  const fileSec = schema ? (filesEntry?.section ?? null) : null;
+  const cvLabelOverride =
+    fileSec && coreItem(fileSec, "cv").label?.trim()
+      ? (coreItem(fileSec, "cv").label as string)
+      : null;
+  const introLabelOverride =
+    fileSec && coreItem(fileSec, "intro").label?.trim()
+      ? (coreItem(fileSec, "intro").label as string)
+      : null;
+  const portfolioLabelOverride =
+    fileSec && coreItem(fileSec, "portfolio").label?.trim()
+      ? (coreItem(fileSec, "portfolio").label as string)
+      : null;
 
   return (
     <div className="@container flex flex-col gap-6">
@@ -2986,19 +3036,22 @@ export function ApplyWizard({
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-name">
-                  {nameFieldLabel} <span className="text-rose-600">*</span>
+                  {nameLabel} <span className="text-rose-600">*</span>
                 </Label>
                 <Input
                   id="apply-name"
                   name="name"
                   value={values.name}
                   onChange={(e) => setField("name", e.target.value)}
-                  placeholder={t.apply.fields.namePh}
+                  placeholder={namePh}
                   autoComplete="name"
                   className="h-11"
                   aria-invalid={errors.name ? true : undefined}
                   aria-describedby={errors.name ? "apply-name-error" : undefined}
                 />
+                {nameHelp ? (
+                  <p className="text-xs text-muted-foreground">{nameHelp}</p>
+                ) : null}
                 {errors.name ? (
                   <p id="apply-name-error" className="text-sm text-rose-600">
                     {errors.name}
@@ -3007,8 +3060,15 @@ export function ApplyWizard({
               </div>
 
               <div className="flex flex-col gap-2">
-                <Label htmlFor="apply-email">
-                  {emailFieldLabel} <span className="text-rose-600">*</span>
+                <Label htmlFor="apply-email" className="gap-2">
+                  {emailLabel}
+                  {emailRequired ? (
+                    <span className="text-rose-600">*</span>
+                  ) : (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({t.apply.uploads.optional})
+                    </span>
+                  )}
                 </Label>
                 <Input
                   id="apply-email"
@@ -3016,12 +3076,15 @@ export function ApplyWizard({
                   type="email"
                   value={values.email}
                   onChange={(e) => setField("email", e.target.value)}
-                  placeholder={t.apply.fields.emailPh}
+                  placeholder={emailPh}
                   autoComplete="email"
                   className="h-11"
                   aria-invalid={errors.email ? true : undefined}
                   aria-describedby={errors.email ? "apply-email-error" : undefined}
                 />
+                {emailHelp ? (
+                  <p className="text-xs text-muted-foreground">{emailHelp}</p>
+                ) : null}
                 {errors.email ? (
                   <p id="apply-email-error" className="text-sm text-rose-600">
                     {errors.email}
@@ -3033,7 +3096,7 @@ export function ApplyWizard({
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-phone" className="gap-2">
-                  {waFieldLabel}
+                  {waLabel}
                   {biodataWaRequired ? (
                     <span className="text-rose-600">*</span>
                   ) : (
@@ -3049,12 +3112,15 @@ export function ApplyWizard({
                   inputMode="tel"
                   value={values.phone}
                   onChange={(e) => setField("phone", e.target.value)}
-                  placeholder={t.apply.fields.phonePh}
+                  placeholder={waPh}
                   autoComplete="tel"
                   className="h-11"
                   aria-invalid={errors.phone ? true : undefined}
                   aria-describedby={errors.phone ? "apply-phone-error" : undefined}
                 />
+                {waHelp ? (
+                  <p className="text-xs text-muted-foreground">{waHelp}</p>
+                ) : null}
                 {errors.phone ? (
                   <p id="apply-phone-error" className="text-sm text-rose-600">
                     {errors.phone}
@@ -3160,11 +3226,15 @@ export function ApplyWizard({
             ) : null}
             {(!schema || (experienceEntry && isExperienceEnabled(experienceEntry.section))) ? (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="apply-experience">
-                {experienceFieldLabel}{" "}
-                {schema && experienceEntry && isExperienceRequired(experienceEntry.section) ? (
+              <Label htmlFor="apply-experience" className="gap-2">
+                {expLabel}
+                {expRequired ? (
                   <span className="text-rose-600">*</span>
-                ) : null}
+                ) : (
+                  <span className="text-xs font-normal text-muted-foreground">
+                    ({t.apply.uploads.optional})
+                  </span>
+                )}
               </Label>
               <Textarea
                 id="apply-experience"
@@ -3172,12 +3242,15 @@ export function ApplyWizard({
                 rows={4}
                 value={values.experience}
                 onChange={(e) => setField("experience", e.target.value)}
-                placeholder={t.apply.fields.experiencePh}
+                placeholder={expPh}
                 aria-invalid={errors.experience ? true : undefined}
                 aria-describedby={
                   errors.experience ? "apply-experience-error" : undefined
                 }
               />
+              {expHelp ? (
+                <p className="text-xs text-muted-foreground">{expHelp}</p>
+              ) : null}
               {errors.experience ? (
                 <p id="apply-experience-error" className="text-sm text-rose-600">
                   {errors.experience}
@@ -3188,11 +3261,15 @@ export function ApplyWizard({
 
             {(!schema || (experienceEntry && isMotivationEnabled(experienceEntry.section))) ? (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="apply-motivation">
-                {motivationFieldLabel}{" "}
-                {schema && experienceEntry && isMotivationRequired(experienceEntry.section) ? (
+              <Label htmlFor="apply-motivation" className="gap-2">
+                {motLabel}
+                {motRequired ? (
                   <span className="text-rose-600">*</span>
-                ) : null}
+                ) : (
+                  <span className="text-xs font-normal text-muted-foreground">
+                    ({t.apply.uploads.optional})
+                  </span>
+                )}
               </Label>
               <Textarea
                 id="apply-motivation"
@@ -3200,12 +3277,15 @@ export function ApplyWizard({
                 rows={4}
                 value={values.motivation}
                 onChange={(e) => setField("motivation", e.target.value)}
-                placeholder={t.apply.fields.motivationPh}
+                placeholder={motPh}
                 aria-invalid={errors.motivation ? true : undefined}
                 aria-describedby={
                   errors.motivation ? "apply-motivation-error" : undefined
                 }
               />
+              {motHelp ? (
+                <p className="text-xs text-muted-foreground">{motHelp}</p>
+              ) : null}
               {errors.motivation ? (
                 <p id="apply-motivation-error" className="text-sm text-rose-600">
                   {errors.motivation}
@@ -3513,21 +3593,15 @@ export function ApplyWizard({
               </p>
             ) : null}
             {isCvEnabled(filesEntry.section)
-              ? renderCvUpload(
-                  isCvRequired(filesEntry.section),
-                  coreItemLabel(filesEntry.section, "cv"),
-                )
+              ? renderCvUpload(isCvRequired(filesEntry.section), cvLabelOverride)
               : null}
             {isIntroEnabled(filesEntry.section)
-              ? renderIntroUpload(
-                  isIntroRequired(filesEntry.section),
-                  coreItemLabel(filesEntry.section, "intro"),
-                )
+              ? renderIntroUpload(isIntroRequired(filesEntry.section), introLabelOverride)
               : null}
             {isPortfolioEnabled(filesEntry.section) ? (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-portfolio" className="gap-2">
-                  {portfolioFieldLabel}
+                  {portfolioLabelOverride ?? t.apply.fields.portfolio}
                   <span
                     className={cn(
                       "text-xs font-normal",
