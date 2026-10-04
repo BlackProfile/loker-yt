@@ -230,7 +230,8 @@ function dateKeyBangkok(d: Date = new Date()): string {
 
 /** Kunci minggu ISO (contoh 2026-W40) menurut zona Asia/Bangkok. */
 function weekKeyBangkok(d: Date = new Date()): string {
-  const parts = d.toLocaleDateString("en-US", { timeZone: "Asia/Bangkok", week: "numeric", year: "numeric" });
+  // Opsi "week" belum ada di lib TS Intl (fitur ESNext Intl) tapi valid di runtime ICU — perlu cast agar compile tanpa mengubah perilaku.
+  const parts = d.toLocaleDateString("en-US", { timeZone: "Asia/Bangkok", week: "numeric", year: "numeric" } as Intl.DateTimeFormatOptions);
   const week = parts.match(/week (\d+)/i)?.[1] ?? "0";
   const year = parts.match(/(\d{4})/)?.[1] ?? "0000";
   return `${year}-W${week.padStart(2, "0")}`;
@@ -702,16 +703,16 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<{ re
           const repliedText = message.reply_to_message?.text ?? message.reply_to_message?.caption ?? "";
           const repliedCode = repliedText.match(/\bLM-[A-Z0-9]{6}\b/i)?.[0];
           if (repliedCode && text && !text.startsWith("/")) {
-            const t = await handleReplyNote(token, chatId, repliedCode.toUpperCase(), text, chatLabel(message.chat, message.from), writeEnabled);
+            const t = await handleReplyNote(token, chatId, repliedCode.toUpperCase(), text, chatLabel(message.chat, message.from), settings.telegramWriteEnabled);
             replies.push(t);
-            return;
+            return { replies };
           }
           // Kode pelacakan polos (LM-XXXXXX) -> status kandidat + langganan (publik).
           const bareCode = text.trim().toUpperCase().match(/^LM-[A-Z0-9]{6}$/);
           if (bareCode) {
             const t = await handleBareTrackingCode(token, chatId, bareCode[0]);
             replies.push(t);
-            return;
+            return { replies };
           }
           // Pesan bebas -> asisten data rekrutmen (read-only, jawaban dari DB).
           const t = await answerFreeQuestion(token, chatId, text);
@@ -2033,7 +2034,7 @@ async function handleCallback(
     if (action === "reject") {
       const app = await db.application.findUnique({
         where: { id: appId },
-        select: { name: true, trackingCode: true, position: { select: { title: true } }, status: true },
+        select: { id: true, name: true, trackingCode: true, position: { select: { title: true } }, status: true },
       });
       if (!app || app.status === "REJECTED" || app.status === "ACCEPTED") {
         await tgAnswerCallback(token, callback.id, "Kandidat tidak bisa ditolak (tahap akhir).");
