@@ -1659,16 +1659,6 @@ export function ApplicationDetailDialog({
     setSalarySaving(false);
   }
 
-  // Masa berlaku dokumen (ide 13): patch merge per fileId (null = hapus).
-  async function handleDocExpiry(fileId: string, value: string) {
-    setDocExpiryBusy(fileId);
-    await patch(
-      { docExpiries: { [fileId]: value === "" ? null : value } },
-      value ? "Masa berlaku dokumen disimpan" : "Masa berlaku dokumen dihapus"
-    );
-    setDocExpiryBusy(null);
-  }
-
   // Undo penolakan (ide 14): POST undo-reject {reason ≤300 wajib}.
   async function handleUndoReject() {
     const reason = undoReason.trim();
@@ -3097,10 +3087,8 @@ export function ApplicationDetailDialog({
                   </div>
                 ) : null}
                 {/* Dokumen wajib tambahan yang diunggah pelamar (customDocs posisi).
-                    NR-24-b (ide 13): masa berlaku dokumen per fileId (docExpiries). */}
+                    Masa berlaku dokumen dikelola blok DocExpirySection (NR-24). */}
                 {app.extraDocs.map((doc) => {
-                  const expiry = app.docExpiries?.[doc.fileId] ?? "";
-                  const expiryDays = expiry ? daysUntil(expiry) : null;
                   return (
                     <div key={doc.fileId} className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-2">
@@ -3121,38 +3109,6 @@ export function ApplicationDetailDialog({
                         >
                           Unduh
                         </a>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 pl-6">
-                        <span className="text-xs text-muted-foreground">Masa berlaku:</span>
-                        {canMutate ? (
-                          <Input
-                            type="date"
-                            value={expiry}
-                            onChange={(e) => void handleDocExpiry(doc.fileId, e.target.value)}
-                            disabled={docExpiryBusy === doc.fileId}
-                            aria-label={`Masa berlaku dokumen ${doc.label}`}
-                            className="h-8 w-40"
-                          />
-                        ) : expiry ? (
-                          <span className="text-xs tabular-nums">{formatDate(expiry)}</span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">-</span>
-                        )}
-                        {expiryDays != null && expiryDays < 0 ? (
-                          <Badge
-                            variant="outline"
-                            className="px-1.5 py-0 text-[10px] border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
-                          >
-                            Kedaluwarsa
-                          </Badge>
-                        ) : expiryDays != null && expiryDays <= 30 ? (
-                          <Badge
-                            variant="outline"
-                            className="px-1.5 py-0 text-[10px] border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
-                          >
-                            Segera habis
-                          </Badge>
-                        ) : null}
                       </div>
                     </div>
                   );

@@ -90,7 +90,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     } = {};
     // Field yang perlu merge dengan nilai existing — dihitung setelah record diambil.
     let starredToggle: boolean | undefined;
-    let docExpiryPatch: Record<string, string | null> | undefined;
 
     if (data.status !== undefined) {
       // Status/tahap menerima string apa pun (5 status bawaan ATAU tahap kustom posisi).
@@ -364,16 +363,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       updateData.starredBy = JSON.stringify(next);
     }
 
-    // Merge masa berlaku dokumen: map existing + patch; nilai null menghapus kunci.
-    if (docExpiryPatch !== undefined) {
-      const merged = parseDocExpiries(existing.docExpiries);
-      for (const [key, value] of Object.entries(docExpiryPatch)) {
-        if (value === null) delete merged[key];
-        else merged[key] = value;
-      }
-      updateData.docExpiries = Object.keys(merged).length > 0 ? JSON.stringify(merged) : null;
-    }
-
     const stageChanged =
       updateData.status !== undefined && updateData.status !== existing.status;
     if (stageChanged && updateData.status) {
@@ -582,14 +571,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             : { actor: session.name, action: "HOLD_REVIEW_CLEARED", detail: "Jadwal review HOLD dihapus" }
         );
       }
-    }
-    if (updateData.docExpiries !== undefined && updateData.docExpiries !== existing.docExpiries) {
-      const entryCount = Object.keys(parseDocExpiries(updateData.docExpiries)).length;
-      logs.push({
-        actor: session.name,
-        action: "DOC_EXPIRY",
-        detail: `Masa berlaku dokumen diperbarui (${entryCount} entri)`,
-      });
     }
     if (logs.length > 0) {
       await db.activityLog.createMany({
