@@ -6,7 +6,7 @@
 // prefers-reduced-motion (langsung tidak merender apa pun) dan tanpa emoji.
 // Warna mengikuti palet aplikasi: rose, amber, emerald, orange, zinc.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
 const COLORS = [
