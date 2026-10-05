@@ -42,6 +42,7 @@ import {
 } from "@/lib/types";
 import { apiFetch, apiGet, apiPatch, apiPost, jsonInit } from "./api";
 import { daysUntil, formatDate, formatDateTime, formatRelative } from "./format";
+import { AdminFileViewButton } from "./file-viewer-dialog"; // NR-36 — pratinjau berkas langsung di aplikasi
 import { StatusBadge } from "./status-badge";
 import { useAdminSession } from "./admin-context";
 import { cn } from "@/lib/utils";
@@ -485,14 +486,22 @@ export function AssessmentSection({
                   <p className="text-xs whitespace-pre-wrap text-muted-foreground">{item.note}</p>
                 ) : null}
                 {item.submittedFileId ? (
-                  <a
-                    href={`/api/files/${item.submittedFileId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-fit text-xs font-medium text-rose-600 underline-offset-2 hover:underline dark:text-rose-400"
-                  >
-                    Lihat berkas hasil{item.submittedFileName ? ` — ${item.submittedFileName}` : ""}
-                  </a>
+                  <span className="flex w-fit flex-wrap items-center gap-2">
+                    {/* NR-36 — pratinjau hasil assessment langsung di aplikasi */}
+                    <AdminFileViewButton
+                      fileId={item.submittedFileId}
+                      filename={item.submittedFileName ?? "Hasil assessment"}
+                      className="h-7"
+                    />
+                    <a
+                      href={`/api/files/${item.submittedFileId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-medium text-rose-600 underline-offset-2 hover:underline dark:text-rose-400"
+                    >
+                      Unduh{item.submittedFileName ? ` — ${item.submittedFileName}` : ""}
+                    </a>
+                  </span>
                 ) : null}
                 {item.resultNote ? (
                   <p className="rounded bg-muted/60 p-2 text-xs whitespace-pre-wrap">
@@ -1027,6 +1036,11 @@ export function InternalDocsSection({
                 {formatDateTime(doc.createdAt)}
                 {doc.uploadedBy ? ` · ${doc.uploadedBy}` : ""}
               </span>
+              {/* NR-36 — pratinjau dokumen internal langsung di aplikasi */}
+              <AdminFileViewButton
+                fileId={doc.fileId}
+                filename={doc.filename ?? doc.label}
+              />
               <a
                 href={`/api/files/${doc.fileId}`}
                 target="_blank"

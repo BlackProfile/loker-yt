@@ -128,6 +128,7 @@ import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { fillTemplate } from "@/components/landing/landing-utils";
 import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, jsonInit } from "./api";
 import { AdminConfetti } from "./confetti"; // NR-28 (item 10) — confetti DITERIMA
+import { AdminFileViewButton } from "./file-viewer-dialog"; // NR-36 — pratinjau berkas langsung di aplikasi
 import {
   actionLabel,
   actorBadgeClass,
@@ -262,6 +263,8 @@ function FormAnswerValueView({ value }: { value: FormAnswerValue | undefined }) 
   return (
     <p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm">
       <span className="break-all">{value.filename || "berkas"}</span>
+      {/* NR-36 — pratinjau jawaban berkas Form Builder langsung di aplikasi */}
+      <AdminFileViewButton fileId={value.fileId} filename={value.filename} />
       <a
         href={`/api/files/${value.fileId}`}
         target="_blank"
@@ -2635,6 +2638,11 @@ export function ApplicationDetailDialog({
                     <span className="min-w-0 flex-1 truncate text-sm">
                       {app.cvFileName ?? "CV Pelamar"}
                     </span>
+                    {/* NR-36 — lihat CV langsung di aplikasi (iframe PDF/gambar) */}
+                    <AdminFileViewButton
+                      fileId={app.cvFileId}
+                      filename={app.cvFileName ?? "CV Pelamar"}
+                    />
                     <a
                       href={`/api/files/${app.cvFileId}`}
                       target="_blank"
@@ -2784,6 +2792,8 @@ export function ApplicationDetailDialog({
                             </span>
                           ) : null}
                         </span>
+                        {/* NR-36 — pratinjau dokumen tambahan langsung di aplikasi */}
+                        <AdminFileViewButton fileId={doc.fileId} filename={doc.filename ?? doc.label} />
                         <a
                           href={`/api/files/${doc.fileId}`}
                           target="_blank"
@@ -4186,14 +4196,22 @@ export function ApplicationDetailDialog({
                           ) : null}
                         </span>
                         {doc.fileId ? (
-                          <a
-                            href={`/api/files/${doc.fileId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex h-8 shrink-0 items-center rounded-md border px-2.5 text-xs font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
-                          >
-                            Unduh
-                          </a>
+                          <>
+                            {/* NR-36 — pratinjau dokumen onboarding langsung di aplikasi */}
+                            <AdminFileViewButton
+                              fileId={doc.fileId}
+                              filename={doc.label}
+                              className="h-8 shrink-0"
+                            />
+                            <a
+                              href={`/api/files/${doc.fileId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex h-8 shrink-0 items-center rounded-md border px-2.5 text-xs font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+                            >
+                              Unduh
+                            </a>
+                          </>
                         ) : null}
                       </div>
                     ))}
