@@ -108,6 +108,8 @@ export async function POST(req: NextRequest) {
         showExpectedSalary: f.showExpectedSalary ?? true,
         customDocs: JSON.stringify(f.customDocs ?? []),
         maxApplicants: f.maxApplicants ?? null,
+        // NR-32 — usia minimal pelamar (opsional; null = tanpa batas)
+        minAge: f.minAge ?? null,
         applyOpen: f.applyOpen ?? true,
 
         publishAt: f.publishAt ?? null,

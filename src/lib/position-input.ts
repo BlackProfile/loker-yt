@@ -83,6 +83,8 @@ export type PositionFields = {
   showExpectedSalary?: boolean;
   customDocs?: string[]; // label dokumen wajib tambahan
   maxApplicants?: number | null;
+  // NR-32 — usia minimal pelamar (opsional): 0-70 tahun; null = tanpa batas.
+  minAge?: number | null;
   applyOpen?: boolean; // formulir lamaran posisi ini buka/tutup
   formSchema?: string | null; // JSON FormSchema (Form Builder); null = kembali mode klasik
   publishAt?: Date | null;
@@ -599,6 +601,18 @@ export async function sanitizePositionInput(
   if (!maxApplicants.ok) return maxApplicants;
   if (maxApplicants.value !== undefined) f.maxApplicants = maxApplicants.value;
 
+  // NR-32 — usia minimal pelamar (opsional, 0-70): null/absen/kosong = tanpa
+  // batas. String kosong diterima sebagai pengosongan agar payload form yang
+  // mengirim "" tetap valid.
+  const minAge = sanitizeNullableInt(
+    data.minAge === "" ? null : data.minAge,
+    "Usia minimal",
+    0,
+    70,
+  );
+  if (!minAge.ok) return minAge;
+  if (minAge.value !== undefined) f.minAge = minAge.value;
+
   // Form Builder per posisi (Task 30): skema formulir bebas; field lama yang
   // dihapus otomatis dipindah ke retiredFields (skema sebelumnya dari record saat ini).
   const formSchema = sanitizeFormSchemaInput(data.formSchema, {
@@ -914,6 +928,8 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.showExpectedSalary !== undefined) out.showExpectedSalary = f.showExpectedSalary;
   if (f.customDocs !== undefined) out.customDocs = JSON.stringify(f.customDocs);
   if (f.maxApplicants !== undefined) out.maxApplicants = f.maxApplicants;
+  // NR-32 — usia minimal pelamar (opsional; WAJIB dipetakan — pelajaran NR-22)
+  if (f.minAge !== undefined) out.minAge = f.minAge;
   if (f.applyOpen !== undefined) out.applyOpen = f.applyOpen;
   if (f.formSchema !== undefined) out.formSchema = f.formSchema;
   if (f.publishAt !== undefined) out.publishAt = f.publishAt;

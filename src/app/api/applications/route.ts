@@ -234,6 +234,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // NR-32 — NIK (opsional): simpan hanya bila tepat 16 digit setelah strip
+    // non-digit; selain itu dianggap tidak valid dan disimpan null.
+    const nikDigits = asTrimmedString(fields.nik).replace(/\D/g, "");
+    const nik = nikDigits.length === 16 ? nikDigits : null;
+
+    // NR-32 — tanggal lahir (opsional): format ketat YYYY-MM-DD, harus tanggal
+    // valid, dan tidak boleh masa depan (toleransi 1 hari untuk selisih jam).
+    let birthDate: Date | null = null;
+    {
+      const rawBirthDate = asTrimmedString(fields.birthDate);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(rawBirthDate)) {
+        const parsed = new Date(`${rawBirthDate}T00:00:00.000Z`);
+        if (
+          !Number.isNaN(parsed.getTime()) &&
+          parsed.getTime() <= Date.now() + 24 * 60 * 60 * 1000
+        ) {
+          birthDate = parsed;
+        }
+      }
+    }
+
     // Rate limit per IP (Task 27): maks 5 submit per jam — dipersona sebagai error biasa.
     const nowMs = Date.now();
     const ipKey = `apply:${clientIp(req)}`;
@@ -635,6 +656,10 @@ export async function POST(req: NextRequest) {
         startDatePref,
         // NR-24 — ekspektasi gaji bulanan pelamar (null bila tidak diisi/tidak valid).
         salaryExpectation: expectedSalary,
+        // NR-32 — data diri lengkap: NIK 16 digit & tanggal lahir (null bila
+        // tidak diisi / tidak valid; item inti bagian Data Diri Form Builder).
+        nik,
+        birthDate,
         // Task 27: pencatatan persetujuan privasi + penanda perubahan tahap awal.
         consentAt: consent ? now : null,
         stageUpdatedAt: now,

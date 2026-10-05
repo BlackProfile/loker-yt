@@ -14,8 +14,15 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -56,6 +63,7 @@ import {
   FileDown,
   FileText,
   Inbox,
+  LayoutTemplate,
   ListChecks,
   Loader2,
   Lock,
@@ -70,6 +78,7 @@ import {
 import { toast } from "sonner";
 import {
   CORE_ITEM_DEFAULT_LABELS,
+  FORM_AUTOCOMPLETE_KEYS,
   FORM_FIELD_TYPES,
   FORM_FIELD_TYPE_LABELS,
   FORM_LIMITS,
@@ -81,6 +90,8 @@ import {
   defaultBiodataSection,
   defaultExperienceSection,
   defaultFilesSection,
+  isBirthDateEnabled,
+  isBirthDateRequired,
   isBuiltinSection,
   isChoiceType,
   isCvEnabled,
@@ -92,6 +103,8 @@ import {
   isIntroRequired,
   isMotivationEnabled,
   isMotivationRequired,
+  isNikEnabled,
+  isNikRequired,
   isPortfolioEnabled,
   isPortfolioRequired,
   isWaRequired,
@@ -106,6 +119,7 @@ import {
   type FormSchema,
   type FormSection,
 } from "@/lib/form-schema";
+import { FORM_TEMPLATES, expandTemplateFields, type FormTemplate } from "@/lib/form-templates";
 import { STATUS_LABELS, type ApplicationStatus, type Position } from "@/lib/types";
 import { ApiError, apiGet, apiPost, apiPut } from "./api";
 import { formatDateTime } from "./format";
