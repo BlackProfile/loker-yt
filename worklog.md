@@ -2883,3 +2883,23 @@ Stage Summary:
 - Fondasi siap: subagen berikutnya boleh memakai isFieldVisible, isNikEnabled/isBirthDateEnabled, FORM_TEMPLATES/expandTemplateFields, t.apply.dataDiri.*, position.minAge (sudah di tipe + serializer; PETA API public positions harap dicek di task masing-masing).
 - Kontrak submit: wizard kirim fd "nik" (16 digit) & "birthDate" (YYYY-MM-DD) — API POST /api/applications harus menyimpan ke kolom baru.
 - Kontrak dedupe: GET /api/public/dedupe?email=&phone= -> {exists, positionTitle?, createdAt?}.
+
+---
+Task ID: NR-32-2-b
+Agent: full-stack-developer
+Task: Admin Form Builder — picker template paket, editor per-field (kelompok/isi-otomatis/tampil bersyarat), item inti NIK & Tanggal Lahir, dan setelan minAge Penerimaan
+
+Work Log:
+- form-builder-page.tsx (A — template picker): tambah import DropdownMenu (shadcn) + ikon LayoutTemplate + FORM_TEMPLATES/expandTemplateFields/FormTemplate; tombol "Dari template" (DropdownMenu, nama + jumlah pertanyaan + deskripsi) di samping "Tambah pertanyaan" pada SectionCard, HANYA untuk kind biodata/custom (Pengalaman/Berkas disembunyikan); callback onApplyTemplate -> applyTemplateToSection di FormBuilderPage: guard maxFields (toast.error bila slot kurang), expandTemplateFields(tpl, key => newFormId("tpl_"+key)), field hasil di-append ke array draf (sectionId diisi), enablesCore menyalakan nikEnabled/birthDateEnabled saat target biodata, toast.success "N pertanyaan ditambahkan dari template ...".
+- form-builder-page.tsx (B — editor field): FieldEditorCard menerima props baru fieldIndex + sectionFields (dikirim dari SectionCard fields.map); blok baru "Kelompok (sub-header)" + "Kelompok (EN)" (Input, kosong = undefined) dan "Isi-otomatis browser" (Select: sentinel "none" = hapus prop, sisanya FORM_AUTOCOMPLETE_KEYS + label terbaca via FORM_AUTOCOMPLETE_LABELS modul-lokal); editor "Tampilkan hanya jika" HANYA tipe radio/checkbox/dropdown: Select sumber = field pilihan pada bagian sama dengan index < fieldIndex (slice), opsi "Selalu tampil" (sentinel SHOWIF_ALWAYS) menghapus showIf, ganti sumber reset values, daftar Checkbox opsi sumber untuk values; bila tak ada kandidat -> teks "Butuh pertanyaan pilihan di atas field ini."; useEffect membersihkan showIf draf bila sumber hilang (dihapus/ubah tipe/dipindah ke bawah); tipe "currency" otomatis ikut karena dropdown tipe sudah mengiterasi FORM_FIELD_TYPES (tanpa perubahan).
+- form-builder-page.tsx (B.6 — item inti biodata): dua CoreItemCard baru itemKey "nik" & "birthDate" (label/placeholder/helpText via core override, showTextConfig, hint kolom tersendiri) dengan pasangan saklar Aktif (canDisable -> onPatch nikEnabled/birthDateEnabled) dan Wajib (onPatch nikRequired/birthDateRequired; saklar wajib otomatis mati saat item tidak aktif mengikuti pola CoreItemCard); editableFingerprint kini menghitung nikEnabled/nikRequired/birthDateEnabled/birthDateRequired (hanya biodata) agar tombol simpan aktif saat flag diubah.
+- position-settings-pages.tsx (C — minAge): IntakeState.minAge string + buildIntakeState dari p.minAge ?? ""; FormSection baru "Umur Minimum Pelamar" (ikon UserCheck, Input number min 0 max 70, help text sesuai spec) ditempatkan setelah Kuota & sebelum Berkas; validate: wajib kosong atau bulat 0-70 (error "Umur minimum pelamar harus angka bulat 0-70, atau dikosongkan."); buildPayload: payload.minAge = kosong ? null : Math.max(0, Math.min(70, Math.round(Number))).
+- Verifikasi: bunx tsc --noEmit | grep "^src/" KOSONG; bun run lint bersih; dev server GET / 200 tanpa error compile.
+
+Stage Summary:
+- Admin kini bisa menyuntik 3 paket template (Data Diri Lengkap / Supir & Operasional / Kreator Konten) ke bagian Data Diri atau bagian tambahan; Data Diri Lengkap otomatis menyalakan NIK & Tanggal Lahir.
+- Editor pertanyaan mendukung kelompok sub-header dua bahasa, hint isi-otomatis browser (whitelist), dan tampil bersyarat (showIf) dengan sumber terbatas field pilihan di atasnya (kontrak normalizeShowIf dijaga di UI, sanitasi server tetap jaring pengaman).
+- Item inti NIK & Tanggal Lahir bisa diedit label/placeholder/helpText + saklar Aktif/Wajib (bawaan mati) di kartu Data Diri.
+- Penerimaan punya setelan "Umur minimum pelamar (tahun)" (0-70, kosong = tanpa batas, peringatan halus di wizard).
+- PENTING (integrasi backend, di luar file tugas ini): position-input.ts (src/lib) BELUM mem-whitelist minAge pada PositionFields/booleans & positionFieldsToDb — PATCH /api/admin/positions/{id} akan membuang kunci minAge secara diam-diam. Perlu ditambahkan sanitizeNullableInt(minAge, 0-70) + mapping ke DB oleh task backend/orchestrator agar setelan tersimpan. sumber showIf yang dirujuk juga aman di sisi server lewat normalizeShowIf (sudah ada di foundation).
+Do not commit.

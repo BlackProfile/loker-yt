@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
@@ -43,17 +43,22 @@ import {
   defaultBiodataSection,
   formatAnswerValue,
   isAllowedFormFile,
+  isBirthDateEnabled,
+  isBirthDateRequired,
   coreItem,
   isCvEnabled,
   isCvRequired,
   isEmailRequired,
   isExperienceEnabled,
   isExperienceRequired,
+  isFieldVisible,
   isFormSchemaActive,
   isIntroEnabled,
   isIntroRequired,
   isMotivationEnabled,
   isMotivationRequired,
+  isNikEnabled,
+  isNikRequired,
   isPortfolioEnabled,
   isPortfolioRequired,
   isWaRequired,
@@ -93,7 +98,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 import { useLang } from "@/components/landing/lang-context";
-import { fillTemplate, formatMb, safeExternalUrl } from "@/components/landing/landing-utils";
+import {
+  fillTemplate,
+  formatDateTimeId,
+  formatMb,
+  safeExternalUrl,
+} from "@/components/landing/landing-utils";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DRAFT_KEY = "lumina-draft";
@@ -184,6 +194,17 @@ function formAnswerDisplay(
   if (field.type === "file") {
     return value instanceof File ? `${value.name} (${formatMb(value.size)})` : "";
   }
+  // NR-32 — uang selalu ditampilkan "Rp 1.500.000" (jawaban disimpan angka mentah).
+  if (field.type === "currency") {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return `Rp ${value.toLocaleString("id-ID")}`;
+    }
+    if (typeof value === "string" && value.trim() !== "") {
+      const num = Number(value.replace(/\D/g, ""));
+      return Number.isFinite(num) ? `Rp ${num.toLocaleString("id-ID")}` : value;
+    }
+    return "";
+  }
   if (Array.isArray(value)) {
     return formatAnswerValue(value.filter((item) => item !== FORM_OTHER_VALUE));
   }
@@ -242,6 +263,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * (999.999.999 — di bawah batas server 1.000.000.000). */
 function sanitizeSalaryInput(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, 9);
+}
+
+/** NR-32 — normalisasi nomor WhatsApp saat blur: digit murni + prefix +62.
+ * "0812…" → "+62812…", "62812…"/"812…" → "+62812…", "+62…" dipertahankan;
+ * selain itu cukup buang non-digit (kecuali "+" awal nomor internasional). */
+function normalizeWaPhone(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const plus = trimmed.startsWith("+");
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("62")) return `+${digits}`;
+  if (!plus && digits.startsWith("0")) return `+62${digits.slice(1)}`;
+  if (!plus && digits.startsWith("8")) return `+62${digits}`;
+  return plus ? `+${digits}` : digits;
+}
+
+/** NR-32 — usia (tahun penuh) dari tanggal lahir YYYY-MM-DD; null bila tidak sah. */
+function ageFromBirthDate(value: string): number | null {
+  if (!FORM_DATE_RE.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const now = new Date();
+  let age = now.getFullYear() - year;
+  const monthDiff = now.getMonth() + 1 - month;
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < day)) age -= 1;
+  return age >= 0 && age <= 130 ? age : null;
 }
 
 /** Salin jawaban form yang bisa diserialisasi — berkas (File) tidak ikut. */
@@ -788,7 +836,13 @@ type FormValues = {
   startDatePref: string;
 };
 
-type FieldKey = keyof FormValues | "positionId" | `screening:${string}`;
+// NR-32 — "nik" & "birthDate" = item inti biodata mode skema (kolom tersendiri).
+type FieldKey =
+  | keyof FormValues
+  | "positionId"
+  | "nik"
+  | "birthDate"
+  | `screening:${string}`;
 type FormErrors = Partial<Record<FieldKey, string>>;
 
 const INITIAL_VALUES: FormValues = {
@@ -892,6 +946,14 @@ export function ApplyWizard({
   // NR-24 — ekspektasi gaji bulanan (opsional): disimpan sebagai string digit
   // murni (sanitizeSalaryInput); kosong = tidak dikirim ke server.
   const [expectedSalaryInput, setExpectedSalaryInput] = useState("");
+  // NR-32 — item inti Data Diri (mode skema): NIK 16 digit & tanggal lahir.
+  const [nik, setNik] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  // NR-32 — peringatan lamaran duplikat (email/WA sama) dari /api/public/dedupe.
+  const [dedupe, setDedupe] = useState<{ title: string; date: string } | null>(null);
+  const dedupeDismissedRef = useRef(false);
+  const dedupeAbortRef = useRef<AbortController | null>(null);
+  const dedupeTimerRef = useRef<number | null>(null);
   // Mode tutup rekrutmen (Setting "site" via /api/public/site) — saat aktif,
   // tombol kirim di langkah akhir dinonaktifkan dan pengiriman diblokir.
   const [recruitmentClosed, setRecruitmentClosed] = useState(false);
@@ -1056,6 +1118,19 @@ export function ApplyWizard({
   const experienceStepIndex = schema ? (experienceEntry?.stepIndex ?? -1) : 1;
   const schemaFilesStepIndex = schema ? (filesEntry?.stepIndex ?? -1) : -1;
 
+  // NR-32 — item inti NIK & Tanggal Lahir (mode skema): aktif hanya bila bagian
+  // Data Diri posisi menyalakannya (bawaan mati agar posisi lama tak berubah).
+  const nikActive = schema && biodataEntry ? isNikEnabled(biodataEntry.section) : false;
+  const nikRequired = schema && biodataEntry ? isNikRequired(biodataEntry.section) : false;
+  const birthDateActive =
+    schema && biodataEntry ? isBirthDateEnabled(biodataEntry.section) : false;
+  const birthDateRequired =
+    schema && biodataEntry ? isBirthDateRequired(biodataEntry.section) : false;
+  // NR-32 — peringatan lunak usia di bawah minimum posisi (minAge) — tidak memblokir.
+  const minAge = selectedPosition?.minAge ?? null;
+  const birthAge = birthDateActive ? ageFromBirthDate(birthDate) : null;
+  const showAgeBelowMin = birthAge !== null && minAge !== null && birthAge < minAge;
+
   // Pengaman posisi berganti: langkah bisa kelebihan dari daftar dinamis
   // skema posisi baru (pola adjust-state-during-render).
   if (step > previewStep) {
@@ -1083,6 +1158,15 @@ export function ApplyWizard({
     };
   }, []);
 
+  // NR-32 — bersihkan permintaan dedupe & timer debounce saat wizard dilepas.
+  useEffect(
+    () => () => {
+      dedupeAbortRef.current?.abort();
+      if (dedupeTimerRef.current !== null) window.clearTimeout(dedupeTimerRef.current);
+    },
+    [],
+  );
+
   // Reset jawaban screening & dokumen tambahan saat posisi berubah (termasuk perubahan dari luar
   // wizard lewat dialog posisi) — pola "adjust state during render", tanpa effect.
   const [lastPositionId, setLastPositionId] = useState(positionId);
@@ -1096,6 +1180,13 @@ export function ApplyWizard({
     setScreeningAnswers({});
     setExtraFiles({});
     setExtraErrors({});
+    // NR-32 — NIK/tanggal lahir & status duplikat milik posisi — reset saat ganti.
+    setNik("");
+    setBirthDate("");
+    setDedupe(null);
+    setErrors((prev) =>
+      prev.nik || prev.birthDate ? { ...prev, nik: undefined, birthDate: undefined } : prev,
+    );
     // NR-4 — posisi lama ONSITE/HYBRID → baru REMOTE: langkah Info Kehadiran
     // hilang dari urutan. Pengguna yang berada pada/melampauinya digeser balik
     // satu langkah agar validasi Berkas wajib tidak pernah terlewati.
@@ -1329,6 +1420,91 @@ export function ApplyWizard({
   };
 
   /**
+   * NR-32 — cek lamaran duplikat (fire-and-forget) ke /api/public/dedupe:
+   * email atau WA yang sama pernah dipakai → tanda peringatan kuning.
+   * Endpoint gagal/belum tersedia → diabaikan senyap (tidak pernah error UI).
+   */
+  function checkDedupe(email: string, phone: string) {
+    const trimmedEmail = email.trim();
+    const normalizedPhone = normalizeWaPhone(phone);
+    if (!trimmedEmail && !normalizedPhone) {
+      setDedupe(null);
+      return;
+    }
+    dedupeAbortRef.current?.abort();
+    const controller = new AbortController();
+    dedupeAbortRef.current = controller;
+    const params = new URLSearchParams({ email: trimmedEmail, phone: normalizedPhone });
+    fetch(`/api/public/dedupe?${params.toString()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json().catch(() => null) : null))
+      .then((json: unknown) => {
+        if (!isRecord(json) || json.exists !== true) {
+          setDedupe(null);
+          return;
+        }
+        const title =
+          typeof json.positionTitle === "string" && json.positionTitle.trim()
+            ? json.positionTitle
+            : "-";
+        const createdAt = typeof json.createdAt === "string" ? json.createdAt : "";
+        setDedupe({
+          title,
+          date: createdAt ? formatDateTimeId(createdAt) : "-",
+        });
+      })
+      .catch(() => {
+        // dibatalkan / gagal (endpoint belum ada) — peringatan tidak tampil
+      });
+  }
+
+  /** NR-32 — hapus tanda duplikat + batalkan permintaan yang berjalan. */
+  function clearDedupe() {
+    dedupeAbortRef.current?.abort();
+    setDedupe(null);
+  }
+
+  /** NR-32 — pelamar memilih tetap lanjut: peringatan disembunyikan sepanjang sesi. */
+  function dismissDedupe() {
+    dedupeDismissedRef.current = true;
+    dedupeAbortRef.current?.abort();
+    setDedupe(null);
+  }
+
+  /**
+   * NR-32 — render daftar field skema satu bagian: hanya field TERLIHAT
+   * (showIf cocok dengan jawaban bagian ini — field tersembunyi dilewati,
+   * jawabannya disaring lagi saat submit/pratinjau) + sub-header grup kecil
+   * sebelum field yang grupnya berubah dibanding field terlihat sebelumnya.
+   */
+  function renderSectionFields(fields: FormField[]) {
+    const visible = fields.filter((field) => isFieldVisible(field, formAnswers));
+    let lastGroup: string | undefined;
+    return visible.map((field) => {
+      const groupChanged = (field.group ?? undefined) !== lastGroup;
+      lastGroup = field.group ?? undefined;
+      return (
+        <Fragment key={field.id}>
+          {groupChanged && field.group ? (
+            <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground first:mt-0">
+              {lang === "en" && field.groupEn ? field.groupEn : field.group}
+            </p>
+          ) : null}
+          <FormFieldRenderer
+            field={field}
+            value={formAnswers[field.id]}
+            error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
+            onAnswer={handleFormAnswer}
+            onAnswerError={handleFormAnswerError}
+          />
+        </Fragment>
+      );
+    });
+  }
+
+  /**
    * Validasi langkah Data Diri (biodata). Nomor WhatsApp & email wajib hanya
    * bila konfigurasi bagian biodata skema mengaturnya wajib (mode klasik
    * selalu wajib); bila opsional tapi diisi, formatnya tetap divalidasi.
@@ -1351,6 +1527,18 @@ export function ApplyWizard({
     // Formulir per posisi: posisi yang formulirnya ditutup admin tidak bisa dilamar.
     if (positionId && selectedPosition?.applyOpen === false)
       next.positionId = t.apply.errors.positionClosed;
+    // NR-32 — NIK (mode skema): digit murni; bila terisi atau diwajibkan admin,
+    // harus tepat 16 digit.
+    if (nikActive) {
+      if (nik.length !== 16 && (nik.length > 0 || nikRequired)) {
+        next.nik = t.apply.dataDiri.nikInvalid;
+      }
+    }
+    // NR-32 — tanggal lahir (mode skema): wajib hanya bila flag bagian mengatakannya.
+    if (birthDateActive && birthDateRequired && !birthDate) {
+      next.birthDate =
+        lang === "en" ? "Birth date is required." : "Tanggal lahir wajib diisi.";
+    }
     return next;
   }
 
@@ -1508,6 +1696,24 @@ export function ApplyWizard({
         }
         return null;
       }
+      case "currency": {
+        // NR-32 — uang divalidasi seperti number (jawaban disimpan angka mentah;
+        // string dari draft lama diparse dengan membuang non-digit).
+        const num =
+          typeof value === "number"
+            ? value
+            : typeof value === "string"
+              ? Number(value.replace(/\D/g, ""))
+              : NaN;
+        if (!Number.isFinite(num)) return fillTemplate(t.apply.errors.formNumber, { label });
+        if (field.min != null && num < field.min) {
+          return fillTemplate(t.apply.errors.formNumberMin, { label, min: field.min });
+        }
+        if (field.max != null && num > field.max) {
+          return fillTemplate(t.apply.errors.formNumberMax, { label, max: field.max });
+        }
+        return null;
+      }
       case "rating": {
         const num = typeof value === "number" ? value : NaN;
         const ratingMax = field.max ?? FORM_LIMITS.ratingMaxDefault;
@@ -1549,6 +1755,8 @@ export function ApplyWizard({
   function validateSectionFields(fields: FormField[]): Record<string, string> {
     const next: Record<string, string> = {};
     for (const field of fields) {
+      // NR-32 — field tersembunyi (showIf tidak cocok) dilewati — cermin server.
+      if (!isFieldVisible(field, formAnswers)) continue;
       const message = validateFormField(field, formAnswers[field.id]);
       if (message) next[`${FORM_KEY_PREFIX}${field.id}`] = message;
     }
@@ -1657,6 +1865,12 @@ export function ApplyWizard({
   }
 
   function goNext() {
+    // NR-32 — cek duplikat saat meninggalkan langkah Data Diri (mode klasik
+    // langkah 0 / mode skema langkah bagian biodata). Fire-and-forget —
+    // tidak pernah memblokir navigasi.
+    if (step === biodataStepIndex && !dedupeDismissedRef.current) {
+      checkDedupe(values.email, values.phone);
+    }
     // NR-4 — langkah Info Kehadiran: validasi sebelum maju (berlaku mode
     // klasik maupun mode skema — langkah ini bukan bagian skema).
     if (step === attendanceStepIndex) {
@@ -2790,6 +3004,9 @@ export function ApplyWizard({
       ? (coreItem(bioSec, "wa").placeholder as string)
       : t.apply.fields.phonePh;
   const waHelp = bioSec ? coreItem(bioSec, "wa").helpText : undefined;
+  // NR-32 — label item inti NIK & Tanggal Lahir dari kustomisasi bagian Data Diri.
+  const nikLabel = bioSec ? coreItemLabel(bioSec, "nik") : "NIK (16 digit)";
+  const birthDateLabel = bioSec ? coreItemLabel(bioSec, "birthDate") : "Tanggal Lahir";
 
   const expSec = schema ? (experienceEntry?.section ?? null) : null;
   const expLabel = expSec ? coreItemLabel(expSec, "experience") : t.apply.fields.experience;
