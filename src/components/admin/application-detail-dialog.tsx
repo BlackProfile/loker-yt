@@ -33,7 +33,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -78,11 +77,13 @@ import {
   Phone,
   Send,
   Share2,
+  Sparkles,
   Star,
   StickyNote,
   Tag,
   Trash2,
   Undo2,
+  User,
   UserX,
   Users,
   Video,
@@ -175,6 +176,20 @@ function InfoItem({ label, children }: { label: string; children: ReactNode }) {
     </div>
   );
 }
+
+/* -------------- NR-34 — tab bagian detail dialog (per pelamar) -------------- */
+
+/** Enam tab detail: isi dialog panjang tidak lagi digulung satu per satu. */
+const DETAIL_TABS = [
+  { key: "ringkasan", label: "Ringkasan", icon: User },
+  { key: "ai", label: "AI & Berkas", icon: Sparkles },
+  { key: "jawaban", label: "Jawaban", icon: ClipboardList },
+  { key: "evaluasi", label: "Evaluasi", icon: ListChecks },
+  { key: "proses", label: "Proses", icon: CalendarClock },
+  { key: "riwayat", label: "Riwayat", icon: History },
+] as const;
+
+type DetailTabKey = (typeof DETAIL_TABS)[number]["key"];
 
 /* ----------------------- NR-24-b — helper fitur per pelamar ----------------------- */
 
@@ -1009,6 +1024,16 @@ export function ApplicationDetailDialog({
   const [dnhRemoveReason, setDnhRemoveReason] = useState("");
   const [dnhSaving, setDnhSaving] = useState(false);
 
+  // NR-34 — tab aktif pada dialog detail. Sengaja TIDAK direset saat berganti
+  // pelamar: admin yang memeriksa lamaran satu per satu (prev/next) tetap
+  // berada di tab yang sama (mis. terus di "Jawaban").
+  const [detailTab, setDetailTab] = useState<DetailTabKey>("ringkasan");
+  const detailScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    // Ganti tab = mulai dari atas konten tab tersebut.
+    detailScrollRef.current?.scrollTo({ top: 0 });
+  }, [detailTab]);
+
   // Reset form hanya saat berganti pelamar (bukan tiap update objek) agar
   // pesan penolakan/penawaran yang baru dibuat tidak ikut terhapus.
   const lastAppIdRef = useRef<string | null>(null);
@@ -1505,9 +1530,14 @@ export function ApplicationDetailDialog({
 
 
   function scrollToCandidateQuestions() {
-    document
-      .getElementById("nr24-candidate-questions")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // NR-34 — panel pertanyaan pelamar kini hidup di tab Riwayat: pindah tab
+    // dulu, lalu gulir setelah panel ter-render (sedikit jeda untuk render).
+    setDetailTab("riwayat");
+    window.setTimeout(() => {
+      document
+        .getElementById("nr24-candidate-questions")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
   }
 
   /* ----------------------------- Sesi wawancara ----------------------------- */
@@ -2379,11 +2409,52 @@ export function ApplicationDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="-mr-2 max-h-[75vh] overflow-y-auto pr-2 nice-scrollbar">
-          <div className="flex flex-col gap-4">
-            {/* Panel AI — NR-22: disembunyikan bila posisi menyembunyikan blok "ai" */}
-            {isHidden("ai") ? null : <AiPanel app={app} onUpdated={onSaved} />}
+        <div
+          ref={detailScrollRef}
+          className="nice-scrollbar -mr-2 max-h-[75vh] overflow-y-auto pr-2"
+        >
+          {/* NR-34 — baris tab: seluruh isi dialog dikelompokkan agar admin
+              tidak perlu menggulung jauh ke bawah untuk memeriksa satu aspek. */}
+          <div className="sticky top-0 z-10 -mt-1 bg-background pb-3 pt-1">
+            <div
+              role="tablist"
+              aria-label="Bagian detail pelamar"
+              className="nice-scrollbar flex w-full flex-nowrap items-center gap-1 overflow-x-auto rounded-xl bg-muted/60 p-1"
+            >
+              {DETAIL_TABS.map((tab) => {
+                const TabIcon = tab.icon;
+                const active = detailTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-controls={`detail-panel-${tab.key}`}
+                    onClick={() => setDetailTab(tab.key)}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 sm:text-sm",
+                      active
+                        ? "bg-background text-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <TabIcon className="size-3.5" aria-hidden="true" />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
+          {/* ============================== RINGKASAN ============================== */}
+          <section
+            id="detail-panel-ringkasan"
+            role="tabpanel"
+            aria-label="Ringkasan pelamar"
+            hidden={detailTab !== "ringkasan"}
+            className="flex flex-col gap-4"
+          >
             {/* Info grid */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <InfoItem label={emailCoreLabel}>
