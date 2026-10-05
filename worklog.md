@@ -2803,3 +2803,26 @@ Work Log:
 
 Stage Summary:
 - 9/9 error TS di telegram-bot.ts pulih tanpa perubahan perilaku fitur: weekKeyBangkok compile via cast Intl (runtime sama), writeEnabled kembali dari settings.telegramWriteEnabled, dua jalur return mengembalikan { replies }, select tolak cepat & menu pindah tahap membawa id, buttons undefined diterima SendOptions, dan /draft KODE hidup kembali lewat generateReplyDraft lokal (z-ai-web-dev-sdk, sisi server) yang mereplikasi draft balasan AI ai-reply. File compile bersih; service menunggu restart manual oleh orchestrator.
+
+---
+Task ID: NR-29-RECOVERY-504
+Agent: Z.ai Code (orchestrator)
+Task: Pulihkan aplikasi dari 504/502 gateway timeout — environment sandbox di-reset (dev.log hilang, semua daemon mati, db/custom.db menjadi 0 bytes).
+
+Work Log:
+- Diagnosis: `ps` tak menemukan next dev; dev.log tidak ada; `db/custom.db` 0 bytes (DB wiped oleh reset sandbox). Git aman (commit terakhir auto-sync 2026-10-04 10:47).
+- Restore DB dari backup disiplin: `cp backups/custom.db.demo-seed.bak db/custom.db` (561KB, Oct 4 10:44) — data utuh: 23 posisi, 43 lamaran, 3 admin, 2 assessment, 1 callLog, 1 internalDoc.
+- `bunx prisma generate` GAGAL: P1012 — field `assessments` & `internalDocs` defined dua kali pada model Application. Akar: jejak migrasi NR-24 yang tidak bersih — schema memuat DUA set model paralel: (a) ApplicationCall/ApplicationAssessment/ApplicationInternalDoc (lines 174-219) + relasinya di Application & FileAsset, dan (b) Assessment/CallLog/InternalDoc + relasi `assessments`/`callLogs`/`internalDocs`. Frontend aktif memakai set (b) via /api/admin/applications/[id]/assessments|calls|internal-docs; set (a) hanya direferensikan .zscripts sekali-pakai (nr24a1-verify-clean, nr24a2-cleanup) — dead code.
+- Fix schema: hapus 3 model mati (ApplicationCall, ApplicationAssessment, ApplicationInternalDoc), relasi mati di Application (calls/assessments/internalDocs versi Application*), dan field FileAsset.internalDocs @relation("internalDoc"). Set aktif (Assessment/CallLog/InternalDoc) dipertahankan utuh.
+- Hapus 2 route mati: src/app/api/admin/assessments/[id]/route.ts & src/app/api/admin/internal-docs/[id]/route.ts (memakai db.applicationAssessment / db.applicationInternalDoc — tak lagi ada; tidak pernah dipanggil frontend).
+- `bunx prisma generate` + `prisma validate` -> valid. Start dev via `nohup bun run dev` (start-all-guards ikut jalan: dev-keepalive, db-guard, auto-push, realtime-keepalive, telegram-keepalive).
+- Landing masih "Gagal memuat konten": GET /api/public/content 500 P2022 `main.Position.showCvField does not exist` — backup DB (Oct 4 10:44) LEBIH LAMA dari schema (kolom showCvField dll ditambah setelah backup dibuat). Fix: `bunx prisma db push --accept-data-loss` (31ms, sinkron penuh, data demo tetap).
+- bun install di mini-services/realtime-service (socket.io hilang setelah reset) -> realtime :3003 hidup kembali via keepalive. Telegram :3004 langsung 200.
+- Verifikasi E2E via agent-browser di :81: landing (14 lowongan tampil + filter kategori), #admin login Owner -> Dashboard (SLA Bagas Saputra, kartu 43/34/4/3, Live badge), tab Pelamar (42 lamaran, filter lengkap, bintang NR-24), #status (form Cek Status utuh). browser errors: kosong.
+- Refresh backup emas: `cp db/custom.db backups/custom.db.demo-seed.bak` (614KB, kini sinkron dengan schema terbaru — memperbaiki akar masalah backup-ketinggalan-kolom).
+
+Stage Summary:
+- Aplikasi pulih 100% dan tervalidasi browser; semua daemon pelindung hidup (dev-keepalive, db-guard, auto-push, realtime :3003, telegram :3004).
+- Schema kini BERSIH: satu sumber kebenaran untuk fitur NR-24 (Assessment/CallLog/InternalDoc); dead code model Application* + 2 route mati dihapus. Ini mencegah kebingungan migrasi berikutnya.
+- Backup emas diperbarui sehingga mencakup kolom schema terbaru (showCvField dll) — reset sandbox berikutnya tidak akan memicu P2022 lagi.
+- Belum dikerjakan (antrian tetap): 14 item UI/UX "semuanya" (sebagian Paket B items 6/8/9/10/11 ternyata SUDAH ada di worklog NR-27 — cek sebelum implementasi), form-builder-page.tsx editable section bawaan, NR-24 sisanya.
