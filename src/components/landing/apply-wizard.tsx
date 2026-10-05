@@ -375,6 +375,7 @@ function FormFieldRenderer({
           onChange={(event) => onAnswer(field.id, event.target.value)}
           maxLength={Math.min(field.maxLen ?? FORM_LIMITS.textDefaultMax, FORM_LIMITS.textHardMax)}
           placeholder={field.placeholder}
+          autoComplete={field.autocomplete || undefined}
           className="h-11"
           {...inputAria}
         />
@@ -405,6 +406,7 @@ function FormFieldRenderer({
             value={textValue}
             onChange={(event) => onAnswer(field.id, event.target.value)}
             placeholder={field.placeholder || "https://..."}
+            autoComplete={field.autocomplete || undefined}
             className="h-11"
             {...inputAria}
           />
@@ -419,6 +421,7 @@ function FormFieldRenderer({
           type="date"
           value={textValue}
           onChange={(event) => onAnswer(field.id, event.target.value)}
+          autoComplete={field.autocomplete || undefined}
           className="h-11"
           {...inputAria}
         />
@@ -440,6 +443,49 @@ function FormFieldRenderer({
         />
       );
       break;
+    case "currency": {
+      // NR-32 — uang: jawaban disimpan angka MENTAH, tampilan diberi pemisah
+      // ribuan Indonesia saat mengetik. Prefix "Rp" dekoratif (aria-hidden).
+      const currencyDigits =
+        typeof value === "number" && Number.isFinite(value)
+          ? String(Math.trunc(value))
+          : typeof value === "string"
+            ? value.replace(/\D/g, "")
+            : "";
+      const currencyDisplay = currencyDigits
+        ? Number(currencyDigits).toLocaleString("id-ID")
+        : "";
+      control = (
+        <div className="relative">
+          <span
+            className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground"
+            aria-hidden="true"
+          >
+            Rp
+          </span>
+          <Input
+            id={`${anchorId}-input`}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            value={currencyDisplay}
+            onChange={(event) => {
+              const digits = event.target.value.replace(/\D/g, "").slice(0, 12);
+              if (!digits) {
+                onAnswer(field.id, undefined);
+                return;
+              }
+              const num = Number(digits);
+              if (Number.isFinite(num)) onAnswer(field.id, num);
+            }}
+            placeholder={field.placeholder}
+            className="h-11 pl-9"
+            {...inputAria}
+          />
+        </div>
+      );
+      break;
+    }
     case "rating": {
       const ratingMax = field.max ?? FORM_LIMITS.ratingMaxDefault;
       const current = typeof value === "number" ? value : 0;
@@ -738,6 +784,7 @@ function FormFieldRenderer({
       field.type === "url" ||
       field.type === "date" ||
       field.type === "number" ||
+      field.type === "currency" ||
       field.type === "dropdown" ? (
         <Label htmlFor={`${anchorId}-input`} className="gap-2">
           {label} {requiredMark}
@@ -2384,6 +2431,21 @@ export function ApplyWizard({
               value={values.phone}
               fallback={t.apply.preview.notFilled}
             />
+            {/* NR-32 — item inti NIK & tanggal lahir (bila aktif di bagian ini) */}
+            {nikActive ? (
+              <PreviewRow
+                label={coreItemLabel(section, "nik")}
+                value={nik}
+                fallback={t.apply.preview.notFilled}
+              />
+            ) : null}
+            {birthDateActive ? (
+              <PreviewRow
+                label={coreItemLabel(section, "birthDate")}
+                value={birthDate}
+                fallback={t.apply.preview.notFilled}
+              />
+            ) : null}
             <PreviewRow
               label={t.apply.summary.position}
               value={selectedPosition?.title ?? ""}
@@ -2441,18 +2503,22 @@ export function ApplyWizard({
             ) : null}
           </>
         ) : null}
-        {entry.fields.map((field) => (
-          <PreviewRow
-            key={field.id}
-            label={formFieldLabel(field, lang)}
-            value={formAnswerDisplay(field, formAnswers[field.id])}
-            fallback={
-              field.type === "file"
-                ? t.apply.preview.noFile
-                : t.apply.preview.notAnswered
-            }
-          />
-        ))}
+        {/* NR-32 — hanya field TERLIHAT (showIf cocok) yang masuk pratinjau;
+            jawaban field tersembunyi tidak ditampilkan. */}
+        {entry.fields
+          .filter((field) => isFieldVisible(field, formAnswers))
+          .map((field) => (
+            <PreviewRow
+              key={field.id}
+              label={formFieldLabel(field, lang)}
+              value={formAnswerDisplay(field, formAnswers[field.id])}
+              fallback={
+                field.type === "file"
+                  ? t.apply.preview.noFile
+                  : t.apply.preview.notAnswered
+              }
+            />
+          ))}
       </PreviewSection>
     );
   }
@@ -2476,6 +2542,13 @@ export function ApplyWizard({
       fd.append("name", values.name.trim());
       fd.append("email", values.email.trim());
       fd.append("phone", values.phone.trim());
+      // NR-32 — NIK & tanggal lahir (mode skema): dikirim sebagai kolom
+      // tersendiri hanya bila terisi dan sah (16 digit / YYYY-MM-DD).
+      if (schema) {
+        const nikDigits = nik.replace(/\D/g, "");
+        if (nikDigits) fd.append("nik", nikDigits);
+        if (FORM_DATE_RE.test(birthDate)) fd.append("birthDate", birthDate);
+      }
       if (positionId) fd.append("positionId", positionId);
       if (values.portfolioUrl.trim())
         fd.append("portfolioUrl", values.portfolioUrl.trim());
@@ -2550,6 +2623,9 @@ export function ApplyWizard({
         const record: Record<string, string | string[] | number> = {};
         for (const field of schema.fields) {
           if (field.type === "file") continue;
+          // NR-32 — field tersembunyi (showIf tidak cocok) tidak dikirim; server
+          // (validateFormAnswers) juga melewatinya — cegah jawaban basi.
+          if (!isFieldVisible(field, formAnswers)) continue;
           const value = formAnswers[field.id];
           if (value === undefined || value instanceof File) continue;
           if (typeof value === "string") {
@@ -2574,6 +2650,8 @@ export function ApplyWizard({
         // Tiap berkas field dikirim sebagai part formFile_<fieldId>.
         for (const field of schema.fields) {
           if (field.type !== "file") continue;
+          // NR-32 — berkas milik field tersembunyi tidak dikirim.
+          if (!isFieldVisible(field, formAnswers)) continue;
           const file = formAnswers[field.id];
           if (file instanceof File) fd.append(`formFile_${field.id}`, file);
         }
@@ -2700,6 +2778,11 @@ export function ApplyWizard({
     setScreeningAnswers({});
     setFormAnswers({});
     setFormErrors({});
+    // NR-32 — item inti NIK/tanggal lahir & peringatan duplikat ikut direset.
+    setNik("");
+    setBirthDate("");
+    setDedupe(null);
+    dedupeDismissedRef.current = false;
     // Saat lockPosition, posisi milik halaman detail — jangan direset.
     if (!lockPosition) onPositionIdChange("");
     try {
@@ -3293,6 +3376,38 @@ export function ApplyWizard({
                 {biodataEntry.section.description}
               </p>
             ) : null}
+            {/* NR-32 — peringatan lamaran duplikat (email/WA sama pernah dipakai):
+                informatif saja — pelamar tetap bisa melanjutkan. */}
+            {dedupe ? (
+              <div
+                role="status"
+                className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200"
+              >
+                <p className="flex items-start gap-2 text-xs leading-relaxed">
+                  <Info
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+                    aria-hidden="true"
+                  />
+                  <span>
+                    {fillTemplate(t.apply.dataDiri.dedupeWarning, {
+                      title: dedupe.title,
+                      date: dedupe.date,
+                    })}
+                  </span>
+                </p>
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-amber-300 text-amber-800 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+                    onClick={dismissDedupe}
+                  >
+                    {t.apply.dataDiri.dedupeContinue}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="apply-name">
@@ -3335,7 +3450,21 @@ export function ApplyWizard({
                   name="email"
                   type="email"
                   value={values.email}
-                  onChange={(e) => setField("email", e.target.value)}
+                  onChange={(e) => {
+                    setField("email", e.target.value);
+                    clearDedupe();
+                  }}
+                  onBlur={() => {
+                    // NR-32 — cek duplikat saat email ditinggalkan (debounce 600ms).
+                    if (dedupeDismissedRef.current) return;
+                    if (dedupeTimerRef.current !== null) {
+                      window.clearTimeout(dedupeTimerRef.current);
+                    }
+                    dedupeTimerRef.current = window.setTimeout(() => {
+                      dedupeTimerRef.current = null;
+                      checkDedupe(values.email, values.phone);
+                    }, 600);
+                  }}
                   placeholder={emailPh}
                   autoComplete="email"
                   className="h-11"
@@ -3371,7 +3500,18 @@ export function ApplyWizard({
                   type="tel"
                   inputMode="tel"
                   value={values.phone}
-                  onChange={(e) => setField("phone", e.target.value)}
+                  onChange={(e) => {
+                    setField("phone", e.target.value);
+                    clearDedupe();
+                  }}
+                  onBlur={() => {
+                    // NR-32 — rapikan format WA saat ditinggalkan (0812 → +62812).
+                    const normalized = normalizeWaPhone(values.phone);
+                    if (normalized !== values.phone) {
+                      setField("phone", normalized);
+                      clearDedupe();
+                    }
+                  }}
                   placeholder={waPh}
                   autoComplete="tel"
                   className="h-11"
@@ -3436,6 +3576,108 @@ export function ApplyWizard({
               ) : null}
             </div>
 
+            {/* NR-32 — item inti NIK & Tanggal Lahir (mode skema): tampil hanya
+                bila admin mengaktifkannya di bagian Data Diri. NIK = 16 digit;
+                tanggal lahir memicu peringatan lunak usia < minAge posisi. */}
+            {nikActive || birthDateActive ? (
+              <div className="grid gap-5 sm:grid-cols-2">
+                {nikActive ? (
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="apply-nik" className="gap-2">
+                      {nikLabel}
+                      {nikRequired ? (
+                        <span className="text-rose-600">*</span>
+                      ) : (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          ({t.apply.uploads.optional})
+                        </span>
+                      )}
+                    </Label>
+                    <Input
+                      id="apply-nik"
+                      name="nik"
+                      inputMode="numeric"
+                      maxLength={16}
+                      autoComplete="off"
+                      placeholder="16 digit"
+                      value={nik}
+                      onChange={(e) => {
+                        setNik(e.target.value.replace(/\D/g, "").slice(0, 16));
+                        setErrors((prev) =>
+                          prev.nik ? { ...prev, nik: undefined } : prev,
+                        );
+                      }}
+                      className="h-11"
+                      aria-invalid={errors.nik ? true : undefined}
+                      aria-describedby={errors.nik ? "apply-nik-error" : undefined}
+                    />
+                    {errors.nik ? (
+                      <p id="apply-nik-error" className="text-sm text-rose-600">
+                        {errors.nik}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {birthDateActive ? (
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="apply-birthdate" className="gap-2">
+                      {birthDateLabel}
+                      {birthDateRequired ? (
+                        <span className="text-rose-600">*</span>
+                      ) : (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          ({t.apply.uploads.optional})
+                        </span>
+                      )}
+                    </Label>
+                    <Input
+                      id="apply-birthdate"
+                      name="birthDate"
+                      type="date"
+                      autoComplete="bday"
+                      value={birthDate}
+                      onChange={(e) => {
+                        setBirthDate(e.target.value);
+                        setErrors((prev) =>
+                          prev.birthDate ? { ...prev, birthDate: undefined } : prev,
+                        );
+                      }}
+                      className="h-11"
+                      aria-invalid={errors.birthDate ? true : undefined}
+                      aria-describedby={errors.birthDate ? "apply-birthdate-error" : undefined}
+                    />
+                    {/* NR-32 — peringatan lunak usia di bawah minimum posisi:
+                        tidak memblokir, hanya konteks untuk tim rekrutmen. */}
+                    {showAgeBelowMin && birthAge !== null && minAge !== null ? (
+                      <p
+                        role="status"
+                        className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300"
+                      >
+                        {fillTemplate(t.apply.dataDiri.ageBelowMin, {
+                          age: birthAge,
+                          min: minAge,
+                        })}
+                      </p>
+                    ) : null}
+                    {errors.birthDate ? (
+                      <p id="apply-birthdate-error" className="text-sm text-rose-600">
+                        {errors.birthDate}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {nikActive || birthDateActive ? (
+              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                <ShieldCheck
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                  aria-hidden="true"
+                />
+                {t.apply.dataDiri.privacyNote}
+              </p>
+            ) : null}
+
             {/* Sumber pelamar (opsional) — membantu pemilik melacak kanal rekrutmen */}
             <div className="flex flex-col gap-2">
               <Label htmlFor="apply-source">{t.apply.fields.source}</Label>
@@ -3457,18 +3699,7 @@ export function ApplyWizard({
             </div>
 
             {/* Pertanyaan kustom milik bagian Data Diri (mode skema aktif) */}
-            {schema && biodataEntry
-              ? biodataEntry.fields.map((field) => (
-                  <FormFieldRenderer
-                    key={field.id}
-                    field={field}
-                    value={formAnswers[field.id]}
-                    error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
-                    onAnswer={handleFormAnswer}
-                    onAnswerError={handleFormAnswerError}
-                  />
-                ))
-              : null}
+            {schema && biodataEntry ? renderSectionFields(biodataEntry.fields) : null}
           </div>
         )}
 
@@ -3670,16 +3901,7 @@ export function ApplyWizard({
 
             {/* Pertanyaan kustom milik bagian Pengalaman (mode skema aktif) */}
             {schema && experienceEntry
-              ? experienceEntry.fields.map((field) => (
-                  <FormFieldRenderer
-                    key={field.id}
-                    field={field}
-                    value={formAnswers[field.id]}
-                    error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
-                    onAnswer={handleFormAnswer}
-                    onAnswerError={handleFormAnswerError}
-                  />
-                ))
+              ? renderSectionFields(experienceEntry.fields)
               : null}
           </div>
         )}
@@ -3827,16 +4049,7 @@ export function ApplyWizard({
                         </p>
                       ) : null}
                     </div>
-                    {entry.fields.map((field) => (
-                      <FormFieldRenderer
-                        key={field.id}
-                        field={field}
-                        value={formAnswers[field.id]}
-                        error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
-                        onAnswer={handleFormAnswer}
-                        onAnswerError={handleFormAnswerError}
-                      />
-                    ))}
+                    {renderSectionFields(entry.fields)}
                   </div>
                 ) : null,
               )
@@ -3897,16 +4110,9 @@ export function ApplyWizard({
                 ) : null}
               </div>
             ) : null}
-            {filesEntry.fields.map((field) => (
-              <FormFieldRenderer
-                key={field.id}
-                field={field}
-                value={formAnswers[field.id]}
-                error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
-                onAnswer={handleFormAnswer}
-                onAnswerError={handleFormAnswerError}
-              />
-            ))}
+            {filesEntry.fields.length > 0
+              ? renderSectionFields(filesEntry.fields)
+              : null}
             <p className="flex items-center gap-2 text-xs text-muted-foreground">
               <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
               {t.apply.trust[0]}

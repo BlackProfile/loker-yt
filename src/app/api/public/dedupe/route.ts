@@ -83,13 +83,30 @@ export async function GET(req: NextRequest) {
       return false;
     });
 
-    if (!match) {
+    // Tahap 2 (telepon berformat): nomor tersimpan bisa memakai spasi/tanda
+    // hubung ("0812-3456-7890") sehingga substring digit tidak ketemu di SQL.
+    // Pindai jendela lamaran terbaru (bounded) lalu cocokkan digit-only.
+    const fallbackRows =
+      !match && phoneLast10
+        ? await db.application.findMany({
+            where: { deletedAt: null },
+            orderBy: { createdAt: "desc" },
+            take: 300,
+            select: { phone: true, position: { select: { title: true } }, createdAt: true },
+          })
+        : [];
+    const fallbackMatch = fallbackRows.find(
+      (row) => phoneLast10 && digitsOnly(row.phone ?? "").endsWith(phoneLast10),
+    );
+
+    const found = match ?? fallbackMatch ?? null;
+    if (!found) {
       return NextResponse.json({ exists: false, positionTitle: null, createdAt: null });
     }
     return NextResponse.json({
       exists: true,
-      positionTitle: match.position?.title ?? null,
-      createdAt: match.createdAt.toISOString(),
+      positionTitle: found.position?.title ?? null,
+      createdAt: found.createdAt.toISOString(),
     });
   } catch (error) {
     // Tetap 200 dengan exists:false agar wizard publik tidak menampilkan error.
