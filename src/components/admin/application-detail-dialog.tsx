@@ -186,6 +186,19 @@ function dateToEndOfDayIso(value: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+/** Umur dari tanggal lahir (NR-32) — "27 th"; null bila kosong/tidak valid. */
+function ageYearsOf(birthDate: string | null | undefined): string | null {
+  if (!birthDate) return null;
+  const dob = new Date(birthDate);
+  if (Number.isNaN(dob.getTime())) return null;
+  const now = new Date();
+  let years = now.getFullYear() - dob.getFullYear();
+  const monthDelta = now.getMonth() - dob.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < dob.getDate())) years -= 1;
+  if (years < 0 || years > 130) return null;
+  return `${years} th`;
+}
+
 
 
 
@@ -2394,6 +2407,28 @@ export function ApplicationDetailDialog({
               <InfoItem label="Posisi">{app.positionTitle ?? "-"}</InfoItem>
               <InfoItem label="Tanggal Daftar">
                 {formatDateTime(app.createdAt)}
+              </InfoItem>
+              {/* NR-32 — Data Diri Lengkap: NIK + tanggal lahir (+ umur) */}
+              <InfoItem label="NIK">
+                {app.nik ? (
+                  <span className="font-mono text-xs">{app.nik}</span>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                )}
+              </InfoItem>
+              <InfoItem label="Tanggal Lahir">
+                {app.birthDate ? (
+                  <>
+                    {formatDate(app.birthDate)}
+                    {ageYearsOf(app.birthDate) ? (
+                      <span className="ml-1 text-muted-foreground">
+                        ({ageYearsOf(app.birthDate)})
+                      </span>
+                    ) : null}
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                )}
               </InfoItem>
               {/* NR-22 — InfoItem Portofolio & Sosial Media disembunyikan bila posisi menyembunyikan blok "portfolio" */}
               {!isHidden("portfolio") ? (

@@ -468,6 +468,11 @@ export type Application = {
   // Kualitas data
   isDuplicate?: boolean; // true = lamaran ganda terdeteksi (badge "Duplikat" di tabel)
 
+  // NR-32 — Data Diri Lengkap: NIK 16 digit & tanggal lahir (item inti Form
+  // Builder bagian Data Diri; null bila posisi tidak mengaktifkan item ini)
+  nik?: string | null;
+  birthDate?: string | null; // ISO string (tengah malam UTC)
+
   // Task 27 — SLA, arsip, sampah, catatan video, persetujuan
   stageUpdatedAt?: string | null; // terakhir kali tahap berubah (SLA)
   archivedAt?: string | null; // arsip otomatis/manual

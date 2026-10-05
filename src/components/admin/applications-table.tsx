@@ -188,6 +188,22 @@ function expiringDocs(app: Application): DocExpiry[] {
 }
 
 /**
+ * Umur dari tanggal lahir (NR-32) — "27 th"; null bila kosong/tidak valid
+ * (termasuk tanggal lahir di masa depan atau tidak masuk akal > 130 tahun).
+ */
+function ageOf(birthDate: string | null | undefined): string | null {
+  if (!birthDate) return null;
+  const dob = new Date(birthDate);
+  if (Number.isNaN(dob.getTime())) return null;
+  const now = new Date();
+  let years = now.getFullYear() - dob.getFullYear();
+  const monthDelta = now.getMonth() - dob.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < dob.getDate())) years -= 1;
+  if (years < 0 || years > 130) return null;
+  return `${years} th`;
+}
+
+/**
  * Chip ekspektasi gaji pelamar vs rentang gaji posisi — NR-24 fitur 6.
  * Sesuai = emerald, di atas = amber, di bawah / tanpa rentang = zinc.
  */
@@ -329,7 +345,7 @@ export function ApplicationsTable({
     <>
       {/* Desktop: table */}
       <Card className="hidden gap-0 overflow-hidden rounded-2xl py-0 md:block">
-        <Table className="min-w-[1020px]">
+        <Table className="min-w-[1160px]">
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
               <TableHead className="w-10 px-4 py-3">
@@ -349,6 +365,9 @@ export function ApplicationsTable({
               </TableHead>
               <TableHead className="px-4 py-3">Pelamar</TableHead>
               <TableHead className="px-4 py-3">Posisi</TableHead>
+              {/* NR-32 — Data Diri Lengkap: NIK & umur pelamar */}
+              <TableHead className="px-4 py-3">NIK</TableHead>
+              <TableHead className="px-4 py-3">Umur</TableHead>
               <TableHead className="px-4 py-3">Sumber</TableHead>
               <TableHead className="px-4 py-3">Skor AI</TableHead>
               <TableHead className="px-4 py-3">Rating</TableHead>
@@ -468,6 +487,26 @@ export function ApplicationsTable({
                       {/* Chip ekspektasi gaji vs rentang posisi (NR-24 fitur 6). */}
                       <SalaryChip app={app} position={position} />
                     </div>
+                  </TableCell>
+                  {/* NR-32 — NIK & umur (item inti Data Diri; "-" bila kosong). */}
+                  <TableCell className="px-4 py-3 text-sm">
+                    {app.nik ? (
+                      <span className="font-mono text-xs" title="NIK pelamar">
+                        {app.nik}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-sm whitespace-nowrap">
+                    {(() => {
+                      const age = ageOf(app.birthDate);
+                      return age ? (
+                        <span title={`Tanggal lahir: ${formatDate(app.birthDate)}`}>{age}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="max-w-32 px-4 py-3">
                     {app.source ? (
@@ -623,6 +662,14 @@ export function ApplicationsTable({
                     <p className="mt-1 truncate text-xs text-muted-foreground">
                       {app.positionTitle ?? "-"} · {formatDate(app.createdAt)}
                     </p>
+                    {/* NR-32 — NIK & umur ringkas di kartu mobile (bila ada). */}
+                    {app.nik || ageOf(app.birthDate) ? (
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {app.nik ? `NIK ${app.nik}` : ""}
+                        {app.nik && ageOf(app.birthDate) ? " · " : ""}
+                        {ageOf(app.birthDate) ?? ""}
+                      </p>
+                    ) : null}
                     {/* Chip ekspektasi gaji vs rentang posisi (NR-24 fitur 6). */}
                     {app.salaryExpectation != null ? (
                       <div className="mt-1">

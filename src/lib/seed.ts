@@ -596,6 +596,10 @@ export function serializeApplication(record: ApplicationRecord): Application {
 
     isDuplicate: record.isDuplicate,
 
+    // NR-32 — Data Diri Lengkap: NIK & tanggal lahir (null-safe)
+    nik: record.nik ?? null,
+    birthDate: record.birthDate ? record.birthDate.toISOString() : null,
+
     stageUpdatedAt: record.stageUpdatedAt ? record.stageUpdatedAt.toISOString() : null,
     archivedAt: record.archivedAt ? record.archivedAt.toISOString() : null,
     deletedAt: record.deletedAt ? record.deletedAt.toISOString() : null,

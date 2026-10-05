@@ -233,6 +233,13 @@ function editableFingerprint(schema: FormSchema | null): string {
       portfolioEnabled: s.kind === "files" ? s.portfolioEnabled !== false : null,
       portfolioRequired:
         s.kind === "files" ? s.portfolioEnabled !== false && s.portfolioRequired === true : null,
+      // NR-32 — item inti opsional NIK & Tanggal Lahir (biodata) ikut dirty check.
+      nikEnabled: s.kind === "biodata" ? s.nikEnabled === true : null,
+      nikRequired:
+        s.kind === "biodata" && s.nikEnabled === true ? s.nikRequired === true : null,
+      birthDateEnabled: s.kind === "biodata" ? s.birthDateEnabled === true : null,
+      birthDateRequired:
+        s.kind === "biodata" && s.birthDateEnabled === true ? s.birthDateRequired === true : null,
       // NR-26 — kustomisasi item inti ikut menandai perubahan (dibandingkan
       // apa adanya; pembersihan kunci kosong terjadi di patchCoreItem).
       core: s.core ?? null,
@@ -245,6 +252,29 @@ function editableFingerprint(schema: FormSchema | null): string {
 function labelForStatus(status: string): string {
   return STATUS_LABELS[status as ApplicationStatus] ?? status;
 }
+
+/**
+ * NR-32 — label terbaca untuk hint isi-otomatis browser (dropdown editor field).
+ * Kunci diambil dari whitelist FORM_AUTOCOMPLETE_KEYS (form-schema) agar tipe
+ * tetap sinkron dengan sanitizer server.
+ */
+const FORM_AUTOCOMPLETE_LABELS: Record<(typeof FORM_AUTOCOMPLETE_KEYS)[number], string> = {
+  off: "Nonaktif (off)",
+  name: "Nama",
+  email: "Email",
+  tel: "No. Telepon",
+  bday: "Tanggal lahir",
+  sex: "Jenis kelamin",
+  "street-address": "Alamat",
+  organization: "Organisasi",
+  url: "URL",
+};
+
+/**
+ * NR-32 — nilai sentinel dropdown "tampil bersyarat" (Radix Select melarang
+ * value string kosong): pilihan ini berarti field selalu tampil (tanpa showIf).
+ */
+const SHOWIF_ALWAYS = "__selalu_tampil__";
 
 /** Bar proporsi pola drop-off analytics: CSS murni, lebar %, minimum terlihat. */
 function barWidth(count: number, total: number): string {
@@ -479,6 +509,8 @@ function SectionCard({
   onFieldDuplicate: (fieldId: string) => void;
   onFieldRemove: (fieldId: string) => void;
   onAddField: () => void;
+  /** NR-32 — suntik paket pertanyaan dari template ke bagian ini (biodata/kustom). */
+  onApplyTemplate: (template: FormTemplate) => void;
 }) {
   const isBuiltin = isBuiltinSection(section);
   // NR-23 — mode kunci: hanya Pengalaman & Berkas (biodata tak terhapus).
@@ -696,6 +728,35 @@ function SectionCard({
             required={isWaRequired(section)}
             onRequiredChange={(checked) => onPatch({ waRequired: checked })}
           />
+          {/* NR-32 — item inti opsional: mati secara bawaan (opt-in admin).
+              Jawabannya tersimpan sebagai kolom tersendiri Application.nik /
+              Application.birthDate, bukan teks bebas. */}
+          <CoreItemCard
+            section={section}
+            itemKey="nik"
+            canMutate={canMutate}
+            onPatchCoreItem={patchCoreItem}
+            canDisable
+            enabled={isNikEnabled(section)}
+            onToggleEnabled={(checked) => onPatch({ nikEnabled: checked })}
+            required={isNikRequired(section)}
+            onRequiredChange={(checked) => onPatch({ nikRequired: checked })}
+            showTextConfig
+            hint="16 digit sesuai KTP — tersimpan sebagai kolom tersendiri."
+          />
+          <CoreItemCard
+            section={section}
+            itemKey="birthDate"
+            canMutate={canMutate}
+            onPatchCoreItem={patchCoreItem}
+            canDisable
+            enabled={isBirthDateEnabled(section)}
+            onToggleEnabled={(checked) => onPatch({ birthDateEnabled: checked })}
+            required={isBirthDateRequired(section)}
+            onRequiredChange={(checked) => onPatch({ birthDateRequired: checked })}
+            showTextConfig
+            hint="Terstruktur (pemilih tanggal) — dipakai hitung umur otomatis."
+          />
           <p className="text-xs text-muted-foreground">
             Bagian Data Diri selalu tersedia untuk identitas pelamar &amp; deteksi lamaran ganda —
             tidak bisa dihapus. Item opsional boleh dikosongkan pelamar.
@@ -791,6 +852,8 @@ function SectionCard({
             <FieldEditorCard
               key={field.id}
               field={field}
+              fieldIndex={fieldIndex}
+              sectionFields={fields}
               canMoveUp={fieldIndex > 0}
               canMoveDown={fieldIndex < fields.length - 1}
               canMutate={canMutate}
@@ -803,17 +866,57 @@ function SectionCard({
         </div>
       )}
 
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-9 w-fit"
-        onClick={onAddField}
-        disabled={!canMutate || !canAddField}
-      >
-        <Plus className="size-4" aria-hidden="true" />
-        Tambah pertanyaan
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 w-fit"
+          onClick={onAddField}
+          disabled={!canMutate || !canAddField}
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          Tambah pertanyaan
+        </Button>
+        {/* NR-32 — paket pertanyaan siap pakai. Hanya untuk bagian biodata &
+            kustom: Pengalaman/Berkas berisi item inti terstruktur (slot teks &
+            berkas), bukan tempat paket pertanyaan. */}
+        {section.kind === "biodata" || section.kind === "custom" ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 w-fit"
+                disabled={!canMutate || !canAddField}
+              >
+                <LayoutTemplate className="size-4" aria-hidden="true" />
+                Dari template
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-80">
+              {FORM_TEMPLATES.map((template) => (
+                <DropdownMenuItem
+                  key={template.id}
+                  onClick={() => onApplyTemplate(template)}
+                  className="flex-col items-start gap-0.5 py-2.5"
+                >
+                  <span className="flex w-full items-center justify-between gap-3">
+                    <span className="font-medium">{template.name}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {template.fields.length} pertanyaan
+                    </span>
+                  </span>
+                  <span className="line-clamp-2 text-xs font-normal text-muted-foreground">
+                    {template.description}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
 
       {/* Konfirmasi hapus — pengaman kedua setelah kunci (anti-hapus-sengaja) */}
       <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
@@ -850,6 +953,8 @@ function SectionCard({
 
 function FieldEditorCard({
   field,
+  fieldIndex,
+  sectionFields,
   canMoveUp,
   canMoveDown,
   canMutate,
@@ -859,6 +964,10 @@ function FieldEditorCard({
   onRemove,
 }: {
   field: FormField;
+  /** Posisi field ini di daftar field bagian — kandidat showIf harus di atasnya. */
+  fieldIndex: number;
+  /** Seluruh field bagian yang sama (urutan draf) — sumber showIf pilihan. */
+  sectionFields: FormField[];
   canMoveUp: boolean;
   canMoveDown: boolean;
   canMutate: boolean;
@@ -869,6 +978,36 @@ function FieldEditorCard({
 }) {
   const labelInvalid =
     field.label.trim().length > 0 && field.label.trim().length < FORM_LIMITS.labelMin;
+
+  // NR-32 — kandidat sumber showIf: field pilihan (radio/checkbox/dropdown) di
+  // bagian yang sama yang muncul SEBELUM field ini (kontrak normalizeShowIf:
+  // anti-lingkaran lewat urutan array draf).
+  const showIfSources = useMemo(
+    () =>
+      sectionFields
+        .slice(0, Math.max(0, fieldIndex))
+        .filter((f) => f.id !== field.id && isChoiceType(f.type)),
+    [sectionFields, fieldIndex, field.id],
+  );
+  const showIfSource = field.showIf
+    ? showIfSources.find((f) => f.id === field.showIf?.fieldId)
+    : undefined;
+
+  // Sumber showIf hilang (dihapus/diubah tipe/dipindah ke bawah field ini) —
+  // bersihkan draf agar UI tidak menampilkan syarat mati; sanitasi server
+  // (normalizeShowIf) tetap jaring pengaman saat "Simpan & Terapkan".
+  useEffect(() => {
+    if (field.showIf && !showIfSource) onChange({ showIf: undefined });
+  }, [field.showIf, showIfSource, onChange]);
+
+  /** NR-32 — centang/hapus satu nilai syarat tampil (checkbox = cocok salah satu). */
+  function toggleShowIfValue(option: string, checked: boolean) {
+    if (!field.showIf) return;
+    const values = checked
+      ? Array.from(new Set([...field.showIf.values, option]))
+      : field.showIf.values.filter((v) => v !== option);
+    onChange({ showIf: { ...field.showIf, values } });
+  }
 
   function setOption(index: number, value: string) {
     const options = [...field.options];
