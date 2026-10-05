@@ -2926,3 +2926,33 @@ Stage Summary:
 - Admin API (serializeApplication) mengembalikan nik & birthDate; tabel Pelamar punya kolom NIK + Umur (desktop & kartu mobile) dan dialog detail menampilkan NIK + Tanggal Lahir (+ umur).
 - Tidak ada paket baru, tidak jalan prisma, tidak commit. Catatan: penegakan ageBelowMin di server (position.minAge vs umur) belum ada di POST submit — bisa jadi tugas integrasi berikutnya bila diinginkan.
 Do not commit.
+
+---
+Task ID: NR-32-2-a
+Agent: full-stack-developer
+Task: Wizard publik — fitur "Data Diri Lengkap" (NIK, tanggal lahir + minAge, field kondisional showIf, sub-header grup, currency, normalisasi WA, peringatan duplikat, autocomplete) di apply-wizard.tsx
+Work Log:
+- Baca worklog (NR-32-1-FOUNDATION, NR-30/31), form-schema.ts, form-templates.ts, strings.ts (kunci apply.dataDiri.* ada), types.ts (Position.minAge), landing-utils.ts (formatDateTimeId).
+- Import baru: Fragment (react), isFieldVisible/isNikEnabled/isNikRequired/isBirthDateEnabled/isBirthDateRequired (form-schema), formatDateTimeId (landing-utils).
+- Helper modul baru: normalizeWaPhone() (0812/62812/812 → +62812, buang non-digit kecuali "+" awal), ageFromBirthDate() (usia tahun penuh dari YYYY-MM-DD, null bila tidak sah).
+- formAnswerDisplay: case "currency" → pratinjau "Rp 1.500.000" (number mentah; string draft diparse buang non-digit).
+- FieldKey + "nik" | "birthDate" (FormErrors).
+- State baru: nik, birthDate, dedupe {title,date}|null, dedupeDismissedRef/dedupeAbortRef/dedupeTimerRef; effect unmount abort+clearTimeout; reset saat ganti posisi & resetForm.
+- Konstanta turunan: nikActive/nikRequired/birthDateActive/birthDateRequired (schema && biodataEntry — mode klasik selalu false), minAge = selectedPosition?.minAge ?? null, birthAge, showAgeBelowMin.
+- FormFieldRenderer: case "currency" (prefix Rp dekoratif aria-hidden, inputMode numeric, simpan ANGKA MENTAH via onAnswer, tampilan toLocaleString("id-ID") live saat mengetik, digits.slice(0,12)); autoComplete={field.autocomplete || undefined} pada Input text/url/date; "currency" masuk daftar Label htmlFor; validateFormField case "currency" (mirror number: formNumber/formNumberMin/formNumberMax).
+- validateStep1: NIK (digit murni; error nikInvalid bila ≠16 digit dan (terisi atau wajib)) + birthDate required (pesan bilingual inline, tidak ada kunci khusus di strings.ts).
+- Langkah biodata (mode skema): grid NIK + Tanggal Lahir setelah grid WA/posisi (label coreItemLabel + override admin, tanda wajib, aria-invalid/describedby, NIK strip non-digit onChange maxLength 16 autoComplete off, birthDate type=date autoComplete bday); peringatan amber lunak ageBelowMin (fillTemplate {age}/{min}, role=status, rounded-md border-amber-200 bg-amber-50 dark:bg-amber-950/40 text-xs p-2, TIDAK memblokir); catatan privasi t.apply.dataDiri.privacyNote (ShieldCheck) di bawah grid bila salah satu aktif.
+- Field kondisional (showIf): fungsi renderSectionFields() memfilter isFieldVisible(field, formAnswers) + render sub-header grup sebelum field yang field.group berubah dibanding field terlihat sebelumnya (undefined = grupnya sendiri; header hanya bila group terisi; teks groupEn bila lang "en"); dipakai di 4 lokasi render field skema (biodata/pengalaman/kustom/berkas). validateSectionFields melewati field tersembunyi; doSubmit tidak mengirim jawaban/berkas field tersembunyi (2 loop schema.fields); pratinjau (renderSchemaPreviewSection) hanya menampilkan field terlihat.
+- Pratinjau biodata: baris NIK & Tanggal Lahir (bila aktif, label coreItemLabel(section,...)).
+- Normalisasi WA: onBlur input phone (setField bila berubah + clearDedupe); validasi lama tidak disentuh.
+- Dedupe: checkDedupe(email, phone) → GET /api/public/dedupe?email=&phone= dengan AbortController; respons {exists, positionTitle?, createdAt?} → dedupe {title: positionTitle ?? "-", date: formatDateTimeId(createdAt) ?? "-"}; gagal/non-ok/exists≠true → null senyap. Pemicu: klik Lanjut/Berikutnya di langkah biodata (goNext, fire-and-forget, tidak memblokir) + blur email (debounce 600ms); dibersihkan saat email/phone berubah (onChange/normalisasi) & ganti posisi; tombol "Tetap lanjutkan" (dedupeContinue) → dismissDedupe (ref sesi); alert amber di atas grid biodata (border-amber-200 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200).
+- Submit payload: fd "nik" (digit, hanya bila non-empty) & "birthDate" (hanya bila cocok FORM_DATE_RE) — hanya mode skema.
+- Mode klasik tidak berubah perilaku (nikActive/birthDateActive false; dedupe tetap aktif karena langkah 0 = biodata klasik).
+- Verifikasi: bunx tsc --noEmit | grep "^src/" → KOSONG; bun run lint → bersih tanpa error baru; GET / → 200.
+Stage Summary:
+- Semua 10 butir tugas selesai di apply-wizard.tsx saja (tidak ada file lain yang disentuh, tidak ada paket baru). Butir 8 (minAge klasik) di-skip sesuai instruksi.
+- Kontrak yang dipakai: GET /api/public/dedupe?email=&phone= → {exists: boolean, positionTitle?: string, createdAt?: string} (fallback title "-", date "-" bila createdAt absen); Position.minAge: number|null via prop positions/positionId wizard (selectedPosition.minAge); submit fd "nik" (16 digit) & "birthDate" (YYYY-MM-DD) hanya mode skema — API POST /api/applications ditangani agen lain.
+- Catatan desain: currency disimpan angka mentah di answers, tampilan diformat langsung dari value (tanpa state lokal) sehingga selalu konsisten dengan jawaban (draft-restore/reset aman); field tersembunyi dibiarkan di state tapi difilter di render/validasi/submit/pratinjau (pendekatan yang disetujui tugas).
+- NIK/birthDate TIDAK ikut draft localStorage/draft-link (di luar lingkup tugas; jawaban form terkait showIf tetap ikut draft).
+- privacyNote dirender di bawah grid NIK/tanggal lahir (bila salah satu aktif) — kunci sudah disiapkan foundation.
+Do not commit; the auto-push daemon handles git.
