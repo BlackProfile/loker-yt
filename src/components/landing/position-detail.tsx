@@ -1549,8 +1549,8 @@ function PositionDetailViewInner({
               ) : null}
             </div>
 
-            {/* Setelah konten: gerbang baca → formulir pendaftaran, di tengah halaman */}
-            <div className="mx-auto w-full max-w-2xl">
+            {/* Setelah konten: gerbang baca → formulir pendaftaran, selebar kolom konten */}
+            <div className="w-full">
               <FadeIn delay={0.1}>
                 <Card id="form-card" className="scroll-mt-24 gap-4 rounded-2xl p-5 md:p-6">
                   {canApplyOnline ? (
