@@ -101,7 +101,7 @@ import {
   isPortfolioEnabled,
   isPortfolioRequired,
 } from "@/lib/form-schema";
-import { stageLabel, stagesForPosition } from "@/lib/stages";
+import { categoryForStage, stageLabel, stagesForPosition } from "@/lib/stages";
 
 const SOON_DAYS = 3;
 const NEW_DAYS = 7;
@@ -598,37 +598,50 @@ function DefaultCover({ department }: { department: string }) {
 // ---------------------------------------------------------------------------
 // Timeline alur seleksi: lingkaran bernomor + garis penghubung vertikal,
 // pengganti chip "1. X 2. Y" agar proses terbaca sekilas sebagai alur.
+// Tahap akhir hanya diberi tanda emerald bila kategorinya memang ACCEPTED
+// (bukan tahap penolakan — penolakan tetap lingkaran bernomor biasa).
 // ---------------------------------------------------------------------------
-function ProcessTimeline({ stages }: { stages: string[] }) {
+function ProcessTimeline({
+  stages,
+  stageCategories,
+}: {
+  stages: string[];
+  stageCategories?: Record<string, StageCategory> | null;
+}) {
+  const lastIsAccepted =
+    stages.length > 0 &&
+    categoryForStage(stages[stages.length - 1], stageCategories) === "ACCEPTED";
   return (
     <ol className="flex flex-col">
-      {stages.map((stage, index) => (
-        <li key={stage} className="flex gap-2.5">
-          <div className="flex flex-col items-center">
-            <span
-              className={cn(
-                "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
-                index === stages.length - 1
-                  ? "bg-emerald-600 text-white"
-                  : "bg-rose-600 text-white",
-              )}
-            >
-              {index === stages.length - 1 ? (
-                <Check className="size-3" aria-hidden="true" />
-              ) : (
-                index + 1
-              )}
-            </span>
-            {index < stages.length - 1 ? (
+      {stages.map((stage, index) => {
+        const isFinal = index === stages.length - 1;
+        const isSuccess = isFinal && lastIsAccepted;
+        return (
+          <li key={stage} className="flex gap-2.5">
+            <div className="flex flex-col items-center">
               <span
-                aria-hidden="true"
-                className="my-0.5 w-px flex-1 bg-zinc-300 dark:bg-zinc-700"
-              />
-            ) : null}
-          </div>
-          <span className="pb-3 text-sm leading-5">{stageLabel(stage)}</span>
-        </li>
-      ))}
+                className={cn(
+                  "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
+                  isSuccess ? "bg-emerald-600 text-white" : "bg-rose-600 text-white",
+                )}
+              >
+                {isSuccess ? (
+                  <Check className="size-3" aria-hidden="true" />
+                ) : (
+                  index + 1
+                )}
+              </span>
+              {!isFinal ? (
+                <span
+                  aria-hidden="true"
+                  className="my-0.5 w-px flex-1 bg-zinc-300 dark:bg-zinc-700"
+                />
+              ) : null}
+            </div>
+            <span className="pb-3 text-sm leading-5">{stageLabel(stage)}</span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -1398,7 +1411,10 @@ function PositionDetailViewInner({
                   ) : null}
                   {stages.length > 0 ? (
                     <TermRow icon={Workflow} label={t.detail.termsProcess}>
-                      <ProcessTimeline stages={stages} />
+                      <ProcessTimeline
+                        stages={stages}
+                        stageCategories={position.stageCategories}
+                      />
                     </TermRow>
                   ) : null}
                 </Card>
