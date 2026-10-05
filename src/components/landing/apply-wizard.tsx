@@ -2396,16 +2396,29 @@ export function ApplyWizard({
                 {formatMb(cvFile.size)}
               </span>
             </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              aria-label={t.apply.uploads.remove}
-              onClick={() => setCvFile(null)}
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              {/* NR-36 — lihat isi CV langsung di aplikasi (pratinjau blob lokal) */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-xs text-muted-foreground"
+                onClick={() => setViewerFile(cvFile)}
+              >
+                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                {t.apply.uploads.view}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                aria-label={t.apply.uploads.remove}
+                onClick={() => setCvFile(null)}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
           </div>
         ) : null}
         {cvError ? <p className="text-sm text-rose-600">{cvError}</p> : null}
@@ -2479,16 +2492,29 @@ export function ApplyWizard({
                 {formatMb(introFile.size)}
               </span>
             </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              aria-label={t.apply.uploads.remove}
-              onClick={() => setIntroFile(null)}
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              {/* NR-36 — pratinjau audio/video intro langsung di aplikasi */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-xs text-muted-foreground"
+                onClick={() => setViewerFile(introFile)}
+              >
+                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                {t.apply.uploads.view}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                aria-label={t.apply.uploads.remove}
+                onClick={() => setIntroFile(null)}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
           </div>
         ) : null}
         {introError ? (
@@ -2500,14 +2526,18 @@ export function ApplyWizard({
 
   /**
    * Baris pratinjau berkas terunggah (CV / audio intro) — dipakai kartu
-   * Berkas pratinjau klasik DAN kartu bagian Berkas skema.
+   * Berkas pratinjau klasik DAN kartu bagian Berkas skema. NR-36: baris kini
+   * punya tombol Lihat (pratinjau di aplikasi) dan Ganti/Hapus yang balik ke
+   * langkah Berkas (backStep; bila diabaikan memakai filesStep klasik).
    */
   function renderPreviewFileRow(
     kind: "cv" | "intro",
     required: boolean,
+    opts?: { backStep?: number },
   ) {
     const file = kind === "cv" ? cvFile : introFile;
     const Icon = kind === "cv" ? FileText : Mic;
+    const backStep = opts?.backStep ?? filesStep;
     return (
       <div className="flex items-center gap-2.5 text-sm">
         <Icon
@@ -2531,9 +2561,34 @@ export function ApplyWizard({
             {t.apply.preview.noFile}
           </span>
         )}
-        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-          ({required ? t.apply.uploads.required : t.apply.uploads.optional})
-        </span>
+        {file ? (
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+              onClick={() => setViewerFile(file)}
+            >
+              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+              {t.apply.uploads.view}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+              onClick={() => goToStep(backStep)}
+            >
+              <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+              {t.apply.preview.changeOrRemove}
+            </Button>
+          </span>
+        ) : (
+          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+            ({required ? t.apply.uploads.required : t.apply.uploads.optional})
+          </span>
+        )}
       </div>
     );
   }
@@ -2642,10 +2697,14 @@ export function ApplyWizard({
         {section.kind === "files" ? (
           <>
             {isCvEnabled(section)
-              ? renderPreviewFileRow("cv", isCvRequired(section))
+              ? renderPreviewFileRow("cv", isCvRequired(section), {
+                  backStep: entry.stepIndex,
+                })
               : null}
             {isIntroEnabled(section)
-              ? renderPreviewFileRow("intro", isIntroRequired(section))
+              ? renderPreviewFileRow("intro", isIntroRequired(section), {
+                  backStep: entry.stepIndex,
+                })
               : null}
             {isPortfolioEnabled(section) ? (
               <PreviewRow
@@ -2657,21 +2716,67 @@ export function ApplyWizard({
           </>
         ) : null}
         {/* NR-32 — hanya field TERLIHAT (showIf cocok) yang masuk pratinjau;
-            jawaban field tersembunyi tidak ditampilkan. */}
+            jawaban field tersembunyi tidak ditampilkan. Field berkas (NR-36)
+            mendapat tombol Lihat + Ganti/Hapus balik ke langkah bagiannya. */}
         {entry.fields
           .filter((field) => isFieldVisible(field, formAnswers))
-          .map((field) => (
-            <PreviewRow
-              key={field.id}
-              label={formFieldLabel(field, lang)}
-              value={formAnswerDisplay(field, formAnswers[field.id])}
-              fallback={
-                field.type === "file"
-                  ? t.apply.preview.noFile
-                  : t.apply.preview.notAnswered
-              }
-            />
-          ))}
+          .map((field) => {
+            const answer = formAnswers[field.id];
+            if (field.type === "file") {
+              const file = answer instanceof File ? answer : null;
+              return (
+                <div
+                  key={field.id}
+                  className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3"
+                >
+                  <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:w-40">
+                    {formFieldLabel(field, lang)}
+                  </dt>
+                  {file ? (
+                    <dd className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                      <span className="min-w-0 truncate text-sm font-medium">
+                        {file.name} ({formatMb(file.size)})
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                          onClick={() => setViewerFile(file)}
+                        >
+                          <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                          {t.apply.uploads.view}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                          onClick={() => goToStep(entry.stepIndex)}
+                        >
+                          <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+                          {t.apply.preview.changeOrRemove}
+                        </Button>
+                      </span>
+                    </dd>
+                  ) : (
+                    <dd className="text-sm italic text-muted-foreground/70">
+                      {t.apply.preview.noFile}
+                    </dd>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <PreviewRow
+                key={field.id}
+                label={formFieldLabel(field, lang)}
+                value={formAnswerDisplay(field, answer)}
+                fallback={t.apply.preview.notAnswered}
+              />
+            );
+          })}
       </PreviewSection>
     );
   }
@@ -4364,22 +4469,35 @@ export function ApplyWizard({
                               {formatMb(file.size)}
                             </span>
                           </span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 shrink-0"
-                            aria-label={t.apply.uploads.remove}
-                            onClick={() =>
-                              setExtraFiles((prev) => {
-                                const next = { ...prev };
-                                delete next[index];
-                                return next;
-                              })
-                            }
-                          >
-                            <X className="h-4 w-4" aria-hidden="true" />
-                          </Button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {/* NR-36 — pratinjau dokumen tambahan langsung di aplikasi */}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 gap-1.5 text-xs text-muted-foreground"
+                              onClick={() => setViewerFile(file)}
+                            >
+                              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                              {t.apply.uploads.view}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0"
+                              aria-label={t.apply.uploads.remove}
+                              onClick={() =>
+                                setExtraFiles((prev) => {
+                                  const next = { ...prev };
+                                  delete next[index];
+                                  return next;
+                                })
+                              }
+                            >
+                              <X className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                          </div>
                         </div>
                       ) : null}
                       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
@@ -4600,35 +4718,62 @@ export function ApplyWizard({
               {classicShowIntro
                 ? renderPreviewFileRow("intro", selectedPosition?.requireIntro === true)
                 : null}
-              {/* Dokumen wajib tambahan — pratinjau berkas terunggah per label */}
+              {/* Dokumen wajib tambahan — pratinjau berkas terunggah per label.
+                  NR-36: tiap baris punya Lihat + Ganti/Hapus balik ke langkah Berkas. */}
               {customDocs.map((label, index) => {
                 const file = extraFiles[index];
                 return (
-                  <div key={`${label}-${index}`} className="flex items-center gap-2.5 text-sm">
-                    <FileText
-                      className={cn(
-                        "h-4 w-4 shrink-0",
-                        file
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-rose-600 dark:text-rose-400",
-                      )}
-                      aria-hidden="true"
-                    />
-                    <span className="min-w-0 flex-1 truncate">
-                      {label}
-                      {file ? (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {file.name} ({formatMb(file.size)})
-                        </span>
-                      ) : (
-                        <span className="ml-2 text-xs italic text-muted-foreground/70">
-                          {t.apply.preview.notFilled}
-                        </span>
-                      )}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      ({t.apply.uploads.required})
-                    </span>
+                  <div key={`${label}-${index}`} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2.5">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5 text-sm">
+                      <FileText
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          file
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-rose-600 dark:text-rose-400",
+                        )}
+                        aria-hidden="true"
+                      />
+                      <span className="min-w-0 flex-1 truncate">
+                        {label}
+                        {file ? (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {file.name} ({formatMb(file.size)})
+                          </span>
+                        ) : (
+                          <span className="ml-2 text-xs italic text-muted-foreground/70">
+                            {t.apply.preview.notFilled}
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        ({t.apply.uploads.required})
+                      </span>
+                    </div>
+                    {file ? (
+                      <div className="flex shrink-0 items-center gap-1 pl-7 sm:pl-0">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                          onClick={() => setViewerFile(file)}
+                        >
+                          <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                          {t.apply.uploads.view}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                          onClick={() => goToStep(filesStep)}
+                        >
+                          <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+                          {t.apply.preview.changeOrRemove}
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
@@ -4760,6 +4905,16 @@ export function ApplyWizard({
             </Button>
           )}
         </div>
+
+        {/* Dialog pratinjau berkas pelamar (NR-36) — dipakai langkah Berkas
+            & Pratinjau untuk CV, audio intro, dan dokumen tambahan. */}
+        <LocalFileViewerDialog
+          file={viewerFile}
+          open={viewerFile !== null}
+          onOpenChange={(open) => {
+            if (!open) setViewerFile(null);
+          }}
+        />
 
         {/* Dialog konfirmasi akhir — lamaran hanya terkirim setelah tombol ini ditekan */}
         <AlertDialog
