@@ -2538,16 +2538,6 @@ export function ApplicationDetailDialog({
               ) : null}
             </div>
 
-            {/* NR-24 fitur 7/12/15 — riwayat melamar, duplikat tersangka, peringatan do-not-hire */}
-            <RelatedSection
-              key={`related-${app.id}`}
-              applicationId={app.id}
-              list={list}
-              onNavigate={onNavigate}
-              onSaved={onSaved}
-              onListRefresh={onListRefresh}
-            />
-
             {/* NR-15: read receipt — kapan terakhir pelamar membuka halaman status */}
             <div className="flex items-center gap-2 text-xs">
               <Eye className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -2683,81 +2673,18 @@ export function ApplicationDetailDialog({
                 ) : null}
               </div>
             ) : null}
+          </section>
 
-            {/* Wawancara: daftar sesi multi-ronde */}
-            <div className="rounded-lg border p-3">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Video className="size-4 text-orange-500" aria-hidden="true" />
-                <p className="text-sm font-semibold">Wawancara</p>
-                {canMutate ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="ml-auto h-11 sm:h-8"
-                    onClick={() => {
-                      // Nonce memastikan dialog create termuat dengan form bersih.
-                      setCreateNonce((n) => n + 1);
-                      setSessionCreateOpen(true);
-                    }}
-                  >
-                    <CalendarPlus className="size-4" aria-hidden="true" />
-                    Jadwalkan Wawancara
-                  </Button>
-                ) : null}
-              </div>
-              {sessionsLoading && sessions.length === 0 ? (
-                <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  Memuat sesi wawancara...
-                </p>
-              ) : sessions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Belum ada sesi wawancara.</p>
-              ) : (
-                <div className="flex max-h-64 flex-col gap-2 overflow-y-auto nice-scrollbar">
-                  {sessions.map((i) => (
-                    <div
-                      key={i.id}
-                      className="flex flex-wrap items-center gap-2 rounded-lg border p-2.5"
-                    >
-                      <span className="shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
-                        R{i.round}
-                      </span>
-                      <span className="min-w-0 flex-1 text-sm">
-                        {formatDateTime(i.scheduledAt)}
-                        <span className="text-xs text-muted-foreground">
-                          {" "}
-                          · {i.durationMin} menit
-                        </span>
-                      </span>
-                      <InterviewStatusChip status={i.status} />
-                      <div className="flex w-full items-center gap-1.5 sm:w-auto">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-11 sm:h-8"
-                          onClick={() => setSessionDetail(i)}
-                        >
-                          Detail
-                        </Button>
-                        {i.mode === "ONLINE" && i.meetingLink ? (
-                          <Button asChild variant="outline" size="sm" className="h-11 sm:h-8">
-                            <a
-                              href={i.meetingLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              aria-label={`Gabung meeting ronde ${i.round}`}
-                            >
-                              <Video className="size-4" aria-hidden="true" />
-                              Gabung
-                            </a>
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+          {/* ============================ AI & BERKAS ============================ */}
+          <section
+            id="detail-panel-ai"
+            role="tabpanel"
+            aria-label="AI dan berkas pelamar"
+            hidden={detailTab !== "ai"}
+            className="flex flex-col gap-4"
+          >
+            {/* Panel AI — NR-22: disembunyikan bila posisi menyembunyikan blok "ai" */}
+            {isHidden("ai") ? null : <AiPanel app={app} onUpdated={onSaved} />}
 
             {/* Berkas */}
             {app.cvFileId || app.introFileId || app.extraDocs.length > 0 ? (
@@ -2936,9 +2863,16 @@ export function ApplicationDetailDialog({
             {/* NR-24 fitur 11 + 13 — dokumen internal & masa berlaku dokumen */}
             <InternalDocsSection key={`internal-docs-${app.id}`} applicationId={app.id} canMutate={canMutate} />
             <DocExpirySection key={`doc-expiry-${app.id}`} app={app} canMutate={canMutate} onSaved={onSaved} />
+          </section>
 
-            <Separator />
-
+          {/* ============================== JAWABAN ============================== */}
+          <section
+            id="detail-panel-jawaban"
+            role="tabpanel"
+            aria-label="Jawaban pelamar"
+            hidden={detailTab !== "jawaban"}
+            className="flex flex-col gap-4"
+          >
             {/* Jawaban screening */}
             {showScreening ? (
               <div className="flex flex-col gap-2 rounded-lg border p-3">
@@ -3037,7 +2971,16 @@ export function ApplicationDetailDialog({
                 </div>
               </div>
             ) : null}
+          </section>
 
+          {/* ============================== EVALUASI ============================== */}
+          <section
+            id="detail-panel-evaluasi"
+            role="tabpanel"
+            aria-label="Evaluasi kandidat"
+            hidden={detailTab !== "evaluasi"}
+            className="flex flex-col gap-4"
+          >
             {/* Rubrik evaluasi — NR-22: disembunyikan bila posisi menyembunyikan blok "rubric" */}
             {rubricCriteria.length > 0 && !isHidden("rubric") ? (
               <div className="flex flex-col gap-3 rounded-lg border p-3">
@@ -3145,10 +3088,6 @@ export function ApplicationDetailDialog({
               </div>
             ) : null}
 
-            <Separator />
-
-            {/* Editor */}
-            <div className="flex flex-col gap-4">
               <div className="flex flex-wrap items-center gap-3">
                 <Label className="text-sm">Rating</Label>
                 <RatingStars
@@ -3315,6 +3254,90 @@ export function ApplicationDetailDialog({
                   aria-label="Tandai Talent Pool"
                 />
               </div>
+          </section>
+
+          {/* =============================== PROSES =============================== */}
+          <section
+            id="detail-panel-proses"
+            role="tabpanel"
+            aria-label="Proses seleksi"
+            hidden={detailTab !== "proses"}
+            className="flex flex-col gap-4"
+          >
+            {/* Wawancara: daftar sesi multi-ronde */}
+            <div className="rounded-lg border p-3">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Video className="size-4 text-orange-500" aria-hidden="true" />
+                <p className="text-sm font-semibold">Wawancara</p>
+                {canMutate ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto h-11 sm:h-8"
+                    onClick={() => {
+                      // Nonce memastikan dialog create termuat dengan form bersih.
+                      setCreateNonce((n) => n + 1);
+                      setSessionCreateOpen(true);
+                    }}
+                  >
+                    <CalendarPlus className="size-4" aria-hidden="true" />
+                    Jadwalkan Wawancara
+                  </Button>
+                ) : null}
+              </div>
+              {sessionsLoading && sessions.length === 0 ? (
+                <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Memuat sesi wawancara...
+                </p>
+              ) : sessions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada sesi wawancara.</p>
+              ) : (
+                <div className="flex max-h-64 flex-col gap-2 overflow-y-auto nice-scrollbar">
+                  {sessions.map((i) => (
+                    <div
+                      key={i.id}
+                      className="flex flex-wrap items-center gap-2 rounded-lg border p-2.5"
+                    >
+                      <span className="shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
+                        R{i.round}
+                      </span>
+                      <span className="min-w-0 flex-1 text-sm">
+                        {formatDateTime(i.scheduledAt)}
+                        <span className="text-xs text-muted-foreground">
+                          {" "}
+                          · {i.durationMin} menit
+                        </span>
+                      </span>
+                      <InterviewStatusChip status={i.status} />
+                      <div className="flex w-full items-center gap-1.5 sm:w-auto">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-11 sm:h-8"
+                          onClick={() => setSessionDetail(i)}
+                        >
+                          Detail
+                        </Button>
+                        {i.mode === "ONLINE" && i.meetingLink ? (
+                          <Button asChild variant="outline" size="sm" className="h-11 sm:h-8">
+                            <a
+                              href={i.meetingLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label={`Gabung meeting ronde ${i.round}`}
+                            >
+                              <Video className="size-4" aria-hidden="true" />
+                              Gabung
+                            </a>
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
               {/* NR-24 fitur 4 — tindak lanjut / snooze */}
               <div className="flex flex-col gap-2 rounded-lg border p-3">
@@ -3564,7 +3587,6 @@ export function ApplicationDetailDialog({
                   </SelectContent>
                 </Select>
               </div>
-            </div>
 
             {/* NR-24 fitur 8 — tahan proses (HOLD) */}
             {app.holdAt || canMutate ? (
@@ -4254,8 +4276,25 @@ export function ApplicationDetailDialog({
                 ) : null}
               </div>
             ) : null}
+          </section>
 
-            <Separator />
+          {/* ========================= RIWAYAT & KOMUNIKASI ========================= */}
+          <section
+            id="detail-panel-riwayat"
+            role="tabpanel"
+            aria-label="Riwayat dan komunikasi"
+            hidden={detailTab !== "riwayat"}
+            className="flex flex-col gap-4"
+          >
+            {/* NR-24 fitur 7/12/15 — riwayat melamar, duplikat tersangka, peringatan do-not-hire */}
+            <RelatedSection
+              key={`related-${app.id}`}
+              applicationId={app.id}
+              list={list}
+              onNavigate={onNavigate}
+              onSaved={onSaved}
+              onListRefresh={onListRefresh}
+            />
 
             {/* Diskusi tim (Task 20-a) */}
             <TeamDiscussion key={app.id} applicationId={app.id} canMutate={canMutate} />
@@ -4268,16 +4307,8 @@ export function ApplicationDetailDialog({
               <CandidateQuestions key={`q-${app.id}`} applicationId={app.id} canMutate={canMutate} />
             </div>
 
-            <Separator />
-
             {/* NR-24-b (ide 5) — log panggilan telepon */}
             <CallLogSection key={`call-${app.id}`} applicationId={app.id} canMutate={canMutate} />
-
-            {/* NR-24-b (ide 6) — tugas uji / assessment */}
-            <AssessmentSection key={`asg-${app.id}`} applicationId={app.id} canMutate={canMutate} />
-
-            {/* NR-24-b (ide 11) — dokumen internal (hanya admin) */}
-            <InternalDocsSection key={`idoc-${app.id}`} applicationId={app.id} canMutate={canMutate} />
 
             {/* NR-24-b (ide 10) — kotak masuk terpadu (email + pertanyaan + panggilan) */}
             <UnifiedInboxSection
@@ -4286,22 +4317,17 @@ export function ApplicationDetailDialog({
               onGotoQuestions={scrollToCandidateQuestions}
             />
 
-            <Separator />
-
-            {/* NR-24 fitur 9 + 10 — riwayat panggilan & inbox terpadu */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <CallLogSection key={`calls-${app.id}`} applicationId={app.id} canMutate={canMutate} />
-              <InboxSection key={`inbox-${app.id}`} applicationId={app.id} />
-            </div>
-
-            <Separator />
+            {/* NR-24 fitur 9 + 10 — kotak masuk per jenis (email/panggilan/pertanyaan).
+                NR-34: duplikat CallLogSection/Assessment/InternalDocs yang sebelumnya
+                dirender dua kali sudah digabung ke tab masing-masing. */}
+            <InboxSection key={`inbox2-${app.id}`} applicationId={app.id} />
 
             {/* Timeline */}
             <div>
               <h4 className="mb-2 text-sm font-semibold">Riwayat Aktivitas</h4>
               <ActivityTimeline key={app.id} applicationId={app.id} />
             </div>
-          </div>
+          </section>
         </div>
 
         <DialogFooter className="gap-2 border-t pt-4 sm:justify-between">
