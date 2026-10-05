@@ -3016,3 +3016,21 @@ Stage Summary:
 - Dialog detail pelamar kini 6 tab (Ringkasan / AI & Berkas / Jawaban / Evaluasi / Proses / Riwayat) — admin tidak lagi menggulung ribuan piksel; tab persist antar pelamar untuk perbandingan cepat; sticky tab bar; mobile ramah.
 - Bonus: 3 seksi ganda (Assessment/CallLog/InternalDocs) beres, import Separator mati, anchor pertanyaan pelamar lintas-tab bekerja.
 - File berubah: src/components/admin/application-detail-dialog.tsx saja. Tanpa perubahan skema DB/API.
+
+---
+Task ID: NR-35-DEDUP-HEADER-DETAIL
+Agent: Z.ai Code (orchestrator)
+Task: Perbaiki header dialog detail pelamar yang menampilkan DUA widget navigasi prev/next ("8 dari 8" + "8 / 8") dan DUA bintang personal sekaligus (laporan user: "ini kenapa ada 2 gitu" + screenshot)
+
+Work Log:
+- Akar masalah: fitur navigasi & bintang diimplementasi DUA KALI oleh dua batch berbeda — "NR-24 fitur 1/2" (nav inline "N dari M" + bintang kecil sebelum nama) DAN "NR-24-b" (nav pill "N / M" + bintang Button besar setelah badge status) — keduanya dirender berdampingan di DialogTitle (pola sama dengan 3 seksi ganda Assessment/CallLog/InternalDocs yang sudah dibersihkan di NR-34; dua sisanya terlewat).
+- Keputusan: pertahankan versi NR-24-b (lebih baik) untuk keduanya — pill touch-friendly (size-11 mobile / size-9 desktop), dan otomatis TERSEMBUNYI bila daftar hanya 1 lamaran (navActive menuntut length>1); versi lama selalu tampil walau "1 dari 1".
+- Restrukturisasi header (application-detail-dialog.tsx): urutan baru = Bintang (sebelum nama, kini menghormati canMutate — sebelumnya versi NR-24-b lupa) → Nama → Pill pager → StatusBadge → badge Duplikat/Talent Pool/HOLD. Bintang dipindah ke depan nama agar posisi favorit tetap familiar seperti versi lama.
+- Hapus kode mati: nav inline lama, bintang lama, derived vars `starred`/`navTotal`/`navPosition`/`navAvailable`, dan fungsi `navigateBy()` — semua hanya dipakai blok lama (diverifikasi grep). Keyboard ArrowLeft/Right & navCtxRef tidak tersentuh (mekanisme independen).
+- Verifikasi: eslint KOSONG; tsc penuh hanya menyisakan error lama di examples/ & scripts/ (nol di src/). E2E agent-browser :81 (Owner): title dialog = "Lestari Rahmawati 1 / 18 Baru" (1 pager, 0 "dari"); hitung DOM = 1 star button + 1 pager; toggle bintang OK (aria-pressed true→label "Lepas tanda penting", dikembalikan); prev/next OK (1/18 → 2/18 Fitri Hidayat → kembali); desktop 1440px header 1 baris rapi; mobile 390px wrap 2 baris dgn tombol 44px; console errors: 0. Screenshot: /tmp/nr35-header.png, /tmp/nr35-mobile.png.
+- Star sengaja dikembalikan ke kondisi semula (toggle on-off) agar data tidak berubah.
+
+Stage Summary:
+- Header dialog detail kini bersih: SATU bintang personal (depan nama, hormati canMutate) + SATU pager pill "N / M" (sembunyi bila 1 lamaran) + badge status. Duplikasi "N dari M" dan bintang kedua hilang.
+- File berubah: src/components/admin/application-detail-dialog.tsx saja (judul dialog ±60 baris lebih ramping). Tanpa perubahan skema DB/API.
+- Pelajaran: setelah NR-34 masih ada 2 fitur ganda sisa NR-24-b — kini semua deduplikasi NR-24 vs NR-24-b tuntas.
