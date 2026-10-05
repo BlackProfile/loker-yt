@@ -88,6 +88,7 @@ import { ComparisonDialog } from "./comparison-dialog";
 import { AiScoreBadge } from "./status-badge";
 import { Reveal } from "./motion-primitives";
 import { takePendingApplicationId } from "./command-palette";
+import { DemoSimulatorControl } from "./demo-simulator";
 import { cn } from "@/lib/utils";
 
 const ALL = "ALL";
@@ -733,6 +734,8 @@ export function ApplicationsTab() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            {/* Simulator Pelamar Demo: lamaran lengkap masuk otomatis tiap beberapa detik */}
+            <DemoSimulatorControl positions={positions} />
           </div>
         </div>
 
