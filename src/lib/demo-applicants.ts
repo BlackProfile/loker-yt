@@ -833,5 +833,8 @@ export async function cleanupDemoApplications(): Promise<{ deleted: number }> {
   s.lastApplicant = null;
   s.lastError = null;
   s.note = null;
+  // Sinyal realtime agar seluruh panel admin yang terbuka segera memuat ulang
+  // daftar lamaran (baris demo menghilang tanpa perlu refresh manual).
+  void emitRealtime(REALTIME_EVENTS.applications);
   return { deleted: ids.length };
 }
