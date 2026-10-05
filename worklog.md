@@ -2903,3 +2903,26 @@ Stage Summary:
 - Penerimaan punya setelan "Umur minimum pelamar (tahun)" (0-70, kosong = tanpa batas, peringatan halus di wizard).
 - PENTING (integrasi backend, di luar file tugas ini): position-input.ts (src/lib) BELUM mem-whitelist minAge pada PositionFields/booleans & positionFieldsToDb — PATCH /api/admin/positions/{id} akan membuang kunci minAge secara diam-diam. Perlu ditambahkan sanitizeNullableInt(minAge, 0-70) + mapping ke DB oleh task backend/orchestrator agar setelan tersimpan. sumber showIf yang dirujuk juga aman di sisi server lewat normalizeShowIf (sudah ada di foundation).
 Do not commit.
+---
+Task ID: NR-32-2-c
+Agent: full-stack-developer
+Task: API + tabel admin untuk Data Diri Lengkap (dedupe route, simpan NIK/tgl lahir, minAge posisi, kolom NIK/Umur)
+
+Work Log:
+- Baca worklog (NR-32-1-FOUNDATION), route.ts, applications-table.tsx, position-input.ts, seed.ts, types.ts; verifikasi skema (nik/birthDate/minAge sudah di DB, tidak jalan prisma lagi).
+- (A) BARU src/app/api/public/dedupe/route.ts: GET ?email=&phone= — minimal satu identifier (400 {exists:false} bila kosong); email lowercase + SQLite contains case-insensitive (ASCII) lalu filter eksak di JS (anti substring); telepon = 10 digit terakhir: SQL contains + tahap 2 fallback pindai 300 lamaran terbaru untuk nomor tersimpan berformat ("0812-3456-7890"); where deletedAt:null, orderBy createdAt desc; rate limit Map<ip, number[]> 20 req/menit (pola POST /api/applications); try/catch selalu 200 {exists:false,...}.
+- (B) src/app/api/applications/route.ts: parse fields.nik -> strip non-digit, simpan HANYA bila tepat 16 digit (else null); fields.birthDate -> regex ^\d{4}-\d{2}-\d{2}$ + Date valid + tidak masa depan (toleransi 1 hari) -> Date YYYY-MM-DDT00:00:00.000Z; keduanya masuk db.application.create; honeypot/time-trap & blok deteksi duplikat tidak diubah.
+- (C) src/lib/position-input.ts: PositionFields +minAge?: number|null; sanitizeNullableInt(data.minAge, "Usia minimal", 0, 70) ("" diterima sebagai null) setelah blok maxApplicants (berlaku utk create+update karena sanitizer bersama); positionFieldsToDb memetakan out.minAge. Plus src/app/api/admin/positions/route.ts (create): minAge: f.minAge ?? null — create route build data inline, bukan lewat positionFieldsToDb.
+- (D) src/lib/types.ts: Application +nik?: string|null +birthDate?: string|null (optional mengikuti pola field NR-24 agar literal Application lain tidak rusak). src/lib/seed.ts serializeApplication +nik +birthDate (toISOString) — WAJIB: tanpa ini admin API tidak mengembalikan datanya. applications-table.tsx: helper ageOf() ("27 th", invalid/masa depan -> null), kolom TableHead NIK + Umur setelah Posisi (min-w 1020->1160px), cell NIK (font-mono) & Umur (title tgl lahir), kartu mobile baris "NIK ... · 27 th" bila ada. application-detail-dialog.tsx: helper ageYearsOf() + InfoItem NIK & Tanggal Lahir (+umur) di grid Info setelah Tanggal Daftar.
+- (E) Verifikasi /api/positions publik: GET /api/public/content findMany TANPA select + serializePosition sudah output minAge (query log menampilkan kolom minAge) — TIDAK perlu perubahan.
+- Tambah dedupe: wizard sudah kirim normalizeWaPhone ("+62...") — query dinormalisasi digits last-10, aman utk stored berformat lewat fallback.
+- Uji end-to-end (baris tes dibuat lalu dihapus): email case beda -> exists:true; "big..." substring -> false; stored "0812-3456-7890" vs query "+62 812-..." -> true; phone pendek -> false. Data tes dibersihkan (count 0).
+- bunx tsc --noEmit | grep "^src/" -> KOSONG (2 error sesaat di form-builder-page.tsx berasal dari agent paralel, hilang sendiri). bun run lint exit 0. dev.log: /api/public/dedupe 200/400 sesuai kontrak, tanpa error.
+
+Stage Summary:
+- Kontrak dedupe PASTI: 200 {"exists":boolean,"positionTitle":string|null,"createdAt":string|null(ISO)}; 400 {"exists":false} bila email&phone kosong; error internal tetap 200 {"exists":false,"positionTitle":null,"createdAt":null}; 429 {"exists":false} saat rate limit (20/menit/IP). Pencocokan: email case-insensitive eksak ATAU 10 digit terakhir telepon; lamaran terbaru menang; lamaran di trash (deletedAt) diabaikan.
+- POST /api/applications kini menerima fd "nik" (16 digit) & "birthDate" (YYYY-MM-DD) dan menyimpan ke kolom Application.nik/birthDate; nilai invalid -> null (submit tidak pernah gagal karena dua field ini).
+- minAge posisi kini tersimpan via POST & PATCH admin (whitelist PositionFields + positionFieldsToDb + create inline) — menutup catatan agent form-builder sebelumnya.
+- Admin API (serializeApplication) mengembalikan nik & birthDate; tabel Pelamar punya kolom NIK + Umur (desktop & kartu mobile) dan dialog detail menampilkan NIK + Tanggal Lahir (+ umur).
+- Tidak ada paket baru, tidak jalan prisma, tidak commit. Catatan: penegakan ageBelowMin di server (position.minAge vs umur) belum ada di POST submit — bisa jadi tugas integrasi berikutnya bila diinginkan.
+Do not commit.
