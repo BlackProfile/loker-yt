@@ -2863,3 +2863,23 @@ Work Log:
 Stage Summary:
 - Verifikasi agent-browser :81 (?posisi=pembantu-operasional-studio, viewport 1440): lebar section Benefit = 960px = lebar #form-card = 960px (rata kiri-kanan sempurna). Mobile 390px: form mengisi container dengan inset px-4 normal (16/16). Browser errors: kosong.
 - File berubah: src/components/landing/position-detail.tsx (1 baris className).
+
+---
+Task ID: NR-32-1-FOUNDATION
+Agent: Z.ai Code (orchestrator)
+Task: Fondasi fitur "Data Diri Lengkap" (12 ide disetujui user: "semuanya") — skema, tipe, template, strings
+
+Work Log:
+- form-schema.ts: tipe field baru "currency"; whitelist FORM_AUTOCOMPLETE_KEYS (off/name/email/tel/bday/sex/street-address/organization/url); FormField + group/groupEn/autocomplete/showIf; fungsi isFieldVisible() (checkbox = cocok salah satu); core item NIK & Tanggal Lahir (CORE_ITEM_KEYS, CORE_SECTION_ITEM_KEYS.biodata, label bawaan, flag section nikEnabled/nikRequired/birthDateEnabled/birthDateRequired — bawaan MATI/opt-in); getter isNikEnabled/isNikRequired/isBirthDateEnabled/isBirthDateRequired; normalizeShowIf() (source wajib choice field di bagian sama & muncul SEBELUM — anti-lingkaran; strict utk sanitasi, toleran utk parser); parseFormSchema & sanitizeFormSchemaInput mengurai properti baru; validateFormAnswers: field tersembunyi dilewati + currency divalidasi seperti number (terima format "1.500.000"); FORM_FIELD_TYPE_LABELS.currency.
+- src/lib/form-templates.ts (BARU): 3 paket template — data-diri-lengkap (12 field bergrup Identitas/Domisili/Pendidikan/Kontak Darurat/Lainnya + enablesCore nik&birthDate), supir-operasional (SIM kondisional via showIfKey), kreator-konten; expandTemplateFields() memetakan key -> id final + showIf.
+- prisma/schema.prisma: Position.minAge Int?; Application.nik String?; Application.birthDate DateTime? -> bunx prisma db push OK + generate.
+- strings.ts: apply.dataDiri (privacyNote, dedupeWarning {title}/{date}, dedupeContinue, ageBelowMin {age}/{min}, nikInvalid) di dict ID, EN, dan tipe Dict.
+- types.ts: Position.minAge: number|null; type ApplicationDataDiri {nik, birthDate}.
+- seed.ts serializePosition: minAge: record.minAge ?? null.
+- types.ts sempat rusak (kurang tutup kurung ApplicationDataDiri) — sudah diperbaiki.
+- bunx tsc --noEmit: src/ BERSIH (sisa error hanya scripts/examples lama yang memang pre-existing).
+
+Stage Summary:
+- Fondasi siap: subagen berikutnya boleh memakai isFieldVisible, isNikEnabled/isBirthDateEnabled, FORM_TEMPLATES/expandTemplateFields, t.apply.dataDiri.*, position.minAge (sudah di tipe + serializer; PETA API public positions harap dicek di task masing-masing).
+- Kontrak submit: wizard kirim fd "nik" (16 digit) & "birthDate" (YYYY-MM-DD) — API POST /api/applications harus menyimpan ke kolom baru.
+- Kontrak dedupe: GET /api/public/dedupe?email=&phone= -> {exists, positionTitle?, createdAt?}.

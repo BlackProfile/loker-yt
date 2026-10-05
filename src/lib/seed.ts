@@ -370,6 +370,8 @@ export function serializePosition(record: PositionRecordModel): Position {
     showSocialField: record.showSocialField !== false,
     // NR-24 — kolom opsional ekspektasi gaji di wizard (null-safe utk DB lama)
     showExpectedSalary: record.showExpectedSalary !== false,
+    // NR-32 — batas umur minimum pelamar (null-safe utk DB lama)
+    minAge: record.minAge ?? null,
     customDocs: parseRequirements(record.customDocs),
     maxApplicants: record.maxApplicants,
     applyOpen: record.applyOpen !== false,
