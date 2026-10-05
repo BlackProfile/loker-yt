@@ -1014,6 +1014,18 @@ function PositionDetailViewInner({
   const isNew = isWithinDaysBack(position.createdAt, NEW_DAYS);
   const isSoon = !!position.closesAt && isWithinDaysAhead(position.closesAt, SOON_DAYS);
   const quotaFull = stats?.remainingQuota != null && stats.remainingQuota <= 0;
+  // Persentase kuota terisi (0-100, di-clamp) — dipakai bar visual Ketentuan.
+  const quotaPct =
+    stats && position.maxApplicants != null && position.maxApplicants > 0
+      ? Math.min(100, Math.max(0, Math.round((stats.applications / position.maxApplicants) * 100)))
+      : 0;
+  // Urgensi kuota: tersisa <= 20% dari maksimum (dan masih ada sisa).
+  const quotaUrgent =
+    stats != null &&
+    position.maxApplicants != null &&
+    position.maxApplicants > 0 &&
+    !quotaFull &&
+    (stats.remainingQuota ?? 0) / position.maxApplicants <= 0.2;
   // Formulir per posisi: terbuka bila formulir global aktif, kuota belum penuh,
   // DAN formulir posisi ini tidak ditutup oleh admin (applyOpen).
   const positionFormClosed = position.applyOpen === false;
@@ -1192,8 +1204,28 @@ function PositionDetailViewInner({
               </p>
             ) : null}
 
-            {/* Aksi: bagikan + salin tautan khusus lowongan */}
+            {/* Bukti sosial: jumlah view + pendaftar (pelengkap, tersembunyi bila nol) */}
+            {socialViews != null && socialViews > 0 ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5 rounded-full border bg-zinc-50/60 px-2.5 py-1 dark:bg-zinc-900/40">
+                  <Eye className="size-3.5" aria-hidden="true" />
+                  {fillTemplate(t.detail.socialProofViews, { n: socialViews })}
+                </span>
+                {stats && stats.applications > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border bg-zinc-50/60 px-2.5 py-1 dark:bg-zinc-900/40">
+                    <Users className="size-3.5" aria-hidden="true" />
+                    {fillTemplate(t.detail.socialProofApps, { n: stats.applications })}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Aksi: lamar (scroll ke formulir) + bagikan + salin tautan */}
             <div className="mt-5 flex flex-wrap items-center gap-2">
+              <Button size="sm" className="h-11 sm:h-9" onClick={() => jumpToSection("form-card")}>
+                <PenLine className="size-4" aria-hidden="true" />
+                {t.detail.ctaApply}
+              </Button>
               <Button variant="outline" size="sm" className="h-11 sm:h-9" onClick={copyLink}>
                 {copied ? (
                   <Check className="size-4 text-emerald-600" aria-hidden="true" />
@@ -1209,16 +1241,32 @@ function PositionDetailViewInner({
                 </a>
               </Button>
               <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
+                <a href={telegramShareHref(display.title, shareUrl)} target="_blank" rel="noopener noreferrer">
+                  <Send className="size-4" aria-hidden="true" />
+                  Telegram
+                </a>
+              </Button>
+              <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
                 <a href={twitterShareHref(display.title, shareUrl)} target="_blank" rel="noopener noreferrer">
                   <Link2 className="size-4" aria-hidden="true" />
                   X
+                </a>
+              </Button>
+              <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
+                <a href={linkedinShareHref(shareUrl)} target="_blank" rel="noopener noreferrer">
+                  <Linkedin className="size-4" aria-hidden="true" />
+                  LinkedIn
                 </a>
               </Button>
             </div>
 
             {position.closesAt ? (
               <div className="mt-6">
-                <DeadlineCountdown deadline={position.closesAt} variant="detail" />
+                <DeadlineCountdown
+                  deadline={position.closesAt}
+                  variant="detail"
+                  publishedAt={position.createdAt}
+                />
               </div>
             ) : null}
           </FadeIn>
@@ -1287,20 +1335,44 @@ function PositionDetailViewInner({
                   </TermRow>
                   <TermRow icon={Users} label={t.detail.termsQuota}>
                     {position.maxApplicants != null ? (
-                      <span
-                        className={cn(
-                          quotaFull && "font-medium text-rose-600 dark:text-rose-400",
-                        )}
-                      >
-                        {quotaFull
-                          ? t.detail.termsQuotaFull
-                          : stats
-                            ? fillTemplate(t.detail.termsQuotaValue, {
-                                used: stats.applications,
-                                max: position.maxApplicants,
-                                left: stats.remainingQuota ?? 0,
-                              })
-                            : position.maxApplicants}
+                      <span className="flex flex-col gap-1.5">
+                        <span
+                          className={cn(
+                            quotaUrgent && "font-medium text-rose-600 dark:text-rose-400",
+                          )}
+                        >
+                          {quotaFull
+                            ? t.detail.termsQuotaFull
+                            : stats
+                              ? quotaUrgent
+                                ? fillTemplate(t.detail.termsQuotaUrgent, {
+                                    left: stats.remainingQuota ?? 0,
+                                  })
+                                : fillTemplate(t.detail.termsQuotaValue, {
+                                    used: stats.applications,
+                                    max: position.maxApplicants,
+                                    left: stats.remainingQuota ?? 0,
+                                  })
+                              : position.maxApplicants}
+                        </span>
+                        {/* Bar kuota: terisi = gradasi rose->amber; saat tersisa
+                            <= 20% seluruh bar menjadi rose (urgensi). */}
+                        {stats && !quotaFull ? (
+                          <span
+                            aria-hidden="true"
+                            className="block h-1.5 w-44 max-w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
+                          >
+                            <span
+                              className={cn(
+                                "block h-full rounded-full",
+                                quotaUrgent
+                                  ? "bg-rose-600"
+                                  : "bg-gradient-to-r from-rose-600 to-amber-500",
+                              )}
+                              style={{ width: `${quotaPct}%` }}
+                            />
+                          </span>
+                        ) : null}
                       </span>
                     ) : (
                       <span className="text-muted-foreground">{t.detail.termsQuotaUnlimited}</span>
@@ -1326,16 +1398,7 @@ function PositionDetailViewInner({
                   ) : null}
                   {stages.length > 0 ? (
                     <TermRow icon={Workflow} label={t.detail.termsProcess}>
-                      <span className="flex flex-wrap gap-1.5">
-                        {stages.map((stage, index) => (
-                          <span
-                            key={stage}
-                            className="rounded-md bg-zinc-100 px-2 py-0.5 text-xs font-medium dark:bg-zinc-800"
-                          >
-                            {index + 1}. {stageLabel(stage)}
-                          </span>
-                        ))}
-                      </span>
+                      <ProcessTimeline stages={stages} />
                     </TermRow>
                   ) : null}
                 </Card>
@@ -1413,15 +1476,19 @@ function PositionDetailViewInner({
                 <FadeIn id="sec-benefit" className="scroll-mt-24">
                   <SectionTitle icon={Gift}>{t.detail.sectionBenefit}</SectionTitle>
                   <ul className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                    {position.benefits.map((benefit) => (
-                      <li
-                        key={benefit}
-                        className="flex items-start gap-2.5 rounded-lg border bg-zinc-50/60 p-3 text-sm dark:bg-zinc-900/40"
-                      >
-                        <Sparkles className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-                        <span>{benefit}</span>
-                      </li>
-                    ))}
+                    {position.benefits.map((benefit) => {
+                      // Ikon dipetakan otomatis dari kata kunci teks benefit.
+                      const BenefitIcon = benefitIconFor(benefit);
+                      return (
+                        <li
+                          key={benefit}
+                          className="flex items-start gap-2.5 rounded-lg border bg-zinc-50/60 p-3 text-sm dark:bg-zinc-900/40"
+                        >
+                          <BenefitIcon className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                          <span>{benefit}</span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </FadeIn>
               ) : null}
@@ -1567,10 +1634,10 @@ function PositionDetailViewInner({
               </FadeIn>
             </div>
 
-            {/* Posisi tidak bisa dilamar → lowongan serupa yang masih membuka
-                pendaftaran (sembunyi otomatis bila tidak ada kandidat). */}
-            {applyUnavailable ? (
-              <FadeIn delay={0.15}>
+            {/* Posisi lain — selalu tampil bila ada kandidat: saat lamaran tutup
+                menawarkan alternatif, saat masih buka mengajak menjelajah. */}
+            <FadeIn delay={0.15}>
+              {applyUnavailable ? (
                 <SimilarPositions
                   current={position}
                   positions={positions}
@@ -1578,11 +1645,28 @@ function PositionDetailViewInner({
                   title="Lowongan serupa"
                   description="Sementara posisi ini belum bisa dilamar, lowongan lain berikut masih membuka pendaftaran."
                 />
-              </FadeIn>
-            ) : null}
+              ) : (
+                <SimilarPositions
+                  current={position}
+                  positions={positions}
+                  onOpenPosition={openPosition}
+                  title={t.detail.similarTitle}
+                  description={t.detail.similarDesc}
+                />
+              )}
+            </FadeIn>
           </div>
         </Container>
       </main>
+
+      {/* Bar sticky job-board — muncul saat judul terlewat dari viewport */}
+      <StickyApplyBar
+        title={display.title}
+        salary={stickySalary}
+        daysLeftText={stickyDaysLeftText}
+        visible={titleOutOfView}
+        onApply={() => jumpToSection("form-card")}
+      />
 
       {/* Pil progres gerbang baca — tampil selama formulir masih terkunci */}
       {canApplyOnline && !formUnlocked && gateSections.length > 0 ? (
