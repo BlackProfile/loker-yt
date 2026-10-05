@@ -15,7 +15,7 @@ function asciiFilename(name: string): string {
   return name.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
 
@@ -44,7 +44,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "File tidak ditemukan di server" }, { status: 404 });
     }
 
-    const isInline = asset.mimeType.startsWith("audio/") || asset.mimeType.startsWith("image/");
+    // NR-36 — ?inline=1 memaksa pratinjau langsung di aplikasi (iframe dialog
+    // admin "Lihat"). Default tetap attachment agar tombol Unduh tidak berubah;
+    // audio & image memang selalu inline sejak awal.
+    const forceInline = req.nextUrl.searchParams.get("inline") === "1";
+    const isInline =
+      forceInline ||
+      asset.mimeType.startsWith("audio/") ||
+      asset.mimeType.startsWith("image/");
     const disposition = isInline ? "inline" : "attachment";
     return new Response(new Uint8Array(buffer), {
       status: 200,
