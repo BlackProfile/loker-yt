@@ -680,6 +680,14 @@ const id = {
     gateLocked: "Baca semua bagian dulu",
     gateUnlockedToast: "Formulir pendaftaran terbuka — selamat melamar!",
     gateReread: "Baca ulang persyaratan",
+    ctaApply: "Lamar Posisi Ini",
+    stickyApply: "Lamar",
+    daysLeft: "{n} hari lagi",
+    socialProofViews: "{n} kali dilihat",
+    socialProofApps: "{n} sudah mendaftar",
+    similarTitle: "Posisi lain yang mungkin cocok",
+    similarDesc: "Masih membuka pendaftaran — mungkin ada yang lebih sesuai dengan keahlianmu.",
+    termsQuotaUrgent: "Cepat — sisa {left} tempat!",
   },
   previewBanner: {
     title: "Mode Pratinjau — Anda melihat halaman seperti yang dilihat pelamar",
@@ -1277,6 +1285,14 @@ type idDictShape = {
     gateLocked: string;
     gateUnlockedToast: string;
     gateReread: string;
+    ctaApply: string;
+    stickyApply: string;
+    daysLeft: string;
+    socialProofViews: string;
+    socialProofApps: string;
+    similarTitle: string;
+    similarDesc: string;
+    termsQuotaUrgent: string;
   };
   previewBanner: {
     title: string;
@@ -1957,6 +1973,14 @@ const en: Dict = {
     gateLocked: "Read all sections first",
     gateUnlockedToast: "Application form unlocked — good luck!",
     gateReread: "Re-read requirements",
+    ctaApply: "Apply for This Position",
+    stickyApply: "Apply",
+    daysLeft: "{n} days left",
+    socialProofViews: "{n} views",
+    socialProofApps: "{n} already applied",
+    similarTitle: "Other positions you might like",
+    similarDesc: "Still open for applications — one of these might fit you better.",
+    termsQuotaUrgent: "Hurry — only {left} spots left!",
   },
   previewBanner: {
     title: "Preview Mode — You are viewing the page as applicants see it",

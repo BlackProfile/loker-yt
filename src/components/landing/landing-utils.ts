@@ -57,6 +57,16 @@ export function twitterShareHref(text: string, url: string): string {
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
 }
 
+/** Link share Telegram (user pilih channel/chat sendiri). */
+export function telegramShareHref(text: string, url: string): string {
+  return `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+}
+
+/** Link share LinkedIn (offsite share, hanya butuh URL). */
+export function linkedinShareHref(url: string): string {
+  return `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
+}
+
 /** Parse string deadline bebas dari admin menjadi Date, atau null bila gagal. */
 export function parseDeadlineDate(raw: string): Date | null {
   const text = raw.trim();
