@@ -1328,14 +1328,6 @@ export function ApplicationDetailDialog({
 
   /* ------------------------- NR-24 — nilai turunan ------------------------- */
 
-  // Fitur 2 — bintang personal milik admin yang sedang login.
-  const starred = app.starredBy?.includes(session.id) ?? false;
-
-  // Fitur 1 — posisi lamaran dalam daftar (navigasi prev/next).
-  const navTotal = list?.length ?? 0;
-  const navPosition = list ? list.findIndex((a) => a.id === app.id) : -1;
-  const navAvailable = Boolean(list && onNavigate && navPosition >= 0);
-
   // Fitur 3 — tagDefs yang belum terpasang (quick-add).
   const availableTagDefs = tagDefs.filter(
     (td) => !app.tags.some((t) => t.toLowerCase() === td.name.toLowerCase())
@@ -1820,13 +1812,6 @@ export function ApplicationDetailDialog({
 
   /* ------------------------- NR-24 — handler per pelamar ------------------------- */
 
-  // Fitur 1 — klik tombol prev/next di header.
-  function navigateBy(delta: number) {
-    if (!list || !onNavigate) return;
-    const next = list[navPosition + delta];
-    if (next) onNavigate(next);
-  }
-
   // Fitur 2 — bintang personal (optimistik, rollback saat gagal).
   async function handleToggleStar() {
     if (starBusy) return;
@@ -2237,61 +2222,41 @@ export function ApplicationDetailDialog({
       <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2 pr-6 text-lg font-bold">
-            {/* NR-24 fitur 2 — bintang personal */}
+            {/* NR-24 fitur 2 — bintang personal per admin. NR-35: hanya SATU bintang
+                (duplikat versi NR-24-b setelah badge status dihapus), tetap di depan
+                nama & kini menghormati canMutate. */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 sm:size-9"
                   onClick={() => void handleToggleStar()}
                   disabled={!canMutate || starBusy}
-                  aria-label="Tandai penting"
-                  aria-pressed={starred}
-                  className="outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-pressed={isStarred}
+                  aria-label={isStarred ? "Lepas tanda penting" : "Tandai lamaran penting"}
                 >
                   <Star
                     className={cn(
-                      "size-5 transition-colors",
-                      starred
+                      "size-4",
+                      isStarred
                         ? "fill-amber-400 text-amber-500"
-                        : "text-muted-foreground hover:text-amber-500"
+                        : "text-muted-foreground"
                     )}
                     aria-hidden="true"
                   />
-                </button>
+                </Button>
               </TooltipTrigger>
-              <TooltipContent>Tandai penting</TooltipContent>
+              <TooltipContent>
+                {isStarred ? "Bintang dilepas" : "Tandai penting (bintang pribadi)"}
+              </TooltipContent>
             </Tooltip>
             <span>{app.name}</span>
-            {/* NR-24 fitur 1 — navigasi prev/next antar lamaran dalam daftar */}
-            {navAvailable ? (
-              <span className="inline-flex items-center gap-0.5 text-xs font-normal text-muted-foreground">
-                <button
-                  type="button"
-                  onClick={() => navigateBy(-1)}
-                  disabled={navPosition <= 0}
-                  aria-label="Lamaran sebelumnya"
-                  className="inline-flex size-6 items-center justify-center rounded-md outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-40"
-                >
-                  <ChevronLeft className="size-3.5" aria-hidden="true" />
-                </button>
-                <span className="whitespace-nowrap tabular-nums">
-                  {navPosition + 1} dari {navTotal}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => navigateBy(1)}
-                  disabled={navPosition >= navTotal - 1}
-                  aria-label="Lamaran berikutnya"
-                  className="inline-flex size-6 items-center justify-center rounded-md outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-40"
-                >
-                  <ChevronRight className="size-3.5" aria-hidden="true" />
-                </button>
-              </span>
-            ) : null}
-            <StatusBadge status={app.status} />
-            {/* NR-24-b — navigasi antar lamaran (prev/next) bila prop navigasi tersedia */}
+            {/* NR-24 fitur 1 — navigasi prev/next antar lamaran. NR-35: hanya SATU
+                widget (duplikat "N dari M" versi lama dihapus); tersembunyi otomatis
+                bila daftar hanya berisi 1 lamaran. */}
             {navActive && navIds && typeof navIndex === "number" ? (
-              <span className="ml-1 inline-flex items-center gap-0.5 rounded-full border p-0.5">
+              <span className="inline-flex items-center gap-0.5 rounded-full border p-0.5">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -2323,33 +2288,7 @@ export function ApplicationDetailDialog({
                 </Button>
               </span>
             ) : null}
-            {/* NR-24-b — bintang personal per admin (klik = toggle via PATCH starred) */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-11 sm:size-9"
-                  onClick={() => void handleToggleStar()}
-                  disabled={starBusy}
-                  aria-pressed={isStarred}
-                  aria-label={isStarred ? "Lepas tanda penting" : "Tandai lamaran penting"}
-                >
-                  <Star
-                    className={cn(
-                      "size-4",
-                      isStarred
-                        ? "fill-amber-400 text-amber-500"
-                        : "text-muted-foreground"
-                    )}
-                    aria-hidden="true"
-                  />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {isStarred ? "Bintang dilepas" : "Tandai penting (bintang pribadi)"}
-              </TooltipContent>
-            </Tooltip>
+            <StatusBadge status={app.status} />
             {duplicateIds.has(app.id) ? (
               <Tooltip>
                 <TooltipTrigger asChild>
