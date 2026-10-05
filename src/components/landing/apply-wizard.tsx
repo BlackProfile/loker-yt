@@ -3454,15 +3454,18 @@ export function ApplyWizard({
                     setField("email", e.target.value);
                     clearDedupe();
                   }}
-                  onBlur={() => {
+                  onBlur={(e) => {
                     // NR-32 — cek duplikat saat email ditinggalkan (debounce 600ms).
+                    // Snapshot nilai dari event agar callback debounce tidak membaca
+                    // closure basi.
+                    const snapshot = e.currentTarget.value;
                     if (dedupeDismissedRef.current) return;
                     if (dedupeTimerRef.current !== null) {
                       window.clearTimeout(dedupeTimerRef.current);
                     }
                     dedupeTimerRef.current = window.setTimeout(() => {
                       dedupeTimerRef.current = null;
-                      checkDedupe(values.email, values.phone);
+                      checkDedupe(snapshot, values.phone);
                     }, 600);
                   }}
                   placeholder={emailPh}
@@ -3504,10 +3507,12 @@ export function ApplyWizard({
                     setField("phone", e.target.value);
                     clearDedupe();
                   }}
-                  onBlur={() => {
+                  onBlur={(e) => {
                     // NR-32 — rapikan format WA saat ditinggalkan (0812 → +62812).
-                    const normalized = normalizeWaPhone(values.phone);
-                    if (normalized !== values.phone) {
+                    // Nilai dibaca dari event (bukan closure) agar selalu segar.
+                    const current = e.currentTarget.value;
+                    const normalized = normalizeWaPhone(current);
+                    if (normalized !== current) {
                       setField("phone", normalized);
                       clearDedupe();
                     }
