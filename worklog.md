@@ -2850,3 +2850,16 @@ Stage Summary:
 - File berubah: src/components/landing/position-detail.tsx (+~200 baris: DefaultCover, ProcessTimeline, StickyApplyBar, benefitIconFor, state sticky/view/quota), deadline-countdown.tsx (urgensi + garis progres + prop publishedAt), landing-utils.ts (+2 helper share), strings.ts (+10 kunci x2 bahasa + tipe), admin/confetti.tsx (fix lint).
 - Verifikasi E2E :81 + agent-browser: cover default (Motion Graphic Designer + Gaffer on-site), CTA, 5 tombol share, sticky bar desktop & mobile (klik -> form-card top=96), garis progres countdown, bar kuota, timeline (Ditolak=nomor, bukan emerald), ikon benefit, chip bukti sosial (counter naik), posisi serupa selalu tampil, mobile 390px layak. tsc + eslint bersih (nol error seluruh proyek).
 - Semua teks baru dua bahasa ID/EN; palet zinc+rose+amber; tanpa emoji; reduced-motion dihormati (bar sticky & confetti tanpa animasi, garis progres statis).
+
+---
+Task ID: NR-31-RASTAKAN-FORM
+Agent: Z.ai Code (orchestrator)
+Task: Ratakan lebar kartu Formulir Lamaran dengan kolom konten (permintaan user + screenshot)
+
+Work Log:
+- Diagnosa: di position-detail.tsx, seksi konten (Deskripsi/Persyaratan/Ketentuan/Benefit/Karya) memakai lebar penuh Container max-w-5xl, sedangkan kartu #form-card dibungkus <div className="mx-auto w-full max-w-2xl"> (672px, di tengah) — tampak menyempit dibanding konten di atasnya.
+- Fix 1 baris: wrapper form diubah menjadi <div className="w-full"> (hapus mx-auto max-w-2xl), komentar diperbarui. Tidak ada perubahan lain — ApplyWizard/ApplyGate tidak punya max-width internal sehingga kartu kini mengikuti lebar kolom konten.
+
+Stage Summary:
+- Verifikasi agent-browser :81 (?posisi=pembantu-operasional-studio, viewport 1440): lebar section Benefit = 960px = lebar #form-card = 960px (rata kiri-kanan sempurna). Mobile 390px: form mengisi container dengan inset px-4 normal (16/16). Browser errors: kosong.
+- File berubah: src/components/landing/position-detail.tsx (1 baris className).
