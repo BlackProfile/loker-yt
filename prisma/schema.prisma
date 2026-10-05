@@ -89,6 +89,8 @@ model Position {
   applyOpen    Boolean       @default(true) // formulir lamaran posisi ini buka/tutup (dikendalikan per posisi)
   // NR-24 — kolom opsional ekspektasi gaji di wizard (bisa disembunyikan per posisi)
   showExpectedSalary Boolean @default(true)
+  // NR-32 — batas umur minimum pelamar (tahun, opsional) — peringatan halus di wizard
+  minAge      Int?
   formSchema   String? // JSON FormSchema (Form Builder) — null = mode klasik (screeningQuestions/customDocs)
 
   // Publikasi & jadwal
@@ -247,6 +249,10 @@ model Application {
   komuterPlan   String? // SIAP_KOMUTER | PERLU_RELOKASI | TIDAK
   shiftPref     String? // PAGI | SIANG | MALAM | APA_SAJA
   startDatePref String? // perkiraan kapan bisa mulai kerja
+
+  // NR-32 — data diri lengkap (terstruktur, opsional; diisi bila admin mengaktifkannya)
+  nik        String?   // NIK 16 digit — payroll/kontrak
+  birthDate  DateTime? // tanggal lahir — umur dihitung otomatis di admin
 
   // Bot Telegram — snooze & lampiran
   snoozeUntil DateTime? // bila diisi, bot mengingatkan admin pada waktu ini lalu membersihkannya
