@@ -1294,6 +1294,132 @@ function FieldEditorCard({
         </p>
       ) : null}
 
+      {/* NR-32 — pengelompokan (sub-header wizard) & hint isi-otomatis browser.
+          Berlaku untuk semua tipe; kosong = tanpa kelompok / tanpa isi-otomatis. */}
+      <div className="grid gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40 sm:grid-cols-2">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor={`group-${field.id}`} className="text-xs text-muted-foreground">
+            Kelompok (sub-header, opsional)
+          </Label>
+          <Input
+            id={`group-${field.id}`}
+            value={field.group ?? ""}
+            onChange={(e) => onChange({ group: e.target.value || undefined })}
+            maxLength={FORM_LIMITS.labelMax}
+            placeholder="cth. Kontak Darurat — kosongkan bila tanpa kelompok"
+            className="h-9"
+            disabled={!canMutate}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor={`groupEn-${field.id}`} className="text-xs text-muted-foreground">
+            Kelompok (EN)
+          </Label>
+          <Input
+            id={`groupEn-${field.id}`}
+            value={field.groupEn ?? ""}
+            onChange={(e) => onChange({ groupEn: e.target.value || undefined })}
+            maxLength={FORM_LIMITS.labelMax}
+            placeholder="cth. Emergency Contact"
+            className="h-9"
+            disabled={!canMutate}
+          />
+        </div>
+        <div className="flex flex-col gap-1 sm:col-span-2">
+          <Label htmlFor={`autocomplete-${field.id}`} className="text-xs text-muted-foreground">
+            Isi-otomatis browser
+          </Label>
+          <Select
+            value={field.autocomplete ?? "none"}
+            onValueChange={(v) => onChange({ autocomplete: v === "none" ? undefined : v })}
+            disabled={!canMutate}
+          >
+            <SelectTrigger id={`autocomplete-${field.id}`} className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Tanpa isi-otomatis</SelectItem>
+              {FORM_AUTOCOMPLETE_KEYS.map((key) => (
+                <SelectItem key={key} value={key}>
+                  {FORM_AUTOCOMPLETE_LABELS[key]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* NR-32 — tampil bersyarat: hanya pertanyaan pilihan yang bisa bergantung
+          pada pertanyaan pilihan lain DI ATASNYA (bagian sama — kontrak server). */}
+      {isChoiceType(field.type) ? (
+        <div className="flex flex-col gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+          <Label htmlFor={`showif-${field.id}`} className="text-xs text-muted-foreground">
+            Tampilkan hanya jika
+          </Label>
+          {showIfSources.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Butuh pertanyaan pilihan di atas field ini.
+            </p>
+          ) : (
+            <>
+              <Select
+                value={field.showIf?.fieldId ?? SHOWIF_ALWAYS}
+                onValueChange={(v) => {
+                  if (v === SHOWIF_ALWAYS) {
+                    onChange({ showIf: undefined });
+                    return;
+                  }
+                  // Ganti sumber: reset nilai agar opsi field lain tidak ikut tersimpan.
+                  onChange({ showIf: { fieldId: v, values: [] } });
+                }}
+                disabled={!canMutate}
+              >
+                <SelectTrigger id={`showif-${field.id}`} className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SHOWIF_ALWAYS}>Selalu tampil</SelectItem>
+                  {showIfSources.map((source) => (
+                    <SelectItem key={source.id} value={source.id}>
+                      <span className="block max-w-56 truncate">
+                        {source.label.trim() || "(tanpa judul)"}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {field.showIf && showIfSource ? (
+                <div className="flex flex-col gap-1.5 rounded-md border bg-background p-2.5">
+                  <p className="text-xs text-muted-foreground">
+                    Tampilkan bila jawaban &quot;
+                    {showIfSource.label.trim() || "pertanyaan sumber"}&quot; adalah:
+                  </p>
+                  {showIfSource.options.map((option) => (
+                    <label
+                      key={option}
+                      className="flex min-h-8 cursor-pointer items-center gap-2 text-sm"
+                    >
+                      <Checkbox
+                        checked={field.showIf?.values.includes(option) ?? false}
+                        onCheckedChange={(checked) => toggleShowIfValue(option, checked === true)}
+                        disabled={!canMutate}
+                        aria-label={`Tampilkan bila jawaban ${option}`}
+                      />
+                      <span className="truncate">{option}</span>
+                    </label>
+                  ))}
+                  {field.showIf.values.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Pilih minimal satu nilai — tanpa itu pertanyaan tidak akan tampil.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      ) : null}
+
       {/* Baris aksi field */}
       <div className="flex items-center justify-between gap-1.5 border-t pt-2">
         <div className="flex items-center gap-1.5">
@@ -1558,6 +1684,48 @@ export function FormBuilderPage({
 
   function removeField(fieldId: string) {
     setDraft((prev) => ({ ...prev, fields: prev.fields.filter((f) => f.id !== fieldId) }));
+  }
+
+  /**
+   * NR-32 — suntik paket pertanyaan dari template ke satu bagian (biodata atau
+   * kustom). ID final dibangun dari key template agar unik per posisi, dan
+   * showIf antar-field dipetakan oleh expandTemplateFields (sumber selalu
+   * sebelum field bergantung dalam urutan array). Template dengan enablesCore
+   * (Data Diri Lengkap) ikut MENYALAKAN item inti NIK & Tanggal Lahir saat
+   * diterapkan ke bagian biodata.
+   */
+  function applyTemplateToSection(sectionId: string, template: FormTemplate) {
+    const section = draft.sections.find((s) => s.id === sectionId);
+    if (!section || (section.kind !== "biodata" && section.kind !== "custom")) return;
+    const remaining = FORM_LIMITS.maxFields - draft.fields.length;
+    if (remaining <= 0) {
+      toast.error(
+        `Maksimal ${FORM_LIMITS.maxFields} pertanyaan tercapai — hapus beberapa pertanyaan dulu.`,
+      );
+      return;
+    }
+    if (template.fields.length > remaining) {
+      toast.error(
+        `Template "${template.name}" butuh ${template.fields.length} slot pertanyaan — tersisa ${remaining}. Hapus beberapa pertanyaan dulu.`,
+      );
+      return;
+    }
+    const expanded = expandTemplateFields(template, (key) => newFormId(`tpl_${key}`));
+    const enablesCore = section.kind === "biodata" ? template.enablesCore : undefined;
+    setDraft((prev) => ({
+      ...prev,
+      sections: prev.sections.map((s) =>
+        s.id === sectionId && enablesCore
+          ? {
+              ...s,
+              nikEnabled: enablesCore.nik === true ? true : s.nikEnabled,
+              birthDateEnabled: enablesCore.birthDate === true ? true : s.birthDateEnabled,
+            }
+          : s,
+      ),
+      fields: [...prev.fields, ...expanded.map((f) => ({ ...f, sectionId }))],
+    }));
+    toast.success(`${expanded.length} pertanyaan ditambahkan dari template "${template.name}".`);
   }
 
   /* ---------------------------------- Simpan ---------------------------------- */
@@ -1931,6 +2099,7 @@ export function FormBuilderPage({
                     onFieldDuplicate={duplicateField}
                     onFieldRemove={removeField}
                     onAddField={() => addField(section.id)}
+                    onApplyTemplate={(template) => applyTemplateToSection(section.id, template)}
                   />
                 </Reveal>
               ))}

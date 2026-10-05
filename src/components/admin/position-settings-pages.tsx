@@ -257,6 +257,8 @@ type IntakeState = {
   showSocialField: boolean;
   // NR-24 — kolom opsional ekspektasi gaji di formulir lamaran
   showExpectedSalary: boolean;
+  // NR-32 — batas umur minimum pelamar (string agar bisa dikosongkan = tanpa batas)
+  minAge: string;
 };
 
 function buildIntakeState(p: Position): IntakeState {
@@ -275,6 +277,7 @@ function buildIntakeState(p: Position): IntakeState {
     showPortfolioField: p.showPortfolioField !== false,
     showSocialField: p.showSocialField !== false,
     showExpectedSalary: p.showExpectedSalary !== false, // NR-24 — default true
+    minAge: p.minAge == null ? "" : String(p.minAge), // NR-32 — kosong = tanpa batas
   };
 }
 
@@ -352,6 +355,11 @@ export function PositionIntakePage({
           )
             errors.push("Kuota pelamar harus angka bulat 1-10000, atau dikosongkan.");
         }
+        // NR-32 — umur minimum: kosong = tanpa batas; terisi = bulat 0-70.
+        if (form.minAge.trim() !== "") {
+          if (!isInt(form.minAge) || Number(form.minAge) < 0 || Number(form.minAge) > 70)
+            errors.push("Umur minimum pelamar harus angka bulat 0-70, atau dikosongkan.");
+        }
         return errors;
       }}
       buildPayload={() => {
@@ -365,6 +373,13 @@ export function PositionIntakePage({
           customDocs: customDocs.map((d) => d.trim()).filter(Boolean),
         };
         if (form.order.trim() !== "") payload.order = Number(form.order);
+        // NR-32 — batas umur minimum pelamar; kosong = null (tanpa batas).
+        // Pelamar di bawah umur tetap bisa mendaftar — wizard hanya menampilkan
+        // peringatan halus, jadi nilai dikirim untuk SEMUA mode formulir.
+        payload.minAge =
+          form.minAge.trim() === ""
+            ? null
+            : Math.max(0, Math.min(70, Math.round(Number(form.minAge))));
         if (!schemaActive) {
           payload.requireCv = form.requireCv;
           payload.requireIntro = form.requireIntro;
@@ -503,6 +518,35 @@ export function PositionIntakePage({
           />
           <p className="text-xs text-muted-foreground">
             Posisi otomatis berhenti menerima lamaran saat kuota penuh.
+          </p>
+        </div>
+      </FormSection>
+
+      {/* NR-32 — batas umur minimum: peringatan halus di wizard, bukan blokir.
+          Berlaku untuk semua mode formulir (klasik maupun Form Builder). */}
+      <FormSection
+        id="umur"
+        icon={UserCheck}
+        title="Umur Minimum Pelamar"
+        hint="Batas umur opsional dengan peringatan halus — tanpa pemblokiran."
+        hasError={hasErr("umur")}
+      >
+        <div className="flex flex-col gap-1.5 sm:max-w-56">
+          <Label htmlFor="pos-minAge">Umur minimum pelamar (tahun)</Label>
+          <Input
+            id="pos-minAge"
+            type="number"
+            min={0}
+            max={70}
+            step={1}
+            value={form.minAge}
+            onChange={(e) => set("minAge", e.target.value)}
+            placeholder="Tanpa batas"
+            className="h-10"
+          />
+          <p className="text-xs text-muted-foreground">
+            Kosongkan bila tanpa batas. Pelamar di bawah umur ini tetap bisa
+            mendaftar — wizard hanya menampilkan peringatan halus.
           </p>
         </div>
       </FormSection>
