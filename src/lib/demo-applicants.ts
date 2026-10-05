@@ -32,7 +32,7 @@ import {
   type FormAnswerValue,
   type FormField,
 } from "@/lib/form-schema";
-import { APPLICATION_SOURCES, KOMUTER_PLANS, SHIFT_PREFS } from "@/lib/types";
+import { KOMUTER_PLANS, SHIFT_PREFS } from "@/lib/types";
 import { startBackgroundProcessing } from "@/lib/processing";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
