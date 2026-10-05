@@ -489,6 +489,7 @@ function SectionCard({
   onFieldDuplicate,
   onFieldRemove,
   onAddField,
+  onApplyTemplate,
 }: {
   section: FormSection;
   index: number;
