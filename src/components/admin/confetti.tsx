@@ -6,7 +6,7 @@
 // prefers-reduced-motion (langsung tidak merender apa pun) dan tanpa emoji.
 // Warna mengikuti palet aplikasi: rose, amber, emerald, orange, zinc.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
 const COLORS = [
@@ -25,14 +25,25 @@ export function AdminConfetti({ fire }: { fire: boolean }) {
   const reduced = useReducedMotion();
   const [burstId, setBurstId] = useState(0);
   const [visible, setVisible] = useState(false);
+  // Pantulkan perubahan prop `fire` ke state SAAT RENDER (pola resmi React
+  // "adjust state when a prop changes") — bukan di dalam effect, agar aman
+  // dari aturan react-hooks/set-state-in-effect.
+  const lastFireRef = useRef(fire);
+  if (fire !== lastFireRef.current) {
+    lastFireRef.current = fire;
+    if (fire && !reduced) {
+      setBurstId((n) => n + 1);
+      setVisible(true);
+    }
+  }
 
+  // Sembunyikan otomatis ~2.6 dtk setelah tiap burst (setState dipanggil dari
+  // callback timeout, bukan langsung di badan effect).
   useEffect(() => {
-    if (!fire || reduced) return;
-    setBurstId((n) => n + 1);
-    setVisible(true);
+    if (!visible) return;
     const t = setTimeout(() => setVisible(false), 2600);
     return () => clearTimeout(t);
-  }, [fire, reduced]);
+  }, [visible, burstId]);
 
   const particles = useMemo(() => {
     if (!visible || reduced) return [];
