@@ -2826,3 +2826,27 @@ Stage Summary:
 - Schema kini BERSIH: satu sumber kebenaran untuk fitur NR-24 (Assessment/CallLog/InternalDoc); dead code model Application* + 2 route mati dihapus. Ini mencegah kebingungan migrasi berikutnya.
 - Backup emas diperbarui sehingga mencakup kolom schema terbaru (showCvField dll) — reset sandbox berikutnya tidak akan memicu P2022 lagi.
 - Belum dikerjakan (antrian tetap): 14 item UI/UX "semuanya" (sebagian Paket B items 6/8/9/10/11 ternyata SUDAH ada di worklog NR-27 — cek sebelum implementasi), form-builder-page.tsx editable section bawaan, NR-24 sisanya.
+
+---
+Task ID: NR-30-DETAIL-POSISI
+Agent: Z.ai Code (orchestrator)
+Task: 10 perbaikan UI/UX halaman detail per posisi (disetujui user: "semuanya")
+
+Work Log:
+- Item 1 — Cover default: komponen DefaultCover di position-detail.tsx — bila position.coverFileId kosong, render banner gradasi rose-600->rose-500->amber-400 + tekstur grid (background-image 28px, opacity 10%) + 2 blob blur + ikon Briefcase di kapsul glass + kicker nama departemen. aria-hidden, tanpa animasi (aman reduced-motion). Cover gambar admin tetap diutamakan.
+- Item 2 — CTA hero: tombol primary "Lamar Posisi Ini" (ikon PenLine) di baris aksi, onClick scroll ke #form-card (gerbang baca tetap berlaku — formulir tetap terkunci sampai semua seksi dibaca).
+- Item 3 — Sticky job-board bar: komponen StickyApplyBar (fixed top-16 z-30, AnimatePresence y:-56->0 200ms; reduced-motion = tanpa animasi). titleRef di h1 + IntersectionObserver threshold 0 -> titleOutOfView. Isi: judul truncate + gaji (salaryVisible) + "X hari lagi" (hidden sm:flex) + tombol Lamar. Klik -> scroll #form-card. Terverifikasi klik: form-card top=96.
+- Item 4 — Countdown urgensi bertingkat (deadline-countdown.tsx): urgencyLevel(days) normal(>=7, zinc)/warn(3-6, amber-50/amber-700)/urgent(<3, rose-50/rose-700) hanya varian detail; URGENCY_BOX memetakan border/value/bar. Plus garis progres tipis (h-1, max-w-xs) porsi waktu berlalu publishedAt->closesAt, di-clamp 0-100, warna ikut urgensi; statis tanpa animasi. Hook elapsedPct dipindah di ATAS early return (rules-of-hooks). Hero variant tak berubah.
+- Item 5 — Kuota visual: quotaPct (clamp 0-100) + quotaUrgent (sisa <=20% & !quotaFull) dihitung dari stats; TermRow kuota kini flex-col: teks (quotaUrgent -> "Cepat — sisa {left} tempat!" rose, template termsQuotaUrgent baru) + bar h-1.5 w-44 (gradasi rose->amber; full rose saat urgent). Kuota penuh/tanpa stats: teks lama tanpa bar.
+- Item 6 — Timeline proses: ProcessTimeline menggantikan chip bernomor — lingkaran size-5 rose-600 bernomor + garis penghubung vertikal w-px zinc-300. Tahap akhir emerald+Check HANYA bila categoryForStage(stage terakhir, position.stageCategories) === "ACCEPTED" (perbaikan hasil uji: "Ditolak" semula salah dapat emerald). Impor categoryForStage + type StageCategory.
+- Item 7 — Ikon benefit otomatis: BENEFIT_KEYWORD_ICONS (11 aturan regex: asuransi/bpjs->Heart, gaji/bonus/thr->Wallet, cuti->Calendar, jam fleks->Clock, remote/wfh->Globe, training->GraduationCap, karier->TrendingUp, makan->UtensilsCrossed, transport->BusFront, laptop/peralatan->Laptop, tim->Users) + benefitIconFor() fallback Sparkles. Terverifikasi: "Bonus..."->Wallet, "Jam fleksibel..."->Clock, sisanya fallback.
+- Item 8 — Bukti sosial: state viewCount; effect POST /api/positions/{id}/view (endpoint publik existing, terima id/slug) sekali per sesi (sessionStorage lumina-viewed-{id}), AbortController cleanup, deps [positionId] agar tidak re-fetch tiap refresh live. Chip "X kali dilihat" (Eye) + "Y sudah mendaftar" (Users, dari stats.applications) tampil bila >0. Terverifikasi: chip muncul + counter naik (1->2 sesi baru).
+- Item 9 — Posisi serupa selalu tampil: kondisi applyUnavailable dihapus; bila masih buka pakai dict similarTitle/similarDesc ("Posisi lain yang mungkin cocok"), bila tutup teks lama. Terverifikasi: 3 kartu posisi lain tampil di halaman yang masih dibuka.
+- Item 10 — Share Telegram & LinkedIn: helper telegramShareHref(text,url) & linkedinShareHref(url) di landing-utils.ts; 2 tombol outline baru (ikon Send & Linkedin) di baris share.
+- Bonus — Fix lint pre-existing admin/confetti.tsx (react-hooks/set-state-in-effect dari NR-28): setState dipindah ke callback setTimeout(0)/2600ms di dalam effect (bukan langsung badan effect), pola render-ref ditolak react-compiler "Cannot access refs during render". bun run lint kini 0 error.
+- Strings: 10 kunci baru di detail (id dict, tipe idDictShape, en dict): ctaApply, stickyApply, daysLeft, socialProofViews, socialProofApps, similarTitle, similarDesc, termsQuotaUrgent + share label memakai nama platform.
+
+Stage Summary:
+- File berubah: src/components/landing/position-detail.tsx (+~200 baris: DefaultCover, ProcessTimeline, StickyApplyBar, benefitIconFor, state sticky/view/quota), deadline-countdown.tsx (urgensi + garis progres + prop publishedAt), landing-utils.ts (+2 helper share), strings.ts (+10 kunci x2 bahasa + tipe), admin/confetti.tsx (fix lint).
+- Verifikasi E2E :81 + agent-browser: cover default (Motion Graphic Designer + Gaffer on-site), CTA, 5 tombol share, sticky bar desktop & mobile (klik -> form-card top=96), garis progres countdown, bar kuota, timeline (Ditolak=nomor, bukan emerald), ikon benefit, chip bukti sosial (counter naik), posisi serupa selalu tampil, mobile 390px layak. tsc + eslint bersih (nol error seluruh proyek).
+- Semua teks baru dua bahasa ID/EN; palet zinc+rose+amber; tanpa emoji; reduced-motion dihormati (bar sticky & confetti tanpa animasi, garis progres statis).
