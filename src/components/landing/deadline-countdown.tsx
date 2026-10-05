@@ -102,6 +102,18 @@ export function DeadlineCountdown({
     return () => window.clearInterval(timer);
   }, [isFuture, targetMs]);
 
+  // Garis progres waktu: porsi waktu yang sudah berlalu sejak posisi
+  // dipublikasikan sampai tutup (0-100%, di-clamp). Tanpa tanggal publikasi
+  // yang valid, garis tidak digambar. (Hook di atas early return agar urutan
+  // hook tetap konsisten antar render.)
+  const elapsedPct = useMemo(() => {
+    if (!isDetail) return null;
+    const startMs = publishedAt ? new Date(publishedAt).getTime() : NaN;
+    if (!Number.isFinite(startMs) || targetMs <= 0 || startMs >= targetMs) return null;
+    const pct = ((now - startMs) / (targetMs - startMs)) * 100;
+    return Math.min(100, Math.max(0, pct));
+  }, [isDetail, publishedAt, targetMs, now]);
+
   // Belum mount (hindari mismatch hidrasi), gagal parse, atau sudah lewat:
   // tampilkan baris teks deadline.
   if (!mounted || !target || targetMs <= now) {
@@ -126,17 +138,6 @@ export function DeadlineCountdown({
     { value: pad(parts.minutes), label: t.hero.countdown.minutes, pulse: false },
     { value: pad(parts.seconds), label: t.hero.countdown.seconds, pulse: true },
   ];
-
-  // Garis progres waktu: porsi waktu yang sudah berlalu sejak posisi
-  // dipublikasikan sampai tutup (0-100%, di-clamp). Tanpa tanggal publikasi
-  // yang valid, garis tidak digambar.
-  const elapsedPct = useMemo(() => {
-    if (!isDetail) return null;
-    const startMs = publishedAt ? new Date(publishedAt).getTime() : NaN;
-    if (!Number.isFinite(startMs) || startMs >= targetMs) return null;
-    const pct = ((now - startMs) / (targetMs - startMs)) * 100;
-    return Math.min(100, Math.max(0, pct));
-  }, [isDetail, publishedAt, targetMs, now]);
 
   return (
     <div className="mt-6">
