@@ -467,6 +467,8 @@ function FormFieldRenderer({
   const errorId = `${anchorId}-error`;
   const label = formFieldLabel(field, lang);
   const [fileDragging, setFileDragging] = useState(false);
+  // NR-36 — pratinjau berkas field form langsung di aplikasi sebelum dikirim.
+  const [viewOpen, setViewOpen] = useState(false);
 
   const textValue = typeof value === "string" ? value : "";
   const inputAria = {
@@ -888,6 +890,16 @@ function FormFieldRenderer({
                   variant="ghost"
                   size="sm"
                   className="h-8 gap-1.5 text-xs text-muted-foreground"
+                  onClick={() => setViewOpen(true)}
+                >
+                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                  {t.apply.uploads.view}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-muted-foreground"
                   onClick={() => document.getElementById(`${anchorId}-input`)?.click()}
                 >
                   {t.apply.formSection.fileChange}
@@ -905,6 +917,8 @@ function FormFieldRenderer({
               </div>
             </div>
           ) : null}
+          {/* NR-36 — dialog pratinjau berkas lokal (blob:) untuk field form */}
+          <LocalFileViewerDialog file={file} open={viewOpen} onOpenChange={setViewOpen} />
         </div>
       );
       break;
@@ -1398,6 +1412,9 @@ export function ApplyWizard({
   const [cvDragging, setCvDragging] = useState(false);
   const [introDragging, setIntroDragging] = useState(false);
   const [extraDraggingIdx, setExtraDraggingIdx] = useState<number | null>(null);
+  // NR-36 — berkas yang sedang dipratinjau pelamar via LocalFileViewerDialog
+  // (CV / audio intro / dokumen tambahan di langkah Berkas & Pratinjau).
+  const [viewerFile, setViewerFile] = useState<File | null>(null);
 
   // Draft autosave.
   const [draft, setDraft] = useState<StoredDraft | null>(null);
