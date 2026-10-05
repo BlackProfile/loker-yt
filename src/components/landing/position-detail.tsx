@@ -8,7 +8,8 @@
 // Data hidup: komponen menerima positions dari useLiveResource (realtime),
 // sehingga posisi yang baru ditutup/diarsip otomatis keluar dari tampilan.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,6 +17,8 @@ import {
   BellRing,
   BookOpenCheck,
   Briefcase,
+  BusFront,
+  Calendar,
   CalendarClock,
   Check,
   Circle,
@@ -23,23 +26,33 @@ import {
   Clock,
   Copy,
   ExternalLink,
+  Eye,
   FileText,
   Flame,
   Gift,
   Globe,
+  GraduationCap,
+  Heart,
+  Laptop,
   Link2,
+  Linkedin,
   ListChecks,
   Loader2,
   Lock,
   Mail,
   MapPin,
   MessageCircle,
+  PenLine,
   Phone,
   Pin,
+  Send,
   Sparkles,
+  TrendingUp,
   Users,
+  UtensilsCrossed,
   Wallet,
   Workflow,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import type {
@@ -68,7 +81,9 @@ import {
   instagramHref,
   isWithinDaysAhead,
   isWithinDaysBack,
+  linkedinShareHref,
   safeExternalUrl,
+  telegramShareHref,
   twitterShareHref,
   waShareHref,
   whatsappHref,
@@ -90,6 +105,31 @@ import { stageLabel, stagesForPosition } from "@/lib/stages";
 
 const SOON_DAYS = 3;
 const NEW_DAYS = 7;
+
+// ---------------------------------------------------------------------------
+// Ikon benefit otomatis: petakan kata kunci pada teks benefit -> ikon lucide
+// (fallback Sparkles). Urutan penting: aturan paling spesifik dipasang dulu.
+// ---------------------------------------------------------------------------
+const BENEFIT_KEYWORD_ICONS: [RegExp, LucideIcon][] = [
+  [/asuransi|bpjs|kesehatan|insurance|medis|mcu/i, Heart],
+  [/gaji|salary|upah|tunjangan|bonus|thr|insentif/i, Wallet],
+  [/cuti|libur|leave|holiday|lifo/i, Calendar],
+  [/jam\s|jam fleks|flexi|fleksibel|waktu kerja|hours/i, Clock],
+  [/remote|wfh|dari mana saja|kerja jarak jauh/i, Globe],
+  [/training|pelatihan|kursus|workshop|mentoring|kelas/i, GraduationCap],
+  [/karier|karir|jenjang|promosi|career|growth|pengembangan/i, TrendingUp],
+  [/makan|meal|lunch|catering|snack/i, UtensilsCrossed],
+  [/transport|parkir|bensin|commuter|operasional/i, BusFront],
+  [/laptop|peralatan|perangkat|alat kerja|equipment|gear/i, Laptop],
+  [/tim|team|komunitas|community|kolaborasi/i, Users],
+];
+
+function benefitIconFor(text: string): LucideIcon {
+  for (const [pattern, icon] of BENEFIT_KEYWORD_ICONS) {
+    if (pattern.test(text)) return icon;
+  }
+  return Sparkles;
+}
 
 function SectionTitle({
   icon: Icon,

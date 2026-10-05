@@ -32,14 +32,51 @@ function diffParts(targetMs: number, nowMs: number): Remaining {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
+/**
+ * Tingkat urgensi deadline (varian detail): makin dekat tanggal tutup, makin
+ * hangat warnanya (zinc -> amber -> rose). Ambang: >=7 hari netral, 3-6 hari
+ * siaga, <3 hari urgen — selaras dengan badge "Segera Ditutup" (SOON_DAYS).
+ */
+function urgencyLevel(daysLeft: number): "normal" | "warn" | "urgent" {
+  if (daysLeft < 3) return "urgent";
+  if (daysLeft < 7) return "warn";
+  return "normal";
+}
+
+// Kelas warna per tingkat urgensi — dipakai kotak angka & garis progres.
+const URGENCY_BOX: Record<
+  "normal" | "warn" | "urgent",
+  { border: string; value: string; bar: string }
+> = {
+  normal: {
+    border: "border-border bg-muted/60",
+    value: "text-foreground",
+    bar: "bg-zinc-400 dark:bg-zinc-600",
+  },
+  warn: {
+    border: "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40",
+    value: "text-amber-700 dark:text-amber-400",
+    bar: "bg-amber-500",
+  },
+  urgent: {
+    border: "border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40",
+    value: "text-rose-700 dark:text-rose-400",
+    bar: "bg-rose-600",
+  },
+};
+
 // Variant "hero" = latar gelap permanen (hero landing); "detail" = mengikuti
-// tema halaman detail posisi (terang/gelap).
+// tema halaman detail posisi (terang/gelap) + warna urgensi bertingkat.
+// `publishedAt` opsional — bila diberikan, digambar garis progres tipis
+// "waktu tersisa" dari tanggal publikasi ke tanggal tutup.
 export function DeadlineCountdown({
   deadline,
   variant = "hero",
+  publishedAt,
 }: {
   deadline: string;
   variant?: "hero" | "detail";
+  publishedAt?: string;
 }) {
   const { t } = useLang();
   const mounted = useMounted();
@@ -81,12 +118,25 @@ export function DeadlineCountdown({
   }
 
   const parts = diffParts(targetMs, now);
+  const urgency = isDetail ? urgencyLevel(parts.days) : "normal";
+  const boxTone = URGENCY_BOX[urgency];
   const boxes = [
     { value: pad(parts.days), label: t.hero.countdown.days, pulse: false },
     { value: pad(parts.hours), label: t.hero.countdown.hours, pulse: false },
     { value: pad(parts.minutes), label: t.hero.countdown.minutes, pulse: false },
     { value: pad(parts.seconds), label: t.hero.countdown.seconds, pulse: true },
   ];
+
+  // Garis progres waktu: porsi waktu yang sudah berlalu sejak posisi
+  // dipublikasikan sampai tutup (0-100%, di-clamp). Tanpa tanggal publikasi
+  // yang valid, garis tidak digambar.
+  const elapsedPct = useMemo(() => {
+    if (!isDetail) return null;
+    const startMs = publishedAt ? new Date(publishedAt).getTime() : NaN;
+    if (!Number.isFinite(startMs) || startMs >= targetMs) return null;
+    const pct = ((now - startMs) / (targetMs - startMs)) * 100;
+    return Math.min(100, Math.max(0, pct));
+  }, [isDetail, publishedAt, targetMs, now]);
 
   return (
     <div className="mt-6">
@@ -106,8 +156,8 @@ export function DeadlineCountdown({
         {boxes.map((box) => (
           <div
             key={box.label}
-            className={`min-w-16 rounded-xl border px-3 py-2.5 text-center sm:min-w-20 sm:px-4 ${
-              isDetail ? "border-border bg-muted/60" : "border-white/10 bg-white/5 backdrop-blur-sm"
+            className={`min-w-16 rounded-xl border px-3 py-2.5 text-center transition-colors sm:min-w-20 sm:px-4 ${
+              isDetail ? boxTone.border : "border-white/10 bg-white/5 backdrop-blur-sm"
             }`}
           >
             {box.pulse && !reduce ? (
@@ -119,7 +169,7 @@ export function DeadlineCountdown({
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ duration: 0.3, ease: "easeOut" }}
                 className={`text-2xl font-bold tabular-nums sm:text-3xl ${
-                  isDetail ? "text-foreground" : "text-zinc-50"
+                  isDetail ? boxTone.value : "text-zinc-50"
                 }`}
               >
                 {box.value}
@@ -127,7 +177,7 @@ export function DeadlineCountdown({
             ) : (
               <p
                 className={`text-2xl font-bold tabular-nums sm:text-3xl ${
-                  isDetail ? "text-foreground" : "text-zinc-50"
+                  isDetail ? boxTone.value : "text-zinc-50"
                 }`}
               >
                 {box.value}
@@ -143,6 +193,19 @@ export function DeadlineCountdown({
           </div>
         ))}
       </div>
+      {elapsedPct !== null ? (
+        // Garis tipis "waktu tersisa": bagian berwarna = waktu yang sudah lewat.
+        // Hiasan statis (tanpa animasi) — aman untuk prefers-reduced-motion.
+        <div
+          aria-hidden="true"
+          className="mt-3 h-1 w-full max-w-xs overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
+        >
+          <div
+            className={`h-full rounded-full ${boxTone.bar} transition-[width] duration-1000 ease-linear`}
+            style={{ width: `${elapsedPct}%` }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
