@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
@@ -363,18 +363,19 @@ function LocalFileViewerDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useLang();
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
-  // Buat URL objek saat dialog dibuka & cabut otomatis saat ditutup/ganti file.
-  useEffect(() => {
-    if (!open || !file) {
-      setObjectUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setObjectUrl(url);
-    return () => URL.revokeObjectURL(url);
+  // URL objek lokal dibuat saat dialog terbuka (blob:) dan dicabut otomatis
+  // oleh cleanup saat berganti berkas / ditutup / komponen unmount.
+  const objectUrl = useMemo(() => {
+    if (!open || !file) return null;
+    return URL.createObjectURL(file);
   }, [file, open]);
+
+  useEffect(() => {
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [objectUrl]);
 
   const kind: LocalPreviewKind = file ? localPreviewKind(file) : "unsupported";
 
@@ -398,7 +399,6 @@ function LocalFileViewerDialog({
               className="h-[65vh] w-full rounded-lg border bg-background"
             />
           ) : kind === "image" ? (
-            // eslint-disable-next-line @next/next/no-img-element -- blob lokal, bukan aset Next
             <img
               src={objectUrl}
               alt={file.name}

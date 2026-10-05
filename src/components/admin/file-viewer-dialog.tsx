@@ -107,32 +107,29 @@ export function AdminFileViewerDialog({
   filename?: string | null;
   mimeType?: string | null;
 }) {
-  const [detectedMime, setDetectedMime] = useState<string | null>(null);
-  const [detecting, setDetecting] = useState(false);
+  // Hasil deteksi HEAD di-cache per fileId (tanpa setState sinkron di effect).
+  const [mimeByKey, setMimeByKey] = useState<Record<string, string>>({});
 
-  // Deteksi content-type tiap kali dialog dibuka / berkas berganti.
   useEffect(() => {
     if (!open || !fileId || mimeType) return;
+    if (mimeByKey[fileId] !== undefined) return;
     let cancelled = false;
-    setDetectedMime(null);
-    setDetecting(true);
     fetch(`/api/files/${encodeURIComponent(fileId)}?inline=1`, { method: "HEAD" })
       .then((res) => {
         if (cancelled) return;
-        setDetectedMime(res.headers.get("content-type") ?? "");
+        const ct = res.headers.get("content-type") ?? "";
+        setMimeByKey((prev) => ({ ...prev, [fileId]: ct }));
       })
       .catch(() => {
-        if (!cancelled) setDetectedMime("");
-      })
-      .finally(() => {
-        if (!cancelled) setDetecting(false);
+        if (!cancelled) setMimeByKey((prev) => ({ ...prev, [fileId]: "" }));
       });
     return () => {
       cancelled = true;
     };
-  }, [fileId, mimeType, open]);
+  }, [fileId, mimeType, open, mimeByKey]);
 
-  const effectiveMime = mimeType || detectedMime || "";
+  const detecting = open && !mimeType && mimeByKey[fileId] === undefined;
+  const effectiveMime = mimeType || mimeByKey[fileId] || "";
   const kind: AdminPreviewKind = effectiveMime
     ? kindFromMime(effectiveMime)
     : kindFromName(filename ?? "");
@@ -165,7 +162,6 @@ export function AdminFileViewerDialog({
               className="h-[65vh] w-full rounded-lg border bg-background"
             />
           ) : kind === "image" ? (
-            // eslint-disable-next-line @next/next/no-img-element -- konten dinamis milik admin (blob server), bukan aset statis Next
             <img
               key={fileId}
               src={inlineUrl}
