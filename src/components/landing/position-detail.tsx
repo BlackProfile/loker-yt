@@ -565,6 +565,134 @@ function SimilarPositions({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Cover default: bila admin tidak mengunggah gambar sampul, halaman tetap
+// punya pembuka berwarna — gradasi rose->amber + tekstur grid + ikon
+// departemen. Murni dekoratif (aria-hidden), tanpa animasi (aman reduced motion).
+// ---------------------------------------------------------------------------
+function DefaultCover({ department }: { department: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      className="relative h-44 w-full overflow-hidden rounded-2xl border bg-gradient-to-br from-rose-600 via-rose-500 to-amber-400 shadow-sm md:h-64"
+    >
+      {/* Tekstur grid halus */}
+      <div className="absolute inset-0 opacity-10 [background-image:linear-gradient(to_right,white_1px,transparent_1px),linear-gradient(to_bottom,white_1px,transparent_1px)] [background-size:28px_28px]" />
+      {/* Blob cahaya lembut */}
+      <div className="absolute -right-10 -top-16 size-56 rounded-full bg-white/15 blur-2xl" />
+      <div className="absolute -bottom-24 left-1/4 size-64 rounded-full bg-amber-200/25 blur-3xl" />
+      {/* Ikon departemen di tengah */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="flex size-20 items-center justify-center rounded-3xl bg-white/15 ring-1 ring-white/30 backdrop-blur-sm md:size-24">
+          <Briefcase className="size-10 text-white md:size-12" />
+        </span>
+      </div>
+      {/* Kicker departemen */}
+      <span className="absolute bottom-4 left-4 rounded-full bg-black/20 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-white backdrop-blur-sm md:bottom-6 md:left-6">
+        {department}
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Timeline alur seleksi: lingkaran bernomor + garis penghubung vertikal,
+// pengganti chip "1. X 2. Y" agar proses terbaca sekilas sebagai alur.
+// ---------------------------------------------------------------------------
+function ProcessTimeline({ stages }: { stages: string[] }) {
+  return (
+    <ol className="flex flex-col">
+      {stages.map((stage, index) => (
+        <li key={stage} className="flex gap-2.5">
+          <div className="flex flex-col items-center">
+            <span
+              className={cn(
+                "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
+                index === stages.length - 1
+                  ? "bg-emerald-600 text-white"
+                  : "bg-rose-600 text-white",
+              )}
+            >
+              {index === stages.length - 1 ? (
+                <Check className="size-3" aria-hidden="true" />
+              ) : (
+                index + 1
+              )}
+            </span>
+            {index < stages.length - 1 ? (
+              <span
+                aria-hidden="true"
+                className="my-0.5 w-px flex-1 bg-zinc-300 dark:bg-zinc-700"
+              />
+            ) : null}
+          </div>
+          <span className="pb-3 text-sm leading-5">{stageLabel(stage)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bar sticky ala job-board: muncul saat judul posisi terlewat dari viewport
+// (scroll melewati hero) — judul + gaji + sisa hari + tombol Lamar. Hilang
+// lagi saat kembali ke atas. Di mobile ditampilkan ringkas (judul + tombol).
+// ---------------------------------------------------------------------------
+function StickyApplyBar({
+  title,
+  salary,
+  daysLeftText,
+  visible,
+  onApply,
+}: {
+  title: string;
+  salary: string | null;
+  daysLeftText: string | null;
+  visible: boolean;
+  onApply: () => void;
+}) {
+  const { t } = useLang();
+  const reduce = useReducedMotion();
+
+  return (
+    <AnimatePresence>
+      {visible ? (
+        <motion.div
+          initial={reduce ? false : { y: -56, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={reduce ? undefined : { y: -56, opacity: 0 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+          className="fixed inset-x-0 top-16 z-30 border-b bg-background/85 backdrop-blur"
+        >
+          <Container className="flex h-14 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <p className="min-w-0 truncate text-sm font-semibold">{title}</p>
+              <span className="hidden shrink-0 items-center gap-3 sm:flex">
+                {salary ? (
+                  <span className="flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                    <Wallet className="size-3.5" aria-hidden="true" />
+                    {salary}
+                  </span>
+                ) : null}
+                {daysLeftText ? (
+                  <span className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+                    <CalendarClock className="size-3.5" aria-hidden="true" />
+                    {daysLeftText}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+            <Button size="sm" className="h-9 shrink-0" onClick={onApply}>
+              <PenLine className="size-4" aria-hidden="true" />
+              {t.detail.stickyApply}
+            </Button>
+          </Container>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
 export function PositionDetailView(
   props: {
     slug: string;
@@ -760,6 +888,69 @@ function PositionDetailViewInner({
     }
   };
 
+  // --- Bar sticky job-board: tampil saat judul posisi keluar dari viewport ---
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  const [titleOutOfView, setTitleOutOfView] = useState(false);
+  useEffect(() => {
+    const el = titleRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => setTitleOutOfView(!entries[0]?.isIntersecting),
+      { threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [position?.id]);
+
+  // --- Bukti sosial: catat 1 view per sesi per posisi (endpoint publik) ---
+  const positionId = position?.id ?? null;
+  const [viewCount, setViewCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!positionId) return;
+    setViewCount(null);
+    let key: string | null = null;
+    try {
+      key = `lumina-viewed-${positionId}`;
+      if (window.sessionStorage.getItem(key)) return; // sudah terhitat sesi ini
+    } catch {
+      key = null; // sessionStorage tidak tersedia — tetap kirim, tanpa dedupe
+    }
+    const controller = new AbortController();
+    fetch(`/api/positions/${positionId}/view`, { method: "POST", signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { ok?: boolean; views?: number } | null) => {
+        if (data?.ok && typeof data.views === "number") {
+          setViewCount(data.views);
+          if (key) {
+            try {
+              window.sessionStorage.setItem(key, "1");
+            } catch {
+              /* abaikan */
+            }
+          }
+        }
+      })
+      .catch(() => {
+        /* gagal diam — bukti sosial bersifat pelengkap */
+      });
+    return () => controller.abort();
+  }, [positionId]);
+
+  const socialViews = viewCount ?? position?.views ?? null;
+
+  // --- Bar sticky: teks sisa hari (>= 0 hari, dari closesAt) ---
+  const stickyDaysLeftText = useMemo(() => {
+    if (!position?.closesAt) return null;
+    const diff = new Date(position.closesAt).getTime() - Date.now();
+    if (diff <= 0) return null;
+    const days = Math.floor(diff / 86400000);
+    return fillTemplate(t.detail.daysLeft, { n: days });
+  }, [position?.closesAt, t]);
+
+  // Gaji untuk bar sticky (hanya bila admin menampilkannya)
+  const stickySalary =
+    position?.salaryVisible && position?.salaryText ? position.salaryText : null;
+
   // Buka lowongan lain (seksi "Lowongan serupa"). Bila HomeView tidak
   // memberikan callback, replikasi perilaku navigasinya: pushState URL
   // ?posisi=slug lalu event "app:navigate" (didengarkan HomeView) — tanpa reload.
@@ -911,18 +1102,20 @@ function PositionDetailViewInner({
       />
 
       <main className="flex-1 pb-20">
-        {/* Cover */}
-        {position.coverFileId ? (
-          <FadeIn>
-            <div className="mx-auto w-full max-w-5xl px-4 pt-6 sm:px-6">
+        {/* Cover — gambar admin, atau banner gradasi otomatis bila kosong */}
+        <FadeIn>
+          <div className="mx-auto w-full max-w-5xl px-4 pt-6 sm:px-6">
+            {position.coverFileId ? (
               <img
                 src={`/api/files/${position.coverFileId}`}
                 alt={`Cover lowongan ${display.title}`}
                 className="h-44 w-full rounded-2xl border object-cover shadow-sm md:h-64"
               />
-            </div>
-          </FadeIn>
-        ) : null}
+            ) : (
+              <DefaultCover department={position.department} />
+            )}
+          </div>
+        </FadeIn>
 
         <Container className="w-full max-w-5xl">
           {/* Header posisi */}
@@ -959,7 +1152,7 @@ function PositionDetailViewInner({
               ) : null}
             </div>
 
-            <h1 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
+            <h1 ref={titleRef} className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
               {display.title}
             </h1>
 
