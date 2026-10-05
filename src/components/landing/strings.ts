@@ -288,6 +288,7 @@ const id = {
         "Centang persetujuan pemrosesan data pribadi terlebih dahulu.",
       consentNote:
         "Data kamu hanya dipakai untuk proses rekrutmen di studio ini.",
+      changeOrRemove: "Ganti / Hapus",
     },
     uploads: {
       cvLabel: "CV (PDF, maks 5 MB)",
@@ -295,6 +296,7 @@ const id = {
         "Video/Audio perkenalan singkat (maks 10 MB) — membantu peluang lolos",
       dropHint: "Klik atau seret file ke sini",
       remove: "Hapus file",
+      view: "Lihat",
       optional: "Opsional",
       required: "Wajib",
       cvRequiredHint: "Posisi ini mewajibkan CV",
@@ -306,6 +308,14 @@ const id = {
       extraDocType:
         "Format {label} tidak didukung. Gunakan PDF, gambar (JPG/PNG/WEBP), atau Word.",
       extraDocSize: "Ukuran {label} maksimal 5 MB.",
+    },
+    viewer: {
+      title: "Pratinjau Berkas",
+      unsupported:
+        "Format berkas ini tidak dapat ditampilkan langsung di browser. Unduh untuk melihat isinya.",
+      download: "Unduh salinan",
+      loading: "Memuat pratinjau...",
+      close: "Tutup",
     },
     screening: {
       sectionTitle: "Pertanyaan untuk Posisi Ini",
@@ -934,12 +944,14 @@ type idDictShape = {
       consentLabel: string;
       consentRequired: string;
       consentNote: string;
+      changeOrRemove: string;
     };
     uploads: {
       cvLabel: string;
       introLabel: string;
       dropHint: string;
       remove: string;
+      view: string;
       optional: string;
       required: string;
       cvRequiredHint: string;
@@ -949,6 +961,13 @@ type idDictShape = {
       extraDocRequired: string;
       extraDocType: string;
       extraDocSize: string;
+    };
+    viewer: {
+      title: string;
+      unsupported: string;
+      download: string;
+      loading: string;
+      close: string;
     };
     screening: {
       sectionTitle: string;
@@ -1601,6 +1620,7 @@ const en: Dict = {
         "Please tick the personal data processing consent box first.",
       consentNote:
         "Your data will only be used for the recruitment process at this studio.",
+      changeOrRemove: "Replace / Remove",
     },
     uploads: {
       cvLabel: "CV (PDF, max 5 MB)",
@@ -1608,6 +1628,7 @@ const en: Dict = {
         "Short intro video/audio (max 10 MB) — boosts your chances",
       dropHint: "Click or drag a file here",
       remove: "Remove file",
+      view: "View",
       optional: "Optional",
       required: "Required",
       cvRequiredHint: "This position requires a CV",
@@ -1619,6 +1640,14 @@ const en: Dict = {
       extraDocType:
         "Unsupported format for {label}. Use PDF, image (JPG/PNG/WEBP), or Word.",
       extraDocSize: "{label} must be at most 5 MB.",
+    },
+    viewer: {
+      title: "File Preview",
+      unsupported:
+        "This file format cannot be displayed directly in the browser. Download it to view the contents.",
+      download: "Download a copy",
+      loading: "Loading preview...",
+      close: "Close",
     },
     screening: {
       sectionTitle: "Questions for This Position",

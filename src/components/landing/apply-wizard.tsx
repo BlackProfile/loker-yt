@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Copy,
+  Download,
   ExternalLink,
   Eye,
   FileText,
@@ -94,6 +95,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
@@ -313,6 +321,134 @@ type FormFieldRendererProps = {
   /** Catat pesan error field (mis. berkas ditolak saat dipilih). */
   onAnswerError: (fieldId: string, message: string) => void;
 };
+
+/** Jenis pratinjau yang mampu dirender browser untuk satu berkas. */
+type LocalPreviewKind = "pdf" | "image" | "audio" | "video" | "text" | "unsupported";
+
+/**
+ * Tentukan cara pratinjau berkas lokal (sebelum dikirim) dari MIME type —
+ * dengan fallback ekstensi nama karena beberapa berkas (mis. .docx) kosong
+ * MIME-nya di sebagian browser.
+ */
+function localPreviewKind(file: File): LocalPreviewKind {
+  const type = file.type || "";
+  if (type === "application/pdf") return "pdf";
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("audio/")) return "audio";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("text/")) return "text";
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".pdf")) return "pdf";
+  if (/\.(jpe?g|png|webp|gif|bmp|svg)$/.test(name)) return "image";
+  if (/\.(mp3|wav|m4a|ogg|aac)$/.test(name)) return "audio";
+  if (/\.(mp4|webm|mov|m4v)$/.test(name)) return "video";
+  if (/\.(txt|md|csv)$/.test(name)) return "text";
+  return "unsupported";
+}
+
+/**
+ * Dialog pratinjau berkas lokal milik pelamar (NR-36) — berkas BARU dipilih di
+ * wizard sebelum dikirim, jadi pratinjau memakai URL objek lokal (blob:) via
+ * URL.createObjectURL; tidak ada permintaan jaringan & tidak ada isu izin.
+ * Mendukung PDF (iframe), gambar, audio, video, dan teks; format lain (mis.
+ * Word) memakai kotak fallback + tombol unduh salinan.
+ */
+function LocalFileViewerDialog({
+  file,
+  open,
+  onOpenChange,
+}: {
+  file: File | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useLang();
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  // Buat URL objek saat dialog dibuka & cabut otomatis saat ditutup/ganti file.
+  useEffect(() => {
+    if (!open || !file) {
+      setObjectUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file, open]);
+
+  const kind: LocalPreviewKind = file ? localPreviewKind(file) : "unsupported";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[92vh] flex-col gap-4 overflow-hidden rounded-2xl sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base font-bold">
+            <Eye className="h-4 w-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+            {t.apply.viewer.title}
+          </DialogTitle>
+          <DialogDescription className="truncate">
+            {file ? `${file.name} · ${formatMb(file.size)}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto nice-scrollbar">
+          {!file || !objectUrl ? null : kind === "pdf" ? (
+            <iframe
+              src={objectUrl}
+              title={`${file.name} — ${t.apply.viewer.title}`}
+              className="h-[65vh] w-full rounded-lg border bg-background"
+            />
+          ) : kind === "image" ? (
+            // eslint-disable-next-line @next/next/no-img-element -- blob lokal, bukan aset Next
+            <img
+              src={objectUrl}
+              alt={file.name}
+              className="mx-auto max-h-[65vh] w-auto max-w-full rounded-lg object-contain"
+            />
+          ) : kind === "audio" ? (
+            <audio controls src={objectUrl} className="w-full" />
+          ) : kind === "video" ? (
+            <video
+              controls
+              src={objectUrl}
+              className="mx-auto max-h-[65vh] w-full rounded-lg"
+            />
+          ) : kind === "text" ? (
+            <iframe
+              src={objectUrl}
+              title={`${file.name} — ${t.apply.viewer.title}`}
+              className="h-[65vh] w-full rounded-lg border bg-background"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-8 text-center">
+              <FileText className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+              <p className="max-w-sm text-sm text-muted-foreground">
+                {t.apply.viewer.unsupported}
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          {file && objectUrl ? (
+            <Button type="button" variant="outline" className="h-11 gap-2 sm:h-9" asChild>
+              <a href={objectUrl} download={file.name}>
+                <Download className="h-4 w-4" aria-hidden="true" />
+                {t.apply.viewer.download}
+              </a>
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-11 sm:h-9"
+            onClick={() => onOpenChange(false)}
+          >
+            {t.apply.viewer.close}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 /**
  * Renderer satu pertanyaan Form Builder pada langkah dinamis wizard.
