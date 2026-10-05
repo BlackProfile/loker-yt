@@ -201,6 +201,18 @@ const id = {
         "Per bulan, dalam Rupiah — membantu tim menyiapkan penawaran yang sesuai.",
       previewLabel: "Ekspektasi Gaji",
     },
+    // NR-32 — data diri lengkap: catatan privasi, peringatan lamaran ganda &
+    // umur minimum, validasi NIK.
+    dataDiri: {
+      privacyNote:
+        "Data kamu hanya dipakai untuk proses rekrutmen di studio ini dan tidak dibagikan ke pihak lain.",
+      dedupeWarning:
+        "Kami menemukan lamaran dengan email/WA ini di posisi \"{title}\" ({date}). Tidak masalah — kamu tetap bisa melanjutkan.",
+      dedupeContinue: "Tetap lanjutkan",
+      ageBelowMin:
+        "Usiamu {age} tahun — posisi ini meminta minimal {min} tahun. Kamu tetap bisa mendaftar; tim akan meninjaunya.",
+      nikInvalid: "NIK harus tepat 16 digit angka.",
+    },
     errors: {
       name: "Nama lengkap wajib diisi.",
       emailRequired: "Email wajib diisi.",
@@ -847,6 +859,14 @@ type idDictShape = {
       sourcePh: string;
     };
     salary: { label: string; help: string; previewLabel: string };
+    // NR-32 — data diri lengkap
+    dataDiri: {
+      privacyNote: string;
+      dedupeWarning: string;
+      dedupeContinue: string;
+      ageBelowMin: string;
+      nikInvalid: string;
+    };
     errors: {
       name: string;
       emailRequired: string;
@@ -1493,6 +1513,18 @@ const en: Dict = {
       help:
         "Monthly, in Rupiah — helps us prepare a fitting offer.",
       previewLabel: "Salary Expectation",
+    },
+    // NR-32 — complete personal details: privacy note, duplicate & minimum-age
+    // warnings, NIK validation.
+    dataDiri: {
+      privacyNote:
+        "Your data is only used for recruitment at this studio and is never shared with third parties.",
+      dedupeWarning:
+        "We found an application with this email/WA for \"{title}\" ({date}). No worries — you can still continue.",
+      dedupeContinue: "Continue anyway",
+      ageBelowMin:
+        "You are {age} years old — this position asks for at least {min}. You can still apply; the team will review it.",
+      nikInvalid: "NIK must be exactly 16 digits.",
     },
     errors: {
       name: "Full name is required.",

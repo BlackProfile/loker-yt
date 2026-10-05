@@ -284,6 +284,8 @@ export type Position = {
   showSocialField: boolean;
   // NR-24 — tampilkan kolom opsional ekspektasi gaji di wizard
   showExpectedSalary: boolean;
+  // NR-32 — batas umur minimum pelamar (tahun, opsional) — peringatan halus wizard
+  minAge: number | null;
   customDocs: string[]; // label dokumen wajib tambahan (bebas, mis. "KTP", "Ijazah")
   maxApplicants: number | null;
   applyOpen: boolean; // formulir lamaran posisi ini buka/tutup (setting per posisi)
@@ -354,6 +356,12 @@ export type RoundPlanTemplate = {
 export type PositionPublicStats = {
   applications: number;
   remainingQuota: number | null; // null = tanpa kuota
+};
+
+// NR-32 — kolom data diri lengkap pada Application (opsional)
+export type ApplicationDataDiri = {
+  nik: string | null;
+  birthDate: string | null; // ISO string dari API
 };
 
 /** Dokumen wajib tambahan yang diunggah pelamar (dari customDocs posisi). */
