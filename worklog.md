@@ -2956,3 +2956,23 @@ Stage Summary:
 - NIK/birthDate TIDAK ikut draft localStorage/draft-link (di luar lingkup tugas; jawaban form terkait showIf tetap ikut draft).
 - privacyNote dirender di bawah grid NIK/tanggal lahir (bila salah satu aktif) — kunci sudah disiapkan foundation.
 Do not commit; the auto-push daemon handles git.
+
+---
+Task ID: NR-32-3-VERIFY
+Agent: Z.ai Code (orchestrator)
+Task: Verifikasi E2E menyeluruh fitur Data Diri Lengkap (3 subagen: 2-a wizard, 2-b builder, 2-c API+admin)
+
+Work Log:
+- tsc (src) & eslint bersih setelah gabungan 3 subagen; dev.log tanpa error runtime.
+- Admin (agent-browser :81): login Owner -> Posisi -> Supir Armada Operasional -> Kelola Formulir: tombol "Dari template" tampil; apply "Data Diri Lengkap" (12 pertanyaan, toast sukses, NIK & Tanggal Lahir otomatis AKTIF di item inti biodata) + "Paket Supir & Operasional" (6 pertanyaan); editor "Tampilkan hanya jika" pada "Jenis SIM" menunjuk "Punya SIM yang masih berlaku?"; skema tersimpan (25 field, showIf {"values":["Ya"]} utuh).
+- Pengaturan posisi tab Penerimaan: bagian "Umur Minimum Pelamar" -> set 18 -> tersimpan (DB minAge=18).
+- Wizard publik langkah Data Diri: NIK + Tanggal Lahir tampil (opsional), catatan privasi dengan ikon shield, sub-header grup IDENTITAS/DOMISILI/PENDIDIKAN/KONTAK DARURAT/GAJI; kondisional: Punya SIM=Tidak menyembunyikan Jenis SIM & SIM berlaku, =Ya memunculkan lagi; peringatan umur "Usiamu 11 tahun — posisi ini meminta minimal 18 tahun" (amber, non-blocking, dari birthDate 2015-05-10 + minAge 18); dedupe: email rizky.pratama@mail.com -> request /api/public/dedupe 200 -> alert amber "Kami menemukan lamaran ... Video Editor (30 Sep 2026, 23.41)" + tombol "Tetap lanjutkan" (dismiss berfungsi); normalisasi WA 0812345678 -> +62812345678 saat blur.
+- Hardening oleh orchestrator: onBlur phone & email membaca nilai dari e.currentTarget (anti closure basi) di apply-wizard.tsx.
+- Tipe currency: field "Ekspektasi Gaji Bulanan" (grup GAJI) ditambah via builder (menghapus 1 field dokumen lama "SIM A (scan)" karena skema mentok batas 25 field — field lama pindah ke retiredFields). Wizard: mengetik 3500000 tampil "Rp 3.500.000"; pratinjau baris "EKSPEKTASI GAJI BULANAN | Rp 3.500.000"; tersimpan sebagai ANGKA 3500000 di formAnswers.
+- Submit penuh E2E: lamaran "Uji NR32 Full" (LM-I988Q2) terkirim -> DB: nik=3273010102900001 (kolom terstruktur), formAnswers 12 jawaban (field kondisional ikut, tidak ada jawaban liar).
+- Admin Pelamar: kolom NIK & Umur tampil (baris uji: NIK terisi, Umur "-"); dialog detail menampilkan NIK & Tanggal Lahir. Mobile 390px layak, tanpa overflow.
+- EN: kunci apply.dataDiri dua bahasa tersedia (type-checked); groupEn/labelEn dipakai wizard.
+
+Stage Summary:
+- 12/12 ide "Data Diri Lengkap" SELESAI & terverifikasi browser end-to-end (template x3, kondisional, NIK terstruktur, umur otomatis + minAge, dedupe, normalisasi WA + currency, sub-header grup, catatan privasi, autocomplete/native date).
+- Demo data baru: skema Supir kini berisi template (contoh hidup), lamaran uji LM-I988Q2 menampilkan kolom NIK di admin.
