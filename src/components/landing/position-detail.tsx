@@ -59,6 +59,7 @@ import type {
   Position,
   PositionPublicStats,
   SiteContent,
+  StageCategory,
 } from "@/lib/types";
 import { SHIFT_SYSTEM_LABELS } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
