@@ -25,25 +25,22 @@ export function AdminConfetti({ fire }: { fire: boolean }) {
   const reduced = useReducedMotion();
   const [burstId, setBurstId] = useState(0);
   const [visible, setVisible] = useState(false);
-  // Pantulkan perubahan prop `fire` ke state SAAT RENDER (pola resmi React
-  // "adjust state when a prop changes") — bukan di dalam effect, agar aman
-  // dari aturan react-hooks/set-state-in-effect.
-  const lastFireRef = useRef(fire);
-  if (fire !== lastFireRef.current) {
-    lastFireRef.current = fire;
-    if (fire && !reduced) {
+
+  // Pemicu burst: setState dipanggil dari callback timeout (bukan langsung di
+  // badan effect) — memenuhi aturan react-hooks/set-state-in-effect. Jeda 0ms
+  // tak terasa; pemicu false->true menghasilkan satu burst ~2.6 dtk.
+  useEffect(() => {
+    if (!fire || reduced) return;
+    const show = setTimeout(() => {
       setBurstId((n) => n + 1);
       setVisible(true);
-    }
-  }
-
-  // Sembunyikan otomatis ~2.6 dtk setelah tiap burst (setState dipanggil dari
-  // callback timeout, bukan langsung di badan effect).
-  useEffect(() => {
-    if (!visible) return;
-    const t = setTimeout(() => setVisible(false), 2600);
-    return () => clearTimeout(t);
-  }, [visible, burstId]);
+    }, 0);
+    const hide = setTimeout(() => setVisible(false), 2600);
+    return () => {
+      clearTimeout(show);
+      clearTimeout(hide);
+    };
+  }, [fire, reduced]);
 
   const particles = useMemo(() => {
     if (!visible || reduced) return [];
