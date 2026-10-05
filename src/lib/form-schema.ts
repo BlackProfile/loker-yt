@@ -42,8 +42,25 @@ export const FORM_FIELD_TYPES = [
   "dropdown",
   "date",
   "number",
+  "currency",
   "rating",
   "file",
+  "url",
+] as const;
+
+/**
+ * NR-32 — whitelist hint isi-otomatis browser untuk field kustom. Hanya nilai
+ * ini yang disimpan sanitizer; "off" menonaktifkan eksplisit.
+ */
+export const FORM_AUTOCOMPLETE_KEYS = [
+  "off",
+  "name",
+  "email",
+  "tel",
+  "bday",
+  "sex",
+  "street-address",
+  "organization",
   "url",
 ] as const;
 
@@ -148,9 +165,34 @@ export type FormField = {
   helpText?: string;
   labelEn?: string;
   maxLen?: number; // text/textarea/url
-  min?: number; // number
-  max?: number; // number & rating (rating = skala 1..max)
+  min?: number; // number & currency
+  max?: number; // number & currency & rating (rating = skala 1..max)
+  // NR-32 — data diri lengkap:
+  group?: string; // sub-kelompok visual dalam satu langkah (header kecil)
+  groupEn?: string;
+  autocomplete?: string; // hint isi-otomatis browser (whitelist FORM_AUTOCOMPLETE_KEYS)
+  showIf?: { fieldId: string; values: string[] }; // tampil hanya bila jawaban field pilihan cocok
 };
+
+/**
+ * NR-32 — visibilitas field kondisional terhadap jawaban saat ini.
+ * Sumber harus field pilihan (radio/dropdown/checkbox) di bagian yang sama;
+ * checkbox dicocokkan bila SALAH SATU nilainya masuk daftar.
+ */
+export function isFieldVisible(
+  field: FormField,
+  answers: Record<string, unknown> | null | undefined,
+): boolean {
+  if (!field.showIf) return true;
+  const raw = answers ? answers[field.showIf.fieldId] : undefined;
+  if (Array.isArray(raw)) {
+    return raw.some(
+      (v) => typeof v === "string" && field.showIf!.values.includes(v.trim()),
+    );
+  }
+  if (typeof raw !== "string") return false;
+  return field.showIf.values.includes(raw.trim());
+}
 
 /** Jenis bagian: tiga bawaan + kustom. Bawaan bisa disembunyikan (tombstone NR-23), kustom bisa dihapus fisik. */
 export type FormSectionKind = "biodata" | "experience" | "files" | "custom";
@@ -169,6 +211,8 @@ export const CORE_ITEM_KEYS = [
   "name",
   "email",
   "wa",
+  "nik",
+  "birthDate",
   "experience",
   "motivation",
   "cv",
@@ -199,7 +243,7 @@ export const CORE_SECTION_ITEM_KEYS: Record<
   Exclude<FormSectionKind, "custom">,
   CoreItemKey[]
 > = {
-  biodata: ["name", "email", "wa"],
+  biodata: ["name", "email", "wa", "nik", "birthDate"],
   experience: ["experience", "motivation"],
   files: ["cv", "intro", "portfolio"],
 };
@@ -209,6 +253,8 @@ export const CORE_ITEM_DEFAULT_LABELS: Record<CoreItemKey, string> = {
   name: "Nama Lengkap",
   email: "Email",
   wa: "Nomor WhatsApp",
+  nik: "NIK (16 digit)",
+  birthDate: "Tanggal Lahir",
   experience: "Pengalaman Kamu",
   motivation: "Alasan Bergabung",
   cv: "CV (PDF, maks 5 MB)",
@@ -265,6 +311,13 @@ export type FormSection = {
 
   // Konfigurasi item inti (boleh tidak ada = pakai nilai bawaan):
   // biodata — WA boleh tidak wajib (nama & email selalu wajib, identitas pelamar).
+  // NR-32 — NIK & Tanggal Lahir: item inti OPSIONAL yang bisa diaktifkan admin
+  // (bawaan mati agar posisi lama tidak berubah). Nilainya disimpan sebagai
+  // kolom tersendiri Application.nik / Application.birthDate.
+  nikEnabled?: boolean;
+  nikRequired?: boolean;
+  birthDateEnabled?: boolean;
+  birthDateRequired?: boolean;
   waRequired?: boolean;
   // experience — dua pertanyaan inti bisa dimatikan & diatur wajib satu per satu.
   experienceEnabled?: boolean;
@@ -429,6 +482,23 @@ export function isPortfolioRequired(section: FormSection): boolean {
   return isPortfolioEnabled(section) && section.portfolioRequired === true;
 }
 
+// NR-32 — NIK & Tanggal Lahir: aktif hanya bila admin menyalakannya di biodata.
+export function isNikEnabled(section: FormSection): boolean {
+  return section.kind === "biodata" && section.removed !== true && section.nikEnabled === true;
+}
+
+export function isNikRequired(section: FormSection): boolean {
+  return isNikEnabled(section) && section.nikRequired === true;
+}
+
+export function isBirthDateEnabled(section: FormSection): boolean {
+  return section.kind === "biodata" && section.removed !== true && section.birthDateEnabled === true;
+}
+
+export function isBirthDateRequired(section: FormSection): boolean {
+  return isBirthDateEnabled(section) && section.birthDateRequired === true;
+}
+
 /** Semua field milik satu bagian (urut sesuai array fields). */
 export function sectionFields(schema: FormSchema, sectionId: string): FormField[] {
   return schema.fields.filter((f) => f.sectionId === sectionId);
@@ -484,6 +554,53 @@ export function filesConfigFromSchema(schema: FormSchema): {
 /* ------------------------------- ID generator -------------------------------- */
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]{1,39}$/i;
+
+/**
+ * NR-32 — validasi & rapikan showIf dari input mentah (parse maupun sanitasi).
+ * Source WAJIB field pilihan di bagian yang sama yang muncul SEBELUM field ini
+ * (sudah diparse) — mencegah referensi silang/lingkaran. strict=true
+ * mengembalikan pesan error (sanitasi server); strict=false memotong diam-diam
+ * (parser DB toleran).
+ */
+function normalizeShowIf(
+  rawShowIf: unknown,
+  currentId: string,
+  currentSectionId: string,
+  parsedById: Map<string, FormField>,
+  strict: boolean,
+): { fieldId: string; values: string[] } | null | string {
+  if (rawShowIf == null) return null;
+  if (typeof rawShowIf !== "object" || Array.isArray(rawShowIf)) {
+    return strict ? "Syarat tampil harus berupa objek." : null;
+  }
+  const si = rawShowIf as Record<string, unknown>;
+  const srcId = typeof si.fieldId === "string" && ID_RE.test(si.fieldId) ? si.fieldId : "";
+  if (!srcId) return strict ? "Syarat tampil butuh ID pertanyaan sumber yang valid." : null;
+  if (srcId === currentId) return strict ? "Pertanyaan tidak bisa mensyaratkan dirinya sendiri." : null;
+  const src = parsedById.get(srcId);
+  if (!src) {
+    return strict
+      ? "Syarat tampil harus menunjuk pertanyaan pilihan yang ada SEBELUM pertanyaan ini."
+      : null;
+  }
+  if (src.sectionId !== currentSectionId) {
+    return strict ? "Syarat tampil harus dari pertanyaan di bagian yang sama." : null;
+  }
+  if (!isChoiceType(src.type)) {
+    return strict ? "Syarat tampil hanya bisa dari pertanyaan pilihan (pilihan ganda/kotak centang/dropdown)." : null;
+  }
+  const values = Array.isArray(si.values)
+    ? si.values
+        .filter((v): v is string => typeof v === "string")
+        .map((v) => v.trim())
+        .filter(Boolean)
+    : [];
+  const valid = values.filter((v) => src.options.includes(v));
+  if (valid.length === 0) {
+    return strict ? "Syarat tampil butuh minimal satu nilai opsi yang cocok." : null;
+  }
+  return { fieldId: src.id, values: valid.slice(0, FORM_LIMITS.maxOptions) };
+}
 
 /** ID field/section baru yang aman untuk kunci jawaban (dipakai builder di klien). */
 export function newFormId(prefix: string): string {
@@ -561,6 +678,11 @@ function normalizeSectionFlags(section: FormSection, raw: Record<string, unknown
   }
   if (section.kind === "biodata") {
     section.waRequired = raw.waRequired !== false;
+    // NR-32 — NIK & Tanggal Lahir bawaan MATI (opsional, opt-in admin).
+    section.nikEnabled = raw.nikEnabled === true;
+    section.nikRequired = section.nikEnabled && raw.nikRequired === true;
+    section.birthDateEnabled = raw.birthDateEnabled === true;
+    section.birthDateRequired = section.birthDateEnabled && raw.birthDateRequired === true;
   }
   if (section.kind === "experience") {
     section.experienceEnabled = raw.experienceEnabled !== false;
@@ -655,6 +777,7 @@ export function parseFormSchema(raw: string | null | undefined): FormSchema | nu
 
   const fields: FormField[] = [];
   const seenFields = new Set<string>();
+  const parsedById = new Map<string, FormField>(); // NR-32 — referensi showIf
   for (const item of fieldsRaw) {
     if (!item || typeof item !== "object") continue;
     const f = item as Record<string, unknown>;
@@ -688,10 +811,19 @@ export function parseFormSchema(raw: string | null | undefined): FormSchema | nu
     if (helpText) field.helpText = helpText;
     const labelEn = typeof f.labelEn === "string" ? f.labelEn.trim().slice(0, FORM_LIMITS.labelMax) : "";
     if (labelEn) field.labelEn = labelEn;
+    // NR-32 — group/groupEn/autocomplete/showIf (parser toleran: salah bentuk = buang).
+    const group = typeof f.group === "string" ? f.group.trim().slice(0, FORM_LIMITS.labelMax) : "";
+    if (group) field.group = group;
+    const groupEn = typeof f.groupEn === "string" ? f.groupEn.trim().slice(0, FORM_LIMITS.labelMax) : "";
+    if (groupEn) field.groupEn = groupEn;
+    const ac = typeof f.autocomplete === "string" ? f.autocomplete.trim() : "";
+    if (ac && (FORM_AUTOCOMPLETE_KEYS as readonly string[]).includes(ac)) field.autocomplete = ac;
+    const showIf = normalizeShowIf(f.showIf, id, field.sectionId, parsedById, false);
+    if (showIf && typeof showIf === "object") field.showIf = showIf;
     if ((type === "text" || type === "textarea" || type === "url") && typeof f.maxLen === "number" && Number.isFinite(f.maxLen)) {
       field.maxLen = Math.min(FORM_LIMITS.textHardMax, Math.max(1, Math.round(f.maxLen)));
     }
-    if (type === "number") {
+    if (type === "number" || type === "currency") {
       if (typeof f.min === "number" && Number.isFinite(f.min)) field.min = f.min;
       if (typeof f.max === "number" && Number.isFinite(f.max)) field.max = f.max;
       if (field.min != null && field.max != null && field.min > field.max) {
@@ -703,6 +835,7 @@ export function parseFormSchema(raw: string | null | undefined): FormSchema | nu
     if (type === "rating" && typeof f.max === "number" && Number.isFinite(f.max)) {
       field.max = Math.min(FORM_LIMITS.ratingMaxLimit, Math.max(2, Math.round(f.max)));
     }
+    parsedById.set(id, field);
     fields.push(field);
   }
 
@@ -1013,6 +1146,7 @@ export function sanitizeFormSchemaInput(
   }
   const fields: FormField[] = [];
   const fieldIds = new Set<string>();
+  const parsedById = new Map<string, FormField>(); // NR-32 — referensi showIf
   for (let i = 0; i < obj.fields.length; i++) {
     const raw = obj.fields[i];
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -1087,6 +1221,32 @@ export function sanitizeFormSchemaInput(
       field.labelEn = labelEn;
     }
 
+    // NR-32 — group/groupEn/autocomplete/showIf (sanitasi ketat: salah = error).
+    const group = typeof f.group === "string" ? f.group.trim() : "";
+    if (group) {
+      if (group.length > LIMIT.labelMax) {
+        return { ok: false, error: `Kelompok "${label}" maksimal ${LIMIT.labelMax} karakter.` };
+      }
+      field.group = group;
+    }
+    const groupEn = typeof f.groupEn === "string" ? f.groupEn.trim() : "";
+    if (groupEn) {
+      if (groupEn.length > LIMIT.labelMax) {
+        return { ok: false, error: `Kelompok EN "${label}" maksimal ${LIMIT.labelMax} karakter.` };
+      }
+      field.groupEn = groupEn;
+    }
+    const ac = typeof f.autocomplete === "string" ? f.autocomplete.trim() : "";
+    if (ac) {
+      if (!(FORM_AUTOCOMPLETE_KEYS as readonly string[]).includes(ac)) {
+        return { ok: false, error: `Nilai isi-otomatis "${label}" tidak dikenal.` };
+      }
+      field.autocomplete = ac;
+    }
+    const showIf = normalizeShowIf(f.showIf, id, sectionId, parsedById, true);
+    if (typeof showIf === "string") return { ok: false, error: `Pertanyaan "${label}": ${showIf}` };
+    if (showIf) field.showIf = showIf;
+
     if (type === "text" || type === "textarea" || type === "url") {
       if (typeof f.maxLen === "number" && Number.isFinite(f.maxLen)) {
         const maxLen = Math.round(f.maxLen);
@@ -1096,7 +1256,7 @@ export function sanitizeFormSchemaInput(
         field.maxLen = maxLen;
       }
     }
-    if (type === "number") {
+    if (type === "number" || type === "currency") {
       const min = typeof f.min === "number" && Number.isFinite(f.min) ? f.min : undefined;
       const max = typeof f.max === "number" && Number.isFinite(f.max) ? f.max : undefined;
       if (min != null && Math.abs(min) > LIMIT.numberMax) return { ok: false, error: `Nilai minimum "${label}" terlalu besar.` };
@@ -1116,6 +1276,7 @@ export function sanitizeFormSchemaInput(
     }
 
     fieldIds.add(id);
+    parsedById.set(id, field);
     fields.push(field);
   }
 
@@ -1185,6 +1346,8 @@ export function validateFormAnswers(
   for (const field of schema.fields) {
     if (field.type === "file") continue; // ditangani route (upload)
     if (deadSections.has(field.sectionId)) continue; // NR-23 — bagian dihapus
+    // NR-32 — pertanyaan kondisional yang tersembunyi tidak divalidasi & tidak disimpan.
+    if (field.showIf && !isFieldVisible(field, input)) continue;
     const value = input[field.id];
     const empty = value == null || value === "" || (Array.isArray(value) && value.length === 0);
 
@@ -1207,8 +1370,8 @@ export function validateFormAnswers(
       continue;
     }
 
-    if (field.type === "number") {
-      const num = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim()) : NaN;
+    if (field.type === "number" || field.type === "currency") {
+      const num = typeof value === "number" ? value : typeof value === "string" ? Number(value.replace(/[.\s]/g, "").replace(",", ".").trim()) : NaN;
       if (!Number.isFinite(num)) return { ok: false, error: `Jawaban "${field.label}" harus berupa angka.` };
       if (field.min != null && num < field.min) {
         return { ok: false, error: `Jawaban "${field.label}" minimal ${field.min}.` };
@@ -1303,6 +1466,7 @@ export const FORM_FIELD_TYPE_LABELS: Record<FormFieldType, string> = {
   dropdown: "Dropdown",
   date: "Tanggal",
   number: "Angka",
+  currency: "Mata Uang (Rp)",
   rating: "Rating Bintang",
   file: "Unggah Berkas",
   url: "Tautan URL",
