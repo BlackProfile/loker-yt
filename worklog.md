@@ -3145,3 +3145,22 @@ Stage Summary:
 - SEMUA pekerjaan yang pernah disetujui kini terkonfirmasi selesai & terverifikasi E2E pada data kaya: NR-38 (18 fitur), NR-33 Demo Simulator, Data Diri Lengkap, NR-37 viewer.
 - Status demo akhir: 13 lamaran (5 lama + 8 "Demo Simulator" kaya), 11 belum dilihat, tersebar 5 posisi terbuka; simulator dihentikan (tidak berjalan).
 - Pelajaran debugging: agent-browser find --name memakai pencocokan substring Playwright → "Pelamar" bisa mengklik "Lihat sebagai pelamar" (URL lompat ke /?preview=1); gunakan eval exact-text utk nav admin.
+---
+Task ID: NR39-A
+Agent: Z.ai Code (orkestrator)
+Task: Fondasi Kartu Karyawan (NR-39, user setujui "semuanya" — 14 butir): skema, lib, API admin+publik, hook terbit otomatis & sinkron status.
+
+Work Log:
+- Skema: model EmployeeCard (applicationId, cardNumber unik LUM-EMP-XXXX, token unik 24B hex, status PENDING|PROBATION|ACTIVE|LEAVE|SUSPENDED|REVOKED, identityChecks JSON {docs,nikMatch,contract}, issuedAt, probationUntil, revokedAt/Reason, verifyCount, lastVerifiedAt, isCurrent) + relasi Application.employeeCards; db:push sukses (backup custom.db.pre-nr39.bak dulu).
+- src/lib/types.ts: EmployeeCardStatus + label, IdentityChecks + IDENTITY_CHECK_ITEMS (3 gate: docs/nikMatch/contract), EmployeeCardDto (verifyToken termasuk), VerifyCardResponse (publik, data minimal).
+- src/lib/employee-cards.ts (server): maskNik (4+8•+4), getCardSecret (Setting card_secret, auto-create), signCardToken/verifyCardSignature (HMAC-SHA256 16 hex — QR {origin}/#verifikasi?t={token}.{sig}), nextCardNumberFor (berurutan + fallback), effectiveStatus (PROBATION lewat tanggal -> ACTIVE lazy), ensureEmployeeCard (terbit PENDING bila hiredAt terisi + ActivityLog CARD_ISSUED + realtime), syncCardOnStatusChange (REJECTED/doNotHire -> REVOKED; ACCEPTED -> reaktivasi SUSPENDED), serializeCard(owner, verifyToken).
+- API admin: GET /api/admin/cards (backfill malas hired-tanpa-kartu, urut current dulu, verifyToken per baris current); PATCH /api/admin/cards/[id] (identityChecks + aksi activate[syarat 3 cek]/suspend/reactivate/leave/back-from-leave/revoke, VIEWER 403, log CARD_CHECK/CARD_STATUS); POST /api/admin/cards/[id]/reissue (transaksi: lama isCurrent=false+REVOKED "Diterbitkan ulang", baru nomor+token baru, checklist disalin, lama-yang-sudah-aktif langsung aktif lagi; log CARD_REISSUED).
+- API publik: GET /api/public/verify-card (?t= signed ATAU ?nomor=; HMAC diverifikasi sebelum DB; status tidak aktif -> found+reason TIDAK_AKTIF; PENDING/SUSPENDED/REVOKED tidak lolos; kecocokan -> verifyCount++ + lastVerifiedAt; no-store; TANPA NIK/HP/gaji); GET /api/public/my-card?kode= (hanya hiredAt terisi; ensure kartu; kembalikan card DTO + verifyToken untuk QR milik pelamar).
+- Hook: offer/respond ACCEPT -> ensureEmployeeCard (gagal tak menggagalkan offer); PATCH /api/admin/applications/[id] stageChanged -> ACCEPTED+hired = ensure, selain itu sync (REJECTED -> cabut); PUT /api/admin/donothire -> fire-and-forget cabut kartu karyawan hired yang email/teleponnya kena blacklist.
+- Keputusan: kartu terikat hiredAt (bukan sekadar status ACCEPTED — Dewi ACCEPTED tanpa offer TIDAK otomatis dapat kartu; konsisten dgn tab Karyawan yang berbasis hiredAt). verifyToken disertakan di DTO kartu current (admin & pemilik sama-sama butuh QR).
+- html-to-image@1.11.13 dipasang utk ekspor PNG (dipakai subagent UI).
+- Verifikasi: bunx tsc --noEmit src/ KOSONG; bun run lint exit 0.
+
+Stage Summary:
+- Fondasi selesai & bertipe bersih: 3 route admin + 2 route publik + lib + skema + hook 3 titik.
+- Kontrak UI (dipakai subagent B/C): EmployeeCardDto.verifyToken -> URL verifikasi `${origin}/#verifikasi?t=${verifyToken}`; aksi PATCH {identityChecks|action,reason}; VerifyCardResponse {found, reason: TIDAK_ADA|TOKEN_SALAH|TIDAK_AKTIF, card{cardNumber,name,positionTitle,status,issuedAt,probationUntil}, verifiedAt}.
