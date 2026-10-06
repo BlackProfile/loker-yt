@@ -20,19 +20,34 @@ import {
   type DocExpiry,
   type Position,
 } from "@/lib/types";
+import { stageLabel } from "@/lib/stages";
 import { apiGet } from "./api";
 import { cn } from "@/lib/utils";
 import {
-  avatarToneOf,
   daysUntil,
   formatDate,
   formatRupiah,
   formatShortDateTime,
-  initialsOf,
 } from "./format";
 import { StatusBadge, AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 import { useTagDefs } from "./use-tag-defs";
+// NR38-B — avatar inisial + meta umur tahap + chip gaji vs range.
+import { ApplicantAvatar } from "./applicant-avatar";
+import { agingDotClass, agingToneFrom, shortDuration } from "./stage-meta";
+import {
+  ageOf,
+  stageAgeBasis,
+  type ApplicationRow,
+} from "./applicant-row-types";
+import {
+  ApplicantCardGrid,
+  NewBadge,
+  SalaryVerdictChip,
+} from "./applicant-card-grid";
+
+/** Mode kepadatan tabel: "compact" (padat) atau "cozy" (nyaman). */
+export type TableDensity = "compact" | "cozy";
 
 // Baris template dari /api/admin/templates (dipakai untuk pesan WhatsApp).
 type TemplateRow = {
@@ -188,22 +203,6 @@ function expiringDocs(app: Application): DocExpiry[] {
 }
 
 /**
- * Umur dari tanggal lahir (NR-32) — "27 th"; null bila kosong/tidak valid
- * (termasuk tanggal lahir di masa depan atau tidak masuk akal > 130 tahun).
- */
-function ageOf(birthDate: string | null | undefined): string | null {
-  if (!birthDate) return null;
-  const dob = new Date(birthDate);
-  if (Number.isNaN(dob.getTime())) return null;
-  const now = new Date();
-  let years = now.getFullYear() - dob.getFullYear();
-  const monthDelta = now.getMonth() - dob.getMonth();
-  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < dob.getDate())) years -= 1;
-  if (years < 0 || years > 130) return null;
-  return `${years} th`;
-}
-
-/**
  * Chip ekspektasi gaji pelamar vs rentang gaji posisi — NR-24 fitur 6.
  * Sesuai = emerald, di atas = amber, di bawah / tanpa rentang = zinc.
  */
@@ -278,11 +277,17 @@ export function ApplicationsTable({
   onOpenDetail,
   onDeleteRequest,
   onRate,
+  density = "cozy",
+  cardMode = false,
 }: {
-  applications: Application[];
+  applications: ApplicationRow[];
   /** Daftar posisi untuk cek ekspektasi gaji vs rentang wajar (NR-24). */
   positions?: Position[];
   canMutate: boolean;
+  /** NR38-B fitur 5: kepadatan tabel — padat menyembunyikan kolom Sumber/Tags/NIK/Gaji. */
+  density?: TableDensity;
+  /** NR38-B fitur 9: mode kartu menggantikan tabel & daftar mobile. */
+  cardMode?: boolean;
   /** NR-24 fitur 2: id admin aktif — untuk cek starredBy milik siapa. */
   currentUserId: string;
   /** NR-24 fitur 2: toggle bintang personal (state optimistik di induk). */
@@ -341,6 +346,26 @@ export function ApplicationsTable({
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
+  // NR38-B fitur 5 — kepadatan: padat = padding sel py-1.5 + kolom Sumber/Tags/NIK/Gaji disembunyikan.
+  const isCompact = density === "compact";
+  const pad = isCompact ? "px-4 py-1.5" : "px-4 py-3";
+  const padHead = isCompact ? "px-4 py-2" : "px-4 py-3";
+
+  // NR38-B fitur 9 — mode kartu menggantikan tabel desktop & daftar mobile.
+  if (cardMode) {
+    return (
+      <ApplicantCardGrid
+        applications={applications}
+        canMutate={canMutate}
+        currentUserId={currentUserId}
+        selectedIds={selectedIds}
+        onToggleSelect={onToggleSelect}
+        onToggleStar={onToggleStar}
+        onOpenDetail={onOpenDetail}
+      />
+    );
+  }
+
   return (
     <>
       {/* Desktop: table */}
@@ -348,7 +373,7 @@ export function ApplicationsTable({
         <Table className="min-w-[1160px]">
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
-              <TableHead className="w-10 px-4 py-3">
+              <TableHead className={cn("w-10", padHead)}>
                 <Checkbox
                   checked={allSelected}
                   disabled={!canMutate}
@@ -357,10 +382,10 @@ export function ApplicationsTable({
                 />
               </TableHead>
               {/* Kolom bintang "Tandai penting" (NR-24 fitur 2). */}
-              <TableHead className="w-10 px-2 py-3">
+              <TableHead className={cn("w-10", isCompact ? "px-2 py-2" : "px-2 py-3")}>
                 <span className="sr-only">Ditandai</span>
               </TableHead>
-              <TableHead className="w-10 px-2 py-3 text-center text-xs">
+              <TableHead className={cn("w-10 text-center text-xs", isCompact ? "px-2 py-2" : "px-2 py-3")}>
                 Bandingkan
               </TableHead>
               <TableHead className="px-4 py-3">Pelamar</TableHead>
