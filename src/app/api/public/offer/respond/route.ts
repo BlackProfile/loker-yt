@@ -1,9 +1,10 @@
 // POST /api/public/offer/respond — pelamar menjawab penawaran dari halaman status:
-//   ACCEPT  -> offerStatus ACCEPTED, status ACCEPTED, hiredAt + probationEnd diisi, welcome message
+//   ACCEPT  -> offerStatus ACCEPTED, status ACCEPTED, hiredAt + probationEnd diisi, welcome message,
+//              NR-40: template rencana onboarding posisi terpasang otomatis bila pelamar belum punya rencana
 //   DECLINE -> offerStatus DECLINED (+ alasan)
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { APPLICATION_INCLUDE, serializeApplication } from "@/lib/seed";
+import { APPLICATION_INCLUDE, parseOnboardingTemplate, serializeApplication } from "@/lib/seed";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 import { sendSystemEvent } from "@/lib/notify";
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
             welcomeTemplate: true,
             probationMonths: true,
             onboardingDocs: true,
+            onboardingTemplate: true, // NR-40 — auto-install rencana onboarding saat offer diterima
           },
         },
       },
@@ -152,6 +154,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // NR-40 — auto-install template rencana onboarding posisi saat offer diterima.
+    // Hanya bila posisi punya template (>= 1 item) DAN pelamar masih kosong rencananya
+    // ("[]" / rusak / 0 item) — rencana yang sudah diisi manual TIDAK ditimpa.
+    let onboardingPlanJson = application.onboardingPlan;
+    let installedTemplateCount = 0;
+    if (!onboardingPlanJson || onboardingPlanJson === "[]") {
+      const template = parseOnboardingTemplate(application.position?.onboardingTemplate ?? null);
+      if (template && template.length > 0) {
+        // Basis H+0: tanggal mulai dari offer, selain itu hari penerimaan (UTC tengah malam).
+        const base = application.offerStartDate ?? nowDate;
+        const baseUtcMidnight = Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate());
+        onboardingPlanJson = JSON.stringify(
+          template.map((item, i) => ({
+            id: `onb${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}${i}`,
+            label: item.label,
+            owner: item.owner ?? null,
+            dueAt: new Date(baseUtcMidnight + (item.offsetDays ?? 0) * 24 * 60 * 60 * 1000).toISOString(),
+            done: false,
+          })),
+        );
+        installedTemplateCount = template.length;
+      }
+    }
+
     const updated = await db.application.update({
       where: { id: application.id },
       data: {
@@ -163,26 +189,37 @@ export async function POST(req: NextRequest) {
         hiredAt: nowDate,
         probationEnd,
         onboardingDocs: onboardingDocsJson,
+        // NR-40 — rencana onboarding dari template posisi (bila terpasang).
+        ...(onboardingPlanJson !== application.onboardingPlan
+          ? { onboardingPlan: onboardingPlanJson }
+          : {}),
       },
       include: APPLICATION_INCLUDE,
     });
 
-    await db.activityLog.createMany({
-      data: [
-        {
-          applicationId: application.id,
-          actor: "Pelamar",
-          action: "OFFER_ACCEPTED",
-          detail: "Pelamar MENERIMA penawaran — selamat bergabung!",
-        },
-        {
-          applicationId: application.id,
-          actor: "Sistem",
-          action: "STATUS_CHANGE",
-          detail: "Diterima (Hired) — onboarding dimulai",
-        },
-      ],
-    });
+    const acceptLogs: { applicationId: string; actor: string; action: string; detail: string }[] = [
+      {
+        applicationId: application.id,
+        actor: "Pelamar",
+        action: "OFFER_ACCEPTED",
+        detail: "Pelamar MENERIMA penawaran — selamat bergabung!",
+      },
+      {
+        applicationId: application.id,
+        actor: "Sistem",
+        action: "STATUS_CHANGE",
+        detail: "Diterima (Hired) — onboarding dimulai",
+      },
+    ];
+    if (installedTemplateCount > 0) {
+      acceptLogs.push({
+        applicationId: application.id,
+        actor: "Sistem",
+        action: "ONBOARDING_PLAN_INSTALLED",
+        detail: `${installedTemplateCount} item dari template posisi`,
+      });
+    }
+    await db.activityLog.createMany({ data: acceptLogs });
 
     // Webhook keluar (Task 27): pelamar sudah menjawab penawaran (fire-and-forget).
     await emitWebhook("offer.responded", {
