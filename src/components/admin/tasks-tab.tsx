@@ -223,7 +223,7 @@ export function TasksTab() {
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Application | null>(null);
   // NR38-B — kunci tugas yang sedang dipatch (anti dobel klik).
-  const [workingTasks, setWorkingTasks] = useState<Set<string>>(new Set);
+  const [workingTasks, setWorkingTasks] = useState<Set<string>>(new Set<string>());
 
   const loadAll = useCallback(
     async (silent = false) => {
@@ -258,6 +258,107 @@ export function TasksTab() {
       setDetail(app);
     } else {
       toast.info(`Detail ${name} tidak tersedia — muat ulang halaman atau sesuaikan filter.`);
+    }
+  }
+
+  // NR38-B fitur 7 — gabungan tugas "perlu dihubungi": followUpAt ≤ sekarang,
+  // snoozeUntil ≤ sekarang, holdReviewAt ≤ sekarang (lamaran aktif di-HOLD),
+  // dan offerStatus PENDING dengan offerDeadline ≤ 3 hari ke depan.
+  const contactToday = useMemo<ContactTask[]>(() => {
+    const nowMs = Date.now();
+    const tasks: ContactTask[] = [];
+    for (const app of applications) {
+      if (app.deletedAt || app.mergedIntoId) continue;
+      if (app.followUpAt && new Date(app.followUpAt).getTime() <= nowMs) {
+        tasks.push({ key: `${app.id}:followup`, app, kind: "followup", dueAt: app.followUpAt });
+      }
+      if (app.snoozeUntil && new Date(app.snoozeUntil).getTime() <= nowMs) {
+        tasks.push({ key: `${app.id}:snooze`, app, kind: "snooze", dueAt: app.snoozeUntil });
+      }
+      if (
+        app.holdReviewAt &&
+        app.holdAt &&
+        new Date(app.holdReviewAt).getTime() <= nowMs
+      ) {
+        tasks.push({ key: `${app.id}:hold`, app, kind: "hold", dueAt: app.holdReviewAt });
+      }
+      if (
+        app.offerStatus === "PENDING" &&
+        app.offerDeadline &&
+        new Date(app.offerDeadline).getTime() <= nowMs + THREE_DAYS_MS
+      ) {
+        tasks.push({ key: `${app.id}:offer`, app, kind: "offer", dueAt: app.offerDeadline });
+      }
+    }
+    tasks.sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+    return tasks;
+  }, [applications]);
+
+  /**
+   * Aksi cepat panel (optimistik + toast). PATCH hanya memakai field yang
+   * DIDUKUNG whitelist endpoint [id]: followUpAt (null/ISO) dan holdClear /
+   * holdReason+holdReviewAt. snoozeUntil & offerDeadline tidak didukung
+   * endpoint — baris jenis itu hanya menyediakan "Buka Detail".
+   */
+  async function runContactAction(task: ContactTask, action: "done" | "snooze3") {
+    if (workingTasks.has(task.key)) return;
+    const app = task.app;
+    const in3Days = new Date(Date.now() + THREE_DAYS_MS).toISOString();
+    let body: Record<string, unknown>;
+    let optimistic: Partial<ApplicationRow>;
+    let message: string;
+    if (task.kind === "followup") {
+      if (action === "done") {
+        body = { followUpAt: null };
+        optimistic = { followUpAt: null };
+        message = `Follow-up ${app.name} ditandai selesai`;
+      } else {
+        body = { followUpAt: in3Days };
+        optimistic = { followUpAt: in3Days };
+        message = `Follow-up ${app.name} ditunda 3 hari`;
+      }
+    } else if (task.kind === "hold") {
+      if (action === "done") {
+        // "Selesai" review HOLD = lepas tahanan — satu-satunya jalur resmi
+        // endpoint untuk mengosongkan holdReviewAt (holdClear).
+        body = { holdClear: true };
+        optimistic = { holdAt: null, holdReason: null, holdNote: null, holdReviewAt: null };
+        message = `HOLD ${app.name} dilepas`;
+      } else {
+        if (!app.holdReason) return; // PATCH ulang menuntut alasan hold yang valid
+        body = { holdReason: app.holdReason, holdReviewAt: in3Days };
+        optimistic = { holdReviewAt: in3Days };
+        message = `Review HOLD ${app.name} ditunda 3 hari`;
+      }
+    } else {
+      return; // snooze / offer: tidak ada PATCH yang didukung
+    }
+    setWorkingTasks((prev) => new Set(prev).add(task.key));
+    const previous = applications;
+    setApplications((prev) =>
+      prev.map((a) => (a.id === app.id ? { ...a, ...optimistic } : a))
+    );
+    try {
+      const updated = await apiPatch<Application>(
+        `/api/admin/applications/${app.id}`,
+        body
+      );
+      // Merge agar field tambahan payload list tidak hilang.
+      setApplications((prev) =>
+        prev.map((a) =>
+          a.id === updated.id ? ({ ...a, ...updated } as ApplicationRow) : a
+        )
+      );
+      toast.success(message);
+    } catch (err) {
+      setApplications(previous);
+      reportError(err);
+    } finally {
+      setWorkingTasks((prev) => {
+        const next = new Set(prev);
+        next.delete(task.key);
+        return next;
+      });
     }
   }
 
@@ -313,7 +414,114 @@ export function TasksTab() {
             <Skeleton key={i} className="h-40 w-full rounded-2xl" />
           ))}
         </div>
-      ) : totalCount === 0 ? (
+      ) : (
+        <>
+          {/* NR38-B fitur 7 — panel gabungan "Perlu dihubungi hari ini". */}
+          {contactToday.length > 0 ? (
+            <TaskGroup
+              icon={PhoneCall}
+              title="Perlu Dihubungi Hari Ini"
+              description="Follow-up, snooze, review HOLD, dan penawaran yang jatuh tempo — lengkap dengan aksi cepat."
+              count={contactToday.length}
+              tone="rose"
+            >
+              <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
+                {contactToday.map((task) => {
+                  const meta = CONTACT_KIND_META[task.kind];
+                  const working = workingTasks.has(task.key);
+                  return (
+                    <div
+                      key={task.key}
+                      className="flex flex-wrap items-center gap-2 rounded-xl border p-2.5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{task.app.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {task.app.positionTitle ?? "Tanpa posisi"} &middot; jatuh tempo{" "}
+                          {formatShortDateTime(task.dueAt)}
+                        </p>
+                      </div>
+                      <Badge
+                        className={cn(
+                          "shrink-0 rounded-full border-transparent",
+                          meta.chipClass
+                        )}
+                      >
+                        {meta.label}
+                      </Badge>
+                      {/* Aksi cepat hanya utk jenis yang didukung endpoint PATCH. */}
+                      {task.kind === "followup" ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            disabled={working}
+                            onClick={() => void runContactAction(task, "done")}
+                          >
+                            Selesai
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            disabled={working}
+                            title="Geser tindak lanjut 3 hari ke depan"
+                            onClick={() => void runContactAction(task, "snooze3")}
+                          >
+                            Tunda 3 hari
+                          </Button>
+                        </>
+                      ) : null}
+                      {task.kind === "hold" ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            disabled={working || !task.app.holdReason}
+                            title="Geser jadwal review HOLD 3 hari ke depan"
+                            onClick={() => void runContactAction(task, "snooze3")}
+                          >
+                            Tunda 3 hari
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                            disabled={working}
+                            title="Lepas tahanan & kosongkan jadwal review HOLD"
+                            onClick={() => void runContactAction(task, "done")}
+                          >
+                            Lepas HOLD
+                          </Button>
+                        </>
+                      ) : null}
+                      {task.kind === "snooze" ? (
+                        <span
+                          className="text-[11px] text-muted-foreground"
+                          title="snoozeUntil dikelola bot dan tidak didukung endpoint PATCH — selesaikan dari dialog detail"
+                        >
+                          Selesaikan dari detail
+                        </span>
+                      ) : null}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => openDetail(task.app.id, task.app.name)}
+                      >
+                        <Eye className="size-3.5" aria-hidden="true" />
+                        Buka Detail
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </TaskGroup>
+          ) : null}
+
+          {totalCount === 0 ? (
         <Card className="rounded-2xl">
           <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
             <Inbox className="size-10 text-muted-foreground/50" aria-hidden="true" />
@@ -796,6 +1004,8 @@ export function TasksTab() {
             </TaskGroup>
           ) : null}
         </div>
+        )}
+        </>
       )}
 
       <ApplicationDetailDialog
@@ -804,8 +1014,10 @@ export function TasksTab() {
           if (!open) setDetail(null);
         }}
         onSaved={(updated) => {
-          setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-          setDetail((prev) => (prev && prev.id === updated.id ? updated : prev));
+          setApplications((prev) =>
+            prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a))
+          );
+          setDetail((prev) => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
         }}
         onDeleted={(id) => {
           setApplications((prev) => prev.filter((a) => a.id !== id));

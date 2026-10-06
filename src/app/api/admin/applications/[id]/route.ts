@@ -137,7 +137,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       holdClear?: boolean;
       docExpiries?: string;
       screeningVerdicts?: string | null; // NR38-C — verdict admin per jawaban screening
-    };
+    } = {};
     // Field yang perlu merge dengan nilai existing — dihitung setelah record diambil.
     let starredToggle: boolean | undefined;
 
