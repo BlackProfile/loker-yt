@@ -16,9 +16,32 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Copy, GripVertical, Loader2, PauseCircle, Sparkles, Star } from "lucide-react";
+import {
+  CalendarClock,
+  Copy,
+  GripVertical,
+  Hourglass,
+  Loader2,
+  PauseCircle,
+  RotateCcw,
+  Sparkles,
+  Star,
+  XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
-import type { Application, StageKey } from "@/lib/types";
+import {
+  INTERVIEW_MODE_LABELS,
+  INTERVIEW_MODES,
+  INTERVIEW_PLATFORM_LABELS,
+  INTERVIEW_PLATFORMS,
+  REJECTION_REASONS,
+  REJECTION_REASON_LABELS,
+  type Application,
+  type InterviewMode,
+  type InterviewPlatform,
+  type RejectionReason,
+  type StageKey,
+} from "@/lib/types";
 import {
   DEFAULT_STAGES,
   OTHER_STAGE_KEY,
@@ -26,9 +49,29 @@ import {
   stageMeta,
 } from "@/lib/stages";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiGet, apiPatch, apiPost } from "./api";
-import { avatarToneOf, formatRelative, initialsOf } from "./format";
+import { avatarToneOf, formatRelative, initialsOf, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
 import { AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
@@ -42,12 +85,81 @@ const EMPTY_SET: Set<string> = new Set();
 
 // ------------------ NR-19: batas kapasitas tahap (WIP limit) ------------------
 
-// Baris posisi minimal untuk memuat limits (API mengembalikan stageWipLimits terparse).
-type PositionLimitsRow = { id: string; stageWipLimits?: Record<string, number> | null };
+// Baris posisi minimal untuk memuat limits + ambang aging (API mengembalikan
+// stageWipLimits terparse dan agingWarnDays).
+type PositionLimitsRow = {
+  id: string;
+  stageWipLimits?: Record<string, number> | null;
+  agingWarnDays?: number | null;
+};
 
-// Cache modul: limits per posisi dimuat sekali per sesi panel (segarkan saat event
-// positions:changed) — dipakai bila parent tidak memberikan prop stageWipLimits.
+// Cache modul: limits & ambang aging per posisi dimuat sekali per sesi panel
+// (segarkan saat event positions:changed) — dipakai bila parent tidak
+// memberikan prop stageWipLimits.
 let wipLimitsCache: Record<string, Record<string, number>> | null = null;
+let agingWarnCache: Record<string, number> | null = null;
+
+/* ------------------- NR-40: umur tahap, median & bottleneck ------------------- */
+
+const DAY_MS = 86_400_000;
+const DEFAULT_AGING_WARN_DAYS = 7;
+
+/**
+ * Umur (hari penuh) lamaran di tahap sekarang: dari stageUpdatedAt, fallback
+ * createdAt bila kosong (kontrak NR40-0).
+ */
+function daysInStage(app: Application, nowMs: number): number {
+  const iso = app.stageUpdatedAt ?? app.createdAt;
+  if (!iso) return 0;
+  const anchor = new Date(iso).getTime();
+  if (Number.isNaN(anchor)) return 0;
+  return Math.max(0, Math.floor((nowMs - anchor) / DAY_MS));
+}
+
+/** Median daftar hari (pembulatan ke bawah untuk genap); null bila kosong. */
+function medianOf(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : Math.floor((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+/** Warna umur tahap: hijau <= 3 hari, kuning <= ambang, rose > ambang. */
+function agingToneClass(days: number, warnDays: number): { dot: string; text: string } {
+  if (days <= 3) {
+    return { dot: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" };
+  }
+  if (days <= warnDays) {
+    return { dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" };
+  }
+  return { dot: "bg-rose-500", text: "text-rose-600 dark:text-rose-400" };
+}
+
+/** Chip kecil umur tahap: dot warna + "n h" (n hari di tahap ini). */
+function AgingChip({
+  app,
+  warnDays,
+  nowMs,
+}: {
+  app: Application;
+  warnDays: number;
+  nowMs: number;
+}) {
+  const days = daysInStage(app, nowMs);
+  const tone = agingToneClass(days, warnDays);
+  return (
+    <span
+      className={cn(
+        "inline-flex cursor-help items-center gap-1 text-[10px] font-medium tabular-nums",
+        tone.text
+      )}
+      title={`Umur di tahap ini: ${days} hari (ambang mengendap ${warnDays} hari)`}
+    >
+      <span className={cn("size-1.5 rounded-full", tone.dot)} aria-hidden="true" />
+      {days} h
+    </span>
+  );
+}
 
 /**
  * Hitung pelampauan batas kapasitas satu kolom kanban: kelompokkan kartu kolom
@@ -105,12 +217,23 @@ function KanbanCard({
   app,
   canMutate,
   duplicate,
+  warnDays,
+  nowMs,
+  selected,
+  onToggleSelect,
   onOpenDetail,
   onUpdated,
 }: {
   app: Application;
   canMutate: boolean;
   duplicate: boolean;
+  /** NR-40 — ambang hari "mengendap" untuk kartu ini (dari posisi / default 7). */
+  warnDays: number;
+  /** Snapshot waktu render (ms) agar umur tahap konsisten antar kartu. */
+  nowMs: number;
+  /** NR-40 — status pilihan aksi massal kanban. */
+  selected: boolean;
+  onToggleSelect: (checked: boolean) => void;
   onOpenDetail: (app: Application) => void;
   onUpdated?: (app: Application) => void;
 }) {
@@ -123,6 +246,28 @@ function KanbanCard({
 
   // Ringkasan AI: dibuat on-demand dari kartu (fitur Task 20-a).
   const [aiWorking, setAiWorking] = useState(false);
+
+  // NR-40 — batalkan auto-shortlist AI (kontrak PATCH {action:"undo-auto-shortlist"},
+  // endpoint dibuat agent PL-1b; kegagalan ditangani gracefully).
+  const [undoingAuto, setUndoingAuto] = useState(false);
+
+  async function handleUndoAuto() {
+    if (undoingAuto || !canMutate) return;
+    setUndoingAuto(true);
+    try {
+      const updated = await apiPatch<Application>(
+        `/api/admin/applications/${app.id}`,
+        { action: "undo-auto-shortlist" }
+      );
+      toast.success(`${app.name} dikembalikan dari auto-shortlist`);
+      onUpdated?.(updated);
+    } catch (err) {
+      reportError(err);
+      toast.error("Gagal membatalkan auto-shortlist.");
+    } finally {
+      setUndoingAuto(false);
+    }
+  }
 
   // NR-24 fitur 2 — bintang penting personal per admin (tampilkan & toggle dari kartu).
   const starred = Boolean(session && app.starredBy?.includes(session.id));
@@ -190,6 +335,20 @@ function KanbanCard({
       )}
     >
       <div className="flex items-start gap-2">
+        {/* NR-40 — pilihan aksi massal kanban (tidak memicu drag / detail). */}
+        {canMutate ? (
+          <span
+            className="mt-0.5 shrink-0"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Checkbox
+              checked={selected}
+              onCheckedChange={(v) => onToggleSelect(v === true)}
+              aria-label={`Pilih ${app.name} untuk aksi massal`}
+            />
+          </span>
+        ) : null}
         {/* NR-28 (item 7): warna avatar deterministik dari nama. */}
         <span
           className={cn(
@@ -234,6 +393,44 @@ function KanbanCard({
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <AiScoreBadge score={app.aiScore} />
         <DomisiliChip domisili={app.domisili} komuterPlan={app.komuterPlan} />
+        {/* NR-40 — tag "Auto" untuk lamaran hasil auto-shortlist AI + tombol undo. */}
+        {app.autoShortlistedAt ? (
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  title="Dipindah otomatis oleh auto-shortlist AI"
+                  className="cursor-help border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] font-medium text-amber-700 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-400"
+                >
+                  <Sparkles className="size-3" aria-hidden="true" />
+                  Auto
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>Dipindah otomatis oleh auto-shortlist AI</TooltipContent>
+            </Tooltip>
+            {canMutate ? (
+              <button
+                type="button"
+                disabled={undoingAuto}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleUndoAuto();
+                }}
+                title="Batalkan auto"
+                aria-label={`Batalkan auto-shortlist untuk ${app.name}`}
+                className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-amber-50 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-amber-950/40 dark:hover:text-amber-400"
+              >
+                {undoingAuto ? (
+                  <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                ) : (
+                  <RotateCcw className="size-3" aria-hidden="true" />
+                )}
+              </button>
+            ) : null}
+          </>
+        ) : null}
         {app.holdAt ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -263,6 +460,8 @@ function KanbanCard({
           </Tooltip>
         ) : null}
         <RatingStars value={app.rating} size="size-3" disabled />
+        {/* NR-40 — umur di tahap: dot warna + "n h". */}
+        <AgingChip app={app} warnDays={warnDays} nowMs={nowMs} />
       </div>
       {app.aiSummary ? (
         <p className="mt-2 line-clamp-2 rounded-md bg-zinc-50 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground dark:bg-zinc-900/60">

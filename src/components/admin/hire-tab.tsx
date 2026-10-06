@@ -819,11 +819,16 @@ function EmployeeCard({
   employee,
   onPlanSaved,
   onCheckInSaved,
+  onOpenExit,
 }: {
   employee: Employee;
-  onPlanSaved: (employeeId: string, plan: PlanItem[]) => void;
+  onPlanSaved: (employeeId: string, field: PlanField, plan: PlanItem[]) => void;
   onCheckInSaved: (employeeId: string, checkIn: CheckInDto) => void;
+  onOpenExit: (employee: Employee) => void;
 }) {
+  const { canMutate } = useAdminSession();
+  const isAlumni = employee.exitAt != null;
+
   return (
     <Card className="gap-0 rounded-2xl p-4">
       <CardContent className="flex flex-col gap-4 px-0">
@@ -831,6 +836,12 @@ function EmployeeCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="truncate text-sm font-semibold">{employee.name}</p>
+              {employee.permanentAt ? (
+                <Badge variant="outline" className={BADGE_DONE}>
+                  <BadgeCheck className="size-3" aria-hidden="true" />
+                  Karyawan Tetap
+                </Badge>
+              ) : null}
               <Badge variant="secondary">{employee.positionTitle ?? "Tanpa posisi"}</Badge>
             </div>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -838,11 +849,48 @@ function EmployeeCard({
               Bergabung {formatDate(employee.hiredAt)}
             </p>
           </div>
-          <ProbationInfo employee={employee} />
+          {isAlumni ? (
+            <div className="flex min-w-0 flex-col gap-1.5 sm:items-end">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className={BADGE_NEUTRAL}>
+                  Alumni
+                </Badge>
+                {employee.exitReason ? (
+                  <Badge variant="outline">{EXIT_REASON_LABELS[employee.exitReason]}</Badge>
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground sm:text-right">
+                Keluar {formatDate(employee.exitAt)}
+              </p>
+              {employee.exitNote ? (
+                <p className="max-w-xs text-xs italic text-muted-foreground/80 line-clamp-2 sm:text-right">
+                  {employee.exitNote}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-2 sm:items-end">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                onClick={() => onOpenExit(employee)}
+                disabled={!canMutate}
+              >
+                <LogOut className="size-3.5" aria-hidden="true" />
+                Akhiri Kerja
+              </Button>
+              <ProbationInfo employee={employee} />
+            </div>
+          )}
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <OnboardingPlanEditor employee={employee} onPlanSaved={onPlanSaved} />
+          {isAlumni ? (
+            <OffboardingChecklistEditor employee={employee} onPlanSaved={onPlanSaved} />
+          ) : (
+            <OnboardingPlanEditor employee={employee} onPlanSaved={onPlanSaved} />
+          )}
           <CheckInSection employee={employee} onCheckInSaved={onCheckInSaved} />
         </div>
       </CardContent>
