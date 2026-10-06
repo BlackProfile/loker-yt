@@ -65,9 +65,13 @@ type VerifyOutcome =
 export function VerifyCardView({ initialToken }: { initialToken: string | null }) {
   const [siteName, setSiteName] = useState(FALLBACK_SITE_NAME);
   const [nomor, setNomor] = useState("");
-  const [outcome, setOutcome] = useState<VerifyOutcome>({ kind: "idle" });
-  const [year, setYear] = useState<number | null>(null);
+  // Jalur QR: mulai dalam keadaan loading agar hasil tidak "berkedip" kosong.
+  const [outcome, setOutcome] = useState<VerifyOutcome>(() =>
+    initialToken ? { kind: "loading" } : { kind: "idle" }
+  );
   const autoVerifyRef = useRef(false);
+  // Komponen ini hanya ter-mount via hash routing di klien — aman dari mismatch SSR.
+  const year = new Date().getFullYear();
 
   // Nama studio untuk header/footer — fetch sekali; gagal -> fallback tetap rapi.
   useEffect(() => {
@@ -89,13 +93,8 @@ export function VerifyCardView({ initialToken }: { initialToken: string | null }
     };
   }, []);
 
-  useEffect(() => {
-    setYear(new Date().getFullYear());
-  }, []);
-
-  const runVerify = useCallback(
+  const verify = useCallback(
     async (params: { token?: string; nomor?: string }) => {
-      setOutcome({ kind: "loading" });
       const qs = params.token
         ? `t=${encodeURIComponent(params.token)}`
         : `nomor=${encodeURIComponent((params.nomor ?? "").trim())}`;
@@ -121,18 +120,20 @@ export function VerifyCardView({ initialToken }: { initialToken: string | null }
   );
 
   // Jalur QR: verifikasi otomatis SEKALI saat halaman dibuka dengan #verifikasi?t=...
+  // (keadaan loading sudah disiapkan dari initial state — tidak ada setState sinkron).
   useEffect(() => {
     if (autoVerifyRef.current) return;
     autoVerifyRef.current = true;
-    if (initialToken) void runVerify({ token: initialToken });
-  }, [initialToken, runVerify]);
+    if (initialToken) void verify({ token: initialToken });
+  }, [initialToken, verify]);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (outcome.kind === "loading") return;
     const clean = nomor.trim().toUpperCase();
     if (!clean) return;
-    void runVerify({ nomor: clean });
+    setOutcome({ kind: "loading" });
+    void verify({ nomor: clean });
   };
 
   return (
@@ -231,7 +232,7 @@ export function VerifyCardView({ initialToken }: { initialToken: string | null }
       {/* Footer sticky — wrapper min-h-screen flex-col + footer mt-auto */}
       <footer className="mt-auto border-t py-6">
         <p className="text-center text-xs text-muted-foreground">
-          {siteName} — verifikasi kartu karyawan{year ? ` · ${year}` : ""}
+          {siteName} — verifikasi kartu karyawan · {year}
         </p>
       </footer>
     </div>
