@@ -2362,41 +2362,10 @@ export function ApplicationDetailDialog({
     setEmailBody((prev) => (prev.length > 0 ? `${prev}${variable}` : variable));
   }
 
-  // Form penawaran — dipakai untuk kirim baru & edit inline saat PENDING.
-  // NR-40 (lanjutan PL-1b) — peringatan gaji live pada jalur offer inline:
-  // di bawah ekspektasi pelamar (rose) / di luar rentang gaji posisi (amber).
-  // Sama seperti OfferDialog; non-blocking.
-  const offerSalaryWarnings = useMemo(() => {
-    const offered = parseSalaryText(offerForm.salary);
-    if (offered == null) return [];
-    const warnings: { kind: string; tone: "rose" | "amber"; text: string }[] = [];
-    if (app.salaryExpectation != null && offered < app.salaryExpectation) {
-      warnings.push({
-        kind: "expectation",
-        tone: "rose",
-        text: `Di bawah ekspektasi pelamar (${formatRupiah(app.salaryExpectation)})`,
-      });
-    }
-    const min = pos?.salaryMin ?? null;
-    const max = pos?.salaryMax ?? null;
-    if ((min != null && offered < min) || (max != null && offered > max)) {
-      const rangeText =
-        min != null && max != null
-          ? `${formatRupiah(min)}–${formatRupiah(max)}`
-          : min != null
-            ? `minimal ${formatRupiah(min)}`
-            : `maksimal ${formatRupiah(max)}`;
-      warnings.push({
-        kind: "range",
-        tone: "amber",
-        text: `Di luar rentang gaji posisi (${rangeText})`,
-      });
-    }
-    return warnings;
-  }, [offerForm.salary, app, pos]);
+  if (!application) return null;
 
-  const offerFormFields = (
-    <div className="flex flex-col gap-3">
+  const app = application;
+  const pos = position;
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="offer-salary">Gaji</Label>
