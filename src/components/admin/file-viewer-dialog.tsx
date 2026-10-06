@@ -9,6 +9,14 @@
 // Format yang didukung viewer: PDF & teks (iframe), gambar (img), audio
 // (player), video (player). Format lain (mis. .docx) memakai kotak fallback
 // dengan tombol Unduh — browser tidak bisa merendernya.
+//
+// NR-37 — deteksi FORMAT-FIRST dari nama berkas: ekstensi yang dikenali (.pdf,
+// .jpg, .mp4, dst.) langsung dirender TANPA probe HEAD sama sekali. Versi lama
+// selalu probe HEAD lebih dulu — bila request itu datang tanpa cookie sesi
+// (quirk proxy/edge), route menjawab 401 application/json dan viewer menuduh
+// "format tidak didukung" padahal filenya PDF biasa. Kini probe HEAD hanya
+// dipakai untuk ekstensi yang TIDAK dikenali, dan hasilnya hanya dipercaya
+// bila HTTP 200 + content-type bukan JSON/HTML (bukan pesan error).
 "use client";
 
 import { useEffect, useState } from "react";
@@ -36,7 +44,10 @@ function kindFromMime(mime: string): AdminPreviewKind {
   return "unsupported";
 }
 
-/** Fallback ekstensi nama bila MIME tidak diketahui (HEAD gagal / kosong). */
+/**
+ * Sumber utama deteksi format: ekstensi nama berkas (NR-37).
+ * Selalu tersedia di semua pemanggil (filename wajib dioper saat merender baris berkas).
+ */
 function kindFromName(name: string): AdminPreviewKind {
   const lower = (name || "").toLowerCase();
   if (lower.endsWith(".pdf")) return "pdf";
