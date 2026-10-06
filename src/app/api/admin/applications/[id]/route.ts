@@ -22,6 +22,7 @@ import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
 import { appendStageHistory } from "@/lib/stage-history";
+import { ensureEmployeeCard, syncCardOnStatusChange } from "@/lib/employee-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -679,6 +680,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         positionTitle: updated.position?.title ?? null,
         origin: req.headers.get("origin") ?? undefined,
       });
+    }
+
+    // NR-39 — sinkron Kartu Karyawan saat tahap berubah:
+    // masuk Diterima (sudah hired) -> pastikan kartu terbit; keluar dari Diterima /
+    // do-not-hire -> kartu dicabut otomatis. Gagal sinkron tidak menggagalkan PATCH.
+    if (stageChanged) {
+      if (updateData.status === "ACCEPTED" && updated.hiredAt) {
+        await ensureEmployeeCard(id, { actor: session.name }).catch((err) => {
+          console.error("[PATCH app] gagal menerbitkan kartu karyawan", err);
+        });
+      } else {
+        await syncCardOnStatusChange(id, updateData.status, {
+          doNotHire: updateData.doNotHire === true,
+          actor: session.name,
+        }).catch(() => undefined);
+      }
+    } else if (updateData.doNotHire === true) {
+      await syncCardOnStatusChange(id, undefined, { doNotHire: true, actor: session.name }).catch(() => undefined);
     }
 
     // Realtime: perubahan lamaran (status/catatan/wawancara) disebarkan ke semua admin

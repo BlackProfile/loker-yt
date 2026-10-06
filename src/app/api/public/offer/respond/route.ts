@@ -8,6 +8,7 @@ import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 import { sendSystemEvent } from "@/lib/notify";
 import { appendStageHistory } from "@/lib/stage-history";
+import { ensureEmployeeCard } from "@/lib/employee-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -202,6 +203,12 @@ export async function POST(req: NextRequest) {
         })),
       });
     }
+
+    // NR-39 — Kartu Karyawan terbit otomatis saat offer diterima (hiredAt terisi).
+    // Kegagalan penerbitan kartu TIDAK menggagalkan penerimaan offer.
+    await ensureEmployeeCard(application.id, { actor: "Sistem" }).catch((err) => {
+      console.error("[offer-accept] gagal menerbitkan kartu karyawan", err);
+    });
 
     void sendSystemEvent({
       title: "Offer Diterima",
