@@ -4718,37 +4718,10 @@ export function ApplicationDetailDialog({
             </div>
           </section>
 
-          {/* NR38-C fitur 8 — bar aksi prioritas menempel di bawah area scroll.
-              Tombol memanggil handler & state YANG SAMA dengan footer (Hapus
-              membuka AlertDialog konfirmasi yang sama; Simpan memanggil handleSave).
-              Hanya tampil untuk role yang boleh mutasi. */}
-          {canMutate ? (
-            <div className="sticky bottom-0 z-10 -mx-0.5 flex items-center justify-between gap-2 border-t bg-background/90 px-0.5 py-2 backdrop-blur">
-              <Button
-                variant="destructive"
-                className="h-11 sm:h-9"
-                onClick={() => setConfirmOpen(true)}
-                disabled={deleting || saving}
-              >
-                <Trash2 className="size-4" aria-hidden="true" />
-                Hapus
-              </Button>
-              <Button
-                onClick={() => void handleSave()}
-                disabled={saving || deleting}
-                className="h-11 active:scale-[0.99] sm:h-9"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                    Menyimpan...
-                  </>
-                ) : (
-                  "Simpan Perubahan"
-                )}
-              </Button>
-            </div>
-          ) : null}
+          {/* NR38-C: bar aksi sticky dalam area scroll DIHAPUS — DialogFooter di
+              bawah berada DI LUAR container scroll sehingga Hapus & Simpan Perubahan
+              selalu terlihat tanpa scroll; duplikat sticky hanya membuat dua bar
+              aksi tampil serentak saat konten digulir. */}
         </div>
 
         <DialogFooter className="gap-2 border-t pt-4 sm:justify-between">
