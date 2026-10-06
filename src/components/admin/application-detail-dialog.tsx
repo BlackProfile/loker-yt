@@ -130,6 +130,7 @@ import {
 } from "@/lib/form-schema";
 import type { HiddenUiKey } from "@/lib/hidden-ui"; // NR-22 — kunci blok UI tersembunyi per posisi
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
+import { parseSalaryText } from "./offer-dialog"; // NR-40 — parsa nominal gaji utk peringatan offer inline
 import { fillTemplate } from "@/components/landing/landing-utils";
 import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, jsonInit } from "./api";
 import { AdminConfetti } from "./confetti"; // NR-28 (item 10) — confetti DITERIMA
@@ -2362,6 +2363,38 @@ export function ApplicationDetailDialog({
   }
 
   // Form penawaran — dipakai untuk kirim baru & edit inline saat PENDING.
+  // NR-40 (lanjutan PL-1b) — peringatan gaji live pada jalur offer inline:
+  // di bawah ekspektasi pelamar (rose) / di luar rentang gaji posisi (amber).
+  // Sama seperti OfferDialog; non-blocking.
+  const offerSalaryWarnings = useMemo(() => {
+    const offered = parseSalaryText(offerForm.salary);
+    if (offered == null) return [];
+    const warnings: { kind: string; tone: "rose" | "amber"; text: string }[] = [];
+    if (app.salaryExpectation != null && offered < app.salaryExpectation) {
+      warnings.push({
+        kind: "expectation",
+        tone: "rose",
+        text: `Di bawah ekspektasi pelamar (${formatRupiah(app.salaryExpectation)})`,
+      });
+    }
+    const min = pos?.salaryMin ?? null;
+    const max = pos?.salaryMax ?? null;
+    if ((min != null && offered < min) || (max != null && offered > max)) {
+      const rangeText =
+        min != null && max != null
+          ? `${formatRupiah(min)}–${formatRupiah(max)}`
+          : min != null
+            ? `minimal ${formatRupiah(min)}`
+            : `maksimal ${formatRupiah(max)}`;
+      warnings.push({
+        kind: "range",
+        tone: "amber",
+        text: `Di luar rentang gaji posisi (${rangeText})`,
+      });
+    }
+    return warnings;
+  }, [offerForm.salary, app, pos]);
+
   const offerFormFields = (
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -2397,6 +2430,24 @@ export function ApplicationDetailDialog({
           </Select>
         </div>
       </div>
+      {offerSalaryWarnings.length > 0 ? (
+        <div className="flex flex-col gap-1.5" aria-live="polite">
+          {offerSalaryWarnings.map((w) => (
+            <div
+              key={w.kind}
+              className={cn(
+                "flex items-start gap-2 rounded-lg border p-2.5 text-xs",
+                w.tone === "rose"
+                  ? "border-rose-200 bg-rose-50/70 text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-400"
+                  : "border-amber-200 bg-amber-50/70 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-400"
+              )}
+            >
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <span>{w.text}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="offer-start">Mulai Kerja</Label>

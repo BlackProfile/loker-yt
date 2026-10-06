@@ -47,7 +47,7 @@ import type { ApplicationRow } from "./applicant-row-types";
  * "Rp 4.500.000/bulan" -> 4500000. Hasil di bawah 100 ribu dianggap bukan
  * nominal gaji yang disengaja (mis. "15 jt" terbaca 15) dan diabaikan (null).
  */
-function parseSalaryText(text: string): number | null {
+export function parseSalaryText(text: string): number | null {
   const digits = text.replace(/\D+/g, "");
   if (!digits) return null;
   const value = Number.parseInt(digits, 10);
