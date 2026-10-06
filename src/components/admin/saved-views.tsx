@@ -6,7 +6,7 @@
 // klik chip = terapkan filter, ikon x kecil = hapus (konfirmasi inline, tanpa dialog besar).
 // Chip yang filternya identik dengan state aktif diberi ring rose.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -103,18 +103,14 @@ export function SavedViewsBar({
   /** Terapkan snapshot ke state filter induk. */
   onApply: (filters: AdminFilterSnapshot) => void;
 }) {
-  const [views, setViews] = useState<SavedView[]>([]);
-  const [hydrated, setHydrated] = useState(false);
+  // Komponen ini hanya termount di panel admin (client-only), jadi inisialisasi
+  // lazy dari localStorage aman terhadap SSR/hidrasi (pola yang sama dgn sidebar).
+  const [views, setViews] = useState<SavedView[]>(() => loadViews());
   const [saveOpen, setSaveOpen] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [saving, setSaving] = useState(false);
   // Konfirmasi hapus inline: id tampilan yang menunggu konfirmasi.
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
-
-  useEffect(() => {
-    setViews(loadViews());
-    setHydrated(true);
-  }, []);
 
   const currentSignature = snapshotSignature(currentSnapshot);
 
@@ -138,8 +134,6 @@ export function SavedViewsBar({
     setNameInput("");
     toast.success(`Tampilan "${name}" tersimpan`);
   }, [nameInput, currentSnapshot, views]);
-
-  if (!hydrated) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
