@@ -48,7 +48,6 @@ import {
 import {
   ApplicantCardGrid,
   NewBadge,
-  SalaryVerdictChip,
 } from "./applicant-card-grid";
 
 /** Mode kepadatan tabel: "compact" (padat) atau "cozy" (nyaman). */
@@ -539,13 +538,7 @@ export function ApplicationsTable({
                     </div>
                   </TableCell>
                   <TableCell className={cn("max-w-36 text-sm", pad)}>
-                    <div className="flex flex-col gap-1">
-                      <span className="truncate">{app.positionTitle ?? "-"}</span>
-                      {!isCompact ? null : (
-                        /* Mode padat: chip gaji kecil tetap menyertai posisi agar info tak hilang total. */
-                        <SalaryVerdictChip app={app} />
-                      )}
-                    </div>
+                    <span className="truncate">{app.positionTitle ?? "-"}</span>
                   </TableCell>
                   {/* NR38-B fitur 4 — kolom Gaji: verdict ekspektasi vs rentang posisi. */}
                   {!isCompact ? (

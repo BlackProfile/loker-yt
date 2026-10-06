@@ -11,12 +11,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Eye, Star } from "lucide-react";
 import type { Application } from "@/lib/types";
+import { stageLabel } from "@/lib/stages";
 import { cn } from "@/lib/utils";
 import { formatDate, formatShortDateTime } from "./format";
 import { StatusBadge, AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 import { ApplicantAvatar } from "./applicant-avatar";
-import { salaryVerdict, shortDuration } from "./stage-meta";
+import {
+  agingDotClass,
+  agingToneFrom,
+  salaryVerdict,
+  shortDuration,
+} from "./stage-meta";
 import { ageOf, stageAgeBasis, type ApplicationRow } from "./applicant-row-types";
 
 /** Chip gaji vs rentang posisi — dipakai kartu & dialog bandingkan. */
@@ -160,8 +166,21 @@ export function ApplicantCardGrid({
               </div>
 
               {/* Umur lamaran + tanggal daftar */}
-              <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-                <span>Daftar {shortDuration(app.createdAt)} lalu</span>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                <span
+                  className="inline-flex items-center gap-1.5"
+                  title={`Diam di tahap ${stageLabel(app.status)} selama ${shortDuration(ageBasis)}`}
+                >
+                  {/* NR38-B fitur 3 — dot umur lamaran berwarna juga di mode kartu. */}
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "size-2 shrink-0 rounded-full",
+                      agingDotClass(agingToneFrom(ageBasis))
+                    )}
+                  />
+                  Daftar {shortDuration(app.createdAt)} lalu
+                </span>
                 <span aria-hidden="true">&middot;</span>
                 <span title={`Tanggal daftar: ${formatDate(app.createdAt)}`}>
                   {formatShortDateTime(app.createdAt)}

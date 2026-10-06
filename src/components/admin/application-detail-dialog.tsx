@@ -3261,7 +3261,7 @@ export function ApplicationDetailDialog({
                             onClick={() => void handleCycleVerdict(q.id)}
                             aria-label={`Penilaian jawaban: ${verdict ? SCREENING_VERDICT_LABELS[verdict] : "Belum dinilai"}. Klik untuk mengubah.`}
                             className={cn(
-                              "inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-70",
+                              "inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-[11px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-70",
                               verdict ? SCREENING_VERDICT_CHIP[verdict] : SCREENING_VERDICT_CHIP_NONE,
                               canMutate && !verdictSaving && "cursor-pointer hover:opacity-80"
                             )}
