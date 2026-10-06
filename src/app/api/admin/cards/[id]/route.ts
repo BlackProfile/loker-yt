@@ -40,6 +40,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             hiredAt: true,
             trackingCode: true,
             probationEnd: true,
+            permanentAt: true,
+            exitAt: true,
             position: { select: { title: true } },
           },
         },
@@ -191,9 +193,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     void emitRealtime(REALTIME_EVENTS.applications);
 
-    return NextResponse.json(
-      serializeCard(updated, owner, updated.isCurrent ? await signCardToken(updated.token) : null)
-    );
+    return NextResponse.json({
+      ...serializeCard(updated, owner, updated.isCurrent ? await signCardToken(updated.token) : null),
+      // NR-40 — siklus hidup karyawan (badge "Karyawan Tetap" / "Alumni")
+      permanentAt: card.application.permanentAt ? card.application.permanentAt.toISOString() : null,
+      exitAt: card.application.exitAt ? card.application.exitAt.toISOString() : null,
+    });
   } catch (error) {
     console.error("[PATCH /api/admin/cards/[id]]", error);
     return NextResponse.json({ error: "Gagal memperbarui kartu. Coba lagi nanti." }, { status: 500 });

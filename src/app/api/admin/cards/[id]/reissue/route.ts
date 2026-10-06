@@ -37,6 +37,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
             hiredAt: true,
             trackingCode: true,
             probationEnd: true,
+            permanentAt: true,
+            exitAt: true,
             position: { select: { title: true } },
           },
         },
@@ -89,7 +91,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     });
     void emitRealtime(REALTIME_EVENTS.applications);
 
-    return NextResponse.json(serializeCard(created, owner, await signCardToken(created.token)));
+    return NextResponse.json({
+      ...serializeCard(created, owner, await signCardToken(created.token)),
+      // NR-40 — siklus hidup karyawan (badge "Karyawan Tetap" / "Alumni")
+      permanentAt: card.application.permanentAt ? card.application.permanentAt.toISOString() : null,
+      exitAt: card.application.exitAt ? card.application.exitAt.toISOString() : null,
+    });
   } catch (error) {
     console.error("[POST /api/admin/cards/[id]/reissue]", error);
     return NextResponse.json({ error: "Gagal menerbitkan ulang kartu. Coba lagi nanti." }, { status: 500 });

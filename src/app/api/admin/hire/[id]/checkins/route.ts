@@ -1,10 +1,12 @@
 // POST  /api/admin/hire/[id]/checkins — isi cek-in masa percobaan (day 30|60|90) (OWNER/HR).
-// PATCH /api/admin/hire/[id]/checkins — edit rating/catatan cek-in yang sudah ada (OWNER/HR).
+// PATCH /api/admin/hire/[id]/checkins — edit rating/catatan/rekomendasi cek-in yang sudah ada (OWNER/HR).
 // dueAt dihitung dari hiredAt + n hari saat POST; completedAt = waktu pengisian.
+// NR-40: recommendation (LANJUT|PERPANJANG|AKHIRI) opsional — kosong/null disimpan null.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { CHECKIN_RECOMMENDATION_LABELS, CHECKIN_RECOMMENDATIONS, type CheckInRecommendation } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -32,12 +34,23 @@ function sanitizeNotes(value: unknown): string | null | "invalid" {
   return notes.length > 0 ? notes : null;
 }
 
+/** Validasi rekomendasi opsional: null/"" -> null; salah satu CHECKIN_RECOMMENDATIONS; else "invalid". */
+function sanitizeRecommendation(value: unknown): CheckInRecommendation | null | "invalid" {
+  if (value === null || value === undefined) return null;
+  if (value === "") return null;
+  if (typeof value !== "string") return "invalid";
+  return (CHECKIN_RECOMMENDATIONS as string[]).includes(value)
+    ? (value as CheckInRecommendation)
+    : "invalid";
+}
+
 function serializeCheckIn(row: {
   id: string;
   day: number;
   dueAt: Date | null;
   rating: number | null;
   notes: string | null;
+  recommendation: string | null;
   completedAt: Date | null;
 }) {
   return {
@@ -46,6 +59,7 @@ function serializeCheckIn(row: {
     dueAt: row.dueAt ? row.dueAt.toISOString() : null,
     rating: row.rating,
     notes: row.notes,
+    recommendation: row.recommendation,
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
   };
 }
@@ -79,6 +93,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (notes === "invalid") {
       return NextResponse.json({ error: "Catatan harus berupa teks." }, { status: 400 });
     }
+    const recommendation = sanitizeRecommendation(data.recommendation);
+    if (recommendation === "invalid") {
+      return NextResponse.json(
+        { error: "Rekomendasi harus LANJUT, PERPANJANG, atau AKHIRI." },
+        { status: 400 },
+      );
+    }
 
     const employee = await db.application.findUnique({
       where: { id },
@@ -106,6 +127,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         dueAt: new Date(employee.hiredAt.getTime() + day * DAY_MS),
         rating: typeof data.rating === "number" ? data.rating : null,
         notes: notes ?? null,
+        recommendation: recommendation ?? null,
         completedAt: new Date(),
       },
     });
@@ -115,7 +137,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         applicationId: id,
         actor: session.name,
         action: "CHECK_IN",
-        detail: `Cek-in hari ke-${day} selesai${created.rating ? ` — rating ${created.rating}/5` : ""}`,
+        detail: `Cek-in hari ke-${day} selesai${created.rating ? ` — rating ${created.rating}/5` : ""}${
+          created.recommendation
+            ? ` — rekomendasi: ${CHECKIN_RECOMMENDATION_LABELS[created.recommendation as CheckInRecommendation]}`
+            : ""
+        }`,
       },
     });
 
@@ -147,7 +173,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "ID cek-in wajib dikirim." }, { status: 400 });
     }
 
-    const updateData: { rating?: number | null; notes?: string | null } = {};
+    const updateData: { rating?: number | null; notes?: string | null; recommendation?: string | null } = {};
     if (data.rating !== undefined) {
       const ratingErr = ratingError(data.rating);
       if (ratingErr) {
@@ -161,6 +187,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ error: "Catatan harus berupa teks." }, { status: 400 });
       }
       updateData.notes = notes ?? null;
+    }
+    if (data.recommendation !== undefined) {
+      const recommendation = sanitizeRecommendation(data.recommendation);
+      if (recommendation === "invalid") {
+        return NextResponse.json(
+          { error: "Rekomendasi harus LANJUT, PERPANJANG, atau AKHIRI." },
+          { status: 400 },
+        );
+      }
+      updateData.recommendation = recommendation ?? null;
     }
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: "Tidak ada perubahan yang dikirim." }, { status: 400 });
@@ -184,7 +220,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         applicationId: id,
         actor: session.name,
         action: "CHECK_IN",
-        detail: `Cek-in hari ke-${existing.day} diperbarui`,
+        detail: `Cek-in hari ke-${existing.day} diperbarui${
+          updated.recommendation
+            ? ` — rekomendasi: ${CHECKIN_RECOMMENDATION_LABELS[updated.recommendation as CheckInRecommendation]}`
+            : ""
+        }`,
       },
     });
 

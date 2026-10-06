@@ -278,6 +278,165 @@ export async function POST(req: NextRequest) {
       affected = result.count;
       logAction = "BULK_UNARCHIVE";
       logDetail = `${affected} lamaran dikeluarkan dari arsip`;
+    } else if (action === "schedule-interview") {
+      // NR-40 — Jadwalkan wawancara massal: satu konfigurasi jadwal yang sama
+      // untuk semua lamaran terpilih; tiap lamaran mendapat sesi ronde
+      // berikutnya (max round existing + 1) dan interviewAt diperbarui agar
+      // kalender & overview menampilkan jadwal terdekat (pola POST /interviews).
+      const scheduledAtRaw = typeof data.scheduledAt === "string" ? data.scheduledAt.trim() : "";
+      const scheduledAt = scheduledAtRaw ? new Date(scheduledAtRaw) : null;
+      if (!scheduledAt || Number.isNaN(scheduledAt.getTime())) {
+        return NextResponse.json(
+          { error: "Tanggal dan jam wawancara tidak valid." },
+          { status: 400 },
+        );
+      }
+
+      const mode = sanitizeInterviewMode(data.mode);
+      const platform = sanitizeInterviewPlatform(data.platform);
+
+      let meetingLink: string | null = null;
+      if (typeof data.meetingLink === "string" && data.meetingLink.trim()) {
+        const link = data.meetingLink.trim();
+        if (!/^https?:\/\//i.test(link)) {
+          return NextResponse.json(
+            { error: "Link meeting harus diawali http:// atau https://" },
+            { status: 400 },
+          );
+        }
+        meetingLink = link.slice(0, 500);
+      }
+
+      let address: string | null = null;
+      if (typeof data.address === "string" && data.address.trim()) {
+        address = data.address.trim().slice(0, 300);
+      }
+
+      let durationMin = 45;
+      if (typeof data.durationMin === "number" && Number.isInteger(data.durationMin)) {
+        durationMin = Math.min(480, Math.max(10, data.durationMin));
+      }
+
+      // Pewawancara: dipisah koma (form kanban) atau array (kontrak API).
+      const interviewers: string[] = (
+        Array.isArray(data.interviewers)
+          ? data.interviewers
+          : typeof data.interviewers === "string"
+            ? data.interviewers.split(",")
+            : []
+      )
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim().slice(0, 60))
+        .filter((item) => item.length > 0)
+        .slice(0, 6);
+
+      const rows = await db.application.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          trackingCode: true,
+          position: { select: { title: true } },
+        },
+      });
+
+      if (rows.length > 0) {
+        // Ronde berikutnya per lamaran: max round existing + 1 (satu query groupBy).
+        const maxRounds = await db.interview.groupBy({
+          by: ["applicationId"],
+          where: { applicationId: { in: rows.map((row) => row.id) } },
+          _max: { round: true },
+        });
+        const nextRoundByApp = new Map<string, number>();
+        for (const row of maxRounds) {
+          nextRoundByApp.set(row.applicationId, (row._max.round ?? 0) + 1);
+        }
+
+        const whenLabel = scheduledAt.toLocaleString("id-ID", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        });
+
+        await db.$transaction(
+          rows.flatMap((row) => {
+            const round = nextRoundByApp.get(row.id) ?? 1;
+            return [
+              db.interview.create({
+                data: {
+                  applicationId: row.id,
+                  round,
+                  mode,
+                  platform,
+                  meetingLink,
+                  address,
+                  scheduledAt,
+                  durationMin,
+                  interviewers: JSON.stringify(interviewers),
+                  status: "SCHEDULED",
+                },
+              }),
+              // Sinkronkan kolom interviewAt lama (kalender/overview) — pola
+              // yang sama dengan endpoint scheduling satu lamaran.
+              db.application.update({
+                where: { id: row.id },
+                data: { interviewAt: scheduledAt },
+              }),
+            ];
+          }),
+        );
+
+        await db.activityLog.createMany({
+          data: rows.map((row) => ({
+            applicationId: row.id,
+            actor: session.name,
+            action: "INTERVIEW_SCHEDULED",
+            detail: `Wawancara ronde ${nextRoundByApp.get(row.id) ?? 1} dijadwalkan massal ${whenLabel}`,
+          })),
+        });
+
+        // Email undangan sederhana per kandidat — memakai queueEmail (arsip
+        // EmailOutbox + SMTP bila aktif) dengan kind INVITE, pola yang sama
+        // dengan route reschedule-slot. Fire-and-forget, tidak menggagalkan aksi.
+        for (const row of rows) {
+          const email = row.email.trim();
+          if (!email || !email.includes("@")) continue; // lamaran impor bisa tanpa email valid
+          const positionTitle = row.position?.title ?? "posisi umum";
+          void queueEmail({
+            toEmail: email,
+            subject: `Undangan wawancara — ${positionTitle}`,
+            body: [
+              `Halo ${row.name},`,
+              "",
+              `Kamu diundang untuk mengikuti wawancara posisi ${positionTitle}.`,
+              "",
+              `Jadwal: ${whenLabel}`,
+              `Durasi: ${durationMin} menit`,
+              mode === "ONSITE"
+                ? `Lokasi: ${address ?? "akan diinformasikan tim"}`
+                : `Platform: ${INTERVIEW_PLATFORM_LABELS[platform]}`,
+              ...(mode !== "ONSITE" && meetingLink ? ["Link meeting: " + meetingLink] : []),
+              ...(interviewers.length > 0 ? ["Pewawancara: " + interviewers.join(", ")] : []),
+              "",
+              `Buka halaman cek status lamaran dengan kode ${row.trackingCode ?? "-"} untuk melihat detail terbaru.`,
+              "",
+              "Salam hangat,",
+              "Tim Lumina Studio",
+            ].join("\n"),
+            kind: "INVITE",
+            applicationId: row.id,
+          });
+        }
+
+        affected = rows.length;
+        logAction = "BULK_SCHEDULE_INTERVIEW";
+        logDetail = `${affected} wawancara dijadwalkan massal (${whenLabel})`;
+        // Realtime tambahan: daftar jadwal wawancara & kalender ikut segar.
+        void emitRealtime(REALTIME_EVENTS.interviews);
+      } else {
+        logAction = "BULK_SCHEDULE_INTERVIEW";
+        logDetail = "Tidak ada lamaran valid untuk dijadwalkan";
+      }
     } else {
       // SOFT DELETE: masuk tong sampah (deletedAt=now), bukan hapus permanen.
       // Pemulihan tersedia dari tab Data.

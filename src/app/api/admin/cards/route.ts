@@ -36,6 +36,8 @@ export async function GET() {
             nik: true,
             hiredAt: true,
             trackingCode: true,
+            permanentAt: true,
+            exitAt: true,
             position: { select: { title: true } },
           },
         },
@@ -44,8 +46,8 @@ export async function GET() {
     });
 
     const dtos = await Promise.all(
-      rows.map(async (row) =>
-        serializeCard(
+      rows.map(async (row) => ({
+        ...serializeCard(
           row,
           {
             name: row.application.name,
@@ -55,8 +57,11 @@ export async function GET() {
             trackingCode: row.application.trackingCode,
           },
           row.isCurrent ? await signCardToken(row.token) : null
-        )
-      )
+        ),
+        // NR-40 — siklus hidup karyawan (badge "Karyawan Tetap" / "Alumni")
+        permanentAt: row.application.permanentAt ? row.application.permanentAt.toISOString() : null,
+        exitAt: row.application.exitAt ? row.application.exitAt.toISOString() : null,
+      }))
     );
     return NextResponse.json(dtos);
   } catch (error) {
