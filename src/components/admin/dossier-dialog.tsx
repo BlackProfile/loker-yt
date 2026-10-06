@@ -74,7 +74,6 @@ export function DossierDialog({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicationId, open]);
 
   // Buka lamaran lain di dialog detail: GET detail memberi objek Application
