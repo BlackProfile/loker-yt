@@ -30,10 +30,22 @@ import {
   Send,
   Sparkles,
   Star,
+  Trash2,
+  Users,
   Video,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   INTERVIEW_PLATFORM_LABELS,
   INTERVIEW_RECOMMENDATION_LABELS,
@@ -54,7 +66,7 @@ import {
   stagesForCategory,
   stagesForPosition,
 } from "@/lib/stages";
-import { apiGet, apiPatch, apiPost } from "./api";
+import { apiDelete, apiGet, apiPatch, apiPost, buildQuery } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { cn } from "@/lib/utils";
@@ -202,6 +214,21 @@ type ReviewSort = "newest" | "aiScore" | "rating";
 
 // Hasil Shortlist AI (POST /api/admin/positions/[id]/shortlist).
 type ShortlistEntryUI = { id: string; name: string; score: number; reason: string };
+
+// NR-40 — entri daftar tunggu kuota posisi (GET /api/admin/waitlist).
+type WaitlistEntry = {
+  id: string;
+  email: string;
+  positionId: string | null;
+  positionTitle: string | null;
+  createdAt: string;
+};
+
+type WaitlistResponse = {
+  entries: WaitlistEntry[];
+  count: number;
+  perPosition: { positionId: string | null; positionTitle: string | null; count: number }[];
+};
 
 /* ------------------------------- Komponen utama ------------------------------ */
 
