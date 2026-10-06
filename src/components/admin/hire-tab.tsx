@@ -1202,3 +1202,693 @@ function EmployeeCardsSection() {
   );
 }
 
+/* ------------------- NR-40 — Panel & dialog keputusan probasi/exit ------------------- */
+
+type DecisionRow = { employee: Employee; endMs: number };
+
+/** Panel menonjol: karyawan yang masa percobaannya berakhir <= 14 hari lagi atau sudah lewat. */
+function ProbationDecisionPanel({
+  employees,
+  canMutate,
+  onPermanent,
+  onExtend,
+  onExit,
+}: {
+  employees: Employee[];
+  canMutate: boolean;
+  onPermanent: (employee: Employee) => void;
+  onExtend: (employee: Employee) => void;
+  onExit: (employee: Employee) => void;
+}) {
+  const rows = useMemo<DecisionRow[]>(() => {
+    const now = Date.now();
+    const windowMs = PROBATION_DECISION_WINDOW_DAYS * DAY_MS;
+    return employees
+      .filter((e) => !e.permanentAt && !e.exitAt && e.probationEnd)
+      .map((e) => ({ employee: e, endMs: new Date(e.probationEnd as string).getTime() }))
+      .filter((r) => !Number.isNaN(r.endMs) && r.endMs <= now + windowMs)
+      .sort((a, b) => a.endMs - b.endMs);
+  }, [employees]);
+
+  if (rows.length === 0) return null;
+  const hasOverdue = rows.some((r) => r.endMs < Date.now());
+
+  return (
+    <Reveal>
+      <Card
+        className={cn(
+          "rounded-2xl border",
+          hasOverdue
+            ? "border-rose-300 bg-rose-50/60 dark:border-rose-900 dark:bg-rose-950/20"
+            : "border-amber-300 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20"
+        )}
+      >
+        <CardContent className="flex flex-col gap-3 p-4">
+          <div>
+            <CardTitle className="flex items-center gap-2.5 text-base">
+              <span
+                className={cn(
+                  "flex size-10 shrink-0 items-center justify-center rounded-xl border",
+                  hasOverdue
+                    ? "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+                    : "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                )}
+              >
+                <Hourglass className="size-5" aria-hidden="true" />
+              </span>
+              Keputusan Masa Percobaan
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Masa percobaan berikut berakhir dalam {PROBATION_DECISION_WINDOW_DAYS} hari atau sudah lewat —
+              tentukan keputusan akhir: tetap, perpanjang, atau akhiri kerja sama.
+            </CardDescription>
+          </div>
+
+          <ul className="flex flex-col gap-2">
+            {rows.map(({ employee, endMs }) => {
+              const overdue = endMs < Date.now();
+              const daysLeft = Math.ceil((endMs - Date.now()) / DAY_MS);
+              return (
+                <li
+                  key={employee.id}
+                  className={cn(
+                    "flex flex-col gap-2.5 rounded-xl border bg-background p-3 lg:flex-row lg:items-center lg:justify-between",
+                    overdue ? "border-rose-300 dark:border-rose-900" : "border-amber-300 dark:border-amber-900"
+                  )}
+                >
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                      {employee.name}
+                      <Badge variant="secondary">{employee.positionTitle ?? "Tanpa posisi"}</Badge>
+                    </p>
+                    <p
+                      className={cn(
+                        "mt-0.5 text-xs",
+                        overdue ? "text-rose-700 dark:text-rose-400" : "text-amber-700 dark:text-amber-400"
+                      )}
+                    >
+                      Masa percobaan {employee.name} berakhir {formatDate(employee.probationEnd)}
+                      {overdue ? " — sudah lewat" : ` — ${daysLeft} hari lagi`}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      className="h-11 bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.99] sm:h-9"
+                      onClick={() => onPermanent(employee)}
+                      disabled={!canMutate}
+                    >
+                      <BadgeCheck className="size-4" aria-hidden="true" />
+                      Tetap
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-11 border-amber-300 text-amber-800 hover:bg-amber-50 hover:text-amber-900 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950 sm:h-9"
+                      onClick={() => onExtend(employee)}
+                      disabled={!canMutate}
+                    >
+                      <CalendarPlus className="size-4" aria-hidden="true" />
+                      Perpanjang
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-11 border-rose-300 text-rose-700 hover:bg-rose-50 hover:text-rose-800 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950 sm:h-9"
+                      onClick={() => onExit(employee)}
+                      disabled={!canMutate}
+                    >
+                      <LogOut className="size-4" aria-hidden="true" />
+                      Akhiri
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </CardContent>
+      </Card>
+    </Reveal>
+  );
+}
+
+/** Dialog "Tetap" — konfirmasi jadikan Karyawan Tetap (POST probation PERMANENT). */
+function PermanentConfirmDialog({
+  employee,
+  onClose,
+  onConfirmed,
+}: {
+  employee: Employee;
+  onClose: () => void;
+  onConfirmed: () => void;
+}) {
+  const { reportError } = useAdminSession();
+  const [saving, setSaving] = useState(false);
+
+  async function handleConfirm() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await apiPost("/api/admin/hire/probation", {
+        applicationId: employee.id,
+        decision: "PERMANENT",
+      });
+      toast.success(`${employee.name} kini Karyawan Tetap`);
+      onClose();
+      onConfirmed();
+    } catch (err) {
+      reportError(err);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <BadgeCheck className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+            Jadikan Karyawan Tetap?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            Masa percobaan {employee.name} berakhir {formatDate(employee.probationEnd)}. Dengan keputusan ini
+            {employee.name} menjadi Karyawan Tetap dan kartu berstatus Masa Percobaan otomatis menjadi Aktif.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={saving}>Batal</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              void handleConfirm();
+            }}
+            disabled={saving}
+            className="bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.99]"
+          >
+            {saving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+            Ya, Jadikan Tetap
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/** Dialog "Perpanjang" — tanggal baru (wajib masa depan) + alasan (wajib, >= 5 karakter). */
+function ExtendProbationDialog({
+  employee,
+  onClose,
+  onExtended,
+}: {
+  employee: Employee;
+  onClose: () => void;
+  onExtended: () => void;
+}) {
+  const { reportError } = useAdminSession();
+  const [newEnd, setNewEnd] = useState(() => {
+    const base = employee.probationEnd ? new Date(employee.probationEnd).getTime() : Date.now();
+    const start = base > Date.now() ? base : Date.now();
+    return dateInputValue(new Date(start + 60 * DAY_MS).toISOString());
+  });
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const newEndIso = dateInputToIso(newEnd);
+  const isFuture = newEndIso != null && new Date(newEndIso).getTime() > Date.now();
+  const reasonOk = reason.trim().length >= 5;
+  const canSubmit = isFuture && reasonOk && !saving;
+
+  async function handleSubmit() {
+    if (!canSubmit || !newEndIso) return;
+    setSaving(true);
+    try {
+      const updated = await apiPost<Employee>("/api/admin/hire/probation", {
+        applicationId: employee.id,
+        decision: "EXTEND",
+        newProbationEnd: newEndIso,
+        reason: reason.trim(),
+      });
+      toast.success(
+        `Masa percobaan ${employee.name} diperpanjang s.d. ${formatDate(updated.probationEnd)}`
+      );
+      onClose();
+      onExtended();
+    } catch (err) {
+      reportError(err);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="rounded-2xl sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarPlus className="size-5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            Perpanjang Masa Percobaan
+          </DialogTitle>
+          <DialogDescription>
+            {employee.name} — {employee.positionTitle ?? "Tanpa posisi"}. Masa percobaan berakhir{" "}
+            {formatDate(employee.probationEnd)}.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="extend-probation-end">Tanggal perpanjangan</Label>
+            <Input
+              id="extend-probation-end"
+              type="date"
+              value={newEnd}
+              onChange={(e) => setNewEnd(e.target.value)}
+              disabled={saving}
+            />
+            {newEndIso && !isFuture ? (
+              <p className="text-xs text-rose-700 dark:text-rose-400">
+                Tanggal perpanjangan harus setelah hari ini.
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="extend-probation-reason">Alasan (wajib)</Label>
+            <Textarea
+              id="extend-probation-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder="Misal: target cek-in 60 hari belum tercapai, perlu evaluasi tambahan."
+              disabled={saving}
+            />
+            {!reasonOk ? (
+              <p className="text-xs text-muted-foreground">Minimal 5 karakter.</p>
+            ) : null}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Batal
+          </Button>
+          <Button
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit}
+            className="bg-amber-600 text-white hover:bg-amber-700 active:scale-[0.99]"
+          >
+            {saving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+            Perpanjang
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Dialog "Akhiri Kerja" — alasan keluar + tanggal + catatan opsional (POST /api/admin/hire/exit). */
+function ExitEmployeeDialog({
+  employee,
+  onClose,
+  onExited,
+}: {
+  employee: Employee;
+  onClose: () => void;
+  onExited: () => void;
+}) {
+  const { reportError } = useAdminSession();
+  const [exitReason, setExitReason] = useState<ExitReason | "">("");
+  const [exitDate, setExitDate] = useState(() => dateInputValue(new Date().toISOString()));
+  const [exitNote, setExitNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const exitDateIso = dateInputToIso(exitDate);
+  const canSubmit = !!exitReason && !!exitDateIso && !saving;
+
+  async function handleSubmit() {
+    if (!canSubmit || !exitDateIso) return;
+    setSaving(true);
+    try {
+      await apiPost("/api/admin/hire/exit", {
+        applicationId: employee.id,
+        exitAt: exitDateIso,
+        exitReason,
+        exitNote: exitNote.trim() ? exitNote.trim() : undefined,
+      });
+      toast.success(`${employee.name} masuk daftar alumni`);
+      onClose();
+      onExited();
+    } catch (err) {
+      reportError(err);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="rounded-2xl sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <LogOut className="size-5 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+            Akhiri Kerja
+          </DialogTitle>
+          <DialogDescription>
+            {employee.name} — {employee.positionTitle ?? "Tanpa posisi"}. Kartu karyawan akan dicabut,
+            checklist serah terima terbentuk otomatis, dan karyawan masuk daftar alumni.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="exit-reason">Alasan keluar</Label>
+            <Select
+              value={exitReason}
+              onValueChange={(value) => setExitReason(value as ExitReason)}
+              disabled={saving}
+            >
+              <SelectTrigger id="exit-reason" className="w-full">
+                <SelectValue placeholder="Pilih alasan keluar" />
+              </SelectTrigger>
+              <SelectContent>
+                {EXIT_REASONS.map((reason) => (
+                  <SelectItem key={reason} value={reason}>
+                    {EXIT_REASON_LABELS[reason]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="exit-date">Tanggal keluar</Label>
+            <Input
+              id="exit-date"
+              type="date"
+              value={exitDate}
+              onChange={(e) => setExitDate(e.target.value)}
+              disabled={saving}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="exit-note">Catatan (opsional)</Label>
+            <Textarea
+              id="exit-note"
+              value={exitNote}
+              onChange={(e) => setExitNote(e.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder="Misal: serah terima belum selesai, terbuka untuk rehire, dst."
+              disabled={saving}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Batal
+          </Button>
+          <Button
+            onClick={() => void handleSubmit()}
+            disabled={!canSubmit}
+            className="bg-rose-600 text-white hover:bg-rose-700 active:scale-[0.99]"
+          >
+            {saving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+            Catat Keluar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ----------------------------------- Tab utama ----------------------------------- */
+
+type EmployeeView = "aktif" | "alumni";
+
+export function HireTab() {
+  const { canMutate, reportError } = useAdminSession();
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [view, setView] = useState<EmployeeView>("aktif");
+  const [permanentTarget, setPermanentTarget] = useState<Employee | null>(null);
+  const [extendTarget, setExtendTarget] = useState<Employee | null>(null);
+  const [exitTarget, setExitTarget] = useState<Employee | null>(null);
+
+  const load = useCallback(
+    async (silent = false) => {
+      if (silent) setRefreshing(true);
+      else setLoading(true);
+      try {
+        const data = await apiGet<Employee[]>("/api/admin/hire");
+        setEmployees(Array.isArray(data) ? data : []);
+      } catch (err) {
+        reportError(err);
+      } finally {
+        if (silent) setRefreshing(false);
+        else setLoading(false);
+      }
+    },
+    [reportError]
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Realtime: offer diterima / rencana / cek-in / keputusan probasi berubah di tempat lain.
+  useLiveRefresh("applications:changed", () => {
+    void load(true);
+  });
+
+  const summary = useMemo(() => {
+    const now = Date.now();
+    let probationActive = 0;
+    let dueCheckIns = 0;
+    for (const employee of employees) {
+      const endMs = employee.probationEnd ? new Date(employee.probationEnd).getTime() : null;
+      if (endMs != null && !Number.isNaN(endMs) && endMs > now && !employee.exitAt) {
+        probationActive += 1;
+      }
+      for (const day of CHECKIN_DAYS) {
+        const record = employee.checkIns.find((c) => c.day === day);
+        if (record?.completedAt) continue;
+        const due = dueAtOf(employee, day);
+        if (due && due.getTime() <= now) dueCheckIns += 1;
+      }
+    }
+    return { total: employees.length, probationActive, dueCheckIns };
+  }, [employees]);
+
+  const activeEmployees = useMemo(() => employees.filter((e) => !e.exitAt), [employees]);
+  const alumniEmployees = useMemo(() => employees.filter((e) => !!e.exitAt), [employees]);
+  const visibleEmployees = view === "aktif" ? activeEmployees : alumniEmployees;
+
+  const handlePlanSaved = useCallback(
+    (employeeId: string, field: PlanField, plan: PlanItem[]) => {
+      setEmployees((prev) =>
+        prev.map((e) => (e.id === employeeId ? { ...e, [field]: plan } : e))
+      );
+    },
+    []
+  );
+
+  const handleCheckInSaved = useCallback((employeeId: string, checkIn: CheckInDto) => {
+    setEmployees((prev) =>
+      prev.map((e) => {
+        if (e.id !== employeeId) return e;
+        const exists = e.checkIns.some((c) => c.id === checkIn.id);
+        return {
+          ...e,
+          checkIns: exists
+            ? e.checkIns.map((c) => (c.id === checkIn.id ? checkIn : c))
+            : [...e.checkIns, checkIn].sort((a, b) => a.day - b.day),
+        };
+      })
+    );
+  }, []);
+
+  const openExitDialog = useCallback((employee: Employee) => {
+    setExitTarget(employee);
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Reveal className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <CardTitle className="text-lg">Karyawan</CardTitle>
+          <CardDescription className="mt-1">
+            Onboarding, masa percobaan, cek-in 30/60/90 hari, hingga offboarding dan alumni.
+          </CardDescription>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => void load(true)}
+          disabled={refreshing}
+          className="h-11 active:scale-[0.99] sm:h-10"
+          aria-label="Segarkan daftar karyawan"
+        >
+          <RefreshCw
+            className={cn("size-4", refreshing && "animate-spin")}
+            aria-hidden="true"
+          />
+          <span className="sm:hidden">Segarkan</span>
+        </Button>
+      </Reveal>
+
+      {/* Ringkasan 3 angka */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <SummaryStat
+          icon={Users}
+          label="Total Karyawan"
+          value={summary.total}
+          iconClass="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400"
+        />
+        <SummaryStat
+          icon={CalendarClock}
+          label="Masa Percobaan Berjalan"
+          value={summary.probationActive}
+          iconClass="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+        />
+        <SummaryStat
+          icon={ClipboardCheck}
+          label="Cek-in Jatuh Tempo"
+          value={summary.dueCheckIns}
+          iconClass="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
+        />
+      </div>
+
+      {/* NR-40 — keputusan masa percobaan yang mendekati/lewat jatuh tempo */}
+      {!loading ? (
+        <ProbationDecisionPanel
+          employees={employees}
+          canMutate={canMutate}
+          onPermanent={setPermanentTarget}
+          onExtend={setExtendTarget}
+          onExit={openExitDialog}
+        />
+      ) : null}
+
+      {/* NR39-B — Seksi Kartu Karyawan (kartu ID digital) */}
+      <EmployeeCardsSection />
+
+      {loading ? (
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Skeleton key={i} className="h-40 w-full rounded-2xl" />
+          ))}
+        </div>
+      ) : employees.length === 0 ? (
+        <Card className="rounded-2xl">
+          <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
+            <Users className="size-10 text-muted-foreground/50" aria-hidden="true" />
+            <p className="text-sm text-muted-foreground">
+              Belum ada karyawan. Daftar akan terisi otomatis setelah kandidat menerima penawaran.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {/* Filter segmented: Aktif | Alumni */}
+          <div
+            className="inline-flex w-fit rounded-xl border bg-zinc-50 p-1 dark:bg-zinc-900/50"
+            role="group"
+            aria-label="Filter daftar karyawan"
+          >
+            <button
+              type="button"
+              onClick={() => setView("aktif")}
+              aria-pressed={view === "aktif"}
+              className={cn(
+                "h-8 rounded-lg px-3 text-sm font-medium transition-colors",
+                view === "aktif"
+                  ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Aktif ({activeEmployees.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("alumni")}
+              aria-pressed={view === "alumni"}
+              className={cn(
+                "h-8 rounded-lg px-3 text-sm font-medium transition-colors",
+                view === "alumni"
+                  ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Alumni ({alumniEmployees.length})
+            </button>
+          </div>
+
+          {visibleEmployees.length === 0 ? (
+            <Card className="rounded-2xl">
+              <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
+                {view === "aktif" ? (
+                  <Users className="size-10 text-muted-foreground/50" aria-hidden="true" />
+                ) : (
+                  <LogOut className="size-10 text-muted-foreground/50" aria-hidden="true" />
+                )}
+                <p className="text-sm text-muted-foreground">
+                  {view === "aktif"
+                    ? "Semua karyawan saat ini tercatat alumni. Pindah ke tab Alumni untuk melihatnya."
+                    : "Belum ada alumni. Karyawan yang mengakhiri kerja sama akan tampil di sini."}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            // Daftar panjang: digulir di dalam kontainer
+            <div className="nice-scrollbar flex max-h-96 flex-col gap-3 overflow-y-auto pr-1">
+              {visibleEmployees.map((employee) => (
+                <EmployeeCard
+                  key={employee.id}
+                  employee={employee}
+                  onPlanSaved={handlePlanSaved}
+                  onCheckInSaved={handleCheckInSaved}
+                  onOpenExit={openExitDialog}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Dialog keputusan probasi & offboarding */}
+      {permanentTarget ? (
+        <PermanentConfirmDialog
+          employee={permanentTarget}
+          onClose={() => setPermanentTarget(null)}
+          onConfirmed={() => void load(true)}
+        />
+      ) : null}
+      {extendTarget ? (
+        <ExtendProbationDialog
+          employee={extendTarget}
+          onClose={() => setExtendTarget(null)}
+          onExtended={() => void load(true)}
+        />
+      ) : null}
+      {exitTarget ? (
+        <ExitEmployeeDialog
+          employee={exitTarget}
+          onClose={() => setExitTarget(null)}
+          onExited={() => void load(true)}
+        />
+      ) : null}
+    </div>
+  );
+}

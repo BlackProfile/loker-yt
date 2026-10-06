@@ -20,6 +20,10 @@
 //       NotificationItem "Tindak lanjut jatuh tempo" + ActivityLog FOLLOWUP_REMIND
 //       (dedupe: satu pengingat per lamaran per snoozeUntil — dicek via ActivityLog
 //       FOLLOWUP_REMIND yang createdAt >= snoozeUntil)
+//   26. NR-40 Probasi jatuh tempo: karyawan (hiredAt terisi, bukan alumni/tetap) dengan
+//       probationEnd <= now+3 hari (window 30 hari ke belakang) -> NotificationItem
+//       "Keputusan probasi {nama} jatuh tempo" + ActivityLog PROBATION_DUE (dedupe per
+//       NILAI probationEnd — detail memuat ISO probationEnd) + telegram via sendSystemEvent
 // Uji manual: POST body {"forceEmailReport": true} memproses job laporan email
 // mengabaikan cek hari/jam (dedupe harian tetap berlaku).
 import { NextRequest, NextResponse } from "next/server";
@@ -644,6 +648,79 @@ export async function POST(req: NextRequest) {
       // diam — pengingat tidak boleh menggagalkan cron
     }
 
+    // 26) NR-40 — probasi jatuh tempo: karyawan hiredAt terisi, belum alumni (exitAt null),
+    //     belum tetap (permanentAt null), dengan probationEnd <= now+3 hari (dan >= now-30 hari
+    //     agar masa lalu jauh tidak diulang). Dedupe SEKALI PER NILAI probationEnd: marker
+    //     ActivityLog PROBATION_DUE dengan detail memuat ISO probationEnd — bila probasi
+    //     diperpanjang (nilai baru), pengingat boleh berbunyi lagi untuk nilai baru tsb.
+    let probationDue = 0;
+    try {
+      const dueWindowStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const dueWindowEnd = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+      const dueProbations = await db.application.findMany({
+        where: {
+          deletedAt: null,
+          hiredAt: { not: null },
+          exitAt: null,
+          permanentAt: null,
+          probationEnd: { not: null, gte: dueWindowStart, lte: dueWindowEnd },
+        },
+        select: {
+          id: true,
+          name: true,
+          trackingCode: true,
+          probationEnd: true,
+          position: { select: { title: true } },
+        },
+        take: 50,
+      });
+      for (const app of dueProbations) {
+        if (!app.probationEnd) continue;
+        const detail = `Probasi jatuh tempo (${app.probationEnd.toISOString()})`;
+        const already = await db.activityLog.findFirst({
+          where: { applicationId: app.id, action: "PROBATION_DUE", detail },
+          select: { id: true },
+        });
+        if (already) continue;
+
+        const dueLabel = formatDateTimeId(app.probationEnd);
+        await db.activityLog.create({
+          data: {
+            applicationId: app.id,
+            actor: "Sistem",
+            action: "PROBATION_DUE",
+            detail,
+          },
+        });
+        await pushNotification({
+          title: `Keputusan probasi ${app.name} jatuh tempo`,
+          body: `${app.position?.title ?? "-"} — masa percobaan berakhir ${dueLabel}. Tentukan: Tetap, Perpanjang, atau Akhiri (tab Karyawan).`,
+          category: "APPLICATION",
+          applicationId: app.id,
+        });
+        void sendSystemEvent({
+          title: `Keputusan probasi ${app.name} jatuh tempo`,
+          detail: `Masa percobaan berakhir ${dueLabel}. Tentukan keputusannya di tab Karyawan: Tetap, Perpanjang, atau Akhiri.`,
+          applicationId: app.id,
+          action: "PROBATION_DUE",
+          trackingCode: app.trackingCode ?? undefined,
+          telegramButtons: [
+            ...(app.trackingCode
+              ? [[{ text: "Lihat Karyawan", url: `${getSiteUrl()}/?kandidat=${encodeURIComponent(app.trackingCode)}#admin` }]]
+              : []),
+            [{ text: "Buka Panel Admin", url: `${getSiteUrl()}/#admin` }],
+          ],
+        });
+        probationDue += 1;
+      }
+      if (probationDue > 0) {
+        void emitRealtime(REALTIME_EVENTS.applications);
+      }
+    } catch (probationError) {
+      console.error("[POST /api/cron/reminders] probationDue", probationError);
+      // diam — pengingat tidak boleh menggagalkan cron
+    }
+
     return NextResponse.json({
       ok: true,
       offerExpired,
@@ -671,6 +748,7 @@ export async function POST(req: NextRequest) {
       emailReportWeekly,
       emailReportMonthly,
       followupBell,
+      probationDue,
     });
   } catch (error) {
     console.error("[POST /api/cron/reminders]", error);

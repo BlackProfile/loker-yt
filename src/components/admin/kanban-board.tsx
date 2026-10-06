@@ -858,45 +858,523 @@ export function KanbanBoard({
     }, 80);
   }
 
+  // Snapshot waktu render — umur tahap dihitung konsisten untuk semua kartu.
+  const nowMs = Date.now();
+
+  // Susun kartu per kolom (urutan override + jaga-jaga kartu di luar urutan).
+  const columnsData: { column: StageKey; apps: Application[] }[] = columns.map((column) => {
+    const ids = overrides[column] ?? baseOrder[column] ?? [];
+    const list: Application[] = [];
+    for (const id of ids) {
+      const app = appMap.get(id);
+      if (app) list.push(app);
+    }
+    for (const app of apps) {
+      if (columnOf(app.status, columns) === column && !ids.includes(app.id)) {
+        list.push(app);
+      }
+    }
+    return { column, apps: list };
+  });
+
+  // NR-40 — bottleneck: kolom dengan median umur terbesar (hanya kolom berisi).
+  let bottleneckColumn: StageKey | null = null;
+  let bestMedian = -1;
+  for (const { column, apps: list } of columnsData) {
+    if (list.length === 0) continue;
+    const median = medianOf(list.map((a) => daysInStage(a, nowMs))) ?? 0;
+    if (median > bestMedian) {
+      bestMedian = median;
+      bottleneckColumn = column;
+    }
+  }
+
+  // Hitungan kartu mengendap (untuk label filter "Hanya mengendap").
+  const stalledCount = apps.reduce(
+    (n, app) => (daysInStage(app, nowMs) > warnDaysFor(app) ? n + 1 : n),
+    0
+  );
+
+  const selectedList = Array.from(selectedIds);
+
   return (
-    <DndContext
-      sensors={sensors}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
-    >
-      <div className="flex gap-3 overflow-x-auto pb-2 nice-scrollbar">
-        {columns.map((column) => {
-          const ids = overrides[column] ?? baseOrder[column] ?? [];
-          const columnApps: Application[] = [];
-          for (const id of ids) {
-            const app = appMap.get(id);
-            if (app) columnApps.push(app);
-          }
-          // Jaga-jaga: app yang belum tercatat di urutan lokal.
-          for (const app of apps) {
-            if (columnOf(app.status, columns) === column && !ids.includes(app.id)) {
-              columnApps.push(app);
-            }
-          }
-          return (
-            <KanbanColumn
-              key={column}
-              column={column}
-              isOther={column === OTHER_STAGE_KEY}
-              apps={columnApps}
-              canMutate={canMutate}
-              duplicateIds={duplicateIds ?? EMPTY_SET}
-              overLimit={columnOverLimit(column, columnApps, limitsByPosition)}
-              onOpenDetail={(app) => {
-                if (justDraggedRef.current) return;
-                onOpenDetail(app);
-              }}
-              onUpdated={onUpdated}
-            />
-          );
-        })}
+    <div className="flex flex-col gap-3">
+      {/* Toolbar kanban (NR-40): filter kandidat yang mengendap di tahapnya. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={cn(
+            "h-9 rounded-xl",
+            stalledOnly &&
+              "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900/60"
+          )}
+          onClick={() => setStalledOnly((v) => !v)}
+          aria-pressed={stalledOnly}
+          aria-label="Tampilkan hanya kandidat yang mengendap melebihi ambang hari"
+        >
+          <Hourglass
+            className={cn("size-4", !stalledOnly && "text-muted-foreground")}
+            aria-hidden="true"
+          />
+          Hanya mengendap ({stalledCount})
+        </Button>
+        <p className="hidden text-xs text-muted-foreground sm:block">
+          Mengendap = lebih dari ambang hari di tahap yang sama (bawaan 7 hari, diatur per posisi
+          di setelan Seleksi).
+        </p>
       </div>
-    </DndContext>
+
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div className="flex gap-3 overflow-x-auto pb-2 nice-scrollbar">
+          {columnsData.map(({ column, apps: columnAppsAll }) => {
+            // Filter "Hanya mengendap": hanya kartu dengan umur > ambang posisinya.
+            const columnApps = stalledOnly
+              ? columnAppsAll.filter((app) => daysInStage(app, nowMs) > warnDaysFor(app))
+              : columnAppsAll;
+            return (
+              <KanbanColumn
+                key={column}
+                column={column}
+                isOther={column === OTHER_STAGE_KEY}
+                apps={columnApps}
+                canMutate={canMutate}
+                duplicateIds={duplicateIds ?? EMPTY_SET}
+                overLimit={columnOverLimit(column, columnApps, limitsByPosition)}
+                medianDays={medianOf(columnApps.map((a) => daysInStage(a, nowMs)))}
+                isBottleneck={bottleneckColumn === column && columnApps.length > 0}
+                warnDaysFor={warnDaysFor}
+                nowMs={nowMs}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                onOpenDetail={(app) => {
+                  if (justDraggedRef.current) return;
+                  onOpenDetail(app);
+                }}
+                onUpdated={onUpdated}
+              />
+            );
+          })}
+        </div>
+      </DndContext>
+
+      {/* NR-40 — bar aksi massal kanban: muncul saat ada kartu dipilih.
+          Setelah sukses, parent memuat ulang data lewat event realtime. */}
+      {canMutate && selectedIds.size > 0 ? (
+        <div className="sticky bottom-4 z-20">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/95 p-3 shadow-lg backdrop-blur dark:border-rose-900 dark:bg-rose-950/90">
+            <span className="text-sm font-semibold">{selectedIds.size} dipilih</span>
+
+            <Select value={bulkStage || "kanban-bulk-empty"} onValueChange={setBulkStage}>
+              <SelectTrigger
+                className="h-9 w-full rounded-lg bg-background sm:w-44"
+                aria-label="Pindah tahap untuk lamaran terpilih"
+              >
+                <SelectValue placeholder="Pindah ke tahap..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="kanban-bulk-empty" disabled>
+                  Pindah ke tahap...
+                </SelectItem>
+                {columns
+                  .filter((c) => c !== OTHER_STAGE_KEY)
+                  .map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {columnMeta(c).label}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              className="h-9 active:scale-[0.99]"
+              disabled={!bulkStage || bulkWorking}
+              onClick={() =>
+                void runBulk(
+                  { action: "status", status: bulkStage },
+                  "{n} lamaran dipindah tahap"
+                )
+              }
+            >
+              {bulkWorking ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+              Pindah
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 border-rose-300 bg-background text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/60"
+              disabled={bulkWorking}
+              onClick={() => setBulkRejectOpen(true)}
+            >
+              <XCircle className="size-4" aria-hidden="true" />
+              Tolak
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 bg-background"
+              disabled={bulkWorking}
+              onClick={() => setScheduleOpen(true)}
+            >
+              <CalendarClock className="size-4" aria-hidden="true" />
+              Jadwalkan Wawancara
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              Kosongkan pilihan
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Dialog tolak massal (NR-40). */}
+      <KanbanBulkRejectDialog
+        open={bulkRejectOpen}
+        onOpenChange={setBulkRejectOpen}
+        count={selectedIds.size}
+        reason={bulkRejectReason}
+        onReasonChange={setBulkRejectReason}
+        note={bulkRejectNote}
+        onNoteChange={setBulkRejectNote}
+        working={bulkWorking}
+        onSubmit={() =>
+          void runBulk(
+            {
+              action: "reject",
+              reason: bulkRejectReason,
+              note: bulkRejectNote.trim() || undefined,
+            },
+            "{n} lamaran ditolak"
+          )
+        }
+      />
+
+      {/* Dialog jadwalkan wawancara massal (NR-40) — satu jadwal untuk semua
+          lamaran terpilih; tiap lamaran mendapat ronde berikutnya di API. */}
+      <KanbanScheduleDialog
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        count={selectedIds.size}
+        working={bulkWorking}
+        onSubmit={(body) => void runBulk(body, "{n} wawancara dijadwalkan")}
+      />
+    </div>
+  );
+}
+
+/* ------------------------- Dialog aksi massal kanban ------------------------- */
+
+/** Dialog tolak massal dari papan kanban (alasan terstruktur + catatan opsional). */
+function KanbanBulkRejectDialog({
+  open,
+  onOpenChange,
+  count,
+  reason,
+  onReasonChange,
+  note,
+  onNoteChange,
+  working,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  count: number;
+  reason: RejectionReason | "";
+  onReasonChange: (reason: RejectionReason | "") => void;
+  note: string;
+  onNoteChange: (note: string) => void;
+  working: boolean;
+  onSubmit: () => void;
+}) {
+  // Reset pilihan setiap kali dialog ditutup.
+  useEffect(() => {
+    if (!open) {
+      onReasonChange("");
+      onNoteChange("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <XCircle className="size-5 text-rose-600" aria-hidden="true" />
+            Tolak {count} Lamaran
+          </DialogTitle>
+          <DialogDescription>
+            Semua lamaran terpilih akan ditolak dengan alasan yang sama.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="kanban-bulk-reject-reason">Alasan penolakan</Label>
+            <Select
+              value={reason || undefined}
+              onValueChange={(v) => onReasonChange(v as RejectionReason)}
+            >
+              <SelectTrigger
+                id="kanban-bulk-reject-reason"
+                className="h-10 w-full"
+                aria-label="Pilih alasan penolakan massal"
+              >
+                <SelectValue placeholder="Pilih alasan..." />
+              </SelectTrigger>
+              <SelectContent>
+                {REJECTION_REASONS.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {REJECTION_REASON_LABELS[r]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="kanban-bulk-reject-note">Catatan / umpan balik (opsional)</Label>
+            <Textarea
+              id="kanban-bulk-reject-note"
+              value={note}
+              onChange={(e) => onNoteChange(e.target.value)}
+              rows={3}
+              maxLength={1000}
+            />
+          </div>
+        </div>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={working} className="h-11 sm:h-10">
+            Batal
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={onSubmit}
+            disabled={working || !reason}
+            className="h-11 active:scale-[0.99] sm:h-10"
+          >
+            {working ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <XCircle className="size-4" aria-hidden="true" />
+            )}
+            Tolak Semua
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Form mini jadwal wawancara massal: satu konfigurasi untuk semua terpilih. */
+function KanbanScheduleDialog({
+  open,
+  onOpenChange,
+  count,
+  working,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  count: number;
+  working: boolean;
+  /** Kirim payload aksi "schedule-interview" (tanpa ids — ditambahkan runBulk). */
+  onSubmit: (body: Record<string, unknown>) => void;
+}) {
+  const [whenLocal, setWhenLocal] = useState("");
+  const [mode, setMode] = useState<InterviewMode>("ONLINE");
+  const [platform, setPlatform] = useState<InterviewPlatform>("GOOGLE_MEET");
+  const [duration, setDuration] = useState("45");
+  const [meetingLink, setMeetingLink] = useState("");
+  const [address, setAddress] = useState("");
+  const [interviewers, setInterviewers] = useState("");
+
+  // Reset form setiap kali dialog ditutup.
+  useEffect(() => {
+    if (!open) {
+      setWhenLocal("");
+      setMode("ONLINE");
+      setPlatform("GOOGLE_MEET");
+      setDuration("45");
+      setMeetingLink("");
+      setAddress("");
+      setInterviewers("");
+    }
+  }, [open]);
+
+  function handleSubmit() {
+    const scheduledAt = localInputToIso(whenLocal);
+    if (!scheduledAt) {
+      toast.error("Pilih tanggal dan jam wawancara terlebih dahulu.");
+      return;
+    }
+    const rawDuration = duration.trim();
+    const durationMin = rawDuration === "" ? 45 : Number(rawDuration);
+    if (!Number.isInteger(durationMin) || durationMin < 10 || durationMin > 480) {
+      toast.error("Durasi wawancara harus angka bulat 10-480 menit.");
+      return;
+    }
+    if (meetingLink.trim() && !/^https?:\/\//i.test(meetingLink.trim())) {
+      toast.error("Link meeting harus diawali http:// atau https://.");
+      return;
+    }
+    onSubmit({
+      action: "schedule-interview",
+      scheduledAt,
+      mode,
+      platform,
+      durationMin,
+      meetingLink: meetingLink.trim() || undefined,
+      address: address.trim() || undefined,
+      interviewers: interviewers.trim() || undefined,
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarClock className="size-5 text-rose-600" aria-hidden="true" />
+            Jadwalkan Wawancara — {count} Lamaran
+          </DialogTitle>
+          <DialogDescription>
+            Satu jadwal yang sama untuk semua lamaran terpilih. Tiap lamaran mendapat nomor ronde
+            berikutnya secara otomatis, dan pelamar menerima email undangan.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid max-h-[70vh] gap-4 overflow-y-auto pr-1 nice-scrollbar sm:grid-cols-2">
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <Label htmlFor="kanban-schedule-when">Tanggal &amp; jam wawancara</Label>
+            <Input
+              id="kanban-schedule-when"
+              type="datetime-local"
+              value={whenLocal}
+              onChange={(e) => setWhenLocal(e.target.value)}
+              className="h-10"
+              required
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="kanban-schedule-mode">Mode</Label>
+            <Select value={mode} onValueChange={(v) => setMode(v as InterviewMode)}>
+              <SelectTrigger
+                id="kanban-schedule-mode"
+                className="h-10 w-full"
+                aria-label="Mode wawancara massal"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INTERVIEW_MODES.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {INTERVIEW_MODE_LABELS[m]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="kanban-schedule-duration">Durasi (menit)</Label>
+            <Input
+              id="kanban-schedule-duration"
+              type="number"
+              min={10}
+              max={480}
+              step={1}
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              className="h-10"
+              placeholder="mis. 45"
+            />
+          </div>
+          {mode === "ONLINE" ? (
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <Label htmlFor="kanban-schedule-platform">Platform</Label>
+              <Select
+                value={platform}
+                onValueChange={(v) => setPlatform(v as InterviewPlatform)}
+              >
+                <SelectTrigger
+                  id="kanban-schedule-platform"
+                  className="h-10 w-full"
+                  aria-label="Platform wawancara online massal"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INTERVIEW_PLATFORMS.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {INTERVIEW_PLATFORM_LABELS[p]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          {mode === "ONLINE" ? (
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <Label htmlFor="kanban-schedule-link">Link meeting (opsional)</Label>
+              <Input
+                id="kanban-schedule-link"
+                type="url"
+                value={meetingLink}
+                onChange={(e) => setMeetingLink(e.target.value)}
+                className="h-10"
+                placeholder="https://meet.google.com/..."
+                maxLength={500}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <Label htmlFor="kanban-schedule-address">Alamat lokasi (opsional)</Label>
+              <Input
+                id="kanban-schedule-address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="h-10"
+                placeholder="mis. Kantor Lumina Studio, Jl. ..."
+                maxLength={300}
+              />
+            </div>
+          )}
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <Label htmlFor="kanban-schedule-interviewers">Pewawancara (opsional)</Label>
+            <Input
+              id="kanban-schedule-interviewers"
+              value={interviewers}
+              onChange={(e) => setInterviewers(e.target.value)}
+              className="h-10"
+              placeholder="Pisahkan dengan koma, mis. Rani, Dimas"
+              maxLength={400}
+            />
+          </div>
+        </div>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={working} className="h-11 sm:h-10">
+            Batal
+          </Button>
+          <Button onClick={handleSubmit} disabled={working} className="h-11 active:scale-[0.99] sm:h-10">
+            {working ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <CalendarClock className="size-4" aria-hidden="true" />
+            )}
+            Jadwalkan Semua
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

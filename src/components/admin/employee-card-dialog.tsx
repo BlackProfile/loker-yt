@@ -9,6 +9,7 @@ import { useState } from "react";
 import { toPng } from "html-to-image";
 import {
   Ban,
+  BadgeCheck,
   Coffee,
   Copy,
   Download,
@@ -314,6 +315,23 @@ function CardManageBody({
           <IdCard className="size-5 shrink-0 text-rose-600 dark:text-rose-400" aria-hidden="true" />
           <span className="truncate">{card.name}</span>
           <CardStatusBadge status={card.status} />
+          {card.permanentAt ? (
+            <Badge
+              variant="outline"
+              className="border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400"
+            >
+              <BadgeCheck className="size-3" aria-hidden="true" />
+              Karyawan Tetap
+            </Badge>
+          ) : null}
+          {card.exitAt ? (
+            <Badge
+              variant="outline"
+              className="border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+            >
+              Alumni
+            </Badge>
+          ) : null}
           {!card.isCurrent ? <Badge variant="secondary">Riwayat</Badge> : null}
         </DialogTitle>
         <DialogDescription className="flex flex-wrap items-center gap-x-2">
