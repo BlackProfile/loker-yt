@@ -693,6 +693,310 @@ function EmployeeCard({
   );
 }
 
+/* ------------------- NR39-B — Seksi Kartu Karyawan (ID digital) ------------------- */
+
+// CSS cetak massal: seluruh halaman disembunyikan, hanya koleksi .print-card
+// (dari baris terpilih) yang tampil, satu kartu per halaman ukuran 85,6x54 mm.
+const CARDS_PRINT_STYLE = `
+@media print {
+  html, body { height: auto !important; overflow: visible !important; }
+  body * { visibility: hidden; }
+  .print-card, .print-card * { visibility: visible; }
+  .print-cards-bulk {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: block !important;
+    background: #ffffff;
+  }
+  .print-card-page {
+    width: 85.6mm;
+    height: 54mm;
+    overflow: hidden;
+    break-inside: avoid;
+    page-break-after: always;
+  }
+  @page { margin: 10mm; }
+}
+`;
+
+const VERIFY_COUNT_WARNING = 20;
+
+const BADGE_VERIFY_WARN =
+  "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300";
+
+// Props kartu ID untuk pratinjau/cetak dari DTO (URL verifikasi dari token current).
+function cardIdProps(card: EmployeeCardDto): EmployeeIdCardProps {
+  return {
+    cardNumber: card.cardNumber,
+    name: card.name,
+    positionTitle: card.positionTitle,
+    status: card.status,
+    issuedAt: card.issuedAt,
+    probationUntil: card.probationUntil,
+    nikMasked: card.nikMasked,
+    verifyUrl: cardVerifyUrl(card),
+  };
+}
+
+function EmployeeCardsSection() {
+  const { reportError } = useAdminSession();
+  const [cards, setCards] = useState<EmployeeCardDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [dialogCard, setDialogCard] = useState<EmployeeCardDto | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const load = useCallback(
+    async (silent = false) => {
+      if (silent) setRefreshing(true);
+      else setLoading(true);
+      try {
+        const data = await apiGet<EmployeeCardDto[]>("/api/admin/cards");
+        const rows = Array.isArray(data) ? data : [];
+        setCards(rows);
+        // Buang pilihan yang kartunya sudah tidak ada.
+        setSelectedIds((prev) => prev.filter((id) => rows.some((c) => c.id === id)));
+      } catch (err) {
+        reportError(err);
+      } finally {
+        if (silent) setRefreshing(false);
+        else setLoading(false);
+      }
+    },
+    [reportError]
+  );
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Realtime: kartu terbit otomatis saat offer diterima / status berubah di tempat lain.
+  useLiveRefresh("applications:changed", () => {
+    void load(true);
+  });
+
+  const currentCards = useMemo(() => cards.filter((c) => c.isCurrent), [cards]);
+  const historyCount = cards.length - currentCards.length;
+  const selectedCards = useMemo(
+    () => currentCards.filter((c) => selectedIds.includes(c.id)),
+    [currentCards, selectedIds]
+  );
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  function printSelected() {
+    if (selectedCards.length === 0) return;
+    // Koleksi cetak sudah dirender tersembunyi (print-cards-bulk);
+    // CSS @media print di CARDS_PRINT_STYLE yang menampilkannya.
+    window.print();
+    toast.success(`${selectedCards.length} kartu dikirim ke dialog cetak`);
+  }
+
+  // Sinkron hasil dialog (PATCH checklist/aksi, POST reissue) ke daftar.
+  const handleCardUpdated = useCallback((updated: EmployeeCardDto) => {
+    setCards((prev) => {
+      if (prev.some((c) => c.id === updated.id)) {
+        return prev.map((c) => (c.id === updated.id ? updated : c));
+      }
+      // Kartu baru hasil reissue — kartu lama pada lamaran yang sama bukan current lagi.
+      return [
+        updated,
+        ...prev.map((c) =>
+          c.applicationId === updated.applicationId && c.id !== updated.id
+            ? { ...c, isCurrent: false }
+            : c
+        ),
+      ];
+    });
+    setDialogCard(updated);
+  }, []);
+
+  return (
+    <Reveal>
+      <Card className="rounded-2xl">
+        <CardContent className="flex flex-col gap-3 p-4">
+          <style>{CARDS_PRINT_STYLE}</style>
+
+          {/* Judul seksi */}
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400">
+                <IdCard className="size-5" aria-hidden="true" />
+              </span>
+              <div>
+                <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                  Kartu Karyawan
+                  {historyCount > 0 ? (
+                    <Badge variant="secondary" className="font-normal">
+                      {historyCount} riwayat
+                    </Badge>
+                  ) : null}
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  Kartu digital untuk verifikasi keaslian karyawan — terbit otomatis saat
+                  kandidat diterima.
+                </CardDescription>
+              </div>
+            </div>
+            {loading ? null : (
+              <Button
+                variant="outline"
+                onClick={() => void load(true)}
+                disabled={refreshing}
+                className="h-11 active:scale-[0.99] sm:h-9"
+                aria-label="Segarkan daftar kartu karyawan"
+              >
+                <RefreshCw
+                  className={cn("size-4", refreshing && "animate-spin")}
+                  aria-hidden="true"
+                />
+                <span className="sm:hidden">Segarkan</span>
+              </Button>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="flex flex-col gap-2">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : currentCards.length === 0 ? (
+            <div className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed p-6 text-center">
+              <IdCard className="size-8 text-muted-foreground/50" aria-hidden="true" />
+              <p className="text-sm text-muted-foreground">
+                Belum ada kartu. Kartu terbit otomatis begitu kandidat menerima penawaran
+                (offer diterima).
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Kontrol cetak massal */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground" aria-live="polite">
+                  {selectedIds.length > 0
+                    ? `${selectedIds.length} kartu dipilih`
+                    : "Centang kartu untuk mencetak massal"}
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={printSelected}
+                  disabled={selectedIds.length < 1}
+                  className="h-11 sm:h-9"
+                >
+                  <Printer className="size-4" aria-hidden="true" />
+                  Cetak Terpilih ({selectedIds.length})
+                </Button>
+              </div>
+
+              {/* Daftar kartu current */}
+              <ul className="flex flex-col gap-2">
+                {currentCards.map((card) => {
+                  const selected = selectedIds.includes(card.id);
+                  return (
+                    <li
+                      key={card.id}
+                      className={cn(
+                        "flex flex-col gap-2.5 rounded-xl border p-3 sm:flex-row sm:items-center",
+                        selected &&
+                          "border-rose-300 bg-rose-50/50 dark:border-rose-900 dark:bg-rose-950/20"
+                      )}
+                    >
+                      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                        <Checkbox
+                          checked={selected}
+                          onCheckedChange={() => toggleSelect(card.id)}
+                          aria-label={`Pilih kartu ${card.name} untuk dicetak`}
+                          className="shrink-0"
+                        />
+                        <span
+                          aria-hidden="true"
+                          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-sm font-bold text-rose-600 dark:bg-rose-950 dark:text-rose-400"
+                        >
+                          {(card.name.trim().charAt(0) || "?").toUpperCase()}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">{card.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {card.positionTitle ?? "Tanpa posisi"} ·{" "}
+                            <span className="font-mono">{card.cardNumber}</span>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                        <CardStatusBadge status={card.status} />
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            "tabular-nums",
+                            card.verifyCount >= VERIFY_COUNT_WARNING && BADGE_VERIFY_WARN
+                          )}
+                          title={`Kartu diverifikasi ${card.verifyCount} kali`}
+                        >
+                          {card.verifyCount}×
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          Terbit {formatDate(card.issuedAt)}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-11 sm:h-8"
+                          onClick={() => {
+                            setDialogCard(card);
+                            setDialogOpen(true);
+                          }}
+                          aria-label={`Kelola kartu ${card.name}`}
+                        >
+                          Kelola
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Koleksi cetak massal — tersembunyi di layar, tampil hanya saat window.print() */}
+      {!dialogOpen && selectedCards.length > 0 ? (
+        <div className="print-cards-bulk hidden" aria-hidden="true">
+          {selectedCards.map((card) => {
+            const props = cardIdProps(card);
+            return (
+              <Fragment key={card.id}>
+                <div className="print-card print-card-page">
+                  <EmployeeIdCardFront {...props} />
+                </div>
+                <div className="print-card print-card-page">
+                  <EmployeeIdCardBack {...props} />
+                </div>
+              </Fragment>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {/* Dialog kelola kartu */}
+      <EmployeeCardDialog
+        card={dialogCard}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onUpdated={handleCardUpdated}
+      />
+    </Reveal>
+  );
+}
+
 /* ----------------------------------- Tab utama ----------------------------------- */
 
 export function HireTab() {
@@ -810,6 +1114,9 @@ export function HireTab() {
           iconClass="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
         />
       </div>
+
+      {/* NR39-B — Seksi Kartu Karyawan (kartu ID digital) */}
+      <EmployeeCardsSection />
 
       {loading ? (
         <div className="flex flex-col gap-3">

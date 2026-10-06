@@ -9,7 +9,6 @@
  */
 
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -62,6 +61,32 @@ type VerifyOutcome =
   | { kind: "error"; message: string }
   | { kind: "result"; res: VerifyCardResponse };
 
+/**
+ * Panggil endpoint verifikasi publik (halaman publik — fetch biasa + try/catch).
+ * Mengembalikan outcome siap-render; TIDAK menyentuh state React.
+ */
+async function requestVerify(params: { token?: string; nomor?: string }): Promise<VerifyOutcome> {
+  const qs = params.token
+    ? `t=${encodeURIComponent(params.token)}`
+    : `nomor=${encodeURIComponent((params.nomor ?? "").trim())}`;
+  try {
+    const res = await fetch(`/api/public/verify-card?${qs}`, { cache: "no-store" });
+    const data = (await res.json().catch(() => null)) as VerifyCardResponse | null;
+    if (!res.ok || !data) {
+      return {
+        kind: "error",
+        message: "Gagal memeriksa kartu. Periksa koneksi internet, lalu coba lagi.",
+      };
+    }
+    return { kind: "result", res: data };
+  } catch {
+    return {
+      kind: "error",
+      message: "Gagal terhubung ke server. Periksa koneksi internet, lalu coba lagi.",
+    };
+  }
+}
+
 export function VerifyCardView({ initialToken }: { initialToken: string | null }) {
   const [siteName, setSiteName] = useState(FALLBACK_SITE_NAME);
   const [nomor, setNomor] = useState("");
@@ -93,39 +118,20 @@ export function VerifyCardView({ initialToken }: { initialToken: string | null }
     };
   }, []);
 
-  const verify = useCallback(
-    async (params: { token?: string; nomor?: string }) => {
-      const qs = params.token
-        ? `t=${encodeURIComponent(params.token)}`
-        : `nomor=${encodeURIComponent((params.nomor ?? "").trim())}`;
-      try {
-        const res = await fetch(`/api/public/verify-card?${qs}`, { cache: "no-store" });
-        const data = (await res.json().catch(() => null)) as VerifyCardResponse | null;
-        if (!res.ok || !data) {
-          setOutcome({
-            kind: "error",
-            message: "Gagal memeriksa kartu. Periksa koneksi internet, lalu coba lagi.",
-          });
-          return;
-        }
-        setOutcome({ kind: "result", res: data });
-      } catch {
-        setOutcome({
-          kind: "error",
-          message: "Gagal terhubung ke server. Periksa koneksi internet, lalu coba lagi.",
-        });
-      }
-    },
-    []
-  );
-
   // Jalur QR: verifikasi otomatis SEKALI saat halaman dibuka dengan #verifikasi?t=...
   // (keadaan loading sudah disiapkan dari initial state — tidak ada setState sinkron).
   useEffect(() => {
-    if (autoVerifyRef.current) return;
+    if (autoVerifyRef.current || !initialToken) return;
     autoVerifyRef.current = true;
-    if (initialToken) void verify({ token: initialToken });
-  }, [initialToken, verify]);
+    let alive = true;
+    (async () => {
+      const result = await requestVerify({ token: initialToken });
+      if (alive) setOutcome(result);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [initialToken]);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -133,7 +139,10 @@ export function VerifyCardView({ initialToken }: { initialToken: string | null }
     const clean = nomor.trim().toUpperCase();
     if (!clean) return;
     setOutcome({ kind: "loading" });
-    void verify({ nomor: clean });
+    void (async () => {
+      const result = await requestVerify({ nomor: clean });
+      setOutcome(result);
+    })();
   };
 
   return (
