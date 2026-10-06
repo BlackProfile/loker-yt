@@ -6,7 +6,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
-import { activationStatusOf, nextCardNumberFor, randomCardToken, serializeCard } from "@/lib/employee-cards";
+import {
+  activationStatusOf,
+  nextCardNumberFor,
+  randomCardToken,
+  serializeCard,
+  signCardToken,
+} from "@/lib/employee-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +89,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     });
     void emitRealtime(REALTIME_EVENTS.applications);
 
-    return NextResponse.json(serializeCard(created, owner));
+    return NextResponse.json(serializeCard(created, owner, await signCardToken(created.token)));
   } catch (error) {
     console.error("[POST /api/admin/cards/[id]/reissue]", error);
     return NextResponse.json({ error: "Gagal menerbitkan ulang kartu. Coba lagi nanti." }, { status: 500 });

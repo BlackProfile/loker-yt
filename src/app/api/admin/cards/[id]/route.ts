@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
-import { activationStatusOf, serializeCard } from "@/lib/employee-cards";
+import { activationStatusOf, serializeCard, signCardToken } from "@/lib/employee-cards";
 import { IDENTITY_CHECK_ITEMS, type IdentityChecks } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -191,7 +191,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     void emitRealtime(REALTIME_EVENTS.applications);
 
-    return NextResponse.json(serializeCard(updated, owner));
+    return NextResponse.json(
+      serializeCard(updated, owner, updated.isCurrent ? await signCardToken(updated.token) : null)
+    );
   } catch (error) {
     console.error("[PATCH /api/admin/cards/[id]]", error);
     return NextResponse.json({ error: "Gagal memperbarui kartu. Coba lagi nanti." }, { status: 500 });

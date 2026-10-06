@@ -243,7 +243,7 @@ export async function syncCardOnStatusChange(
   }
 }
 
-/** Ubah baris Prisma -> DTO klien. */
+/** Ubah baris Prisma -> DTO klien (verifyToken diisi pemanggil bila kartu current). */
 export function serializeCard(
   card: {
     id: string;
@@ -260,7 +260,8 @@ export function serializeCard(
     lastVerifiedAt: Date | null;
     isCurrent: boolean;
   },
-  owner?: { name: string; positionTitle: string | null; hiredAt: Date | null; nik: string | null; trackingCode: string | null }
+  owner?: { name: string; positionTitle: string | null; hiredAt: Date | null; nik: string | null; trackingCode: string | null },
+  verifyToken: string | null = null
 ): EmployeeCardDto {
   return {
     id: card.id,
@@ -275,6 +276,7 @@ export function serializeCard(
     verifyCount: card.verifyCount,
     lastVerifiedAt: card.lastVerifiedAt ? card.lastVerifiedAt.toISOString() : null,
     isCurrent: card.isCurrent,
+    verifyToken,
     name: owner?.name ?? "",
     positionTitle: owner?.positionTitle ?? null,
     hiredAt: owner?.hiredAt ? owner.hiredAt.toISOString() : null,

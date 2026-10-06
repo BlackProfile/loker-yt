@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
-import { ensureEmployeeCard, serializeCard } from "@/lib/employee-cards";
+import { ensureEmployeeCard, serializeCard, signCardToken } from "@/lib/employee-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -43,17 +43,22 @@ export async function GET() {
       take: 200,
     });
 
-    return NextResponse.json(
-      rows.map((row) =>
-        serializeCard(row, {
-          name: row.application.name,
-          positionTitle: row.application.position?.title ?? null,
-          hiredAt: row.application.hiredAt,
-          nik: row.application.nik,
-          trackingCode: row.application.trackingCode,
-        })
+    const dtos = await Promise.all(
+      rows.map(async (row) =>
+        serializeCard(
+          row,
+          {
+            name: row.application.name,
+            positionTitle: row.application.position?.title ?? null,
+            hiredAt: row.application.hiredAt,
+            nik: row.application.nik,
+            trackingCode: row.application.trackingCode,
+          },
+          row.isCurrent ? await signCardToken(row.token) : null
+        )
       )
     );
+    return NextResponse.json(dtos);
   } catch (error) {
     console.error("[GET /api/admin/cards]", error);
     return NextResponse.json({ error: "Gagal memuat daftar kartu. Coba lagi nanti." }, { status: 500 });

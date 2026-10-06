@@ -1304,6 +1304,8 @@ export type EmployeeCardDto = {
   verifyCount: number;
   lastVerifiedAt: string | null;
   isCurrent: boolean;
+  // Token QR bertanda tangan — hanya diisi untuk kartu current (admin & pemilik kartu)
+  verifyToken: string | null;
   // Data pemilik (dari application/position)
   name: string;
   positionTitle: string | null;
