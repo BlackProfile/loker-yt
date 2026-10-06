@@ -7,6 +7,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { syncCardOnStatusChange } from "@/lib/employee-cards";
 import type { DoNotHireEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -115,6 +117,30 @@ export async function PUT(req: NextRequest) {
     const map = await readMap();
     map[key] = { reason, by: session.name, at: new Date().toISOString() };
     await writeMap(map);
+
+    // NR-39 — kartu karyawan milik orang yang di-do-not-hire langsung dicabut
+    // (kecocokan email ATAU digit telepon) agar verifikasi publik menolak kartunya.
+    // Fire-and-forget: kegagalan tidak menggagalkan penyimpanan entri.
+    void (async () => {
+      try {
+        const digits = key.includes("@") ? null : key;
+        const targets = await db.application.findMany({
+          where: {
+            deletedAt: null,
+            hiredAt: { not: null },
+            ...(key.includes("@") ? { email: key } : { phone: { contains: digits ?? "__none__" } }),
+          },
+          select: { id: true },
+          take: 20,
+        });
+        for (const t of targets) {
+          await syncCardOnStatusChange(t.id, undefined, { doNotHire: true, actor: session.name });
+        }
+        if (targets.length > 0) void emitRealtime(REALTIME_EVENTS.applications);
+      } catch (err) {
+        console.error("[donothire] gagal mencabut kartu karyawan", err);
+      }
+    })();
 
     return NextResponse.json({ ok: true, entries: serialize(map) });
   } catch (error) {
