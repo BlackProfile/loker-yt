@@ -102,8 +102,16 @@ export function AdminFileViewButton({
 }
 
 /**
- * Dialog pratinjau berkas admin. Bila mimeType tidak diberikan, deteksi via
- * request HEAD ke /api/files/{id} (hemat bandwidth — tidak mengunduh isi).
+ * Dialog pratinjau berkas admin.
+ *
+ * NR-37 — deteksi format dua lapis:
+ * 1. Ekstensi nama berkas dikenali → render langsung TANPA request jaringan
+ *    (lebih cepat + kebal terhadap probe yang datang tanpa cookie sesi).
+ * 2. Ekstensi tidak dikenali (mis. label tanpa ekstensi) → probe HEAD ke
+ *    /api/files/{id} (hemat bandwidth — tidak mengunduh isi). MIME hasil probe
+ *    hanya dipercaya bila HTTP 200 dan content-type bukan JSON/HTML — respons
+ *    error (401/404/500) tidak boleh dianggap sebagai tipe berkas.
+ * 3. Pemanggil yang sudah tahu MIME-nya bisa mengoper `mimeType` — melewati semua.
  */
 export function AdminFileViewerDialog({
   open,
@@ -116,34 +124,53 @@ export function AdminFileViewerDialog({
   onOpenChange: (open: boolean) => void;
   fileId: string;
   filename?: string | null;
+  /** MIME bila sudah diketahui pemanggil — melewati semua deteksi. */
   mimeType?: string | null;
 }) {
-  // Hasil deteksi HEAD di-cache per fileId (tanpa setState sinkron di effect).
-  const [mimeByKey, setMimeByKey] = useState<Record<string, string>>({});
+  // Lapis 1 — format dari ekstensi nama berkas (murni sinkron, tanpa network).
+  const kindFromFilename = kindFromName(filename ?? "");
+
+  // Lapis 2 — hasil probe HEAD untuk nama tanpa ekstensi yang dikenali.
+  // null = probe selesai tetapi tidak menghasilkan tipe yang layak dirender.
+  const [probedKindByKey, setProbedKindByKey] = useState<Record<string, AdminPreviewKind | null>>({});
+
+  const probeNeeded =
+    open &&
+    !mimeType &&
+    kindFromFilename === "unsupported" &&
+    probedKindByKey[fileId] === undefined;
 
   useEffect(() => {
-    if (!open || !fileId || mimeType) return;
-    if (mimeByKey[fileId] !== undefined) return;
+    if (!probeNeeded || !fileId) return;
     let cancelled = false;
-    fetch(`/api/files/${encodeURIComponent(fileId)}?inline=1`, { method: "HEAD" })
+    fetch(`/api/files/${encodeURIComponent(fileId)}?inline=1`, {
+      method: "HEAD",
+      credentials: "same-origin",
+    })
       .then((res) => {
         if (cancelled) return;
-        const ct = res.headers.get("content-type") ?? "";
-        setMimeByKey((prev) => ({ ...prev, [fileId]: ct }));
+        const ct = (res.headers.get("content-type") ?? "").toLowerCase();
+        // Hanya percaya MIME dari respons sukses (200) yang bukan payload error.
+        const sane = res.ok && ct !== "" && !ct.includes("json") && !ct.includes("html");
+        setProbedKindByKey((prev) => ({
+          ...prev,
+          [fileId]: sane ? kindFromMime(ct) : null,
+        }));
       })
       .catch(() => {
-        if (!cancelled) setMimeByKey((prev) => ({ ...prev, [fileId]: "" }));
+        if (!cancelled) setProbedKindByKey((prev) => ({ ...prev, [fileId]: null }));
       });
     return () => {
       cancelled = true;
     };
-  }, [fileId, mimeType, open, mimeByKey]);
+  }, [fileId, probeNeeded]);
 
-  const detecting = open && !mimeType && mimeByKey[fileId] === undefined;
-  const effectiveMime = mimeType || mimeByKey[fileId] || "";
-  const kind: AdminPreviewKind = effectiveMime
-    ? kindFromMime(effectiveMime)
-    : kindFromName(filename ?? "");
+  const kind: AdminPreviewKind = mimeType
+    ? kindFromMime(mimeType)
+    : kindFromFilename !== "unsupported"
+      ? kindFromFilename
+      : (probedKindByKey[fileId] ?? "unsupported");
+  const detecting = probeNeeded;
   const inlineUrl = `/api/files/${encodeURIComponent(fileId)}?inline=1`;
   const downloadUrl = `/api/files/${encodeURIComponent(fileId)}`;
 
