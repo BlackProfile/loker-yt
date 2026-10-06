@@ -1412,3 +1412,172 @@ function StatusPageInner({
     </>
   );
 }
+
+/* ---------------------------------------------------------------------------
+ * NR-39: Kartu Karyawanku — tampil hanya bila status lamaran DITERIMA.
+ * Mengambil kartu milik pelamar via kode pelacakan (endpoint publik my-card;
+ * server otomatis menerbitkan kartu bila belum ada). 404/gagal -> bagian ini
+ * tidak dirender sama sekali (diam). Data kartu hanya milik pelamar itu sendiri.
+ * ------------------------------------------------------------------------- */
+
+type MyEmployeeCard = EmployeeCardDto & { verifyToken: string | null };
+
+// Warna badge status kartu (emerald/amber/zinc/rose — tanpa biru).
+const MY_CARD_STATUS_BADGE: Record<EmployeeCardStatus, string> = {
+  PENDING:
+    "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  PROBATION:
+    "border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
+  ACTIVE:
+    "border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300",
+  LEAVE:
+    "border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300",
+  SUSPENDED:
+    "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300",
+  REVOKED:
+    "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300",
+};
+
+function MyCardSection({ trackingCode }: { trackingCode: string }) {
+  const [card, setCard] = useState<MyEmployeeCard | null>(null);
+  const [siteName, setSiteName] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // Id unik untuk node yang diekspor ke PNG (sanitize karakter khas useId).
+  const pngNodeId = `my-card-png-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+
+  // Kartu milik pelamar ini — 404 -> bagian tidak dirender (senyap).
+  useEffect(() => {
+    let alive = true;
+    setCard(null);
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/public/my-card?kode=${encodeURIComponent(trackingCode)}`,
+          { cache: "no-store" }
+        );
+        if (res.status === 404) return;
+        const data = (await res.json().catch(() => null)) as
+          | { card?: MyEmployeeCard }
+          | null;
+        if (alive && res.ok && data?.card) setCard(data.card);
+      } catch {
+        // Senyap — bagian kartu bersifat opsional.
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [trackingCode]);
+
+  // Nama studio untuk header kartu (opsional; gagal -> default komponen kartu).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/public/content", { cache: "no-store" });
+        const data = (await res.json().catch(() => null)) as
+          | { site?: { siteName?: string } }
+          | null;
+        if (alive && data?.site?.siteName) setSiteName(data.site.siteName);
+      } catch {
+        // Biarkan default.
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /** Ekspor node kartu (ber-id unik) menjadi PNG lalu unduh otomatis. */
+  const savePng = useCallback(async () => {
+    const node = document.getElementById(pngNodeId);
+    if (!node || !card) return;
+    setSaving(true);
+    try {
+      const dataUrl = await toPng(node, { pixelRatio: 2, backgroundColor: "#ffffff" });
+      const link = document.createElement("a");
+      link.download = `kartu-karyawan-${card.cardNumber}.png`;
+      link.href = dataUrl;
+      link.click();
+      toast.success("Kartu tersimpan sebagai PNG.");
+    } catch {
+      toast.error("Gagal menyimpan gambar. Coba lagi.");
+    } finally {
+      setSaving(false);
+    }
+  }, [pngNodeId, card]);
+
+  if (!card) return null;
+
+  const verifyUrl = card.verifyToken
+    ? `${window.location.origin}/#verifikasi?t=${card.verifyToken}`
+    : "";
+
+  return (
+    <div className="rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50/70 to-transparent p-5 dark:border-emerald-500/20 dark:from-emerald-500/5 dark:to-transparent">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
+            <IdCard className="size-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h3 className="text-sm font-bold">Kartu Karyawanku</h3>
+            <p className="mt-0.5 font-mono text-xs tracking-wider text-muted-foreground">
+              {card.cardNumber}
+            </p>
+          </div>
+        </div>
+        <Badge variant="outline" className={MY_CARD_STATUS_BADGE[card.status]}>
+          {EMPLOYEE_CARD_STATUS_LABELS[card.status]}
+        </Badge>
+      </div>
+      <div className="mt-4">
+        <Button className="min-h-11 w-full sm:w-auto" onClick={() => setDialogOpen(true)}>
+          <IdCard className="size-4" aria-hidden="true" />
+          Lihat & Unduh Kartu
+        </Button>
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Kartu juga tercetak di sisi belakang dengan QR verifikasi.
+      </p>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Kartu Karyawan</DialogTitle>
+            <DialogDescription>
+              Tunjukkan kartu ini bila diminta, atau simpan sebagai gambar.
+            </DialogDescription>
+          </DialogHeader>
+          {/* Wrapper putih — latar konsisten saat diekspor ke PNG (juga di mode gelap). */}
+          <div id={pngNodeId} className="rounded-2xl bg-white p-2">
+            <EmployeeIdCard
+              cardNumber={card.cardNumber}
+              name={card.name}
+              positionTitle={card.positionTitle}
+              status={card.status}
+              issuedAt={card.issuedAt}
+              probationUntil={card.probationUntil}
+              nikMasked={card.nikMasked}
+              verifyUrl={verifyUrl}
+              siteName={siteName ?? undefined}
+            />
+          </div>
+          <Button
+            className="min-h-11 w-full"
+            onClick={() => void savePng()}
+            disabled={saving || !card.verifyToken}
+          >
+            {saving ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Download className="size-4" aria-hidden="true" />
+            )}
+            Simpan PNG
+          </Button>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
