@@ -1234,3 +1234,95 @@ export const APPLICATION_SOURCES = [
   "Lainnya",
 ] as const;
 export type ApplicationSource = (typeof APPLICATION_SOURCES)[number];
+
+/* ------------------------- Kartu Karyawan (NR-39) ------------------------- */
+
+// Siklus kartu: PENDING (menunggu verifikasi identitas) -> PROBATION/ACTIVE
+// -> LEAVE/SUSPENDED -> REVOKED. Re-issue membuat baris baru (kartu lama REVOKED).
+export type EmployeeCardStatus =
+  | "PENDING"
+  | "PROBATION"
+  | "ACTIVE"
+  | "LEAVE"
+  | "SUSPENDED"
+  | "REVOKED";
+
+export const EMPLOYEE_CARD_STATUSES: EmployeeCardStatus[] = [
+  "PENDING",
+  "PROBATION",
+  "ACTIVE",
+  "LEAVE",
+  "SUSPENDED",
+  "REVOKED",
+];
+
+export const EMPLOYEE_CARD_STATUS_LABELS: Record<EmployeeCardStatus, string> = {
+  PENDING: "Menunggu Verifikasi",
+  PROBATION: "Masa Percobaan",
+  ACTIVE: "Aktif",
+  LEAVE: "Cuti",
+  SUSPENDED: "Dinonaktifkan",
+  REVOKED: "Dicabut",
+};
+
+// Gerbang aktivasi kartu: 3 pemeriksaan identitas oleh admin sebelum kartu boleh aktif.
+export type IdentityChecks = {
+  docs: boolean; // dokumen identitas (KTP/SIM) terunggah & sesuai
+  nikMatch: boolean; // NIK terisi & cocok dengan dokumen
+  contract: boolean; // kesepakatan/kontrak ditandatangani
+};
+
+export const IDENTITY_CHECK_ITEMS: { key: keyof IdentityChecks; label: string; hint: string }[] = [
+  {
+    key: "docs",
+    label: "Dokumen identitas terunggah",
+    hint: "KTP/SIM/scan identitas terlihat jelas di berkas lamaran (tab AI & Berkas / dokumen wajib).",
+  },
+  {
+    key: "nikMatch",
+    label: "NIK terisi & cocok",
+    hint: "NIK 16 digit di strip Data Diri cocok dengan dokumen identitas.",
+  },
+  {
+    key: "contract",
+    label: "Kesepakatan ditandatangani",
+    hint: "Offer diterima dan kesepakatan kerja sudah disetujui karyawan.",
+  },
+];
+
+// DTO kartu untuk klien (admin & pemilik kartu). NIK sudah termask di server.
+export type EmployeeCardDto = {
+  id: string;
+  applicationId: string;
+  cardNumber: string;
+  status: EmployeeCardStatus;
+  identityChecks: IdentityChecks;
+  issuedAt: string;
+  probationUntil: string | null;
+  revokedAt: string | null;
+  revokedReason: string | null;
+  verifyCount: number;
+  lastVerifiedAt: string | null;
+  isCurrent: boolean;
+  // Data pemilik (dari application/position)
+  name: string;
+  positionTitle: string | null;
+  hiredAt: string | null;
+  nikMasked: string | null;
+  trackingCode: string | null;
+};
+
+// Payload verifikasi publik — data minimal demi privasi (tanpa NIK/HP/gaji).
+export type VerifyCardResponse = {
+  found: boolean;
+  reason?: "TIDAK_ADA" | "TOKEN_SALAH" | "TIDAK_AKTIF";
+  card?: {
+    cardNumber: string;
+    name: string;
+    positionTitle: string | null;
+    status: EmployeeCardStatus;
+    issuedAt: string;
+    probationUntil: string | null;
+  };
+  verifiedAt: string;
+};
