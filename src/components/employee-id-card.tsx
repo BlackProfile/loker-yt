@@ -7,6 +7,13 @@
 // Aturan desain: warna FIX (bukan token tema) agar hasil ekspor PNG / cetak
 // selalu terang konsisten meski halaman berada di dark mode. Tanpa biru/indigo,
 // tanpa emoji. Rasio kartu ID standar 85,6 x 54 mm (aspect-[856/540]).
+//
+// SKALA: akar kartu memakai `@container` (container query) dan SELURUH ukuran
+// tipografi/spacing di dalamnya memakai satuan `cqw` — kartu tampil identik
+// pada lebar berapa pun (dialog sempit, pratinjau admin, cetak 85,6 mm).
+// Tanpa ini, teks px tetap akan overflow & terpotong saat kartu kecil.
+// Catatan: satuan cqw HANYA dipakai pada elemen DI DALAM akar @container
+// (elemen tidak bisa meng-query dirinya sendiri).
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
@@ -25,7 +32,7 @@ export type EmployeeIdCardProps = {
   issuedAt: string; // ISO
   probationUntil: string | null;
   nikMasked: string | null;
-  verifyUrl: string; // URL lengkap untuk QR + teks kecil di bawah QR
+  verifyUrl: string; // URL lengkap untuk QR (TIDAK dicetak sebagai teks)
   siteName?: string; // default "Lumina Studio"
   contactLine?: string | null; // mis. "admin@lumina.id · 62xxxxxxxxxx"
   withIds?: boolean; // pasang id="ecard-front"/"ecard-back" untuk html-to-image
@@ -78,42 +85,42 @@ export function EmployeeIdCardFront(props: EmployeeIdCardProps) {
   return (
     <div
       id={withIds ? "ecard-front" : undefined}
-      className="flex aspect-[856/540] w-full flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-900 shadow-sm"
+      className="@container flex aspect-[856/540] w-full flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-900 shadow-sm"
     >
       {/* Bar aksen atas: nama situs + jenis kartu */}
-      <div className="flex items-center justify-between gap-2 bg-rose-600 px-4 py-2 text-white">
-        <span className="truncate text-[11px] font-bold uppercase tracking-widest">
+      <div className="flex items-center justify-between gap-[2cqw] bg-rose-600 px-[4cqw] py-[2.2cqw] text-white">
+        <span className="text-[2.9cqw] font-bold uppercase leading-tight tracking-[0.18em]">
           {siteName}
         </span>
-        <span className="shrink-0 text-[10px] font-semibold tracking-[0.22em]">
+        <span className="shrink-0 text-[2.6cqw] font-semibold tracking-[0.22em]">
           KARTU KARYAWAN
         </span>
       </div>
 
-      {/* Identitas */}
-      <div className="flex flex-1 items-start gap-3 p-4">
+      {/* Identitas — vertikal di tengah agar seimbang pada lebar berapa pun */}
+      <div className="flex min-h-0 flex-1 items-center gap-[3.2cqw] px-[4.2cqw] py-[3cqw]">
         <span
           aria-hidden="true"
-          className="flex size-14 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xl font-bold text-rose-600"
+          className="flex size-[15cqw] shrink-0 items-center justify-center rounded-full bg-rose-100 text-[5.5cqw] font-bold text-rose-600"
         >
           {initial}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xl font-bold leading-tight">{name}</p>
-          <p className="mt-0.5 truncate text-sm text-zinc-600">
+          <p className="break-words text-[5.8cqw] font-bold leading-[1.15]">{name}</p>
+          <p className="mt-[0.8cqw] break-words text-[3.4cqw] leading-snug text-zinc-600">
             {positionTitle ?? "Karyawan"}
           </p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="mt-[1.6cqw] flex flex-wrap items-center gap-x-[2cqw] gap-y-[1cqw]">
             <span
               className={cn(
-                "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                "inline-flex items-center rounded-full border px-[2.2cqw] py-[0.7cqw] text-[2.5cqw] font-bold uppercase tracking-wide",
                 STATUS_BADGE_FIX[status]
               )}
             >
               {EMPLOYEE_CARD_STATUS_LABELS[status]}
             </span>
             {probationUntil ? (
-              <span className="text-[10px] text-zinc-500">
+              <span className="text-[2.5cqw] leading-snug text-zinc-500">
                 Masa percobaan s.d. {formatCardDate(probationUntil)}
               </span>
             ) : null}
@@ -122,26 +129,30 @@ export function EmployeeIdCardFront(props: EmployeeIdCardProps) {
       </div>
 
       {/* Baris data bawah */}
-      <div className="grid grid-cols-3 gap-2 border-t border-zinc-200 bg-zinc-50 px-4 py-2.5">
+      <div className="grid grid-cols-3 gap-[2cqw] border-t border-zinc-200 bg-zinc-50 px-[4.2cqw] py-[2.4cqw]">
         <div className="min-w-0">
-          <p className="text-[9px] font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="text-[2.2cqw] font-semibold uppercase tracking-wide text-zinc-500">
             Bergabung
           </p>
-          <p className="truncate text-xs font-semibold">{formatCardDate(issuedAt)}</p>
+          <p className="mt-[0.3cqw] truncate text-[2.9cqw] font-semibold">
+            {formatCardDate(issuedAt)}
+          </p>
         </div>
         <div className="min-w-0">
-          <p className="text-[9px] font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="text-[2.2cqw] font-semibold uppercase tracking-wide text-zinc-500">
             NIK
           </p>
-          <p className="truncate font-mono text-xs font-semibold">
+          <p className="mt-[0.3cqw] truncate font-mono text-[2.8cqw] font-semibold">
             {nikMasked ?? "NIK belum diisi"}
           </p>
         </div>
         <div className="min-w-0">
-          <p className="text-[9px] font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="text-[2.2cqw] font-semibold uppercase tracking-wide text-zinc-500">
             No. Kartu
           </p>
-          <p className="truncate font-mono text-xs font-bold">{cardNumber}</p>
+          <p className="mt-[0.3cqw] truncate font-mono text-[2.8cqw] font-bold">
+            {cardNumber}
+          </p>
         </div>
       </div>
     </div>
@@ -154,15 +165,16 @@ type QrResult = { url: string; dataUrl: string | null; error: boolean };
 
 function QrPlaceholder({ message }: { message: string }) {
   return (
-    <div className="flex size-full flex-col items-center justify-center gap-1 text-zinc-400">
-      <QrCode className="size-6" aria-hidden="true" />
-      <p className="px-1 text-center text-[9px] leading-snug">{message}</p>
+    <div className="flex size-full flex-col items-center justify-center gap-[1cqw] text-zinc-400">
+      <QrCode className="size-[6cqw]" aria-hidden="true" />
+      <p className="px-[1cqw] text-center text-[2.4cqw] leading-snug">{message}</p>
     </div>
   );
 }
 
 export function EmployeeIdCardBack(props: EmployeeIdCardProps) {
   const {
+    cardNumber,
     name,
     verifyUrl,
     siteName = "Lumina Studio",
@@ -176,10 +188,11 @@ export function EmployeeIdCardBack(props: EmployeeIdCardProps) {
 
   // QR dibuat dari verifyUrl via qrcode.toDataURL — setState hanya di callback
   // async (bukan sinkron di body effect) agar aman terhadap StrictMode.
+  // Lebar 512 px agar QR tetap tajam pada ekspor PNG pixelRatio tinggi.
   useEffect(() => {
     if (!verifyUrl) return;
     let cancelled = false;
-    QRCode.toDataURL(verifyUrl, { width: 256, margin: 1 })
+    QRCode.toDataURL(verifyUrl, { width: 512, margin: 1 })
       .then((dataUrl) => {
         if (cancelled) return;
         setQr({ url: verifyUrl, dataUrl, error: false });
@@ -203,20 +216,22 @@ export function EmployeeIdCardBack(props: EmployeeIdCardProps) {
   return (
     <div
       id={withIds ? "ecard-back" : undefined}
-      className="flex aspect-[856/540] w-full overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-900 shadow-sm"
+      className="@container flex aspect-[856/540] w-full overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-900 shadow-sm"
     >
-      {/* Kolom QR */}
-      <div className="flex w-[44%] shrink-0 flex-col items-center justify-center gap-2 border-r border-zinc-200 bg-zinc-50 p-3">
-        <div className="flex aspect-square w-full max-w-[150px] items-center justify-center rounded-lg border-2 border-zinc-300 bg-white p-1.5">
+      {/* Kolom QR — URL lengkap TIDAK dicetak sebagai teks (URL pratinjau
+          panjang merusak tata letak); fallback manual memakai No. Kartu yang
+          memang diterima halaman verifikasi publik. */}
+      <div className="flex w-[42%] shrink-0 flex-col items-center justify-center gap-[1.6cqw] border-r border-zinc-200 bg-zinc-50 p-[3cqw]">
+        <div className="flex aspect-square w-[30cqw] items-center justify-center rounded-[2.5cqw] border-2 border-zinc-300 bg-white p-[1.2cqw]">
           {qrView.kind === "loading" ? (
-            <Loader2 className="size-6 animate-spin text-zinc-400" aria-hidden="true" />
+            <Loader2 className="size-[6cqw] animate-spin text-zinc-400" aria-hidden="true" />
           ) : qrView.kind === "ready" ? (
             <img
               src={qrView.dataUrl}
               alt={`QR verifikasi keaslian kartu ${name}`}
               className="size-full"
-              width={150}
-              height={150}
+              width={512}
+              height={512}
             />
           ) : qrView.kind === "error" ? (
             <QrPlaceholder message="QR gagal dibuat. Coba muat ulang." />
@@ -224,40 +239,43 @@ export function EmployeeIdCardBack(props: EmployeeIdCardProps) {
             <QrPlaceholder message="QR tidak tersedia untuk kartu ini." />
           )}
         </div>
-        <p className="text-center text-[9px] font-semibold leading-snug text-zinc-700">
+        <p className="text-center text-[2.5cqw] font-semibold leading-snug text-zinc-700">
           Pindai untuk verifikasi keaslian
         </p>
-        {verifyUrl ? (
-          <p className="w-full break-all text-center text-[9px] leading-snug text-zinc-500">
-            {verifyUrl}
-          </p>
-        ) : null}
+        <p className="text-center text-[2.3cqw] leading-snug text-zinc-500">
+          atau ketik No. Kartu di halaman verifikasi
+        </p>
+        <p className="font-mono text-[2.7cqw] font-bold tracking-wide text-zinc-800">
+          {cardNumber}
+        </p>
       </div>
 
       {/* Kolom informasi */}
-      <div className="flex min-w-0 flex-1 flex-col gap-2 p-3.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-[2.2cqw] p-[3.6cqw]">
         <div>
-          <p className="text-sm font-bold leading-tight">{siteName}</p>
+          <p className="text-[3.6cqw] font-bold leading-tight">{siteName}</p>
           {contactLine ? (
-            <p className="mt-0.5 text-[10px] leading-snug text-zinc-600">{contactLine}</p>
+            <p className="mt-[0.6cqw] break-words text-[2.5cqw] leading-snug text-zinc-600">
+              {contactLine}
+            </p>
           ) : null}
         </div>
 
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-2">
-          <p className="text-[10px] font-bold leading-snug text-rose-800">
+        <div className="rounded-[2.2cqw] border border-rose-200 bg-rose-50 p-[2.2cqw]">
+          <p className="break-words text-[2.6cqw] font-bold leading-snug text-rose-800">
             Kartu ini milik {name} — tidak dapat dipindahtangankan
           </p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[9px] leading-snug text-zinc-600">
+          <ul className="mt-[1.2cqw] list-disc space-y-[0.7cqw] pl-[3cqw] text-[2.3cqw] leading-snug text-zinc-600">
             <li>Tunjukkan kartu ini sebagai identitas karyawan {siteName}.</li>
             <li>
-              Keaslian kartu diverifikasi dengan memindai QR atau membuka tautan resmi
-              di samping.
+              Keaslian kartu diverifikasi dengan memindai QR atau memasukkan nomor
+              kartu di halaman verifikasi resmi.
             </li>
             <li>Bila kartu hilang atau ditemukan, laporkan kepada {siteName}.</li>
           </ul>
         </div>
 
-        <p className="mt-auto text-[8px] uppercase tracking-widest text-zinc-400">
+        <p className="mt-auto text-[2cqw] uppercase tracking-[0.2em] text-zinc-400">
           {siteName} · Kartu Karyawan Digital
         </p>
       </div>

@@ -1495,7 +1495,7 @@ function MyCardSection({ trackingCode }: { trackingCode: string }) {
     if (!node || !card) return;
     setSaving(true);
     try {
-      const dataUrl = await toPng(node, { pixelRatio: 2, backgroundColor: "#ffffff" });
+      const dataUrl = await toPng(node, { pixelRatio: 3, backgroundColor: "#ffffff" });
       const link = document.createElement("a");
       link.download = `kartu-karyawan-${card.cardNumber}.png`;
       link.href = dataUrl;
@@ -1543,7 +1543,7 @@ function MyCardSection({ trackingCode }: { trackingCode: string }) {
       </p>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Kartu Karyawan</DialogTitle>
             <DialogDescription>

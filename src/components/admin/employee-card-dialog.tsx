@@ -267,7 +267,7 @@ function CardManageBody({
         toast.error("Pratinjau kartu tidak ditemukan.");
         return;
       }
-      const opts = { pixelRatio: 2, backgroundColor: "#ffffff" } as const;
+      const opts = { pixelRatio: 3, backgroundColor: "#ffffff" } as const;
       const frontUrl = await toPng(front, opts);
       downloadDataUrl(frontUrl, `kartu-${card.cardNumber}-depan.png`);
       const backUrl = await toPng(back, opts);
