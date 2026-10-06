@@ -40,6 +40,7 @@ import {
   AudioLines,
   Ban,
   Banknote,
+  Cake,
   CalendarClock,
   CalendarPlus,
   CheckCircle2,
@@ -50,14 +51,17 @@ import {
   ClipboardCheck,
   ClipboardList,
   Clock,
+  Contact,
   Copy,
   ExternalLink,
   Eye,
   FileDown,
   FileText,
   Flag,
+  FolderSearch,
   Globe,
   Handshake,
+  Hash,
   HelpCircle,
   History,
   Inbox,
@@ -82,6 +86,7 @@ import {
   StickyNote,
   Tag,
   Trash2,
+  TriangleAlert,
   Undo2,
   User,
   UserX,
@@ -147,6 +152,11 @@ import {
 import { StatusBadge } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 import { AiPanel } from "./ai-panel";
+import { ApplicantAvatar } from "./applicant-avatar"; // NR38-C fitur 9
+import { salaryVerdict } from "./stage-meta"; // NR38-C fitur 2
+import { CvSummaryCard, type CvSummary } from "./cv-summary-card"; // NR38-C fitur 5
+import { DossierDialog } from "./dossier-dialog"; // NR38-C fitur 6
+import { QuickCallDialog } from "./quick-call-dialog"; // NR38-C fitur 7
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { useTagDefs } from "./use-tag-defs";
@@ -213,6 +223,91 @@ function ageYearsOf(birthDate: string | null | undefined): string | null {
   if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < dob.getDate())) years -= 1;
   if (years < 0 || years > 130) return null;
   return `${years} th`;
+}
+
+/* --------------------- NR38-C — tipe & helper lokal detail --------------------- */
+
+// Verdict per jawaban screening — tersimpan sebagai JSON string di
+// Application.screeningVerdicts (patch baru di route [id]).
+type ScreeningVerdict = "PASS" | "WARN" | "FAIL";
+
+/** Urutan siklus chip: Belum dinilai -> Lulus -> Perlu dicek -> Gugur -> kembali. */
+const SCREENING_VERDICT_CYCLE: Array<ScreeningVerdict | null> = [null, "PASS", "WARN", "FAIL"];
+const SCREENING_VERDICT_LABELS: Record<ScreeningVerdict, string> = {
+  PASS: "Lulus",
+  WARN: "Perlu dicek",
+  FAIL: "Gugur",
+};
+const SCREENING_VERDICT_CHIP: Record<ScreeningVerdict, string> = {
+  PASS:
+    "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400",
+  WARN:
+    "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400",
+  FAIL:
+    "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400",
+};
+const SCREENING_VERDICT_CHIP_NONE =
+  "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400";
+
+/** Respons GET /api/admin/applications/[id] — Application + field tambahan aditif. */
+type DetailApplication = Application & {
+  adminSeenAt?: string | null;
+  screeningVerdicts?: string | null;
+  cvSummary?: string | null;
+  cvSummaryAt?: string | null;
+};
+
+/** Parse JSON {questionId: "PASS"|"WARN"|"FAIL"} dari DB — aman terhadap data rusak. */
+function parseScreeningVerdicts(raw: string | null | undefined): Record<string, ScreeningVerdict> {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, ScreeningVerdict> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if ((value === "PASS" || value === "WARN" || value === "FAIL") && key.trim()) {
+        out[key] = value;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Parse JSON {bullets, generatedAt} ringkasan CV — null bila rusak/kosong. */
+function parseCvSummaryJson(raw: string | null | undefined): CvSummary | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const obj = parsed as Record<string, unknown>;
+    const bullets = Array.isArray(obj.bullets)
+      ? obj.bullets
+          .filter((b): b is string => typeof b === "string" && b.trim().length > 0)
+          .slice(0, 6)
+      : [];
+    if (bullets.length === 0) return null;
+    return {
+      bullets,
+      generatedAt: typeof obj.generatedAt === "string" ? obj.generatedAt : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Umur numerik dari tanggal lahir (untuk banding minAge); null bila tidak valid. */
+function ageNumberOf(birthDate: string | null | undefined): number | null {
+  if (!birthDate) return null;
+  const dob = new Date(birthDate);
+  if (Number.isNaN(dob.getTime())) return null;
+  const now = new Date();
+  let years = now.getFullYear() - dob.getFullYear();
+  const monthDelta = now.getMonth() - dob.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < dob.getDate())) years -= 1;
+  if (years < 0 || years > 130) return null;
+  return years;
 }
 
 
@@ -1037,6 +1132,34 @@ export function ApplicationDetailDialog({
     detailScrollRef.current?.scrollTo({ top: 0 });
   }, [detailTab]);
 
+  // NR38-C — state fitur detail baru.
+  const [screeningVerdicts, setScreeningVerdicts] = useState<Record<string, ScreeningVerdict>>({});
+  const [verdictSaving, setVerdictSaving] = useState(false);
+  const [cvSummary, setCvSummary] = useState<CvSummary | null>(null);
+  const [dossierOpen, setDossierOpen] = useState(false);
+  const [quickCallOpen, setQuickCallOpen] = useState(false);
+
+  // NR38-C fitur 1 — tandai lamaran "sudah dilihat admin": dialog memanggil
+  // GET /api/admin/applications/[id] setiap membuka satu lamaran; server
+  // mengisi adminSeenAt bila masih null. Respons dipakai juga untuk memuat
+  // verdict screening (fitur 4) & ringkasan CV (fitur 5) yang tersimpan.
+  useEffect(() => {
+    if (!applicationId) return;
+    let cancelled = false;
+    apiGet<DetailApplication>(`/api/admin/applications/${applicationId}`)
+      .then((detail) => {
+        if (cancelled) return;
+        setScreeningVerdicts(parseScreeningVerdicts(detail.screeningVerdicts));
+        setCvSummary(parseCvSummaryJson(detail.cvSummary));
+      })
+      .catch(() => {
+        // Penandaan dilihat bersifat pelengkap — abaikan kegagalan fetch.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applicationId]);
+
   // Reset form hanya saat berganti pelamar (bukan tiap update objek) agar
   // pesan penolakan/penawaran yang baru dibuat tidak ikut terhapus.
   const lastAppIdRef = useRef<string | null>(null);
@@ -1093,6 +1216,12 @@ export function ApplicationDetailDialog({
     setDnhRemoveOpen(false);
     setDnhRemoveReason("");
     setDnhSaving(false);
+    // NR38-C — reset fitur baru saat berganti pelamar (data asli dimuat ulang
+    // oleh effect GET detail di atas).
+    setScreeningVerdicts({});
+    setCvSummary(null);
+    setDossierOpen(false);
+    setQuickCallOpen(false);
   }, [application]);
 
   // NR-24 fitur 1 — navigasi keyboard ArrowLeft/ArrowRight antar lamaran.

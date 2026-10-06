@@ -45,6 +45,7 @@ import {
   ArchiveRestore,
   Download,
   Eye,
+  EyeOff,
   FileSpreadsheet,
   FileText,
   Inbox,
@@ -52,6 +53,8 @@ import {
   Loader2,
   MapPin,
   RotateCcw,
+  Rows3,
+  Rows4,
   Search,
   Sparkles,
   Star,
@@ -90,6 +93,12 @@ import { Reveal } from "./motion-primitives";
 import { takePendingApplicationId } from "./command-palette";
 import { DemoSimulatorControl } from "./demo-simulator";
 import { cn } from "@/lib/utils";
+// NR38-B — tampilan tersimpan, bandingkan massal, ekspor CSV, tipe baris.
+import { formatDate } from "./format";
+import { SavedViewsBar, type AdminFilterSnapshot } from "./saved-views";
+import { CompareApplicantsDialog } from "./compare-applicants-dialog";
+import { ageOf, type ApplicationRow } from "./applicant-row-types";
+import type { TableDensity } from "./applications-table";
 
 const ALL = "ALL";
 
@@ -117,7 +126,7 @@ type SemanticSearchEntryUI = { id: string; name: string; score: number; reason: 
 export function ApplicationsTab() {
   const { session, canMutate, reportError } = useAdminSession();
 
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [applications, setApplications] = useState<ApplicationRow[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -142,9 +151,50 @@ export function ApplicationsTab() {
   // + pencarian domisili (case-insensitive contains).
   const [komuterFilter, setKomuterFilter] = useState<string>(ALL);
   const [domisiliFilter, setDomisiliFilter] = useState<string>("");
+  // NR38-B fitur 1 — filter "Belum dilihat": hanya lamaran yang belum pernah
+  // dibuka admin (adminSeenAt null). Pencatatan adminSeenAt dikerjakan dialog detail.
+  const [unseenOnly, setUnseenOnly] = useState(false);
 
   const [allTags, setAllTags] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>("table");
+
+  // NR38-B fitur 5 — kepadatan tabel (persist "lumina.admin.density").
+  const [density, setDensity] = useState<TableDensity>(() => {
+    if (typeof window === "undefined") return "cozy";
+    try {
+      return window.localStorage.getItem("lumina.admin.density") === "compact"
+        ? "compact"
+        : "cozy";
+    } catch {
+      return "cozy";
+    }
+  });
+  // NR38-B fitur 9 — mode kartu vs tabel (persist "lumina.admin.cardMode").
+  const [cardMode, setCardMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem("lumina.admin.cardMode") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  const changeDensity = useCallback((next: TableDensity) => {
+    setDensity(next);
+    try {
+      window.localStorage.setItem("lumina.admin.density", next);
+    } catch {
+      /* penyimpanan tidak tersedia — abaikan */
+    }
+  }, []);
+  const changeCardMode = useCallback((next: boolean) => {
+    setCardMode(next);
+    try {
+      window.localStorage.setItem("lumina.admin.cardMode", next ? "1" : "0");
+    } catch {
+      /* penyimpanan tidak tersedia — abaikan */
+    }
+  }, []);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [compareIds, setCompareIds] = useState<string[]>([]);
@@ -163,6 +213,8 @@ export function ApplicationsTab() {
   const [deleteTarget, setDeleteTarget] = useState<Application | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  // NR38-B fitur 6 — dialog bandingkan dari seleksi massal (2-3 terpilih).
+  const [bulkCompareOpen, setBulkCompareOpen] = useState(false);
   // NR-28 (item 13): hormati reduced motion pada animasi bulk bar.
   const reducedMotion = useReducedMotion();
 
@@ -248,6 +300,9 @@ export function ApplicationsTab() {
     talentPool ||
     hasInterview ||
     starredOnly ||
+    followupOnly ||
+    holdOnly ||
+    unseenOnly ||
     archiveFilter !== "ACTIVE" ||
     komuterFilter !== ALL ||
     domisiliFilter.trim() !== "";
@@ -287,7 +342,7 @@ export function ApplicationsTab() {
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        const data = await apiGet<Application[]>(
+        const data = await apiGet<ApplicationRow[]>(
           `/api/admin/applications${activeQuery}`
         );
         setApplications(data);
@@ -379,9 +434,73 @@ export function ApplicationsTab() {
     setTalentPool(false);
     setHasInterview(false);
     setStarredOnly(false);
+    setFollowupOnly(false);
+    setHoldOnly(false);
+    setUnseenOnly(false);
     setArchiveFilter("ACTIVE");
     setKomuterFilter(ALL);
     setDomisiliFilter("");
+  }
+
+  // NR38-B fitur 2 — snapshot filter aktif utk tampilan tersimpan.
+  const currentSnapshot = useMemo<AdminFilterSnapshot>(
+    () => ({
+      q: q || undefined,
+      status: statusFilter !== ALL ? statusFilter : undefined,
+      positionId: positionFilter !== ALL ? positionFilter : undefined,
+      source: sourceFilter !== ALL ? sourceFilter : undefined,
+      sort: sort !== "newest" ? sort : undefined,
+      ratingMin: ratingMin && ratingMin !== "all-rating" ? ratingMin : undefined,
+      tag: tag !== ALL ? tag : undefined,
+      talentPool: talentPool || undefined,
+      hasInterview: hasInterview || undefined,
+      starred: starredOnly || undefined,
+      followup: followupOnly || undefined,
+      hold: holdOnly || undefined,
+      unseen: unseenOnly || undefined,
+      archive: archiveFilter !== "ACTIVE" ? archiveFilter : undefined,
+      komuter: komuterFilter !== ALL ? komuterFilter : undefined,
+      domisili: domisiliFilter.trim() || undefined,
+    }),
+    [
+      q,
+      statusFilter,
+      positionFilter,
+      sourceFilter,
+      sort,
+      ratingMin,
+      tag,
+      talentPool,
+      hasInterview,
+      starredOnly,
+      followupOnly,
+      holdOnly,
+      unseenOnly,
+      archiveFilter,
+      komuterFilter,
+      domisiliFilter,
+    ]
+  );
+
+  // Terapkan snapshot tampilan tersimpan ke seluruh state filter.
+  function applySnapshot(filters: AdminFilterSnapshot) {
+    setSearchInput(filters.q ?? "");
+    setQ(filters.q ?? "");
+    setStatusFilter(filters.status ?? ALL);
+    setPositionFilter(filters.positionId ?? ALL);
+    setSourceFilter(filters.source ?? ALL);
+    setSort(filters.sort ?? "newest");
+    setRatingMin(filters.ratingMin ?? "");
+    setTag(filters.tag ?? ALL);
+    setTalentPool(filters.talentPool ?? false);
+    setHasInterview(filters.hasInterview ?? false);
+    setStarredOnly(filters.starred ?? false);
+    setFollowupOnly(filters.followup ?? false);
+    setHoldOnly(filters.hold ?? false);
+    setUnseenOnly(filters.unseen ?? false);
+    setArchiveFilter(filters.archive ?? "ACTIVE");
+    setKomuterFilter(filters.komuter ?? ALL);
+    setDomisiliFilter(filters.domisili ?? "");
   }
 
   function toggleSelect(id: string, checked: boolean) {
@@ -419,6 +538,10 @@ export function ApplicationsTab() {
     if (starredOnly) {
       list = list.filter((a) => a.starredBy?.includes(session.id) ?? false);
     }
+    // NR38-B fitur 1 — filter "Belum dilihat": adminSeenAt masih null.
+    if (unseenOnly) {
+      list = list.filter((a) => !a.adminSeenAt);
+    }
     return list;
   }, [
     applications,
@@ -427,8 +550,15 @@ export function ApplicationsTab() {
     komuterFilter,
     domisiliFilter,
     starredOnly,
+    unseenOnly,
     session.id,
   ]);
+
+  // NR38-B fitur 1 — hitung lamaran yang belum dilihat admin (adminSeenAt kosong).
+  const unseenCount = useMemo(
+    () => applications.filter((a) => !a.deletedAt && !a.adminSeenAt).length,
+    [applications]
+  );
 
   // Jumlah lamaran terarsip (untuk keterangan kecil pada baris filter).
   const archivedCount = useMemo(
@@ -462,8 +592,19 @@ export function ApplicationsTab() {
   }
 
   function updateAppInList(updated: Application) {
-    setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-    setDetail((prev) => (prev && prev.id === updated.id ? updated : prev));
+    // NR38-B — merge (bukan replace): respons PATCH tidak membawa field tambahan
+    // NR38-B (adminSeenAt/snoozeUntil/gaji posisi) sehingga dipertahankan dari
+    // baris lama; field inti tetap terganti dari respons terbaru.
+    setApplications((prev) =>
+      prev.map((a) =>
+        a.id === updated.id ? ({ ...a, ...updated } as ApplicationRow) : a
+      )
+    );
+    setDetail((prev) =>
+      prev && prev.id === updated.id
+        ? ({ ...prev, ...updated } as ApplicationRow)
+        : prev
+    );
   }
 
   // Toggle bintang personal per admin (NR-24 fitur 2): update optimistik,
