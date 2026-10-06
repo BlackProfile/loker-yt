@@ -320,8 +320,6 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
         <AdminApp onExit={exitAdmin} />
       ) : view === "status" ? (
         <StatusPageView onExit={exitStatus} initialCode={statusCode} />
-      ) : view === "verifikasi" ? (
-        <VerifyCardView initialToken={verifyToken} />
       ) : view === "embed" ? (
         <EmbedView data={data} />
       ) : view === "survei" && slug ? (
