@@ -132,6 +132,10 @@ model Position {
   reapplyCooldownDays Int    @default(0) // jeda minimal lamar ulang setelah ditolak (hari); 0 = bebas
   autoCloseOnHired   Boolean @default(true) // tandai kuota terpenuhi otomatis saat kandidat diterima
 
+  // NR-40 — pipeline lengkap: ambang aging & template onboarding per posisi
+  agingWarnDays     Int? // hari di tahap sebelum kartu kanban dianggap "mengendap" (null = 7)
+  onboardingTemplate String? // JSON {label,owner?,offsetDays?}[] rencana onboarding bawaan — terpasang otomatis saat offer diterima
+
   // Rentang gaji wajar (validasi offer) — angka bulanan
   salaryMin Int?
   salaryMax Int?
@@ -230,6 +234,14 @@ model Application {
 
   // Rencana onboarding (agenda hari pertama, mentor, target): JSON {id,label,owner?,dueAt?,done}[]
   onboardingPlan String @default("[]")
+
+  // NR-40 — siklus hidup karyawan: probasi, permanen, offboarding & alumni
+  autoShortlistedAt DateTime? // saat dipindah otomatis oleh auto-shortlist AI (untuk tag "Auto" + undo)
+  permanentAt       DateTime? // saat diputuskan TETAP setelah masa percobaan
+  exitAt            DateTime? // tanggal berhenti kerja — terisi = karyawan menjadi alumni
+  exitReason        String?   // RESIGN | KONTRAK_HABIS | KINERJA | LAINNYA
+  exitNote          String?   // catatan offboarding
+  offboardingPlan   String    @default("[]") // JSON {id,label,owner?,dueAt?,done}[] checklist serah terima
 
   // Kualitas data & pelacakan sumber
   cvText        String? // teks hasil ekstraksi/OCR CV — dipakai pencarian semantik
@@ -542,6 +554,7 @@ model CheckIn {
   dueAt         DateTime?
   rating        Int? // 1-5
   notes         String?
+  recommendation String? // NR-40 — LANJUT | PERPANJANG | AKHIRI (rekomendasi evaluasi masa percobaan)
   completedAt   DateTime?
   createdAt     DateTime    @default(now())
 

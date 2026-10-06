@@ -326,6 +326,10 @@ export type Position = {
   reapplyCooldownDays: number;
   autoCloseOnHired: boolean;
 
+  // NR-40 — pipeline lengkap
+  agingWarnDays: number | null; // ambang hari "mengendap" di kanban (null = 7)
+  onboardingTemplate: OnboardingTemplateItem[] | null; // rencana onboarding bawaan, auto-terpasang saat diterima
+
   // Rentang gaji wajar (validasi offer) — null = tanpa batas
   salaryMin: number | null;
   salaryMax: number | null;
@@ -464,6 +468,14 @@ export type Application = {
   hiredAt: string | null;
   probationEnd: string | null;
   onboardingDocs: OnboardingDoc[];
+
+  // NR-40 — siklus hidup karyawan (probasi, permanen, offboarding/alumni)
+  autoShortlistedAt?: string | null; // saat dipindah otomatis auto-shortlist AI (tag "Auto" + undo)
+  permanentAt?: string | null; // saat diputuskan TETAP setelah probasi
+  exitAt?: string | null; // tanggal berhenti kerja — terisi = alumni
+  exitReason?: ExitReason | null;
+  exitNote?: string | null;
+  offboardingPlan?: OnboardingPlanItem[] | null; // checklist serah terima alumni
 
   // Kualitas data
   isDuplicate?: boolean; // true = lamaran ganda terdeteksi (badge "Duplikat" di tabel)
@@ -1059,6 +1071,53 @@ export type OnboardingPlanItem = {
   owner?: string;
   dueAt?: string | null;
   done: boolean;
+};
+
+/* ----------------------- NR-40 — pipeline lengkap (kontrak bersama) ----------------------- */
+
+/** Item template onboarding per posisi — terpasang otomatis saat offer diterima. */
+export type OnboardingTemplateItem = {
+  label: string;
+  owner?: string; // penanggung jawab (opsional)
+  offsetDays?: number; // H+n hari sejak tanggal mulai (default 0 = hari pertama)
+};
+
+/** Alasan berhenti kerja (offboarding/alumni). */
+export type ExitReason = "RESIGN" | "KONTRAK_HABIS" | "KINERJA" | "LAINNYA";
+
+export const EXIT_REASONS: ExitReason[] = ["RESIGN", "KONTRAK_HABIS", "KINERJA", "LAINNYA"];
+
+export const EXIT_REASON_LABELS: Record<ExitReason, string> = {
+  RESIGN: "Mengundurkan diri",
+  KONTRAK_HABIS: "Kontrak berakhir",
+  KINERJA: "Kinerja",
+  LAINNYA: "Lainnya",
+};
+
+/** Rekomendasi evaluasi cek-in masa percobaan (30/60/90 hari). */
+export type CheckInRecommendation = "LANJUT" | "PERPANJANG" | "AKHIRI";
+
+export const CHECKIN_RECOMMENDATIONS: CheckInRecommendation[] = [
+  "LANJUT",
+  "PERPANJANG",
+  "AKHIRI",
+];
+
+export const CHECKIN_RECOMMENDATION_LABELS: Record<CheckInRecommendation, string> = {
+  LANJUT: "Lanjut sampai tetap",
+  PERPANJANG: "Rekomendasi perpanjang probasi",
+  AKHIRI: "Rekomendasi akhiri",
+};
+
+/** Keputusan akhir masa percobaan oleh admin. */
+export type ProbationDecision = "PERMANENT" | "EXTEND" | "END";
+
+export const PROBATION_DECISIONS: ProbationDecision[] = ["PERMANENT", "EXTEND", "END"];
+
+export const PROBATION_DECISION_LABELS: Record<ProbationDecision, string> = {
+  PERMANENT: "Tetap (Karyawan Tetap)",
+  EXTEND: "Perpanjang masa percobaan",
+  END: "Akhiri kerja sama",
 };
 
 // POST /api/public/slots/book -> sukses
