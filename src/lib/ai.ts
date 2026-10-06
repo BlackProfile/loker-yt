@@ -337,7 +337,8 @@ export async function analyzeApplication(applicationId: string): Promise<Screeni
       try {
         await db.application.update({
           where: { id: applicationId },
-          data: { status: targetStage },
+          // NR-40/PL-1b — tandai waktu auto-shortlist (tag "Auto" + undo).
+          data: { status: targetStage, autoShortlistedAt: new Date() },
         });
         await db.activityLog.create({
           data: {

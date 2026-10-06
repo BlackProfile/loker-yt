@@ -1,5 +1,6 @@
 // PATCH  /api/admin/applications/[id] — update status/catatan/rating/tags/wawancara/talent pool/rubrik/checklist/catatan video
 //        + NR-24: bintang personal, tindak lanjut (snooze), ekspektasi gaji, HOLD, masa berlaku dokumen (OWNER/HR).
+//        + NR-40/PL-1b: gerbang transisi tahap (guard kategori) + bypass OWNER (force) + undo auto-shortlist.
 // DELETE /api/admin/applications/[id] — pindahkan lamaran ke tong sampah (soft delete, OWNER/HR).
 // Setiap perubahan dicatat ke ActivityLog. Perubahan tahap memicu webhook application.stage_changed.
 import { NextRequest, NextResponse } from "next/server";
@@ -11,12 +12,19 @@ import {
   parseDocExpiries,
   parseRequirements,
   parseScoreRecord,
+  parseStageCategories,
   parseStarredBy,
   parseTags,
   parseVideoNotes,
+  sanitizeRejectionReason,
   serializeApplication,
 } from "@/lib/seed";
-import { isBuiltInStage } from "@/lib/stages";
+import {
+  categoryForStage,
+  DEFAULT_STAGES,
+  isBuiltInStage,
+  stagesForPosition,
+} from "@/lib/stages";
 import { HOLD_REASONS, STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
@@ -110,9 +118,65 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const data = body as Record<string, unknown>;
 
     // Muat lamaran lebih awal — validasi bintang/hold memerlukan nilai lama.
-    const existing = await db.application.findUnique({ where: { id } });
+    // PL-1b: posisi ikut diambil (stages + stageCategories) untuk gerbang tahap
+    // dan validasi pipeline undo auto-shortlist.
+    const existing = await db.application.findUnique({
+      where: { id },
+      include: { position: { select: { stages: true, stageCategories: true } } },
+    });
     if (!existing) {
       return NextResponse.json(NOT_FOUND, { status: 404 });
+    }
+
+    // ===== PL-1b — Undo auto-shortlist =====
+    // PATCH { action: "undo-auto-shortlist" } — kembalikan lamaran yang dipindah
+    // otomatis oleh AI ke tahap Baru. Bila action ini ada, field body lain diabaikan.
+    if (data.action === "undo-auto-shortlist") {
+      if (session.role !== "OWNER" && session.role !== "HR") {
+        return NextResponse.json(FORBIDDEN, { status: 403 });
+      }
+      if (!existing.autoShortlistedAt) {
+        return NextResponse.json(
+          { error: "Lamaran ini tidak sedang ditandai auto-shortlist." },
+          { status: 409 },
+        );
+      }
+      // Tahap tujuan: "NEW" bila masih ada di pipeline posisi; bila tidak (posisi
+      // mengganti stages kustom), pakai tahap bawaan pertama.
+      const pipelineStages = stagesForPosition(
+        parseRequirements(existing.position?.stages ?? null),
+      );
+      const targetStage = pipelineStages.includes("NEW") ? "NEW" : DEFAULT_STAGES[0];
+      const stageMoved = targetStage !== existing.status;
+      const updated = await db.application.update({
+        where: { id },
+        data: {
+          status: targetStage,
+          autoShortlistedAt: null,
+          ...(stageMoved
+            ? {
+                // SLA + riwayat tahap mengikuti pola perubahan status PATCH utama.
+                stageUpdatedAt: new Date(),
+                stageHistory: appendStageHistory(
+                  existing.stageHistory,
+                  targetStage,
+                  existing.status,
+                ),
+              }
+            : {}),
+        },
+        include: APPLICATION_INCLUDE,
+      });
+      await db.activityLog.create({
+        data: {
+          applicationId: id,
+          actor: session.name,
+          action: "AUTO_SHORTLIST_UNDO",
+          detail: "Batal auto-shortlist — kembali ke tahap Baru",
+        },
+      });
+      void emitRealtime(REALTIME_EVENTS.applications);
+      return NextResponse.json(serializeApplication(updated));
     }
 
     const updateData: {
@@ -138,6 +202,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       holdClear?: boolean;
       docExpiries?: string;
       screeningVerdicts?: string | null; // NR38-C — verdict admin per jawaban screening
+      // PL-1b — alasan penolakan terstruktur (gerbang tahap Ditolak)
+      rejectionReason?: string | null;
+      rejectionNote?: string | null;
+      rejectedAt?: Date;
     } = {};
     // Field yang perlu merge dengan nilai existing — dihitung setelah record diambil.
     let starredToggle: boolean | undefined;
@@ -444,6 +512,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
+    // PL-1b — alasan penolakan terstruktur dari PATCH: boleh dikirim dalam body
+    // yang sama dengan { status: "REJECTED" } untuk memenuhi gerbang tahap.
+    // Sanitasi persis seperti route reject: enum alasan bawaan + catatan maks 1000.
+    if (data.rejectionReason !== undefined) {
+      if (data.rejectionReason === null) {
+        updateData.rejectionReason = null;
+      } else {
+        const reason = sanitizeRejectionReason(data.rejectionReason);
+        if (!reason) {
+          return NextResponse.json({ error: "Alasan penolakan tidak valid." }, { status: 400 });
+        }
+        updateData.rejectionReason = reason;
+      }
+    }
+    if (data.rejectionNote !== undefined) {
+      if (data.rejectionNote === null || data.rejectionNote === "") {
+        updateData.rejectionNote = null;
+      } else if (typeof data.rejectionNote === "string") {
+        updateData.rejectionNote = data.rejectionNote.trim().slice(0, 1000) || null;
+      } else {
+        return NextResponse.json({ error: "Catatan penolakan harus berupa teks." }, { status: 400 });
+      }
+    }
+
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ error: "Tidak ada perubahan yang dikirim." }, { status: 400 });
     }
@@ -461,6 +553,83 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const stageChanged =
       updateData.status !== undefined && updateData.status !== existing.status;
+
+    // ===== PL-1b — Gerbang transisi tahap =====
+    // Sebelum status baru diterapkan, periksa syarat berdasar KATEGORI tahap tujuan
+    // (bawaan kategorinya tetap; tahap kustom mengikuti Position.stageCategories).
+    // Gagal gerbang -> 422 { error, guard } agar klien bisa menawarkan bypass OWNER.
+    let guardForcedReason: string | null = null;
+    if (stageChanged && updateData.status) {
+      const targetStage = updateData.status;
+      const category = categoryForStage(
+        targetStage,
+        parseStageCategories(existing.position?.stageCategories),
+      );
+
+      // BYPASS (force): hanya OWNER, wajib forceReason >= 5 karakter. Bila valid,
+      // perubahan dilanjutkan dan tercatat sebagai ActivityLog STAGE_GUARD_FORCED.
+      if (data.force === true) {
+        if (session.role !== "OWNER") {
+          return NextResponse.json(
+            { error: "Hanya Pemilik (OWNER) yang dapat meneruskan perpindahan melewati gerbang." },
+            { status: 403 },
+          );
+        }
+        const forceReason = typeof data.forceReason === "string" ? data.forceReason.trim() : "";
+        if (forceReason.length < 5) {
+          return NextResponse.json(
+            { error: "Alasan penerusan gerbang wajib diisi minimal 5 karakter." },
+            { status: 400 },
+          );
+        }
+        guardForcedReason = forceReason;
+      } else if (category === "INTERVIEW") {
+        // Gerbang Wawancara: wajib sudah ada sesi wawancara aktif (status bukan
+        // CANCELLED) ATAU jadwal wawancara lama (interviewAt) terisi.
+        const activeInterviews = await db.interview.count({
+          where: { applicationId: id, status: { not: "CANCELLED" } },
+        });
+        if (activeInterviews === 0 && !existing.interviewAt) {
+          return NextResponse.json(
+            {
+              error:
+                "Jadwalkan sesi wawancara terlebih dahulu sebelum memindahkan kandidat ke tahap ini.",
+              guard: "REVIEW_INTERVIEW",
+            },
+            { status: 422 },
+          );
+        }
+      } else if (category === "ACCEPTED") {
+        // Gerbang Diterima: hanya boleh lewat penawaran yang diterima pelamar
+        // ATAU lamaran sudah tercatat hired.
+        if (existing.offerStatus !== "ACCEPTED" && !existing.hiredAt) {
+          return NextResponse.json(
+            {
+              error:
+                "Pindah ke tahap diterima hanya boleh melalui penawaran yang diterima pelamar. Kirim offer terlebih dahulu.",
+              guard: "REVIEW_ACCEPTED",
+            },
+            { status: 422 },
+          );
+        }
+      } else if (category === "REJECTED") {
+        // Gerbang Ditolak: wajib alasan penolakan — bawaan lamaran ATAU yang
+        // dikirim dalam PATCH body yang sama (rejectionReason/rejectionNote).
+        if (!existing.rejectionReason && !updateData.rejectionReason) {
+          return NextResponse.json(
+            {
+              error: "Pilih alasan penolakan sebelum memindahkan kandidat ke tahap ini.",
+              guard: "REVIEW_REJECTED",
+            },
+            { status: 422 },
+          );
+        }
+        if (updateData.rejectionReason) {
+          updateData.rejectedAt = new Date();
+        }
+      }
+    }
+
     if (stageChanged && updateData.status) {
       // SLA per tahap: reset penanda waktu setiap kali tahap pipeline berubah.
       updateData.stageUpdatedAt = new Date();
@@ -637,6 +806,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           ? { actor: session.name, action: "HOLD_SET", detail: `Proses ditahan: ${updateData.holdReason}` }
           : { actor: session.name, action: "HOLD_CLEAR", detail: "Tahan proses dilepas" }
       );
+    }
+    // PL-1b — gerbang tahap dilewati paksa oleh OWNER: catat alasan audit.
+    if (guardForcedReason) {
+      logs.push({
+        actor: session.name,
+        action: "STAGE_GUARD_FORCED",
+        detail: `Gerbang dilewati: ${guardForcedReason}`,
+      });
     }
     // snoozeUntil (snooze bot Telegram) dikelola langsung oleh bot via db —
     // bukan bagian dari PATCH admin, sehingga tidak perlu log di sini.
