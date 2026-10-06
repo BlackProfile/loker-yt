@@ -3051,3 +3051,18 @@ Work Log:
 Stage Summary:
 - Berkas terunggah kini bisa DILIHAT langsung di aplikasi (pelamar: pratinjau lokal sebelum kirim; admin: pratinjau berkas tersimpan via ?inline=1) + Hapus tersedia di barisnya; pratinjau lamaran menyediakan Lihat, dan Ganti/Hapus mengembalikan ke halaman Berkas; admin tidak perlu unduh dulu untuk memeriksa CV/dokumen.
 - File berubah: src/components/landing/apply-wizard.tsx, src/components/landing/strings.ts, src/app/api/files/[id]/route.ts, src/components/admin/file-viewer-dialog.tsx (BARU), src/components/admin/application-detail-dialog.tsx, src/components/admin/detail-nr24-sections.tsx. Tanpa perubahan skema DB.
+
+---
+Task ID: NR-37-VIEWER-FILENAME-FIRST
+Agent: Z.ai Code (orchestrator)
+Task: Perbaikan "admin ga bisa lihat dokumen langsung di aplikasi" — dialog Pratinjau Berkas menampilkan kotak "Format berkas ini tidak dapat ditampilkan langsung di browser" padahal berkasnya biografi.pdf (PDF biasa).
+
+Work Log:
+- Diagnosis (forensik dev.log + DB + curl + agent-browser): fitur pratinjau NR-36 sendiri SEHAT — repro live di browser menampilkan PDF dengan sempurna. Akar masalah: viewer mendeteksi jenis pratinjau SELALU via probe HEAD ke /api/files/{id}?inline=1 SEBELUM render. Pada insiden ~01:20 UTC, request HEAD itu datang TANPA cookie sesi (bukti: trace handler 401 tidak pernah menjalankan query SessionToken/AdminUser — getSession() gagal di verifySessionToken(undefined); sementara token Windows user valid & lastSeen terus ter-update sampai 01:24). Route menjawab 401 application/json → kindFromMime("application/json") = "unsupported" → viewer MENUDUH format berkas dan menampilkan kotak fallback menyesatkan. Kemungkinan sumber request tanpa cookie: quirk proxy/edge di rantai preview (di luar kendali aplikasi) — tidak bisa direproduksi ulang, tapi kelas kegagalannya bisa dihilangkan total.
+- Fix (src/components/admin/file-viewer-dialog.tsx): deteksi format kini FILENAME-FIRST dua lapis. Lapis 1: ekstensi dikenali (.pdf/.jpg/.png/.webp/.gif/.bmp/.svg/.mp3/.wav/.m4a/.ogg/.aac/.mp4/.webm/.mov/.m4v/.txt/.md/.csv) → render LANGSUNG tanpa satu pun request jaringan (lebih cepat + kebal masalah cookie). Lapis 2: hanya untuk nama TANPA ekstensi dikenali (mis. label dokumen onboarding) → probe HEAD dipertahankan, tetapi hasilnya hanya dipercaya bila HTTP 200 dan content-type bukan JSON/HTML (pesan error 401/404/500 tidak boleh dianggap tipe berkas); probe kini eksplisit credentials: "same-origin". mimeType dari pemanggil tetap lapis paling atas.
+- Verifikasi: eslint BERSIH; tsc nol error di src/ (sisa lama hanya examples/scripts). E2E agent-browser :81 (Owner, lamaran "juan nisaqi" → tab AI & Berkas → Lihat biografi.pdf): PDF dirender sempurna 3 halaman (screenshot /tmp/nr37-fixed.png); network log = HANYA GET iframe (Document) 200 — probe HEAD TIDAK lagi dikirim utk ekstensi dikenali; console errors 0; mobile 390px viewer full-width rapi dgn tombol h-11 (screenshot /tmp/nr37-mobile.png). Tidak ada perubahan DB/API — murni logika klien.
+
+Stage Summary:
+- Kelas bug "format tidak didukung palsu" hilang: format pratinjau kini ditentukan dari nama berkas (selalu tersedia di semua call site), bukan dari hasil request yang bisa gagal/gagal-autentikasi.
+- File berubah: src/components/admin/file-viewer-dialog.tsx saja. Tanpa perubahan skema DB, tanpa perubahan route.
+- Pelajaran: jangan jadikan respons jaringan (apalagi respons error) sebagai sumber kebenaran bila fakta yang setara (ekstensi nama berkas) sudah ada di tangan.
