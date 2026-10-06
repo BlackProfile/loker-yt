@@ -28,3 +28,20 @@ export function isUnseenRow(app: ApplicationRow): boolean {
 export function stageAgeBasis(app: ApplicationRow): string {
   return app.stageUpdatedAt || app.createdAt;
 }
+
+/**
+ * Umur dari tanggal lahir — "27 th"; null bila kosong/tidak valid
+ * (termasuk tanggal lahir di masa depan atau tidak masuk akal > 130 tahun).
+ * Salinan helper tabel agar dipakai bersama kartu & dialog bandingkan.
+ */
+export function ageOf(birthDate: string | null | undefined): string | null {
+  if (!birthDate) return null;
+  const dob = new Date(birthDate);
+  if (Number.isNaN(dob.getTime())) return null;
+  const now = new Date();
+  let years = now.getFullYear() - dob.getFullYear();
+  const monthDelta = now.getMonth() - dob.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < dob.getDate())) years -= 1;
+  if (years < 0 || years > 130) return null;
+  return `${years} th`;
+}
