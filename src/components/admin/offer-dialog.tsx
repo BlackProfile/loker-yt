@@ -5,7 +5,7 @@
 // POST  /api/admin/applications/[id]/offer  → kirim penawaran baru
 // PATCH /api/admin/applications/[id]/offer  → kirim ulang (RESEND) / batalkan (CANCEL)
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CalendarClock, FileText, Loader2, MailCheck, Send, XCircle } from "lucide-react";
+import { CalendarClock, FileText, Loader2, MailCheck, Send, TriangleAlert, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   OFFER_STATUS_LABELS,
@@ -34,9 +34,32 @@ import {
   type Application,
 } from "@/lib/types";
 import { apiPatch, apiPost } from "./api";
-import { formatDate } from "./format";
+import { formatDate, formatRupiah } from "./format";
 import { useAdminSession } from "./admin-context";
 import { TemplatePicker } from "./template-picker";
+import type { ApplicationRow } from "./applicant-row-types";
+
+// PL-1b — peringatan gaji di dialog offer: bandingkan nominal offer yang diketik
+// dengan ekspektasi pelamar dan rentang gaji posisi. Non-blocking.
+
+/**
+ * Parsa angka dari teks gaji bebas — buang semua non-digit, mis.
+ * "Rp 4.500.000/bulan" -> 4500000. Hasil di bawah 100 ribu dianggap bukan
+ * nominal gaji yang disengaja (mis. "15 jt" terbaca 15) dan diabaikan (null).
+ */
+function parseSalaryText(text: string): number | null {
+  const digits = text.replace(/\D+/g, "");
+  if (!digits) return null;
+  const value = Number.parseInt(digits, 10);
+  if (!Number.isFinite(value) || value < 100_000) return null;
+  return value;
+}
+
+type SalaryWarning = {
+  kind: "expectation" | "range";
+  tone: "rose" | "amber";
+  text: string;
+};
 
 export function OfferDialog({
   application,
@@ -75,7 +98,43 @@ export function OfferDialog({
       setNote(application.offerNote ?? "");
       setDeadlineDays("3");
     }
-  }, [open, application?.id]);  
+  }, [open, application?.id]);
+
+  // PL-1b — peringatan gaji live saat mengetik (useMemo, non-blocking).
+  // Rentang gaji posisi diambil dari payload daftar lamaran (positionSalaryMin/Max)
+  // yang sudah diteruskan ke dialog sebagai field tambahan objek application
+  // (GET /api/admin/applications memuatnya aditif).
+  const salaryWarnings = useMemo<SalaryWarning[]>(() => {
+    if (!application) return [];
+    const offered = parseSalaryText(salary);
+    if (offered == null) return [];
+    const row = application as ApplicationRow;
+    const warnings: SalaryWarning[] = [];
+    const expectation = application.salaryExpectation ?? null;
+    if (expectation != null && offered < expectation) {
+      warnings.push({
+        kind: "expectation",
+        tone: "rose",
+        text: `Di bawah ekspektasi pelamar (${formatRupiah(expectation)})`,
+      });
+    }
+    const min = row.positionSalaryMin ?? null;
+    const max = row.positionSalaryMax ?? null;
+    if ((min != null && offered < min) || (max != null && offered > max)) {
+      const rangeText =
+        min != null && max != null
+          ? `${formatRupiah(min)}–${formatRupiah(max)}`
+          : min != null
+            ? `minimal ${formatRupiah(min)}`
+            : `maksimal ${formatRupiah(max)}`;
+      warnings.push({
+        kind: "range",
+        tone: "amber",
+        text: `Di luar rentang gaji posisi (${rangeText})`,
+      });
+    }
+    return warnings;
+  }, [application, salary]);
 
   if (!application) return null;
 
@@ -242,7 +301,27 @@ export function OfferDialog({
                   placeholder="Rp 4.500.000/bulan"
                   maxLength={120}
                   className="h-10"
+                  aria-describedby="offer-salary-warning"
                 />
+                {/* PL-1b — peringatan gaji live: di bawah ekspektasi pelamar /
+                    di luar rentang posisi. Hanya peringatan — tidak mencegah kirim. */}
+                {salaryWarnings.length > 0 ? (
+                  <div id="offer-salary-warning" role="status" aria-live="polite" className="flex flex-col gap-1.5">
+                    {salaryWarnings.map((w) => (
+                      <p
+                        key={w.kind}
+                        className={
+                          w.tone === "rose"
+                            ? "flex items-start gap-1.5 rounded-xl border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400"
+                            : "flex items-start gap-1.5 rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+                        }
+                      >
+                        <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                        {w.text}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="offer-type">Jenis pekerjaan</Label>
