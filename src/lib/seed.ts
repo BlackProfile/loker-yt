@@ -250,6 +250,44 @@ export function parseRoundPlan(raw: string | null | undefined): RoundPlanTemplat
   }
 }
 
+/** Parse aman Position.onboardingTemplate (JSON OnboardingTemplateItem[]) — NR-40.
+ * null = template tidak terpasang (JSON "[]", rusak, atau tanpa item valid).
+ * Item tanpa label dibuang; maksimal 20 item. */
+export function parseOnboardingTemplate(
+  raw: string | null | undefined,
+): OnboardingTemplateItem[] | null {
+  if (!raw || !raw.trim()) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const items: OnboardingTemplateItem[] = [];
+    for (const item of parsed) {
+      const obj =
+        item && typeof item === "object" && !Array.isArray(item)
+          ? (item as Record<string, unknown>)
+          : {};
+      const label = typeof obj.label === "string" ? obj.label.trim().slice(0, 120) : "";
+      if (!label) continue; // item tanpa label dibuang
+      const entry: OnboardingTemplateItem = { label };
+      const owner = typeof obj.owner === "string" ? obj.owner.trim().slice(0, 60) : "";
+      if (owner) entry.owner = owner;
+      if (
+        typeof obj.offsetDays === "number" &&
+        Number.isInteger(obj.offsetDays) &&
+        obj.offsetDays >= 0 &&
+        obj.offsetDays <= 365
+      ) {
+        entry.offsetDays = obj.offsetDays;
+      }
+      items.push(entry);
+      if (items.length >= 20) break;
+    }
+    return items.length > 0 ? items : null;
+  } catch {
+    return null;
+  }
+}
+
 export function parseStageCategories(raw: string | null | undefined): Record<string, StageCategory> {
   if (!raw) return {};
   try {
@@ -429,6 +467,9 @@ export function serializePosition(record: PositionRecordModel): Position {
 
     // NR-40 — ambang hari "mengendap" kanban per posisi (null = default 7).
     agingWarnDays: record.agingWarnDays ?? null,
+
+    // NR-40 — template rencana onboarding per posisi (null = template tidak terpasang).
+    onboardingTemplate: parseOnboardingTemplate(record.onboardingTemplate),
 
     // Rencana ronde wawancara bawaan
     roundPlan: parseRoundPlan(record.roundPlan),

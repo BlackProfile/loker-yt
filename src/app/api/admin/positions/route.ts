@@ -132,6 +132,8 @@ export async function POST(req: NextRequest) {
         noteTemplates: JSON.stringify(f.noteTemplates ?? []),
         // NR-40 — ambang hari "mengendap" kanban (null = default 7)
         agingWarnDays: f.agingWarnDays ?? null,
+        // NR-40 — template rencana onboarding per posisi ("[]" = tidak terpasang)
+        onboardingTemplate: f.onboardingTemplate ?? "[]",
       },
     });
 

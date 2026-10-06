@@ -129,6 +129,9 @@ export type PositionFields = {
   roundPlan?: string; // JSON RoundPlanTemplate[]
   // NR-40 — ambang hari "mengendap" kartu kanban per posisi; null = default 7
   agingWarnDays?: number | null;
+  // NR-40 — template rencana onboarding per posisi; JSON string OnboardingTemplateItem[];
+  // "[]" = template tidak terpasang (tanpa auto-install saat offer diterima).
+  onboardingTemplate?: string | null;
 };
 
 /* ------------------------------- Field sederhana ------------------------------- */
@@ -886,6 +889,49 @@ export async function sanitizePositionInput(
     }
   }
 
+  // NR-40 — template rencana onboarding per posisi (opsional):
+  // array {label, owner?, offsetDays?}; kosong/null/"[]" = template tidak terpasang.
+  if (data.onboardingTemplate !== undefined) {
+    if (data.onboardingTemplate === null || data.onboardingTemplate === "") {
+      f.onboardingTemplate = "[]";
+    } else if (Array.isArray(data.onboardingTemplate)) {
+      const rows = data.onboardingTemplate.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === "object" && !Array.isArray(item),
+      );
+      if (rows.length > 20) {
+        return err("Template rencana onboarding maksimal 20 item.");
+      }
+      const cleaned: Record<string, unknown>[] = [];
+      for (let i = 0; i < rows.length; i++) {
+        const item = rows[i];
+        const label = typeof item.label === "string" ? item.label.trim() : "";
+        if (!label) {
+          return err(`Item ke-${i + 1} template onboarding wajib punya uraian (1-120 karakter).`);
+        }
+        const entry: Record<string, unknown> = { label: label.slice(0, 120) };
+        const owner = typeof item.owner === "string" ? item.owner.trim().slice(0, 60) : "";
+        if (owner) entry.owner = owner;
+        if (item.offsetDays !== undefined && item.offsetDays !== null) {
+          const offset = item.offsetDays;
+          if (
+            typeof offset !== "number" ||
+            !Number.isInteger(offset) ||
+            offset < 0 ||
+            offset > 365
+          ) {
+            return err("H+n item template onboarding harus angka bulat 0-365.");
+          }
+          entry.offsetDays = offset;
+        }
+        cleaned.push(entry);
+      }
+      f.onboardingTemplate = JSON.stringify(cleaned);
+    } else {
+      return err("Template rencana onboarding tidak valid.");
+    }
+  }
+
   // Slug: eksplisit divalidasi; bila tidak dikirim tapi judul BERUBA -> regenerate dari judul.
   const slug = await sanitizeSlug(data.slug, opts.excludeId);
   if (!slug.ok) return slug;
@@ -995,6 +1041,8 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.roundPlan !== undefined) out.roundPlan = f.roundPlan;
   // NR-40 — ambang hari "mengendap" kanban (WAJIB dipetakan — pelajaran NR-22)
   if (f.agingWarnDays !== undefined) out.agingWarnDays = f.agingWarnDays;
+  // NR-40 — template rencana onboarding per posisi (WAJIB dipetakan — pelajaran NR-22)
+  if (f.onboardingTemplate !== undefined) out.onboardingTemplate = f.onboardingTemplate;
   // coverFileId hanya tersedia lewat relasi pada input update.
   if (f.coverFileId === null) out.coverFile = { disconnect: true };
   else if (f.coverFileId !== undefined) out.coverFile = { connect: { id: f.coverFileId } };
