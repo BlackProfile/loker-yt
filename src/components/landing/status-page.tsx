@@ -23,14 +23,22 @@ import type { ChangeEvent, FormEvent } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
+  ArrowDown,
   ArrowLeft,
+  CalendarCheck,
+  CalendarClock,
   ClipboardList,
   Download,
   ExternalLink,
+  Hourglass,
   IdCard,
+  ListChecks,
   Loader2,
   LogOut,
+  Reply,
+  Upload,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   EMPLOYEE_CARD_STATUS_LABELS,
   STATUS_FLOW,
