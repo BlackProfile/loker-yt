@@ -37,6 +37,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,11 +58,13 @@ import {
   Rows3,
   Rows4,
   Search,
+  Send,
   Sparkles,
   Star,
   Table2,
   Tag,
   Trash2,
+  Users,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -81,6 +85,7 @@ import {
   stageLabel,
   stagesForPosition,
 } from "@/lib/stages";
+import type { TalentMatchResult } from "@/lib/talent-match"; // PL-2b — tipe hasil cocok talent pool (lib murni, aman klien)
 import { apiDelete, apiGet, apiPatch, apiPost, buildQuery } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
@@ -227,6 +232,16 @@ export function ApplicationsTab() {
   const [semanticOpen, setSemanticOpen] = useState(false);
   const [semanticResults, setSemanticResults] = useState<SemanticSearchEntryUI[]>([]);
 
+  // PL-2b (butir 12) — re-engagement talent pool: cocokkan kandidat lama dengan
+  // posisi target lalu kirim undangan lamar ulang.
+  const [talentOpen, setTalentOpen] = useState(false);
+  const [talentPositionId, setTalentPositionId] = useState("");
+  const [talentLoading, setTalentLoading] = useState(false);
+  const [talentMatched, setTalentMatched] = useState(false);
+  const [talentMatches, setTalentMatches] = useState<TalentMatchResult[]>([]);
+  const [talentChecked, setTalentChecked] = useState<Set<string>>(new Set());
+  const [talentSending, setTalentSending] = useState(false);
+
   // Posisi terpilih menentukan opsi tahap (pipeline kustom vs bawaan).
   const selectedPosition = useMemo(
     () =>
@@ -235,6 +250,9 @@ export function ApplicationsTab() {
         : null,
     [positions, positionFilter]
   );
+
+  // Posisi aktif untuk target re-engagement talent pool (PL-2b).
+  const activePositions = useMemo(() => positions.filter((p) => p.isActive), [positions]);
 
   // Opsi filter tahap: dengan posisi -> tahap milik posisi;
   // tanpa posisi -> 5 bawaan + "Lainnya" (tahap kustom, disaring client-side).
