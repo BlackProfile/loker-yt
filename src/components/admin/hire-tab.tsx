@@ -12,8 +12,25 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -23,11 +40,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  BadgeCheck,
   CalendarCheck,
   CalendarClock,
+  CalendarPlus,
   ClipboardCheck,
+  Hourglass,
   IdCard,
   Loader2,
+  LogOut,
   Pencil,
   Plus,
   Printer,
@@ -38,7 +59,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import type { EmployeeCardDto } from "@/lib/types";
+import {
+  CHECKIN_RECOMMENDATIONS,
+  CHECKIN_RECOMMENDATION_LABELS,
+  EXIT_REASONS,
+  EXIT_REASON_LABELS,
+  type CheckInRecommendation,
+  type EmployeeCardDto,
+  type ExitReason,
+} from "@/lib/types";
 import {
   EmployeeIdCardBack,
   EmployeeIdCardFront,
@@ -72,6 +101,7 @@ type CheckInDto = {
   dueAt: string | null;
   rating: number | null;
   notes: string | null;
+  recommendation: CheckInRecommendation | null;
   completedAt: string | null;
 };
 
@@ -84,17 +114,34 @@ type Employee = {
   positionTitle: string | null;
   hiredAt: string;
   probationEnd: string | null;
+  permanentAt: string | null;
+  exitAt: string | null;
+  exitReason: ExitReason | null;
+  exitNote: string | null;
   onboardingPlan: PlanItem[];
+  offboardingPlan: PlanItem[];
   checkIns: CheckInDto[];
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CHECKIN_DAYS = [30, 60, 90] as const;
+const PROBATION_DECISION_WINDOW_DAYS = 14; // panel keputusan tampil saat probasi <= 14 hari lagi
 
 const BADGE_DONE =
   "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400";
 const BADGE_DUE =
   "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400";
+const BADGE_ROSE =
+  "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400";
+const BADGE_NEUTRAL =
+  "border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+
+// Chip rekomendasi cek-in: LANJUT emerald, PERPANJANG amber, AKHIRI rose.
+const RECOMMENDATION_BADGE: Record<CheckInRecommendation, string> = {
+  LANJUT: BADGE_DONE,
+  PERPANJANG: BADGE_DUE,
+  AKHIRI: BADGE_ROSE,
+};
 
 /* --------------------------------- Util kecil --------------------------------- */
 
