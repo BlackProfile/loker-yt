@@ -1523,6 +1523,77 @@ export function ApplicationDetailDialog({
   // Bintang personal: session.id milik admin aktif ada di app.starredBy.
   const isStarred = session ? (app.starredBy ?? []).includes(session.id) : false;
 
+  /* --------------------- NR38-C — nilai turunan fitur detail --------------------- */
+
+  // Fitur 7 — tautan WA dengan pesan pembuka (nama admin dari sesi aktif).
+  const waDigits = (app.phone || "").replace(/[^0-9]/g, "");
+  const waOpenMessage = `Halo ${app.name}, saya ${session?.name ?? "Admin"} dari Lumina Studio. Terkait lamaran Anda untuk posisi ${app.positionTitle ?? "-"}, ...`;
+  const waPrefixedHref = waDigits
+    ? `https://wa.me/${waDigits}?text=${encodeURIComponent(waOpenMessage)}`
+    : "#";
+
+  // Fitur 2 — strip "Data Diri Esensial": deretan item kecil, field kosong
+  // dilewati (tidak tampil "-"); bila SEMUA kosong strip tidak dirender.
+  const essentialAge = ageYearsOf(app.birthDate);
+  const essentialNik = app.nik?.trim() ?? "";
+  const essentialDomisili = app.domisili?.trim() ?? "";
+  const essentialStart = app.startDatePref?.trim() ?? "";
+  const essentialSalaryChip =
+    app.salaryExpectation != null
+      ? salaryVerdict(app.salaryExpectation, pos?.salaryMin ?? null, pos?.salaryMax ?? null)
+      : null;
+  const showEssentialStrip = Boolean(
+    essentialAge ||
+      essentialDomisili ||
+      app.komuterPlan ||
+      app.shiftPref ||
+      essentialStart ||
+      essentialNik ||
+      essentialSalaryChip
+  );
+
+  // Fitur 3 — peringatan otomatis dihitung client-side dari data yang ADA.
+  const autoWarnings: string[] = [];
+  const applicantAgeNum = ageNumberOf(app.birthDate);
+  const positionMinAge = pos?.minAge ?? null;
+  if (applicantAgeNum != null && positionMinAge != null && applicantAgeNum < positionMinAge) {
+    autoWarnings.push(`Umur di bawah minimal (${positionMinAge} th)`);
+  }
+  if (app.salaryExpectation != null && pos?.salaryMax != null && app.salaryExpectation > pos.salaryMax) {
+    autoWarnings.push("Gaji di atas range");
+  }
+  if (app.komuterPlan === "PERLU_RELOKASI") {
+    autoWarnings.push("Perlu relokasi");
+  }
+  if (!essentialNik) {
+    autoWarnings.push("NIK belum diisi");
+  }
+
+  // Fitur 3a — kriteria penilaian posisi (aiCriteria = teks bebas; dipecah
+  // jadi chips kecil bila ada pemisah baris/koma/titik koma). Konteks skor,
+  // BUKAN klaim terpenuhi/tidak.
+  const aiCriteriaChips = (pos?.aiCriteria ?? "")
+    .split(/[\n;,]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .slice(0, 8);
+  const aiCriteriaAsParagraph =
+    aiCriteriaChips.length === 1 && (aiCriteriaChips[0]?.length ?? 0) > 60;
+  const showAiContextBlock =
+    !isHidden("ai") && (aiCriteriaChips.length > 0 || autoWarnings.length > 0);
+
+  // Fitur 4 — rekap verdict jawaban screening.
+  const verdictCounts = screeningQuestions.reduce(
+    (acc, q) => {
+      const v = screeningVerdicts[q.id];
+      if (v === "PASS") acc.pass += 1;
+      else if (v === "WARN") acc.warn += 1;
+      else if (v === "FAIL") acc.fail += 1;
+      return acc;
+    },
+    { pass: 0, warn: 0, fail: 0 }
+  );
+
   // Undo penolakan: hanya bila ditolak bukan karena menarik diri dan belum digabung.
   const canUndoReject =
     app.status === "REJECTED" &&
@@ -2002,6 +2073,39 @@ export function ApplicationDetailDialog({
     );
   }
 
+  // NR38-C fitur 4 — siklus verdict jawaban screening (optimistik, rollback
+  // saat gagal; tanpa toast sukses agar triase cepat tidak berisik).
+  async function handleCycleVerdict(questionId: string) {
+    if (verdictSaving || !canMutate) return;
+    const prev = screeningVerdicts;
+    const current = prev[questionId] ?? null;
+    const idx = SCREENING_VERDICT_CYCLE.indexOf(current);
+    const next = SCREENING_VERDICT_CYCLE[(idx + 1) % SCREENING_VERDICT_CYCLE.length];
+    const nextMap: Record<string, ScreeningVerdict> = { ...prev };
+    if (next) nextMap[questionId] = next;
+    else delete nextMap[questionId];
+    setScreeningVerdicts(nextMap);
+    setVerdictSaving(true);
+    try {
+      await apiPatch(`/api/admin/applications/${app.id}`, {
+        screeningVerdicts: JSON.stringify(nextMap),
+      });
+    } catch (err) {
+      setScreeningVerdicts(prev); // rollback ke kondisi sebelum optimistik
+      reportError(err);
+    } finally {
+      setVerdictSaving(false);
+    }
+  }
+
+  // NR38-C fitur 2 — salin NIK dari strip data diri esensial.
+  async function handleCopyNik() {
+    if (!essentialNik) return;
+    const ok = await copyText(essentialNik);
+    if (ok) toast.success("NIK disalin");
+    else toast.error("Gagal menyalin NIK");
+  }
+
   // Fitur 6 — simpan ekspektasi gaji (null = kosongkan).
   async function handleSaveSalary() {
     if (salarySaving) return;
@@ -2383,6 +2487,9 @@ export function ApplicationDetailDialog({
                 {isStarred ? "Bintang dilepas" : "Tandai penting (bintang pribadi)"}
               </TooltipContent>
             </Tooltip>
+            {/* NR38-C fitur 9 — avatar inisial pelamar di header; cincin rose
+                otomatis bila pelamar ditandai penting oleh admin aktif. */}
+            <ApplicantAvatar name={app.name} starred={isStarred} className="mr-0.5" />
             <span>{app.name}</span>
             {/* NR-24 fitur 1 — navigasi prev/next antar lamaran. NR-35: hanya SATU
                 widget (duplikat "N dari M" versi lama dihapus); tersembunyi otomatis
@@ -2526,6 +2633,82 @@ export function ApplicationDetailDialog({
             hidden={detailTab !== "ringkasan"}
             className="flex flex-col gap-4"
           >
+            {/* NR38-C fitur 2 — strip "Data Diri Esensial" di atas konten
+                Ringkasan: pemeriksaan cepat tanpa membaca grid lengkap. */}
+            {showEssentialStrip ? (
+              <div className="flex flex-col gap-2 rounded-lg border p-3">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                  <Contact className="size-3.5" aria-hidden="true" />
+                  Data Diri Esensial
+                </p>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  {essentialAge ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs">
+                      <Cake className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="text-muted-foreground">Umur</span>
+                      <span className="font-semibold">{essentialAge}</span>
+                    </span>
+                  ) : null}
+                  {essentialDomisili ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs">
+                      <MapPin className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="text-muted-foreground">Domisili</span>
+                      <span className="font-semibold">{essentialDomisili}</span>
+                    </span>
+                  ) : null}
+                  {app.komuterPlan ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs">
+                      <Users className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="text-muted-foreground">Komuter</span>
+                      <span className="font-semibold">{KOMUTER_PLAN_LABELS[app.komuterPlan]}</span>
+                    </span>
+                  ) : null}
+                  {app.shiftPref ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs">
+                      <Clock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="text-muted-foreground">Shift</span>
+                      <span className="font-semibold">{SHIFT_PREF_LABELS[app.shiftPref]}</span>
+                    </span>
+                  ) : null}
+                  {essentialStart ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs">
+                      <CalendarPlus className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="text-muted-foreground">Mulai bisa kerja</span>
+                      <span className="font-semibold">{essentialStart}</span>
+                    </span>
+                  ) : null}
+                  {essentialNik ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs">
+                      <Hash className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                      <span className="text-muted-foreground">NIK</span>
+                      <span className="font-mono font-semibold">{essentialNik}</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyNik()}
+                        aria-label="Salin NIK"
+                        className="text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                      >
+                        <Copy className="size-3" aria-hidden="true" />
+                      </button>
+                    </span>
+                  ) : null}
+                  {essentialSalaryChip ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs">
+                      <span className="text-muted-foreground">Gaji</span>
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                          essentialSalaryChip.chipClass
+                        )}
+                      >
+                        {essentialSalaryChip.label}
+                      </span>
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             {/* Info grid */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <InfoItem label={emailCoreLabel}>
@@ -2537,14 +2720,36 @@ export function ApplicationDetailDialog({
                 </a>
               </InfoItem>
               <InfoItem label={waCoreLabel}>
-                <a
-                  href={waHref(app.phone)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-rose-600 underline-offset-2 hover:underline"
-                >
-                  {app.phone || "-"}
-                </a>
+                {/* NR38-C fitur 7 — telepon + klik-WA (pesan pembuka siap pakai)
+                    + catat panggilan cepat (2 klik sampai tersimpan). */}
+                {app.phone ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="min-w-0 break-all text-sm">{app.phone}</span>
+                    <a
+                      href={waPrefixedHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Buka WhatsApp dengan pesan pembuka"
+                      aria-label="Hubungi via WhatsApp dengan pesan pembuka"
+                      className="inline-flex h-8 items-center gap-1 rounded-md border px-2 text-xs font-medium text-emerald-700 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-emerald-400"
+                    >
+                      <MessageCircle className="size-3.5" aria-hidden="true" />
+                      WA
+                    </a>
+                    {canMutate ? (
+                      <button
+                        type="button"
+                        onClick={() => setQuickCallOpen(true)}
+                        className="inline-flex h-8 items-center gap-1 rounded-md border px-2 text-xs font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+                      >
+                        <Phone className="size-3.5" aria-hidden="true" />
+                        Catat panggilan
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                )}
               </InfoItem>
               <InfoItem label="Posisi">{app.positionTitle ?? "-"}</InfoItem>
               <InfoItem label="Tanggal Daftar">
@@ -2607,6 +2812,23 @@ export function ApplicationDetailDialog({
                   </InfoItem>
                 </>
               ) : null}
+            </div>
+
+            {/* NR38-C fitur 6 — tombol Dossier: cek lamaran lain dari orang ini
+                secara proaktif (SELALU tampil, termasuk bila belum ada ganda). */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11 sm:h-9"
+                onClick={() => setDossierOpen(true)}
+              >
+                <FolderSearch className="size-4" aria-hidden="true" />
+                Dossier
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Lamaran lain dari orang ini (email / WA / NIK sama)
+              </span>
             </div>
 
             {/* NR-15: read receipt — kapan terakhir pelamar membuka halaman status */}

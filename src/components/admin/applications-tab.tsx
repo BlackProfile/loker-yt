@@ -786,6 +786,77 @@ export function ApplicationsTab() {
     }
   }
 
+  // NR38-B fitur 10 — ekspor CSV sisi klien: baris terpilih bila ada, kalau
+  // tidak semua baris yang lolos filter aktif. BOM + delimiter ";" + escaping.
+  function exportCsv() {
+    const rows =
+      selectedIds.size > 0
+        ? displayedApplications.filter((a) => selectedIds.has(a.id))
+        : displayedApplications;
+    if (rows.length === 0) {
+      toast.info("Tidak ada baris untuk diekspor.");
+      return;
+    }
+    const header = [
+      "Nama",
+      "Email",
+      "Telepon",
+      "Posisi",
+      "Tahap",
+      "Skor AI",
+      "Rating",
+      "Gaji Harapan",
+      "Domisili",
+      "Umur",
+      "NIK",
+      "Sumber",
+      "Tanggal Daftar",
+      "Kode Pelacakan",
+      "Tag",
+    ];
+    // Escape: bungkus kutip bila berisi delimiter/kutip/garis baru; kutip digandakan.
+    const escapeCell = (value: string) =>
+      /[";\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+    const lines = [header.join(";")];
+    for (const a of rows) {
+      lines.push(
+        [
+          a.name,
+          a.email,
+          a.phone ?? "",
+          a.positionTitle ?? "",
+          stageLabel(a.status),
+          a.aiScore == null ? "" : String(a.aiScore),
+          String(a.rating ?? 0),
+          a.salaryExpectation == null ? "" : String(a.salaryExpectation),
+          a.domisili ?? "",
+          ageOf(a.birthDate) ?? "",
+          a.nik ?? "",
+          a.source ?? "",
+          formatDate(a.createdAt),
+          a.trackingCode ?? "",
+          a.tags.join(", "),
+        ]
+          .map(escapeCell)
+          .join(";")
+      );
+    }
+    const csv = "\uFEFF" + lines.join("\r\n") + "\r\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const now = new Date();
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}-${pad2(now.getHours())}${pad2(now.getMinutes())}`;
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `lamaran-${stamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast.success(`CSV diekspor (${rows.length} baris)`);
+  }
+
   const comparedApps = useMemo(
     () =>
       compareIds
@@ -798,6 +869,9 @@ export function ApplicationsTab() {
     <div className="flex flex-col gap-4">
       {/* Toolbar filter */}
       <div className="flex flex-col gap-3">
+        {/* NR38-B fitur 2 — baris chip tampilan tersimpan, di atas bar filter. */}
+        <SavedViewsBar currentSnapshot={currentSnapshot} onApply={applySnapshot} />
+
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
           <div className="relative flex-1">
             <Search
@@ -840,6 +914,78 @@ export function ApplicationsTab() {
                 Kanban
               </Button>
             </div>
+            {/* NR38-B fitur 5+9 — kepadatan tabel & mode kartu (hanya saat tampilan tabel). */}
+            {view === "table" ? (
+              <>
+                <div
+                  className="flex items-center gap-1 rounded-xl border p-1"
+                  role="group"
+                  aria-label="Kepadatan tabel"
+                >
+                  <Button
+                    variant={density === "compact" ? "secondary" : "ghost"}
+                    size="icon"
+                    className={cn("size-8", density === "compact" && "shadow-xs")}
+                    onClick={() => changeDensity("compact")}
+                    aria-pressed={density === "compact"}
+                    aria-label="Tabel padat"
+                    title="Tabel padat — padding rapat, kolom ringkas"
+                  >
+                    <Rows3 className="size-4" aria-hidden="true" />
+                  </Button>
+                  <Button
+                    variant={density === "cozy" ? "secondary" : "ghost"}
+                    size="icon"
+                    className={cn("size-8", density === "cozy" && "shadow-xs")}
+                    onClick={() => changeDensity("cozy")}
+                    aria-pressed={density === "cozy"}
+                    aria-label="Tabel nyaman"
+                    title="Tabel nyaman — padding lega, semua kolom"
+                  >
+                    <Rows4 className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+                <div
+                  className="flex items-center gap-1 rounded-xl border p-1"
+                  role="group"
+                  aria-label="Mode daftar"
+                >
+                  <Button
+                    variant={!cardMode ? "secondary" : "ghost"}
+                    size="icon"
+                    className={cn("size-8", !cardMode && "shadow-xs")}
+                    onClick={() => changeCardMode(false)}
+                    aria-pressed={!cardMode}
+                    aria-label="Tampilan tabel"
+                    title="Tampilan tabel"
+                  >
+                    <Table2 className="size-4" aria-hidden="true" />
+                  </Button>
+                  <Button
+                    variant={cardMode ? "secondary" : "ghost"}
+                    size="icon"
+                    className={cn("size-8", cardMode && "shadow-xs")}
+                    onClick={() => changeCardMode(true)}
+                    aria-pressed={cardMode}
+                    aria-label="Tampilan kartu"
+                    title="Tampilan kartu"
+                  >
+                    <LayoutGrid className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              </>
+            ) : null}
+            {/* NR38-B fitur 10 — ekspor CSV klien: terpilih bila ada, selain itu filter aktif. */}
+            <Button
+              variant="outline"
+              className="h-10 rounded-xl"
+              onClick={exportCsv}
+              aria-label="Ekspor CSV (baris terpilih bila ada, selain itu hasil filter aktif)"
+              title="Ekspor CSV — baris terpilih bila ada, selain itu hasil filter aktif"
+            >
+              <Download className="size-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Ekspor CSV</span>
+            </Button>
             {/* Ekspor: dropdown CSV / Excel XLSX (NR-19-b) */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1087,6 +1233,29 @@ export function ApplicationsTab() {
             />
             Ditandai
           </Button>
+          {/* NR38-B fitur 1 — chip filter "Belum dilihat" + hitungan. */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={cn(
+              "h-9 rounded-xl",
+              unseenOnly &&
+                "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400 dark:hover:bg-rose-900/60"
+            )}
+            onClick={() => setUnseenOnly((v) => !v)}
+            aria-pressed={unseenOnly}
+            aria-label="Hanya tampilkan lamaran yang belum dilihat"
+          >
+            <EyeOff
+              className={cn(
+                "size-4",
+                unseenOnly ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
+              )}
+              aria-hidden="true"
+            />
+            Belum dilihat ({unseenCount})
+          </Button>
           {hasActiveFilter ? (
             <Button
               variant="outline"
@@ -1142,6 +1311,8 @@ export function ApplicationsTab() {
           onOpenDetail={setDetail}
           onDeleteRequest={setDeleteTarget}
           onRate={(app, rating) => void handleRate(app, rating)}
+          density={density}
+          cardMode={cardMode}
         />
       ) : (
         <KanbanBoard
@@ -1240,6 +1411,22 @@ export function ApplicationsTab() {
                   <Tag className="size-4" aria-hidden="true" />
                   Atur Tag
                 </Button>
+                {/* NR38-B fitur 6 — bandingkan 2-3 pelamar terpilih berdampingan. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 bg-background"
+                  disabled={selectedIds.size < 2 || selectedIds.size > 3 || bulkWorking}
+                  title={
+                    selectedIds.size < 2 || selectedIds.size > 3
+                      ? "Pilih tepat 2-3 lamaran untuk dibandingkan"
+                      : "Bandingkan lamaran terpilih berdampingan"
+                  }
+                  onClick={() => setBulkCompareOpen(true)}
+                >
+                  <LayoutGrid className="size-4" aria-hidden="true" />
+                  Bandingkan
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1337,6 +1524,20 @@ export function ApplicationsTab() {
       <ComparisonDialog
         apps={compareOpen ? comparedApps : []}
         onOpenChange={setCompareOpen}
+      />
+
+      {/* NR38-B fitur 6 — bandingkan dari seleksi massal (2-3 lamaran). */}
+      <CompareApplicantsDialog
+        apps={
+          bulkCompareOpen
+            ? Array.from(selectedIds)
+                .map((id) => displayedApplications.find((a) => a.id === id))
+                .filter((a): a is Application => Boolean(a))
+            : []
+        }
+        open={bulkCompareOpen}
+        onOpenChange={setBulkCompareOpen}
+        currentUserId={session.id}
       />
 
       {/* Dialog hasil pencarian semantik AI */}
