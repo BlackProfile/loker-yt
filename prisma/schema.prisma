@@ -281,6 +281,9 @@ model Application {
   callLogs     CallLog[]
   internalDocs InternalDoc[]
 
+  // NR-39 — kartu karyawan digital untuk verifikasi (versi aktif: isCurrent)
+  employeeCards EmployeeCard[]
+
   // NR-15 — transparansi & keterlibatan pelamar di halaman Cek Status
   stageHistory       String    @default("[]") // JSON {status,at}[] — riwayat tahap yang dilewati (urut waktu)
   candidateSeenAt    DateTime? // read receipt: terakhir pelamar membuka status lamaran ini
@@ -543,6 +546,31 @@ model CheckIn {
   createdAt     DateTime    @default(now())
 
   @@index([applicationId])
+}
+
+// NR-39 — Kartu Karyawan digital: terbit otomatis saat hiredAt terisi (offer diterima).
+// Verifikasi publik via token acak + HMAC di QR; siklus: PENDING -> PROBATION/ACTIVE
+// -> LEAVE/SUSPENDED -> REVOKED. Re-issue membuat baris baru, kartu lama otomatis mati.
+model EmployeeCard {
+  id             String      @id @default(cuid())
+  applicationId  String
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  cardNumber     String      @unique // LUM-EMP-0001 (berurutan global)
+  token          String      @unique // 24 byte acak hex — kunci QR verifikasi
+  status         String      @default("PENDING") // PENDING | PROBATION | ACTIVE | LEAVE | SUSPENDED | REVOKED
+  identityChecks String      @default("{}") // JSON {docs:boolean,nikMatch:boolean,contract:boolean} — gerbang aktivasi
+  issuedAt       DateTime    @default(now())
+  probationUntil DateTime?   // dari Application.probationEnd — PROBATION otomatis jadi ACTIVE saat lewat
+  revokedAt      DateTime?
+  revokedReason  String?
+  verifyCount    Int         @default(0) // jumlah pemindaian/verifikasi (audit sederhana)
+  lastVerifiedAt DateTime?
+  isCurrent      Boolean     @default(true) // false = sudah digantikan kartu re-issue / dicabut permanen
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([applicationId])
+  @@index([status])
 }
 
 // Draft lamaran lintas perangkat — pelamar mengirim tautan lanjutkan ke emailnya
