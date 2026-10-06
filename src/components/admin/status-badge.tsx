@@ -2,8 +2,10 @@
 
 import { MapPin } from "lucide-react";
 import { KOMUTER_PLAN_LABELS, type ApplicationStatus, type KomuterPlan, type StageKey } from "@/lib/types";
-import { stageBadgeClass, stageLabel, stageMeta } from "@/lib/stages";
+import { stageBadgeClass, stageDotClass, stageLabel, stageMeta } from "@/lib/stages";
 import { cn } from "@/lib/utils";
+import { formatDate } from "./format";
+import { agingTextClass, agingToneFrom, shortDuration } from "./stage-meta"; // NR-38
 
 /**
  * Badge tahap pipeline: label & warna diambil dari @/lib/stages.
