@@ -34,7 +34,12 @@ import { RatingStars } from "./rating-stars";
 import { useTagDefs } from "./use-tag-defs";
 // NR38-B — avatar inisial + meta umur tahap + chip gaji vs range.
 import { ApplicantAvatar } from "./applicant-avatar";
-import { agingDotClass, agingToneFrom, shortDuration } from "./stage-meta";
+import {
+  agingDotClass,
+  agingToneFrom,
+  salaryVerdict,
+  shortDuration,
+} from "./stage-meta";
 import {
   ageOf,
   stageAgeBasis,
@@ -260,6 +265,31 @@ function SalaryChip({ app, position }: { app: Application; position: Position | 
     >
       Sesuai rentang
     </MiniChip>
+  );
+}
+
+/**
+ * NR38-B fitur 4 — sel kolom Gaji (desktop): chip verdict ekspektasi vs rentang
+ * posisi memakai salaryVerdict() dari stage-meta. Rentang dari payload API
+ * (positionSalaryMin/Max) dengan fallback ke objek posisi yang sudah dimuat.
+ */
+function GajiCell({ app, position }: { app: ApplicationRow; position: Position | null }) {
+  const min = app.positionSalaryMin ?? position?.salaryMin ?? null;
+  const max = app.positionSalaryMax ?? position?.salaryMax ?? null;
+  const verdict = salaryVerdict(app.salaryExpectation, min, max);
+  if (app.salaryExpectation == null) {
+    return <span className="text-xs text-muted-foreground">-</span>;
+  }
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-36 items-center truncate rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+        verdict.chipClass
+      )}
+      title={verdict.label}
+    >
+      {verdict.label}
+    </span>
   );
 }
 
@@ -691,20 +721,19 @@ export function ApplicationsTable({
                     aria-label={`Pilih ${app.name}`}
                     className="mt-1"
                   />
-                  <span
-                    className={cn(
-                      "flex size-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-                      // NR-28 (item 7): warna avatar deterministik dari nama.
-                      avatarToneOf(app.name)
-                    )}
-                  >
-                    {initialsOf(app.name)}
-                  </span>
+                  <ApplicantAvatar name={app.name} starred={isStarred} className="size-10" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1">
-                      <span className="max-w-40 truncate text-sm font-semibold">
+                      {/* NR38-B fitur 1 — belum dilihat: nama tebal + badge "Baru". */}
+                      <span
+                        className={cn(
+                          "max-w-40 truncate text-sm",
+                          !app.adminSeenAt ? "font-semibold" : "font-medium"
+                        )}
+                      >
                         {app.name}
                       </span>
+                      {!app.adminSeenAt ? <NewBadge /> : null}
                       {app.isDuplicate === true ? <DuplicateBadge /> : null}
                       {app.archivedAt ? <ArchivedBadge /> : null}
                       {app.doNotHire ? <DoNotHireBadge app={app} /> : null}
@@ -713,8 +742,21 @@ export function ApplicationsTable({
                     <p className="truncate text-xs text-muted-foreground">
                       {app.email}
                     </p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {app.positionTitle ?? "-"} · {formatDate(app.createdAt)}
+                    <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                      {/* NR38-B fitur 3 — dot umur lamaran juga di kartu mobile. */}
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "size-2 shrink-0 rounded-full",
+                          agingDotClass(agingToneFrom(stageAgeBasis(app)))
+                        )}
+                      />
+                      <span
+                        className="truncate"
+                        title={`Diam di tahap ${stageLabel(app.status)} selama ${shortDuration(stageAgeBasis(app))}`}
+                      >
+                        {app.positionTitle ?? "-"} · {formatDate(app.createdAt)}
+                      </span>
                     </p>
                     {/* NR-32 — NIK & umur ringkas di kartu mobile (bila ada). */}
                     {app.nik || ageOf(app.birthDate) ? (
