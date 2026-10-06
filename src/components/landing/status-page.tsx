@@ -1086,6 +1086,87 @@ function StatusPageInner({
   const canWithdraw =
     !!detail && detail.found && !!detail.status && !isFinalStatus(detail.status);
 
+  /* ---------- PL-2b (butir 14): aksi yang diminta dari pelamar ----------
+   * Dihitung murni dari TrackResponse yang sudah ada (tanpa endpoint baru).
+   * Panel hanya ringkasan + navigasi — logika aksi asli tidak diubah.
+   * Item (e) assignment DILEWATI: TrackResponse tidak menyediakan status
+   * pengumpulan tugas, jadi tidak ada penanda yang bisa diandalkan.
+   */
+  const requiredActions: RequiredActionItem[] = [];
+  if (offer && offer.status === "PENDING") {
+    const deadlineMs = offer.deadline ? new Date(offer.deadline).getTime() : NaN;
+    const deadlineText = Number.isNaN(deadlineMs)
+      ? null
+      : new Date(offer.deadline as string).toLocaleDateString("id-ID", { dateStyle: "long" });
+    requiredActions.push({
+      key: "offer-pending",
+      tone: "rose",
+      icon: Reply,
+      text: deadlineText
+        ? `Jawab penawaran sebelum ${deadlineText}`
+        : "Jawab penawaran yang menunggu respons kamu",
+      targetId: "bagian-penawaran",
+    });
+  }
+  const upcomingInterview = interviews
+    .filter((iv) => iv.status === "SCHEDULED" && new Date(iv.scheduledAt).getTime() > nowMs)
+    .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))[0];
+  if (upcomingInterview) {
+    const when = new Date(upcomingInterview.scheduledAt);
+    const dateText = when.toLocaleDateString("id-ID", { dateStyle: "long" });
+    const timeText = when.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    requiredActions.push({
+      key: "interview-confirm",
+      tone: "amber",
+      icon: CalendarClock,
+      text: `Konfirmasi kehadiran wawancara ${dateText} pukul ${timeText}`,
+      targetId: "bagian-wawancara",
+    });
+  }
+  if (interviews.some((iv) => iv.status === "RESCHEDULE_REQUESTED")) {
+    requiredActions.push({
+      key: "interview-reschedule",
+      tone: "zinc",
+      icon: Hourglass,
+      text: "Menunggu konfirmasi jadwal baru",
+      targetId: "bagian-wawancara",
+    });
+  }
+  const missingDocsCount = onboardingDocs.filter((doc) => doc.required && !doc.done).length;
+  if (missingDocsCount > 0) {
+    requiredActions.push({
+      key: "onboarding-docs",
+      tone: "amber",
+      icon: Upload,
+      text: `Unggah ${missingDocsCount} dokumen onboarding`,
+      targetId: "bagian-onboarding",
+    });
+  }
+  if (
+    offer?.status === "ACCEPTED" &&
+    candidateStart &&
+    !candidateStart.confirmedAt &&
+    !candidateStart.proposedAt
+  ) {
+    requiredActions.push({
+      key: "start-date",
+      tone: "amber",
+      icon: CalendarCheck,
+      text: "Konfirmasi tanggal mulai kerja",
+      targetId: "bagian-tanggal-mulai",
+    });
+  }
+
+  /** Gulir halus ke bagian aksi terkait; hormati prefers-reduced-motion. */
+  function scrollToSection(targetId: string) {
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    const reduceMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  }
+
   // ---------- Render ----------
   return (
     <>
@@ -1204,6 +1285,15 @@ function StatusPageInner({
                     onWithdraw={() => void withdrawApplication()}
                   />
 
+                  {/* PL-2b (butir 14): ringkasan aksi yang diminta dari pelamar —
+                      hanya dirender bila ada >= 1 aksi, murni ringkasan + navigasi */}
+                  {requiredActions.length > 0 ? (
+                    <RequiredActionsPanel
+                      actions={requiredActions}
+                      onGoTo={(targetId) => scrollToSection(targetId)}
+                    />
+                  ) : null}
+
                   {/* Timeline progres (stepper vertikal penuh) */}
                   <StatusTimeline
                     steps={steps}
@@ -1221,7 +1311,7 @@ function StatusPageInner({
                   {/* Info tes seleksi posisi (bila posisi punya assignment) */}
                   {detail.assignment &&
                   (detail.assignment.title || detail.assignment.note || detail.assignment.url) ? (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+                    <div id="bagian-tes-seleksi" className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
                       <div className="flex items-start gap-2.5">
                         <ClipboardList
                           className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
@@ -1260,7 +1350,8 @@ function StatusPageInner({
                   ) : null}
 
                   {/* Jadwal wawancara + slot self-service */}
-                  <InterviewsSection
+                  <div id="bagian-wawancara">
+                    <InterviewsSection
                     t={t}
                     detail={detail}
                     selectedCode={selectedCode}
@@ -1294,42 +1385,47 @@ function StatusPageInner({
                     moveInterviewToSlot={moveInterviewToSlot}
                     cancelAttendance={cancelAttendance}
                     bookSlot={bookSlot}
-                  />
+                    />
+                  </div>
 
                   {/* Penawaran (offer) — disembunyikan bila tahap akhir sudah Ditolak
                       (sudah ganti tahap: kartu penawaran lama tidak relevan lagi). */}
                   {offer && finalStatus !== "REJECTED" ? (
-                    <OfferCard
-                      offer={offer}
-                      offerDaysLeft={offerDaysLeft}
-                      t={t}
-                      offerBusy={offerBusy}
-                      declineOpen={declineOpen}
-                      setDeclineOpen={setDeclineOpen}
-                      declineReason={declineReason}
-                      setDeclineReason={setDeclineReason}
-                      onAccept={acceptOffer}
-                      onDecline={declineOffer}
-                      onOpenLetter={() => setLetterOpen(true)}
-                    />
+                    <div id="bagian-penawaran">
+                      <OfferCard
+                        offer={offer}
+                        offerDaysLeft={offerDaysLeft}
+                        t={t}
+                        offerBusy={offerBusy}
+                        declineOpen={declineOpen}
+                        setDeclineOpen={setDeclineOpen}
+                        declineReason={declineReason}
+                        setDeclineReason={setDeclineReason}
+                        onAccept={acceptOffer}
+                        onDecline={declineOffer}
+                        onOpenLetter={() => setLetterOpen(true)}
+                      />
+                    </div>
                   ) : null}
 
                   {/* NR-15 (idea 13): kartu Tanggal Mulai — hanya bila status diterima */}
                   {candidateStart ? (
-                    <StartDateCard
-                      candidateStart={candidateStart}
-                      startBusy={startBusy}
-                      startProposeOpen={startProposeOpen}
-                      setStartProposeOpen={setStartProposeOpen}
-                      startDateValue={startDateValue}
-                      setStartDateValue={setStartDateValue}
-                      startNoteValue={startNoteValue}
-                      setStartNoteValue={setStartNoteValue}
-                      onSubmitStartDate={submitStartDate}
-                      lang={lang}
-                      p={p}
-                      t={t}
-                    />
+                    <div id="bagian-tanggal-mulai">
+                      <StartDateCard
+                        candidateStart={candidateStart}
+                        startBusy={startBusy}
+                        startProposeOpen={startProposeOpen}
+                        setStartProposeOpen={setStartProposeOpen}
+                        startDateValue={startDateValue}
+                        setStartDateValue={setStartDateValue}
+                        startNoteValue={startNoteValue}
+                        setStartNoteValue={setStartNoteValue}
+                        onSubmitStartDate={submitStartDate}
+                        lang={lang}
+                        p={p}
+                        t={t}
+                      />
+                    </div>
                   ) : null}
 
                   {/* NR-15 (idea 11): panel Perbarui CV — collapsible, default tertutup */}
@@ -1360,14 +1456,16 @@ function StatusPageInner({
                   {/* Onboarding — dokumen & info bergabung (tidak tampil bila sudah ditolak);
                       collapsible, default terbuka bila ada dokumen diminta */}
                   {onboarding && finalStatus !== "REJECTED" ? (
-                    <OnboardingPanel
-                      onboarding={onboarding}
-                      onboardingDocs={onboardingDocs}
-                      onboardingDoneCount={onboardingDoneCount}
-                      uploadingDocId={uploadingDocId}
-                      onUploadDoc={uploadOnboardingDoc}
-                      t={t}
-                    />
+                    <div id="bagian-onboarding">
+                      <OnboardingPanel
+                        onboarding={onboarding}
+                        onboardingDocs={onboardingDocs}
+                        onboardingDoneCount={onboardingDoneCount}
+                        uploadingDocId={uploadingDocId}
+                        onUploadDoc={uploadOnboardingDoc}
+                        t={t}
+                      />
+                    </div>
                   ) : null}
 
                   {finalStatus === "ACCEPTED" ? <AcceptedNotice t={t} /> : null}
@@ -1418,6 +1516,94 @@ function StatusPageInner({
       />
     ) : null}
     </>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * PL-2b (butir 14): panel "Aksi yang Diminta dari Anda" — ringkasan aksi yang
+ * ditunggu dari pelamar, dihitung klien dari TrackResponse. Murni ringkasan +
+ * navigasi (tombol menggulir halus ke bagian terkait); logika aksi asli tidak
+ * diubah. Palet rose (mendesak) / amber (segera) / zinc (info), tanpa biru.
+ * ------------------------------------------------------------------------- */
+
+type RequiredActionItem = {
+  key: string;
+  tone: "rose" | "amber" | "zinc";
+  icon: LucideIcon;
+  text: string;
+  targetId: string | null;
+};
+
+const ACTION_TONE_STYLES: Record<RequiredActionItem["tone"], { row: string; icon: string }> = {
+  rose: {
+    row: "border-rose-200 bg-rose-50 dark:border-rose-500/30 dark:bg-rose-500/10",
+    icon: "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400",
+  },
+  amber: {
+    row: "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
+    icon: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
+  },
+  zinc: {
+    row: "border-zinc-200 bg-zinc-50 dark:border-zinc-500/30 dark:bg-zinc-500/5",
+    icon: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+  },
+};
+
+function RequiredActionsPanel({
+  actions,
+  onGoTo,
+}: {
+  actions: RequiredActionItem[];
+  onGoTo: (targetId: string) => void;
+}) {
+  return (
+    <section
+      aria-label="Aksi yang Diminta dari Anda"
+      className="rounded-2xl border border-zinc-200 bg-card p-4 dark:border-zinc-800"
+    >
+      <div className="flex items-center gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
+          <ListChecks className="size-4" aria-hidden="true" />
+        </span>
+        <div>
+          <h3 className="text-sm font-bold">Aksi yang Diminta dari Anda</h3>
+          <p className="text-xs text-muted-foreground">
+            Hal yang masih menunggu tindakan kamu pada lamaran ini.
+          </p>
+        </div>
+      </div>
+      <ul className="mt-3 flex flex-col gap-2">
+        {actions.map((action) => {
+          const tone = ACTION_TONE_STYLES[action.tone];
+          const Icon = action.icon;
+          return (
+            <li
+              key={action.key}
+              className={`flex flex-wrap items-center gap-2.5 rounded-xl border p-3 ${tone.row}`}
+            >
+              <span
+                className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${tone.icon}`}
+              >
+                <Icon className="size-4" aria-hidden="true" />
+              </span>
+              <p className="min-w-0 flex-1 text-sm font-medium">{action.text}</p>
+              {action.targetId ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-11 shrink-0 sm:h-9"
+                  onClick={() => onGoTo(action.targetId as string)}
+                  aria-label={`Ke bagian terkait: ${action.text}`}
+                >
+                  Ke bagian ini
+                  <ArrowDown className="size-3.5" aria-hidden="true" />
+                </Button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
