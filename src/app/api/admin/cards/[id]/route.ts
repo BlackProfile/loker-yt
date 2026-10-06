@@ -46,6 +46,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
     });
     if (!card || !card.isCurrent) return NextResponse.json(NOT_FOUND, { status: 404 });
+    const owner = {
+      name: card.application.name,
+      positionTitle: card.application.position?.title ?? null,
+      hiredAt: card.application.hiredAt,
+      nik: card.application.nik,
+      trackingCode: card.application.trackingCode,
+    };
 
     const body = (await req.json().catch(() => ({}))) as {
       identityChecks?: Partial<IdentityChecks>;
@@ -175,17 +182,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const updated = await db.employeeCard.update({
       where: { id: card.id },
       data,
-      include: {
-        application: {
-          select: {
-            name: true,
-            nik: true,
-            hiredAt: true,
-            trackingCode: true,
-            position: { select: { title: true } },
-          },
-        },
-      },
     });
 
     if (logs.length > 0) {
@@ -195,7 +191,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     void emitRealtime(REALTIME_EVENTS.applications);
 
-    return NextResponse.json(serializeCard(updated, updated.application));
+    return NextResponse.json(serializeCard(updated, owner));
   } catch (error) {
     console.error("[PATCH /api/admin/cards/[id]]", error);
     return NextResponse.json({ error: "Gagal memperbarui kartu. Coba lagi nanti." }, { status: 500 });

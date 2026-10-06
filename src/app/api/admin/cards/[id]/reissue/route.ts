@@ -37,6 +37,13 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       },
     });
     if (!card || !card.isCurrent) return NextResponse.json(NOT_FOUND, { status: 404 });
+    const owner = {
+      name: card.application.name,
+      positionTitle: card.application.position?.title ?? null,
+      hiredAt: card.application.hiredAt,
+      nik: card.application.nik,
+      trackingCode: card.application.trackingCode,
+    };
 
     const now = new Date();
     const checks = card.identityChecks;
@@ -76,7 +83,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     });
     void emitRealtime(REALTIME_EVENTS.applications);
 
-    return NextResponse.json(serializeCard(created, card.application));
+    return NextResponse.json(serializeCard(created, owner));
   } catch (error) {
     console.error("[POST /api/admin/cards/[id]/reissue]", error);
     return NextResponse.json({ error: "Gagal menerbitkan ulang kartu. Coba lagi nanti." }, { status: 500 });

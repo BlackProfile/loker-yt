@@ -122,9 +122,24 @@ export async function ensureEmployeeCard(
 ): Promise<EmployeeCardDto | null> {
   const app = await db.application.findUnique({
     where: { id: applicationId },
-    select: { id: true, hiredAt: true, probationEnd: true },
+    select: {
+      id: true,
+      hiredAt: true,
+      probationEnd: true,
+      name: true,
+      nik: true,
+      trackingCode: true,
+      position: { select: { title: true } },
+    },
   });
   if (!app?.hiredAt) return null;
+  const owner = {
+    name: app.name,
+    positionTitle: app.position?.title ?? null,
+    hiredAt: app.hiredAt,
+    nik: app.nik,
+    trackingCode: app.trackingCode,
+  };
 
   const existing = await db.employeeCard.findFirst({
     where: { applicationId, isCurrent: true },
@@ -135,9 +150,9 @@ export async function ensureEmployeeCard(
       const updated = await db.employeeCard
         .update({ where: { id: existing.id }, data: { status: "ACTIVE" } })
         .catch(() => existing);
-      return serializeCard(updated, app);
+      return serializeCard(updated, owner);
     }
-    return serializeCard(existing, app);
+    return serializeCard(existing, owner);
   }
 
   const card = await db.employeeCard.create({
@@ -160,7 +175,7 @@ export async function ensureEmployeeCard(
     })
     .catch(() => undefined);
   void emitRealtime(REALTIME_EVENTS.applications);
-  return serializeCard(card, app);
+  return serializeCard(card, owner);
 }
 
 /**
