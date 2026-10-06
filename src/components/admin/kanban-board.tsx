@@ -502,6 +502,12 @@ function KanbanColumn({
   canMutate,
   duplicateIds,
   overLimit,
+  medianDays,
+  isBottleneck,
+  warnDaysFor,
+  nowMs,
+  selectedIds,
+  onToggleSelect,
   onOpenDetail,
   onUpdated,
 }: {
@@ -511,6 +517,17 @@ function KanbanColumn({
   canMutate: boolean;
   duplicateIds: Set<string>;
   overLimit?: { count: number; limit: number } | null;
+  /** NR-40 — median umur kartu di kolom ini (null bila kosong). */
+  medianDays: number | null;
+  /** NR-40 — kolom dengan median terbesar (count > 0) mendapat badge bottleneck. */
+  isBottleneck: boolean;
+  /** NR-40 — ambang hari "mengendap" per lamaran (dari posisinya). */
+  warnDaysFor: (app: Application) => number;
+  /** Snapshot waktu render (ms). */
+  nowMs: number;
+  /** NR-40 — pilihan aksi massal kanban. */
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string, checked: boolean) => void;
   onOpenDetail: (app: Application) => void;
   onUpdated?: (app: Application) => void;
 }) {
@@ -528,6 +545,15 @@ function KanbanColumn({
       <div className="flex items-center gap-2 border-b px-3 py-2.5">
         <span className={cn("size-2 rounded-full", meta.dot)} aria-hidden="true" />
         <p className="truncate text-sm font-semibold">{meta.label}</p>
+        {/* NR-40 — kolom paling lambat (median umur terbesar) ditandai bottleneck. */}
+        {isBottleneck ? (
+          <Badge
+            className="shrink-0 border-amber-200 bg-amber-100 px-1.5 py-0 text-[10px] font-semibold text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+            aria-label={`Tahap ${meta.label} menjadi bottleneck: median hari terlama`}
+          >
+            Bottleneck
+          </Badge>
+        ) : null}
         {overLimit ? (
           <Badge
             className="shrink-0 border-rose-200 bg-rose-100 px-1.5 py-0 text-[10px] font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
@@ -536,8 +562,19 @@ function KanbanColumn({
             Melebihi batas ({overLimit.count}/{overLimit.limit})
           </Badge>
         ) : null}
-        <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-secondary-foreground">
-          {apps.length}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {/* NR-40 — median hari kandidat berada di tahap ini. */}
+          {medianDays !== null ? (
+            <span
+              className="text-[10px] tabular-nums text-muted-foreground"
+              title={`Median hari kandidat berada di tahap ${meta.label}`}
+            >
+              median {medianDays} h
+            </span>
+          ) : null}
+          <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-secondary-foreground">
+            {apps.length}
+          </span>
         </span>
       </div>
       <SortableContext
@@ -568,6 +605,10 @@ function KanbanColumn({
                 app={app}
                 canMutate={canMutate}
                 duplicate={duplicateIds.has(app.id)}
+                warnDays={warnDaysFor(app)}
+                nowMs={nowMs}
+                selected={selectedIds.has(app.id)}
+                onToggleSelect={(checked) => onToggleSelect(app.id, checked)}
                 onOpenDetail={(a) => {
                   onOpenDetail(a);
                 }}
@@ -607,6 +648,8 @@ export function KanbanBoard({
   onOpenDetail: (app: Application) => void;
   onUpdated?: (app: Application) => void;
 }) {
+  const { reportError } = useAdminSession();
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
@@ -652,20 +695,28 @@ export function KanbanBoard({
   const [fetchedLimits, setFetchedLimits] = useState<Record<string, Record<string, number>>>(
     () => wipLimitsCache ?? {}
   );
+  // NR-40 — ambang hari "mengendap" per posisi (dari cache/response positions).
+  const [fetchedAging, setFetchedAging] = useState<Record<string, number>>(
+    () => agingWarnCache ?? {}
+  );
 
   const loadLimits = useCallback(() => {
     if (stageWipLimits !== undefined) return; // parent sudah memberi limits
     apiGet<PositionLimitsRow[]>("/api/admin/positions")
       .then((rows) => {
         const map: Record<string, Record<string, number>> = {};
+        const aging: Record<string, number> = {};
         for (const row of rows) {
           if (row.stageWipLimits) map[row.id] = row.stageWipLimits;
+          if (typeof row.agingWarnDays === "number") aging[row.id] = row.agingWarnDays;
         }
         wipLimitsCache = map;
+        agingWarnCache = aging;
         setFetchedLimits(map);
+        setFetchedAging(aging);
       })
       .catch(() => {
-        // Badge kapasitas pelengkap — biarkan data lama/kosong saat gagal.
+        // Badge kapasitas & ambang aging pelengkap — biarkan data lama/kosong saat gagal.
       });
   }, [stageWipLimits]);
 
@@ -690,6 +741,64 @@ export function KanbanBoard({
     }
     return fetchedLimits;
   }, [stageWipLimits, apps, fetchedLimits]);
+
+  /* ------------------- NR-40 — kesehatan papan & aksi massal ------------------- */
+
+  // Pilihan massal & bar aksi (status/tolak/jadwalkan wawancara).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkWorking, setBulkWorking] = useState(false);
+  const [bulkStage, setBulkStage] = useState("");
+  const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
+  const [bulkRejectReason, setBulkRejectReason] = useState<RejectionReason | "">("");
+  const [bulkRejectNote, setBulkRejectNote] = useState("");
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  // Filter "Hanya mengendap": tampilkan kartu dengan umur tahap > ambang posisinya.
+  const [stalledOnly, setStalledOnly] = useState(false);
+
+  /** Ambang hari mengendap untuk satu lamaran: Position.agingWarnDays ?? 7. */
+  const warnDaysFor = useCallback(
+    (app: Application): number => {
+      if (!app.positionId) return DEFAULT_AGING_WARN_DAYS;
+      const value = fetchedAging[app.positionId];
+      return typeof value === "number" ? value : DEFAULT_AGING_WARN_DAYS;
+    },
+    [fetchedAging]
+  );
+
+  function toggleSelect(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  async function runBulk(body: Record<string, unknown>, successMessage: string) {
+    if (bulkWorking) return;
+    const ids = Array.from(selectedIds).filter((id) => appMap.has(id));
+    if (ids.length === 0) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setBulkWorking(true);
+    try {
+      const res = await apiPost<{ ok: boolean; affected: number }>(
+        "/api/admin/applications/bulk",
+        { ...body, ids }
+      );
+      toast.success(successMessage.replace("{n}", String(res.affected)));
+      setSelectedIds(new Set());
+      setBulkStage("");
+      // Data lamaran & jadwal diperbarui otomatis: bulk route memancarkan
+      // event realtime "applications:changed" (dan "interviews:changed") yang
+      // di-respon parent dengan refresh senyap (pola useLiveRefresh).
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBulkWorking(false);
+    }
+  }
 
   function handleDragStart(_event: DragStartEvent) {
     justDraggedRef.current = true;
