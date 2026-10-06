@@ -3127,3 +3127,21 @@ Stage Summary:
 - Skema: Application +adminSeenAt +screeningVerdicts +cvSummary +cvSummaryAt (nullable, aman). Route baru: POST [id]/cv-summary, GET [id]/dossier; GET [id] kini menandai adminSeenAt; PATCH [id] menerima screeningVerdicts; GET list menyertakan adminSeenAt/stageUpdatedAt/positionSalaryMin/Max.
 - File baru: stage-meta.ts, applicant-avatar.tsx, saved-views.tsx, compare-applicants-dialog.tsx, applicant-card-grid.tsx, applicant-row-types.ts, dossier-dialog.tsx, quick-call-dialog.tsx, cv-summary-card.tsx + 2 route. File besar berubah: applications-tab, applications-table, tasks-tab, application-detail-dialog, route list & [id].
 - Tertunda dari persetujuan sebelumnya (belum dikerjakan, bukan bagian NR-38): demo feeder lamaran otomatis + 10 perbaikan biodata "Data Diri Lengkap".
+---
+Task ID: NR38-VERIFY
+Agent: Z.ai Code
+Task: Verifikasi E2E pasca-lanjutan (user: "lanjutkan") — pastikan seluruh NR-38 hidup di data nyata, pulihkan data demo kaya via Demo Simulator, tutup loop.
+
+Work Log:
+- Riset status: NR38-MASTER sudah menuntaskan 18/18; catatan "tertunda demo feeder + 10 biodata" pada entri itu TERNYATA KEDALUWARSA — NR-33 Demo Simulator (demo feeder) dan batch "Data Diri Lengkap" sudah selesai di sesi sebelumnya (terverifikasi di kode: demo-simulator.tsx terpasang di applications-tab, /api/admin/demo-simulator + src/lib/demo-applicants.ts ada).
+- DB saat itu hanya 5 lamaran lama TANPA biodata/AI/gaji/jawaban screening (posisi juga tanpa salaryMin/Max & minAge) → mayoritas fitur NR-38 tak bisa didemokan. Posisi aktif: Video Editor (punya aiCriteria), Thumbnail Designer, Penulis Naskah, Social Media Officer, Content Strategist.
+- Menjalankan Demo Simulator via API resmi: login /api/admin/login (OWNER) → POST start intervalSec=5 (semua posisi terbuka) → 35 dtk → stop. HASIL: 8 lamaran demo kaya (source "Demo Simulator") — NIK 16-digit, tanggal lahir (umur 22-48 th), domisili+komuter+shift utk ONSITE/HYBRID, ekspektasi gaji Rp 5,0-8,2 jt, Skor AI 30-60 dari pipeline latar belakang; 0 gagal.
+- VERIFIKASI BROWSER (:81, Owner) pada data kaya: tabel 13 baris → chip "Belum dilihat (12)" + 12 badge "Baru" + nama tebal; kolom Umur/Skor AI/Gaji terisi 8 baris; filter chip unseen on/off benar. Detail Hendra Oktaviani → strip "Data Diri Esensial" lengkap (Umur 22 th / Domisili Bogor Timur / Komuter / Shift malam / Mulai kerja / NIK 32731601048447 / Gaji Rp 6,5 jt/bln) + tombol WA & Catat panggilan + Dossier + footer Simpan/Hapus. adminSeenAt terisi di DB saat dialog dibuka (Fajar berubah jadi seen → chip turun ke 11).
+- Bandingkan: pilih Rina Nugroho + Rani Halim → dialog "Bandingkan 2 Pelamar" side-by-side (gaji, domisili, avatar). Pusat Tugas: PATCH followUpAt masa depan → muncul di "Tindak Lanjut Jatuh Tempo"; PATCH jatuh tempo → panel "Perlu Dihubungi Hari Ini" tampil dgn chip Follow-up + tombol inline Selesai/Tunda 3 hari/Buka Detail → klik "Selesai" → baris hilang optimistik + DB followUpAt=null.
+- Mode kartu: 13 kartu dgn avatar+cincin rose, badge Baru, pill tahap ber-d aging dot ("Baru hari ini", "Ditinjau 3h", "Wawancara 5h", "Diterima 8h"), skor AI, chip gaji, chip domisili, dot umur lamaran hijau/amber/merah. Mobile 390px: tanpa scroll-x, toolbar ikon, filter 2 kolom, kartu 1 kolom. Console: 0 error; dev.log bersih.
+- Jejak data: followUpAt Rina dikembalikan null (aksi Selesai); 8 lamaran demo DISENGAJA dibiarkan sebagai bahan demo user (bisa dibersihkan via Demo > Bersihkan). Screenshot dipindah ke /tmp/nr38-final-*.png. Temp files dihapus.
+
+Stage Summary:
+- SEMUA pekerjaan yang pernah disetujui kini terkonfirmasi selesai & terverifikasi E2E pada data kaya: NR-38 (18 fitur), NR-33 Demo Simulator, Data Diri Lengkap, NR-37 viewer.
+- Status demo akhir: 13 lamaran (5 lama + 8 "Demo Simulator" kaya), 11 belum dilihat, tersebar 5 posisi terbuka; simulator dihentikan (tidak berjalan).
+- Pelajaran debugging: agent-browser find --name memakai pencocokan substring Playwright → "Pelamar" bisa mengklik "Lihat sebagai pelamar" (URL lompat ke /?preview=1); gunakan eval exact-text utk nav admin.
