@@ -38,14 +38,10 @@ async function getSiteName(): Promise<string> {
     const setting = await db.setting.findUnique({ where: { key: "site" } });
     if (setting) {
       const parsed: unknown = JSON.parse(setting.value);
-      if (
-        parsed &&
-        typeof parsed === "object" &&
-        !Array.isArray(parsed) &&
-        typeof (parsed as Record<string, unknown>).siteName === "string" &&
-        (parsed as Record<string, unknown>).siteName.trim()
-      ) {
-        return ((parsed as Record<string, unknown>).siteName as string).trim();
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const site = parsed as Record<string, unknown>;
+        const siteName = typeof site.siteName === "string" ? site.siteName.trim() : "";
+        if (siteName) return siteName;
       }
     }
   } catch {
@@ -55,13 +51,12 @@ async function getSiteName(): Promise<string> {
 }
 
 /** Muat baris kandidat lama (subset field untuk pencocokan) beserta posisi lamanya. */
-async function loadTalentRows(whereIds?: string[]): Promise<TalentCandidateRow[]> {
+async function loadTalentRows(): Promise<TalentCandidateRow[]> {
   const rows = await db.application.findMany({
     where: {
       deletedAt: null,
       archivedAt: null,
       doNotHire: false,
-      ...(whereIds ? { id: { in: whereIds } } : {}),
       OR: [{ status: "REJECTED" }, { holdAt: { not: null } }, { talentPool: true }],
     },
     select: {
@@ -84,7 +79,7 @@ async function loadTalentRows(whereIds?: string[]): Promise<TalentCandidateRow[]
       createdAt: true,
     },
     orderBy: { createdAt: "desc" },
-    take: whereIds ? whereIds.length + 1 : MAX_CANDIDATE_ROWS,
+    take: MAX_CANDIDATE_ROWS,
   });
   return rows;
 }
@@ -193,7 +188,31 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date();
-    const rows = await loadTalentRows(ids);
+    // Muat apa adanya (tanpa filter pool) agar alasan skip per kandidat akurat;
+    // penyaringan penuh dilakukan manual di bawah.
+    const rows = await db.application.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        status: true,
+        positionId: true,
+        position: { select: { id: true, title: true, department: true, reapplyCooldownDays: true } },
+        rating: true,
+        tags: true,
+        aiScore: true,
+        rejectedAt: true,
+        holdAt: true,
+        talentPool: true,
+        doNotHire: true,
+        deletedAt: true,
+        archivedAt: true,
+        stageUpdatedAt: true,
+        createdAt: true,
+      },
+      take: ids.length,
+    });
     const rowById = new Map(rows.map((row) => [row.id, row]));
     const targetTags = await loadTargetTags(position.id);
 
