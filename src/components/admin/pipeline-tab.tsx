@@ -1083,6 +1083,7 @@ export function PipelineTab({
                       canMutate={canMutate}
                       nextSession={nextSessionOf(app.id)}
                       lastSession={lastSessionOf(app.id)}
+                      allSessions={sessionsOf(app.id)}
                       onSchedule={() => openCreateSession(app)}
                       onOpenSession={(i) => {
                         setSessionReset((n) => n + 1);
@@ -1620,6 +1621,7 @@ function InterviewCard({
   canMutate,
   nextSession,
   lastSession,
+  allSessions,
   onSchedule,
   onOpenSession,
   onOffer,
@@ -1630,12 +1632,35 @@ function InterviewCard({
   canMutate: boolean;
   nextSession: Interview | null;
   lastSession: Interview | null;
+  allSessions: Interview[]; // NR-40 (butir 8) — semua ronde utk ringkasan keputusan
   onSchedule: () => void;
   onOpenSession: (interview: Interview) => void;
   onOffer: () => void;
   onReject: () => void;
   onDetail: () => void;
 }) {
+  // NR-40 (butir 8) — ringkasan keputusan wawancara: rekomendasi terbanyak
+  // dari semua ronde yang selesai dinilai. Hanya tampil bila >= 1 ronde selesai.
+  const decision = (() => {
+    const scored = allSessions.filter(
+      (s) => s.status === "COMPLETED" && s.recommendation != null,
+    );
+    if (scored.length === 0) return null;
+    const tally: Record<string, number> = { LANJUT: 0, CADANGAN: 0, TOLAK: 0 };
+    for (const s of scored) {
+      if (s.recommendation && s.recommendation in tally) tally[s.recommendation] += 1;
+    }
+    const top = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+    if (!top || top[1] === 0) return null;
+    const split = Object.values(tally).filter((n) => n > 0).length > 1;
+    return {
+      verdict: top[0] as "LANJUT" | "CADANGAN" | "TOLAK",
+      votes: top[1],
+      rounds: scored.length,
+      split,
+    };
+  })();
+
   return (
     <CandidateCardShell
       footer={
@@ -1679,6 +1704,28 @@ function InterviewCard({
       <div className="min-w-0 flex-1">
         <CandidateHead app={app} />
         <StallChips app={app} className="mt-2 flex flex-wrap items-center gap-1.5" />
+        {decision ? (
+          <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+            <Badge
+              variant="outline"
+              className={cn(
+                "rounded-full",
+                decision.verdict === "LANJUT" &&
+                  "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400",
+                decision.verdict === "CADANGAN" &&
+                  "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400",
+                decision.verdict === "TOLAK" &&
+                  "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-400",
+              )}
+            >
+              {INTERVIEW_RECOMMENDATION_LABELS[decision.verdict]}
+            </Badge>
+            <span className="text-muted-foreground">
+              {decision.rounds} ronde dinilai
+              {decision.split ? ` — terbanyak ${decision.votes}/${decision.rounds}` : ""}
+            </span>
+          </p>
+        ) : null}
         {nextSession ? (
           <button
             type="button"
