@@ -22,6 +22,7 @@ import {
   Inbox,
   Loader2,
   PauseCircle,
+  PhoneCall,
   Timer,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -32,10 +33,12 @@ import {
   type HoldReason,
 } from "@/lib/types";
 import { daysUntil, formatDate, formatDateTime, formatRelative, formatShortDateTime } from "./format";
-import { apiGet } from "./api";
+import { apiGet, apiPatch } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { ApplicationDetailDialog } from "./application-detail-dialog";
+// NR38-B — tipe baris diperkaya (snoozeUntil & adminSeenAt dari payload list).
+import type { ApplicationRow } from "./applicant-row-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -65,6 +68,41 @@ type FollowUpItem = NonNullable<ActionItemsResponse["followUpsDue"]>[number];
 type HoldReviewItem = NonNullable<ActionItemsResponse["holdReviewsDue"]>[number];
 // NR-24 — tugas uji mendekati/lewat tenggat.
 type AssessmentDueItem = NonNullable<ActionItemsResponse["assessmentsDue"]>[number];
+
+/* --------------------- NR38-B fitur 7 — Perlu dihubungi hari ini --------------------- */
+
+// Jenis tugas "perlu dihubungi": follow-up manual, snooze bot, review HOLD,
+// dan penawaran yang mendekati/lewat batas jawaban (offerStatus PENDING —
+// padanan "SENT" pada skema aplikasi ini; status SENT tidak ada di OfferStatus).
+type ContactKind = "followup" | "snooze" | "hold" | "offer";
+
+const CONTACT_KIND_META: Record<ContactKind, { label: string; chipClass: string }> = {
+  followup: {
+    label: "Follow-up",
+    chipClass: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
+  },
+  snooze: {
+    label: "Snooze",
+    chipClass: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  },
+  hold: {
+    label: "Review HOLD",
+    chipClass: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
+  },
+  offer: {
+    label: "Penawaran",
+    chipClass: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400",
+  },
+};
+
+type ContactTask = {
+  key: string;
+  app: ApplicationRow;
+  kind: ContactKind;
+  dueAt: string;
+};
+
+const THREE_DAYS_MS = 3 * 86_400_000;
 
 // Label alasan HOLD yang aman terhadap nilai tak dikenal/null.
 function holdReasonLabel(reason: string | null): string {
@@ -181,9 +219,11 @@ export function TasksTab() {
   const { reportError } = useAdminSession();
 
   const [items, setItems] = useState<ExtendedActionItems | null>(null);
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [applications, setApplications] = useState<ApplicationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Application | null>(null);
+  // NR38-B — kunci tugas yang sedang dipatch (anti dobel klik).
+  const [workingTasks, setWorkingTasks] = useState<Set<string>>(new Set);
 
   const loadAll = useCallback(
     async (silent = false) => {
@@ -191,7 +231,7 @@ export function TasksTab() {
       try {
         const [actionItems, apps] = await Promise.all([
           apiGet<ExtendedActionItems>("/api/admin/action-items"),
-          apiGet<Application[]>("/api/admin/applications"),
+          apiGet<ApplicationRow[]>("/api/admin/applications"),
         ]);
         setItems(actionItems);
         setApplications(apps);

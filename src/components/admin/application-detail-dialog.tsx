@@ -147,7 +147,6 @@ import {
   isoToLocalInput,
   localInputToIso,
   normalizeUrl,
-  waHref,
 } from "./format";
 import { StatusBadge } from "./status-badge";
 import { RatingStars } from "./rating-stars";
@@ -2589,7 +2588,7 @@ export function ApplicationDetailDialog({
 
         <div
           ref={detailScrollRef}
-          className="nice-scrollbar -mr-2 max-h-[75vh] overflow-y-auto pr-2"
+          className="nice-scrollbar -mr-2 max-h-[75vh] overflow-y-auto pb-2 pr-2"
         >
           {/* NR-34 — baris tab: seluruh isi dialog dikelompokkan agar admin
               tidak perlu menggulung jauh ke bawah untuk memeriksa satu aspek. */}
@@ -2979,6 +2978,48 @@ export function ApplicationDetailDialog({
             {/* Panel AI — NR-22: disembunyikan bila posisi menyembunyikan blok "ai" */}
             {isHidden("ai") ? null : <AiPanel app={app} onUpdated={onSaved} />}
 
+            {/* NR38-C fitur 3 — "Kenapa skornya segini": kriteria penilaian dari
+                posisi (konteks skor, bukan klaim terpenuhi) + peringatan otomatis
+                yang dihitung dari data lamaran (umur/gaji/relokasi/NIK). */}
+            {showAiContextBlock ? (
+              <div className="flex flex-col gap-3 rounded-lg border p-3">
+                {aiCriteriaChips.length > 0 ? (
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Kriteria penilaian (dari posisi — konteks skor, bukan hasil penilaian)
+                    </p>
+                    {aiCriteriaAsParagraph ? (
+                      <p className="text-sm leading-relaxed">{aiCriteriaChips[0]}</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {aiCriteriaChips.map((chip) => (
+                          <span
+                            key={chip}
+                            className="inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                          >
+                            {chip}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+                {autoWarnings.length > 0 ? (
+                  <div className="flex flex-col gap-1.5 rounded-md border border-amber-200 bg-amber-50/70 p-2.5 dark:border-amber-900 dark:bg-amber-950/30">
+                    <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                      <TriangleAlert className="size-3.5" aria-hidden="true" />
+                      Peringatan
+                    </p>
+                    <ul className="flex list-disc flex-col gap-0.5 pl-5 text-sm text-amber-800 dark:text-amber-300">
+                      {autoWarnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             {/* Berkas */}
             {app.cvFileId || app.introFileId || app.extraDocs.length > 0 ? (
               <div className="flex flex-col gap-2 rounded-lg border p-3">
@@ -3003,6 +3044,15 @@ export function ApplicationDetailDialog({
                       Unduh
                     </a>
                   </div>
+                ) : null}
+                {/* NR38-C fitur 5 — ringkasan CV otomatis, dekat baris CV.
+                    Manual via tombol (TIDAK auto-run saat dialog dibuka). */}
+                {app.cvFileId ? (
+                  <CvSummaryCard
+                    applicationId={app.id}
+                    summary={cvSummary}
+                    onSummaryChange={setCvSummary}
+                  />
                 ) : null}
                 {app.introFileId ? (
                   <div className="flex flex-col gap-2">
@@ -3176,23 +3226,47 @@ export function ApplicationDetailDialog({
             {/* Jawaban screening */}
             {showScreening ? (
               <div className="flex flex-col gap-2 rounded-lg border p-3">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <ClipboardList className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
                   <p className="text-sm font-semibold">Jawaban Screening</p>
+                  {/* NR38-C fitur 4 — rekap verdict: lulus / perlu dicek / gugur. */}
+                  <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                    {verdictCounts.pass} lulus · {verdictCounts.warn} perlu dicek ·{" "}
+                    {verdictCounts.fail} gugur · dari {screeningQuestions.length} jawaban
+                  </span>
                 </div>
                 <div className="flex flex-col gap-2.5">
                   {screeningQuestions.map((q) => {
                     const answer = screeningAnswers[q.id]?.trim() ?? "";
+                    const verdict = screeningVerdicts[q.id] ?? null;
                     return (
                       <div key={q.id} className="rounded-lg bg-muted/50 p-2.5">
-                        <p className="text-xs font-medium text-muted-foreground">
-                          {q.label}
-                          {q.required ? (
-                            <span className="ml-1 text-rose-500" aria-hidden="true">
-                              *
-                            </span>
-                          ) : null}
-                        </p>
+                        <div className="flex flex-wrap items-start gap-2">
+                          <p className="min-w-0 flex-1 text-xs font-medium text-muted-foreground">
+                            {q.label}
+                            {q.required ? (
+                              <span className="ml-1 text-rose-500" aria-hidden="true">
+                                *
+                              </span>
+                            ) : null}
+                          </p>
+                          {/* NR38-C fitur 4 — chip verdict siklus: Belum dinilai
+                              -> Lulus -> Perlu dicek -> Gugur -> kembali. Optimistik,
+                              persist via PATCH screeningVerdicts. */}
+                          <button
+                            type="button"
+                            disabled={!canMutate || verdictSaving}
+                            onClick={() => void handleCycleVerdict(q.id)}
+                            aria-label={`Penilaian jawaban: ${verdict ? SCREENING_VERDICT_LABELS[verdict] : "Belum dinilai"}. Klik untuk mengubah.`}
+                            className={cn(
+                              "inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2.5 text-[11px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-70",
+                              verdict ? SCREENING_VERDICT_CHIP[verdict] : SCREENING_VERDICT_CHIP_NONE,
+                              canMutate && !verdictSaving && "cursor-pointer hover:opacity-80"
+                            )}
+                          >
+                            {verdict ? SCREENING_VERDICT_LABELS[verdict] : "Belum dinilai"}
+                          </button>
+                        </div>
                         {answer ? (
                           <p className="mt-0.5 text-sm whitespace-pre-wrap">{answer}</p>
                         ) : (
@@ -3204,6 +3278,11 @@ export function ApplicationDetailDialog({
                     );
                   })}
                 </div>
+                {!canMutate ? (
+                  <p className="text-xs text-muted-foreground">
+                    Penilaian jawaban hanya dapat diubah oleh OWNER/HR.
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
@@ -4636,6 +4715,38 @@ export function ApplicationDetailDialog({
               <ActivityTimeline key={app.id} applicationId={app.id} />
             </div>
           </section>
+
+          {/* NR38-C fitur 8 — bar aksi prioritas menempel di bawah area scroll.
+              Tombol memanggil handler & state YANG SAMA dengan footer (Hapus
+              membuka AlertDialog konfirmasi yang sama; Simpan memanggil handleSave).
+              Hanya tampil untuk role yang boleh mutasi. */}
+          {canMutate ? (
+            <div className="sticky bottom-0 z-10 -mx-0.5 flex items-center justify-between gap-2 border-t bg-background/90 px-0.5 py-2 backdrop-blur">
+              <Button
+                variant="destructive"
+                className="h-11 sm:h-9"
+                onClick={() => setConfirmOpen(true)}
+                disabled={deleting || saving}
+              >
+                <Trash2 className="size-4" aria-hidden="true" />
+                Hapus
+              </Button>
+              <Button
+                onClick={() => void handleSave()}
+                disabled={saving || deleting}
+                className="h-11 active:scale-[0.99] sm:h-9"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    Menyimpan...
+                  </>
+                ) : (
+                  "Simpan Perubahan"
+                )}
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <DialogFooter className="gap-2 border-t pt-4 sm:justify-between">
@@ -4729,6 +4840,20 @@ export function ApplicationDetailDialog({
           resetKey={createNonce}
           onSaved={handleSessionSaved}
           onDeleted={handleSessionDeleted}
+        />
+        {/* NR38-C fitur 6 — dossier pelamar ganda (buka lamaran lain via onNavigate). */}
+        <DossierDialog
+          applicationId={app.id}
+          open={dossierOpen}
+          onOpenChange={setDossierOpen}
+          onNavigate={onNavigate}
+        />
+        {/* NR38-C fitur 7 — catat panggilan cepat dari info kontak. */}
+        <QuickCallDialog
+          applicationId={app.id}
+          open={quickCallOpen}
+          onOpenChange={setQuickCallOpen}
+          onSaved={onSaved}
         />
       </DialogContent>
     </Dialog>
