@@ -18,20 +18,25 @@
 // folder ./status/ via props eksplisit. Logika & urutan efek dipertahankan
 // verbatim; satu-satunya perubahan UI adalah organisasi collapsible (Bagian 2).
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useId } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   ArrowLeft,
   ClipboardList,
+  Download,
   ExternalLink,
+  IdCard,
   Loader2,
   LogOut,
 } from "lucide-react";
 import {
+  EMPLOYEE_CARD_STATUS_LABELS,
   STATUS_FLOW,
   STATUS_LABELS,
+  type EmployeeCardDto,
+  type EmployeeCardStatus,
   type TrackAuthResponse,
   type TrackChangeInfo,
   type TrackResponse,
@@ -48,6 +53,16 @@ import {
 } from "@/lib/status-session";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { toPng } from "html-to-image";
+import { EmployeeIdCard } from "@/components/employee-id-card";
 import { LangProvider, useLang } from "@/components/landing/lang-context";
 import { Container } from "@/components/landing/primitives";
 import { fillTemplate, safeExternalUrl } from "@/components/landing/landing-utils";
@@ -1348,6 +1363,10 @@ function StatusPageInner({
                   ) : null}
 
                   {finalStatus === "ACCEPTED" ? <AcceptedNotice t={t} /> : null}
+                  {/* NR-39: kartu karyawan milik pelamar — bila status diterima */}
+                  {finalStatus === "ACCEPTED" && selectedCode ? (
+                    <MyCardSection trackingCode={selectedCode} />
+                  ) : null}
                   {finalStatus === "REJECTED" ? (
                     <RejectedNotice
                       detail={detail}
