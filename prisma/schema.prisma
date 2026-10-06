@@ -263,6 +263,12 @@ model Application {
   followUpAt        DateTime? // tanggal tindak lanjut (snooze) — muncul di Pusat Tugas saat jatuh tempo
   salaryExpectation Int? // ekspektasi gaji bulanan (rupiah) — dibandingkan dengan rentang gaji posisi
   holdAt            DateTime? // saat lamaran ditahan (HOLD)
+
+  // NR-38 — mempermudah admin cek pelamar
+  adminSeenAt       DateTime? // saat admin (siapa pun) pertama kali membuka dialog detail — dasar filter "Belum dilihat"
+  screeningVerdicts String?   // JSON {questionId: "PASS"|"WARN"|"FAIL"} — penilaian admin per jawaban screening
+  cvSummary         String?   // JSON {bullets: string[], generatedAt} — ringkasan CV otomatis (LLM atas cvText OCR)
+  cvSummaryAt       DateTime? // waktu ringkasan CV terakhir dibuat — invalidasi bila CV diganti
   holdReason        String? // kode alasan hold: SLOT_PENUH | TUNGGU_KEPUTUSAN | MENUNGGU_DOKUMEN | LAINNYA
   holdNote          String? // catatan tambahan hold
   holdReviewAt      DateTime? // tanggal review kembali — masuk Pusat Tugas saat jatuh tempo

@@ -9,14 +9,25 @@ import { cn } from "@/lib/utils";
  * Badge tahap pipeline: label & warna diambil dari @/lib/stages.
  * 5 tahap bawaan tampil persis seperti sebelumnya; tahap kustom
  * mendapat palet hash konsisten (tanpa biru/indigo/violet).
+ *
+ * NR-38 — props opsional baru (semua default mati, backward-compatible):
+ * - dot: titik warna tahap di depan label (pola visual konsisten daftar/pipeline/detail).
+ * - stageAgeIso: ISO date perubahan tahap terakhir — menampilkan durasi singkat
+ *   ("3h") dengan warna umur (hijau/amber/merah) setelah label.
  */
 export function StatusBadge({
   status,
   className,
+  dot = false,
+  stageAgeIso,
 }: {
   status: StageKey;
   className?: string;
+  dot?: boolean;
+  stageAgeIso?: string | null;
 }) {
+  const ageLabel = stageAgeIso ? shortDuration(stageAgeIso) : "";
+  const tone = agingToneFrom(stageAgeIso);
   return (
     <span
       className={cn(
@@ -25,7 +36,18 @@ export function StatusBadge({
         className
       )}
     >
+      {dot ? (
+        <span aria-hidden="true" className={cn("size-1.5 rounded-full", stageDotClass(status))} />
+      ) : null}
       {stageLabel(status)}
+      {ageLabel ? (
+        <span
+          className={cn("text-[10px] font-semibold tabular-nums opacity-80", agingTextClass(tone))}
+          title={`Sejak ${formatDate(stageAgeIso)}`}
+        >
+          {ageLabel}
+        </span>
+      ) : null}
     </span>
   );
 }
