@@ -895,8 +895,6 @@ export function KanbanBoard({
     0
   );
 
-  const selectedList = Array.from(selectedIds);
-
   return (
     <div className="flex flex-col gap-3">
       {/* Toolbar kanban (NR-40): filter kandidat yang mengendap di tahapnya. */}
@@ -1105,7 +1103,7 @@ function KanbanBulkRejectDialog({
       onReasonChange("");
       onNoteChange("");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open]);
 
   return (

@@ -779,6 +779,7 @@ type SelectionState = {
   stageCategories: Record<string, StageCategory>;
   stageNotes: Record<string, string>; // NR-15: penjelasan per tahap untuk halaman status pelamar
   stageWipLimits: Record<string, string>; // NR-19: batas kapasitas per tahap (string dari input angka; "" = tanpa batas)
+  agingWarnDays: string; // NR-40: ambang hari "mengendap" kanban (string; "" = default bawaan 7)
   hiddenUi: string[]; // NR-22: blok UI yang disembunyikan di dialog detail lamaran
   aiCriteria: string;
   autoShortlistScore: string;
@@ -801,6 +802,7 @@ function buildSelectionState(p: Position): SelectionState {
           Object.entries(p.stageWipLimits).map(([stage, limit]) => [stage, String(limit)])
         )
       : {},
+    agingWarnDays: p.agingWarnDays == null ? "" : String(p.agingWarnDays),
     aiCriteria: p.aiCriteria ?? "",
     hiddenUi: [...p.hiddenUi], // NR-22
     autoShortlistScore: p.autoShortlistScore == null ? "" : String(p.autoShortlistScore),
@@ -918,6 +920,15 @@ export function PositionSelectionPage({
             Number(form.autoShortlistScore) > 100
           )
             errors.push("Skor auto-shortlist harus angka bulat 0-100, atau dikosongkan.");
+        }
+        // NR-40 — ambang hari mengendap kanban: kosong = bawaan 7, else 0-90.
+        if (form.agingWarnDays.trim() !== "") {
+          if (
+            !isInt(form.agingWarnDays) ||
+            Number(form.agingWarnDays) < 0 ||
+            Number(form.agingWarnDays) > 90
+          )
+            errors.push("Ambang hari mengendap harus angka bulat 0-90, atau dikosongkan.");
         }
         if (
           form.assignmentUrl.trim().length > 0 &&

@@ -15,10 +15,12 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  ChevronRight,
   ClipboardCheck,
   Copy,
   Eye,
   FileText,
+  Filter,
   Inbox,
   Lightbulb,
   Loader2,
@@ -389,6 +391,17 @@ export function PipelineTab({
   const positionStages = useMemo(
     () => (position ? stagesForPosition(position.stages) : []),
     [position]
+  );
+
+  // NR-40 — funnel ringkas per tahap pipeline posisi (dihitung client-side
+  // dari lamaran posisi aktif, tanpa endpoint/chart baru).
+  const funnel = useMemo(
+    () =>
+      positionStages.map((stage) => ({
+        stage,
+        count: positionApps.filter((a) => a.status === stage).length,
+      })),
+    [positionStages, positionApps]
   );
 
   // Tahap tujuan "naik ke wawancara": tahap pertama kategori Wawancara, atau INTERVIEW.
@@ -816,6 +829,46 @@ export function PipelineTab({
               </Button>
             </div>
           </div>
+
+          {/* NR-40 — strip funnel ringkas: "tahap: n" per kolom + kuota terisi. */}
+          {funnel.length > 0 ? (
+            <div
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl border bg-card px-4 py-3 text-xs"
+              aria-label={`Funnel pipeline ${position.title}`}
+            >
+              <span className="mr-1 flex items-center gap-1 font-semibold text-muted-foreground">
+                <Filter className="size-3.5" aria-hidden="true" />
+                Funnel
+              </span>
+              {funnel.map((f, i) => (
+                <span key={f.stage} className="flex items-center gap-2">
+                  {i > 0 ? (
+                    <ChevronRight
+                      className="size-3.5 text-muted-foreground/50"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                    {stageLabel(f.stage)}:
+                  </span>
+                  <span className="font-semibold tabular-nums">{f.count}</span>
+                </span>
+              ))}
+              {position.maxApplicants != null ? (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "ml-auto rounded-full",
+                    buckets.ACCEPTED.length >= position.maxApplicants
+                      ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-400"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-400"
+                  )}
+                >
+                  Terisi {buckets.ACCEPTED.length}/{position.maxApplicants}
+                </Badge>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Tab kategori */}
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4" role="tablist" aria-label="Kategori tahap">
