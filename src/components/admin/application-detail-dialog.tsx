@@ -1387,6 +1387,7 @@ export function ApplicationDetailDialog({
   // Sama seperti OfferDialog; non-blocking. Diletakkan SEBELUM early return
   // agar urutan hook selalu sama (rules-of-hooks).
   const offerSalaryWarnings = useMemo(() => {
+    if (!application) return [];
     const offered = parseSalaryText(offerForm.salary);
     if (offered == null) return [];
     const warnings: { kind: string; tone: "rose" | "amber"; text: string }[] = [];
