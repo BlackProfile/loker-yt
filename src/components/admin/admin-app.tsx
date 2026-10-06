@@ -901,7 +901,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 </Button>
                 <Button
                   variant="outline"
-                  className="h-11 active:scale-[0.99] sm:h-10"
+                  className="hidden h-11 active:scale-[0.99] sm:inline-flex sm:h-10"
                   onClick={onExit}
                   aria-label="Lihat halaman publik"
                 >
