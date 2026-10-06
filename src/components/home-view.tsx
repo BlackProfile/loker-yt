@@ -15,16 +15,31 @@ import { EmbedJobs } from "@/components/landing/embed-jobs";
 import { PositionDetailView } from "@/components/landing/position-detail";
 import { SurveyView } from "@/components/landing/survey-view";
 import { StatusPageView } from "@/components/landing/status-page";
+import { VerifyCardView } from "@/components/landing/verify-card-view";
 import { AdminApp } from "@/components/admin/admin-app";
 import { MiniAppView } from "@/components/landing/mini-app-view";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type View = "landing" | "detail" | "admin" | "embed" | "survei" | "status" | "mini";
+type View =
+  | "landing"
+  | "detail"
+  | "admin"
+  | "embed"
+  | "survei"
+  | "status"
+  | "mini"
+  | "verifikasi";
 
 // Hasil pembacaan URL: view aktif + slug posisi (jika ada) + kode pelacakan
-// dari hash "#status?code=XXX" (tautan "salin tautan status" halaman Cek Status).
-type LocationInfo = { view: View; slug: string | null; statusCode: string | null };
+// dari hash "#status?code=XXX" (tautan "salin tautan status" halaman Cek Status)
+// + token QR verifikasi dari hash "#verifikasi?t=..." (kartu karyawan).
+type LocationInfo = {
+  view: View;
+  slug: string | null;
+  statusCode: string | null;
+  verifyToken: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // Sumber data publik bersama (realtime + anti-flicker).
@@ -91,7 +106,19 @@ class ViewErrorBoundary extends Component<
 function readLocation(): LocationInfo {
   const params = new URLSearchParams(window.location.search);
   // "#admin" dan sub-halamannya (mis. "#admin/posisi/<id>") masuk ke panel admin.
-  if (window.location.hash.startsWith("#admin")) return { view: "admin", slug: null, statusCode: null };
+  if (window.location.hash.startsWith("#admin"))
+    return { view: "admin", slug: null, statusCode: null, verifyToken: null };
+  // "#verifikasi" — halaman publik verifikasi kartu karyawan (tanpa login).
+  // Hash bisa membawa token QR: "#verifikasi?t=<token>.<hmac>" (link di kartu).
+  if (window.location.hash.startsWith("#verifikasi")) {
+    const hashQuery = window.location.hash.slice("#verifikasi".length);
+    let verifyToken: string | null = null;
+    if (hashQuery.startsWith("?")) {
+      const raw = new URLSearchParams(hashQuery.slice(1)).get("t");
+      if (raw && raw.trim()) verifyToken = raw.trim().slice(0, 128);
+    }
+    return { view: "verifikasi", slug: null, statusCode: null, verifyToken };
+  }
   // "#status" — halaman Cek Status pelamar (login email + kode pelacakan).
   // Hash bisa membawa query: "#status?code=LM-XXXXXX" (tautan berbagi) —
   // kode dipakai untuk prefill form login bila belum ada sesi tersimpan.
@@ -102,17 +129,17 @@ function readLocation(): LocationInfo {
       const raw = new URLSearchParams(hashQuery.slice(1)).get("code");
       if (raw && raw.trim()) statusCode = raw.trim().toUpperCase().slice(0, 24);
     }
-    return { view: "status", slug: null, statusCode };
+    return { view: "status", slug: null, statusCode, verifyToken: null };
   }
   // Mini App Telegram (?mini=1) — panel versi ringkas di webview bot.
-  if (params.get("mini") === "1") return { view: "mini", slug: null, statusCode: null };
-  if (params.get("embed") === "1") return { view: "embed", slug: null, statusCode: null };
+  if (params.get("mini") === "1") return { view: "mini", slug: null, statusCode: null, verifyToken: null };
+  if (params.get("embed") === "1") return { view: "embed", slug: null, statusCode: null, verifyToken: null };
   // Survei pengalaman kandidat (?survei=token) — dikirim via email status final.
   const surveiToken = params.get("survei");
-  if (surveiToken) return { view: "survei", slug: surveiToken.slice(0, 64), statusCode: null };
+  if (surveiToken) return { view: "survei", slug: surveiToken.slice(0, 64), statusCode: null, verifyToken: null };
   const slug = params.get("posisi");
-  if (slug) return { view: "detail", slug: slug.slice(0, 80), statusCode: null };
-  return { view: "landing", slug: null, statusCode: null };
+  if (slug) return { view: "detail", slug: slug.slice(0, 80), statusCode: null, verifyToken: null };
+  return { view: "landing", slug: null, statusCode: null, verifyToken: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +185,8 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
   const [slug, setSlug] = useState<string | null>(initialPosisiSlug);
   // Kode pelacakan dari "#status?code=XXX" — prefill form login Cek Status.
   const [statusCode, setStatusCode] = useState<string | null>(null);
+  // Token QR verifikasi kartu dari "#verifikasi?t=..." — dipakai view verifikasi.
+  const [verifyToken, setVerifyToken] = useState<string | null>(null);
 
   const { data, error, loading, refreshing, refresh } = usePublicContent();
   const realtimeUp = useRealtimeConnected();
@@ -168,6 +197,7 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
       setView(next.view);
       setSlug(next.slug);
       setStatusCode(next.statusCode);
+      setVerifyToken(next.verifyToken);
     };
     sync();
     window.addEventListener("hashchange", sync);
@@ -222,6 +252,12 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
   // landing) — early return agar tampil langsung tanpa menunggu fetch konten.
   if (view === "mini") {
     return <MiniAppView />;
+  }
+
+  // View verifikasi kartu: mandiri (tanpa konten publik) — early return agar
+  // halaman verifikasi publik tidak tertahan blok loading konten landing.
+  if (view === "verifikasi") {
+    return <VerifyCardView initialToken={verifyToken} />;
   }
 
   const resetKey = `${view}:${slug ?? ""}`;
@@ -284,6 +320,8 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
         <AdminApp onExit={exitAdmin} />
       ) : view === "status" ? (
         <StatusPageView onExit={exitStatus} initialCode={statusCode} />
+      ) : view === "verifikasi" ? (
+        <VerifyCardView initialToken={verifyToken} />
       ) : view === "embed" ? (
         <EmbedView data={data} />
       ) : view === "survei" && slug ? (
