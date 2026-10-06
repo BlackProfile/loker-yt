@@ -948,6 +948,8 @@ export function PositionSelectionPage({
           form.autoShortlistScore.trim() === "" ? null : Number(form.autoShortlistScore),
         autoShortlistStage:
           cleanedStages.length === 0 ? null : form.autoShortlistStage || null,
+        // NR-40 — kosong = null (server memakai bawaan 7 hari)
+        agingWarnDays: form.agingWarnDays.trim() === "" ? null : Number(form.agingWarnDays.trim()),
         assignmentTitle: form.assignmentTitle.trim() || null,
         assignmentUrl: form.assignmentUrl.trim() || null,
         assignmentNote: form.assignmentNote.trim() || null,
@@ -1074,6 +1076,28 @@ export function PositionSelectionPage({
               </div>
             ))}
           </div>
+        </div>
+
+        {/* NR-40: ambang hari "mengendap" untuk kartu kanban & filter papan */}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="pos-agingWarnDays">Ambang Hari Mengendap (opsional)</Label>
+          <Input
+            id="pos-agingWarnDays"
+            type="number"
+            min={0}
+            max={90}
+            step={1}
+            value={form.agingWarnDays}
+            onChange={(e) => set("agingWarnDays", e.target.value)}
+            placeholder="Bawaan: 7 hari"
+            className="h-10 sm:w-48"
+            aria-label="Ambang hari mengendap di papan kanban"
+          />
+          <p className="text-xs text-muted-foreground">
+            Kartu kanban yang berada lebih lama dari angka ini di tahap mana pun dianggap
+            mengendap (ditandai merah dan masuk filter "Hanya mengendap"). Angka 0-90;
+            kosongkan untuk memakai bawaan 7 hari.
+          </p>
         </div>
 
         {customStages.length > 0 ? (
