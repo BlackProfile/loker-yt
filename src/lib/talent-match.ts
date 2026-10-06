@@ -76,18 +76,16 @@ export function parseTalentTags(raw: string | null | undefined): string[] {
 }
 
 /**
- * Kandidat memenuhi syarat dasar talent pool untuk posisi target:
- * REJECTED / ditahan / ditandai talent pool, aktif (tidak terhapus/arsip),
- * bukan do-not-hire. Posisi lama boleh sama atau beda dengan target
- * (kandidat lintas posisi diperbolehkan).
+ * Kandidat memenuhi syarat dasar talent pool: REJECTED / ditahan / ditandai
+ * talent pool, aktif (tidak terhapus/arsip), bukan do-not-hire, dan punya
+ * email valid. Posisi lama boleh sama dengan posisi target maupun beda
+ * (kandidat lintas posisi diperbolehkan — kontrak butir 12).
  */
-export function isTalentCandidateEligible(row: TalentCandidateRow, targetPositionId: string): boolean {
+export function isTalentCandidateEligible(row: TalentCandidateRow): boolean {
   if (row.deletedAt || row.archivedAt || row.doNotHire) return false;
   const inPool = row.status === "REJECTED" || row.holdAt != null || row.talentPool === true;
   if (!inPool) return false;
-  if (!row.email || !row.email.includes("@")) return false; // lamaran impor tanpa email tidak bisa diundang
-  void targetPositionId;
-  return true;
+  return !!row.email && row.email.includes("@"); // lamaran impor tanpa email tidak bisa diundang
 }
 
 /**
@@ -172,7 +170,7 @@ export function findTalentMatches(params: {
 
   const matches: TalentMatchResult[] = [];
   for (const row of params.candidates) {
-    if (!isTalentCandidateEligible(row, params.target.id)) continue;
+    if (!isTalentCandidateEligible(row)) continue;
     if (isCandidateInCooldown(row, now)) continue;
     const { score, reasons } = scoreTalentCandidate(row, params.target, targetTags);
     matches.push({

@@ -280,6 +280,10 @@ export function PipelineTab({
   const [shortlistLoading, setShortlistLoading] = useState(false);
   const [shortlistResults, setShortlistResults] = useState<ShortlistEntryUI[]>([]);
 
+  // NR-40 — daftar tunggu kuota: jumlah pendaftar posisi aktif + dialog kelola.
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [waitlistCount, setWaitlistCount] = useState(0);
+
   /* ------------------------------ Pemuatan data ------------------------------ */
 
   const loadAll = useCallback(
@@ -330,6 +334,28 @@ export function PipelineTab({
   useEffect(() => {
     void loadDuplicates();
   }, [loadDuplicates]);
+
+  // NR-40 — muat jumlah pendaftar daftar tunggu posisi aktif (badge tombol, senyap).
+  const handleWaitlistCount = useCallback((count: number) => setWaitlistCount(count), []);
+
+  const loadWaitlistCount = useCallback(async () => {
+    if (!positionId) {
+      setWaitlistCount(0);
+      return;
+    }
+    try {
+      const data = await apiGet<WaitlistResponse>(
+        `/api/admin/waitlist${buildQuery({ positionId })}`,
+      );
+      setWaitlistCount(data.count);
+    } catch {
+      // Badge jumlah bersifat pelengkap; biarkan angka lama saat gagal.
+    }
+  }, [positionId]);
+
+  useEffect(() => {
+    void loadWaitlistCount();
+  }, [loadWaitlistCount]);
 
   // Realtime: lamaran, sesi wawancara, atau posisi berubah → segarkan senyap
   // (daftar lama tetap tampil sampai data baru siap — anti-flicker).
@@ -823,8 +849,18 @@ export function PipelineTab({
               </Badge>
             ) : null}
 
-            {/* Badge peringatan duplikat + tombol Shortlist AI (fitur Task 20-a) */}
+            {/* Badge peringatan duplikat + tombol Daftar Tunggu + Shortlist AI (NR-40 / Task 20-a) */}
             <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={() => setWaitlistOpen(true)}
+                aria-label={`Buka daftar tunggu posisi ini (${waitlistCount} pendaftar)`}
+              >
+                <Users className="size-4" aria-hidden="true" />
+                Daftar Tunggu ({waitlistCount})
+              </Button>
               {duplicateCount > 0 ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1228,6 +1264,17 @@ export function PipelineTab({
         onNoteChange={setBulkRejectNote}
         working={bulkWorking}
         onSubmit={() => void handleBulkReject()}
+      />
+
+      {/* NR-40 — dialog kelola daftar tunggu kuota posisi */}
+      <WaitlistDialog
+        open={waitlistOpen}
+        onOpenChange={setWaitlistOpen}
+        positionId={positionId}
+        positionTitle={position?.title ?? ""}
+        canMutate={canMutate}
+        reportError={reportError}
+        onCountChange={handleWaitlistCount}
       />
 
       {/* Dialog hasil Shortlist AI (fitur Task 20-a) */}
@@ -1970,5 +2017,179 @@ function BulkRejectDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ----------------------- Dialog daftar tunggu (NR-40) ----------------------- */
+
+/**
+ * Dialog kelola daftar tunggu kuota posisi (butir 13): daftar pendaftar
+ * "ingatkan saya bila dibuka lagi" + hapus per baris (konfirmasi AlertDialog).
+ * Mengikuti filter posisi aktif (pipeline selalu punya posisi terpilih);
+ * endpoint GET /api/admin/waitlist juga mendukung tanpa filter (semua posisi).
+ */
+function WaitlistDialog({
+  open,
+  onOpenChange,
+  positionId,
+  positionTitle,
+  canMutate,
+  reportError,
+  onCountChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  positionId: string;
+  positionTitle: string;
+  canMutate: boolean;
+  reportError: (err: unknown) => void;
+  onCountChange: (count: number) => void;
+}) {
+  const [entries, setEntries] = useState<WaitlistEntry[]>([]);
+  const [totalAll, setTotalAll] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<WaitlistEntry | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiGet<WaitlistResponse>(
+        `/api/admin/waitlist${buildQuery({ positionId: positionId || undefined })}`,
+      );
+      setEntries(data.entries);
+      setTotalAll(data.perPosition.reduce((sum, p) => sum + p.count, 0));
+      onCountChange(data.count);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [positionId, reportError, onCountChange]);
+
+  // Muat setiap kali dialog dibuka (daftar selalu segar).
+  useEffect(() => {
+    if (open) void load();
+  }, [open, load]);
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await apiDelete(`/api/admin/waitlist?id=${encodeURIComponent(deleteTarget.id)}`);
+      toast.success("Entri daftar tunggu dihapus");
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="rounded-2xl sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="size-4 text-rose-600" aria-hidden="true" />
+              Daftar Tunggu{positionTitle ? ` — ${positionTitle}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              Pelamar yang mendaftar untuk diingatkan saat lowongan dibuka lagi atau kuotanya
+              tersedia. Pendaftar tidak otomatis masuk pipeline.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loading ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <Loader2 className="size-6 animate-spin text-rose-600" aria-hidden="true" />
+              <p className="text-sm text-muted-foreground">Memuat daftar tunggu...</p>
+            </div>
+          ) : entries.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <Inbox className="size-8 text-muted-foreground/50" aria-hidden="true" />
+              <p className="text-sm text-muted-foreground">
+                Belum ada yang mendaftar daftar tunggu.
+              </p>
+            </div>
+          ) : (
+            <div
+              className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar"
+              role="list"
+              aria-label="Entri daftar tunggu"
+            >
+              {entries.map((entry) => (
+                <div
+                  key={entry.id}
+                  role="listitem"
+                  className="flex items-center gap-2 rounded-xl border p-3"
+                >
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <p className="truncate text-sm font-medium">{entry.email}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {entry.positionTitle ?? "Tanpa posisi"} · {formatDate(entry.createdAt)}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-11 shrink-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
+                    disabled={!canMutate}
+                    onClick={() => setDeleteTarget(entry)}
+                    aria-label={`Hapus entri daftar tunggu ${entry.email}`}
+                  >
+                    <Trash2 className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Menampilkan {entries.length} entri untuk posisi ini
+            {totalAll > entries.length ? ` · total semua posisi: ${totalAll}` : ""}.
+          </p>
+        </DialogContent>
+      </Dialog>
+
+      {/* Konfirmasi hapus per baris */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus entri daftar tunggu?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.email} tidak akan lagi menerima pemberitahuan saat lowongan ini
+              dibuka kembali.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmDelete();
+              }}
+              disabled={deleting}
+              className="bg-rose-600 text-white hover:bg-rose-700 active:scale-[0.99]"
+            >
+              {deleting ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="size-4" aria-hidden="true" />
+              )}
+              Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
