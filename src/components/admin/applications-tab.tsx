@@ -804,6 +804,78 @@ export function ApplicationsTab() {
     }
   }
 
+  // PL-2b (butir 12) — re-engagement talent pool.
+  function openTalentDialog() {
+    setTalentPositionId("");
+    setTalentMatched(false);
+    setTalentMatches([]);
+    setTalentChecked(new Set());
+    setTalentOpen(true);
+  }
+
+  async function runTalentMatch() {
+    if (!talentPositionId || talentLoading) return;
+    setTalentLoading(true);
+    try {
+      const res = await apiGet<{
+        position: { id: string; title: string; slug: string | null };
+        matches: TalentMatchResult[];
+      }>(`/api/admin/talent-pool?positionId=${encodeURIComponent(talentPositionId)}`);
+      setTalentMatches(res.matches);
+      setTalentMatched(true);
+      // Default: semua kandidat hasil cocok tercentang.
+      setTalentChecked(new Set(res.matches.map((m) => m.applicationId)));
+      if (res.matches.length > 0) {
+        toast.success(`${res.matches.length} kandidat lama cocok`);
+      }
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setTalentLoading(false);
+    }
+  }
+
+  function toggleTalentCandidate(id: string, checked: boolean) {
+    setTalentChecked((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  async function sendTalentInvites() {
+    if (talentSending || !talentPositionId || talentChecked.size === 0) return;
+    setTalentSending(true);
+    try {
+      const res = await apiPost<{
+        sent: number;
+        skipped: { applicationId: string; name: string; reason: string }[];
+      }>("/api/admin/talent-pool", {
+        positionId: talentPositionId,
+        applicationIds: Array.from(talentChecked),
+      });
+      const skippedNote = res.skipped
+        .map((s) => `${s.name || "Kandidat"} — ${s.reason}`)
+        .join("; ");
+      if (res.sent > 0 && res.skipped.length === 0) {
+        toast.success(`Undangan talent pool terkirim (${res.sent} kandidat)`);
+      } else if (res.sent > 0) {
+        toast.success(`Undangan terkirim (${res.sent} kandidat). Dilewati: ${skippedNote}`);
+      } else {
+        toast.info(`Tidak ada undangan terkirim. Dilewati: ${skippedNote}`);
+      }
+      setTalentOpen(false);
+      setTalentMatches([]);
+      setTalentChecked(new Set());
+      setTalentMatched(false);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setTalentSending(false);
+    }
+  }
+
   // NR38-B fitur 10 — ekspor CSV sisi klien: baris terpilih bila ada, kalau
   // tidak semua baris yang lolos filter aktif. BOM + delimiter ";" + escaping.
   function exportCsv() {
@@ -1039,6 +1111,19 @@ export function ApplicationsTab() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            {/* PL-2b (butir 12) — re-engagement talent pool: undang kandidat lama */}
+            {canMutate ? (
+              <Button
+                variant="outline"
+                className="h-10 rounded-xl"
+                onClick={openTalentDialog}
+                aria-label="Cari kandidat talent pool untuk posisi target"
+                title="Cari Kandidat Talent Pool — cocokkan kandidat lama dengan posisi aktif lalu kirim undangan lamar ulang"
+              >
+                <Users className="size-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Cari Kandidat Talent Pool</span>
+              </Button>
+            ) : null}
             {/* Simulator Pelamar Demo: lamaran lengkap masuk otomatis tiap beberapa detik */}
             <DemoSimulatorControl positions={positions} />
           </div>
@@ -1614,6 +1699,146 @@ export function ApplicationsTab() {
               })}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* PL-2b (butir 12) — dialog re-engagement talent pool */}
+      <Dialog open={talentOpen} onOpenChange={setTalentOpen}>
+        <DialogContent className="rounded-2xl sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="size-4 text-rose-600" aria-hidden="true" />
+              Cari Kandidat Talent Pool
+            </DialogTitle>
+            <DialogDescription>
+              Cocokkan kandidat lama (ditolak, ditahan, atau ditandai talent pool)
+              dengan posisi target, lalu kirim undangan untuk melamar ulang.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="talent-position">Posisi target</Label>
+              <Select
+                value={talentPositionId}
+                onValueChange={(v) => {
+                  setTalentPositionId(v);
+                  setTalentMatched(false);
+                  setTalentMatches([]);
+                  setTalentChecked(new Set());
+                }}
+              >
+                <SelectTrigger id="talent-position" className="h-10 rounded-xl" aria-label="Pilih posisi target">
+                  <SelectValue placeholder="Pilih posisi aktif" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activePositions.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              className="h-10 rounded-xl"
+              onClick={() => void runTalentMatch()}
+              disabled={!talentPositionId || talentLoading}
+            >
+              {talentLoading ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Search className="size-4" aria-hidden="true" />
+              )}
+              Cocokkan
+            </Button>
+          </div>
+
+          {talentLoading ? (
+            <div className="flex flex-col gap-2" aria-live="polite" aria-label="Mencocokkan kandidat">
+              <Skeleton className="h-16 w-full rounded-xl" />
+              <Skeleton className="h-16 w-full rounded-xl" />
+            </div>
+          ) : talentMatched && talentMatches.length === 0 ? (
+            <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Tidak ada kandidat lama yang cocok.
+            </p>
+          ) : talentMatches.length > 0 ? (
+            <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar" aria-label="Hasil kandidat talent pool">
+              {talentMatches.map((m) => {
+                const checked = talentChecked.has(m.applicationId);
+                const scoreBadge =
+                  m.score >= 70
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                    : m.score >= 40
+                      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+                      : "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+                const originText = m.holdAt
+                  ? `Ditahan ${formatDate(m.holdAt)}`
+                  : m.rejectedAt
+                    ? `Ditolak ${formatDate(m.rejectedAt)}`
+                    : "Talent pool";
+                return (
+                  <li key={m.applicationId} className="flex flex-col gap-1.5 rounded-xl border p-3">
+                    <div className="flex items-center gap-2.5">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(v) => toggleTalentCandidate(m.applicationId, v === true)}
+                        aria-label={`Undang ${m.name} melamar ulang`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{m.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {m.positionTitle ?? "Tanpa posisi"} · {originText} · {stageLabel(m.status)}
+                        </p>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={cn("shrink-0 tabular-nums", scoreBadge)}
+                        title={`Skor kecocokan ${m.score}/100`}
+                      >
+                        {m.score}
+                      </Badge>
+                    </div>
+                    {m.reasons.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 pl-7">
+                        {m.reasons.map((reason) => (
+                          <Badge
+                            key={reason}
+                            variant="outline"
+                            className="text-[11px] font-normal text-zinc-600 dark:text-zinc-300"
+                          >
+                            {reason}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Pilih posisi target lalu klik Cocokkan untuk melihat kandidat lama yang cocok.
+            </p>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setTalentOpen(false)} disabled={talentSending}>
+              Tutup
+            </Button>
+            <Button
+              onClick={() => void sendTalentInvites()}
+              disabled={talentSending || talentChecked.size === 0}
+            >
+              {talentSending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Send className="size-4" aria-hidden="true" />
+              )}
+              Kirim Undangan ({talentChecked.size})
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
