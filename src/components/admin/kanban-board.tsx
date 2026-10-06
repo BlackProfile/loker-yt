@@ -1198,8 +1198,11 @@ function KanbanScheduleDialog({
   const [address, setAddress] = useState("");
   const [interviewers, setInterviewers] = useState("");
 
-  // Reset form setiap kali dialog ditutup.
-  useEffect(() => {
+  // Reset form setiap kali dialog ditutup (penyesuaian state saat render —
+  // pola resmi React, tanpa effect; sama dengan reset override di papan).
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
     if (!open) {
       setWhenLocal("");
       setMode("ONLINE");
@@ -1209,7 +1212,7 @@ function KanbanScheduleDialog({
       setAddress("");
       setInterviewers("");
     }
-  }, [open]);
+  }
 
   function handleSubmit() {
     const scheduledAt = localInputToIso(whenLocal);
