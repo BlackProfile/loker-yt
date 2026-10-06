@@ -48,6 +48,7 @@ import {
   type RoundPlanTemplate,
   type OfferStatus,
   type OnboardingDoc,
+  type OnboardingTemplateItem,
   type Position,
   type RejectionReason,
   type ReplyTemplates,
