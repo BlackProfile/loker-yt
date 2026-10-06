@@ -1384,6 +1384,39 @@ export function ApplicationDetailDialog({
 
   if (!application) return null;
 
+  // NR-40 (lanjutan PL-1b) — peringatan gaji live pada jalur offer inline:
+  // di bawah ekspektasi pelamar (rose) / di luar rentang gaji posisi (amber).
+  // Sama seperti OfferDialog; non-blocking. Diletakkan SEBELUM early return
+  // agar urutan hook selalu sama (rules-of-hooks).
+  const offerSalaryWarnings = useMemo(() => {
+    const offered = parseSalaryText(offerForm.salary);
+    if (offered == null) return [];
+    const warnings: { kind: string; tone: "rose" | "amber"; text: string }[] = [];
+    if (application.salaryExpectation != null && offered < application.salaryExpectation) {
+      warnings.push({
+        kind: "expectation",
+        tone: "rose",
+        text: `Di bawah ekspektasi pelamar (${formatRupiah(application.salaryExpectation)})`,
+      });
+    }
+    const min = position?.salaryMin ?? null;
+    const max = position?.salaryMax ?? null;
+    if ((min != null && offered < min) || (max != null && offered > max)) {
+      const rangeText =
+        min != null && max != null
+          ? `${formatRupiah(min)}–${formatRupiah(max)}`
+          : min != null
+            ? `minimal ${formatRupiah(min)}`
+            : `maksimal ${formatRupiah(max)}`;
+      warnings.push({
+        kind: "range",
+        tone: "amber",
+        text: `Di luar rentang gaji posisi (${rangeText})`,
+      });
+    }
+    return warnings;
+  }, [offerForm.salary, application, position]);
+
   const app = application;
   const pos = position;
 
