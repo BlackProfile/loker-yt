@@ -59,7 +59,7 @@ export async function verifyCardSignature(raw: string | null | undefined): Promi
 }
 
 /** Nomor kartu berurutan global: LUM-EMP-0001, 0002, ... (aman dari balapan via cek unik). */
-async function nextCardNumber(): Promise<string> {
+export async function nextCardNumberFor(): Promise<string> {
   const count = await db.employeeCard.count();
   for (let i = 1; i <= 200; i++) {
     const candidate = `${CARD_PREFIX}${String(count + i).padStart(4, "0")}`;
@@ -73,6 +73,8 @@ async function nextCardNumber(): Promise<string> {
 function randomToken(): string {
   return crypto.randomBytes(24).toString("hex");
 }
+
+export { randomToken as randomCardToken };
 
 /** PROBATION yang sudah lewat tanggal dianggap ACTIVE (upgrade malas saat dibaca). */
 export function effectiveStatus(card: {
@@ -103,9 +105,11 @@ function parseChecks(raw: string): IdentityChecks {
 }
 
 /** Status beralih-aktif setelah gerbang checklist: PROBATION bila masih dalam masa percobaan. */
-function activationStatus(probationUntil: Date | null): EmployeeCardStatus {
+export function activationStatusOf(probationUntil: Date | null): EmployeeCardStatus {
   return probationUntil && probationUntil.getTime() > Date.now() ? "PROBATION" : "ACTIVE";
 }
+
+const activationStatus = activationStatusOf;
 
 /**
  * Pastikan karyawan (hiredAt terisi) punya kartu current — terbit otomatis.
@@ -139,7 +143,7 @@ export async function ensureEmployeeCard(
   const card = await db.employeeCard.create({
     data: {
       applicationId,
-      cardNumber: await nextCardNumber(),
+      cardNumber: await nextCardNumberFor(),
       token: randomToken(),
       status: "PENDING",
       probationUntil: app.probationEnd,
