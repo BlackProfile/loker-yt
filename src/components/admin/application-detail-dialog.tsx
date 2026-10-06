@@ -1382,8 +1382,6 @@ export function ApplicationDetailDialog({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [navActive, application, list, navIds, navIndex, onNavigate, sessionDetail, sessionCreateOpen]);
 
-  if (!application) return null;
-
   // NR-40 (lanjutan PL-1b) — peringatan gaji live pada jalur offer inline:
   // di bawah ekspektasi pelamar (rose) / di luar rentang gaji posisi (amber).
   // Sama seperti OfferDialog; non-blocking. Diletakkan SEBELUM early return
@@ -1416,6 +1414,8 @@ export function ApplicationDetailDialog({
     }
     return warnings;
   }, [offerForm.salary, application, position]);
+
+  if (!application) return null;
 
   const app = application;
   const pos = position;
@@ -2395,10 +2395,9 @@ export function ApplicationDetailDialog({
     setEmailBody((prev) => (prev.length > 0 ? `${prev}${variable}` : variable));
   }
 
-  if (!application) return null;
-
-  const app = application;
-  const pos = position;
+  // Form penawaran — dipakai untuk kirim baru & edit inline saat PENDING.
+  const offerFormFields = (
+    <div className="flex flex-col gap-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="offer-salary">Gaji</Label>
