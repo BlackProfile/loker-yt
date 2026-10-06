@@ -150,7 +150,7 @@ export function EmployeeIdCardFront(props: EmployeeIdCardProps) {
 
 /* ----------------------------------- SISI BELAKANG ----------------------------------- */
 
-type QrState = "loading" | "ready" | "error" | "empty";
+type QrResult = { url: string; dataUrl: string | null; error: boolean };
 
 function QrPlaceholder({ message }: { message: string }) {
   return (
@@ -170,32 +170,35 @@ export function EmployeeIdCardBack(props: EmployeeIdCardProps) {
     withIds = false,
   } = props;
 
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [qrState, setQrState] = useState<QrState>(verifyUrl ? "loading" : "empty");
+  // Hasil QR disimpan per URL; "loading" diturunkan (bukan state) sehingga
+  // effect tidak memanggil setState secara sinkron.
+  const [qr, setQr] = useState<QrResult | null>(null);
 
-  // QR dibuat dari verifyUrl via qrcode.toDataURL. setState hanya di callback
+  // QR dibuat dari verifyUrl via qrcode.toDataURL — setState hanya di callback
   // async (bukan sinkron di body effect) agar aman terhadap StrictMode.
   useEffect(() => {
-    if (!verifyUrl) {
-      setQrDataUrl(null);
-      setQrState("empty");
-      return;
-    }
+    if (!verifyUrl) return;
     let cancelled = false;
-    setQrState("loading");
     QRCode.toDataURL(verifyUrl, { width: 256, margin: 1 })
       .then((dataUrl) => {
         if (cancelled) return;
-        setQrDataUrl(dataUrl);
-        setQrState("ready");
+        setQr({ url: verifyUrl, dataUrl, error: false });
       })
       .catch(() => {
-        if (!cancelled) setQrState("error");
+        if (!cancelled) setQr({ url: verifyUrl, dataUrl: null, error: true });
       });
     return () => {
       cancelled = true;
     };
   }, [verifyUrl]);
+
+  // Keadaan tampilan QR diturunkan dari prop + hasil generate terakhir.
+  const qrView = (() => {
+    if (!verifyUrl) return { kind: "empty" as const };
+    if (!qr || qr.url !== verifyUrl) return { kind: "loading" as const };
+    if (qr.error || !qr.dataUrl) return { kind: "error" as const };
+    return { kind: "ready" as const, dataUrl: qr.dataUrl };
+  })();
 
   return (
     <div
@@ -205,17 +208,17 @@ export function EmployeeIdCardBack(props: EmployeeIdCardProps) {
       {/* Kolom QR */}
       <div className="flex w-[44%] shrink-0 flex-col items-center justify-center gap-2 border-r border-zinc-200 bg-zinc-50 p-3">
         <div className="flex aspect-square w-full max-w-[150px] items-center justify-center rounded-lg border-2 border-zinc-300 bg-white p-1.5">
-          {qrState === "loading" ? (
+          {qrView.kind === "loading" ? (
             <Loader2 className="size-6 animate-spin text-zinc-400" aria-hidden="true" />
-          ) : qrState === "ready" && qrDataUrl ? (
+          ) : qrView.kind === "ready" ? (
             <img
-              src={qrDataUrl}
+              src={qrView.dataUrl}
               alt={`QR verifikasi keaslian kartu ${name}`}
               className="size-full"
               width={150}
               height={150}
             />
-          ) : qrState === "error" ? (
+          ) : qrView.kind === "error" ? (
             <QrPlaceholder message="QR gagal dibuat. Coba muat ulang." />
           ) : (
             <QrPlaceholder message="QR tidak tersedia untuk kartu ini." />
