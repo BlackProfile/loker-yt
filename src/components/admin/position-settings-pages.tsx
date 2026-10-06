@@ -1699,7 +1699,12 @@ type MessagesState = {
   reapplyCooldownDays: string;
   onboardingDocs: string[];
   autoCloseOnHired: boolean;
+  // NR-40 — baris editor "Template Rencana Onboarding" (offsetDays = string input H+n).
+  onboardingTemplate: OnboardingTemplateRow[];
 };
+
+// NR-40 — satu baris template onboarding per posisi sebelum diserialisasi ke server.
+type OnboardingTemplateRow = { label: string; owner: string; offsetDays: string };
 
 function buildMessagesState(p: Position): MessagesState {
   return {
@@ -1712,6 +1717,11 @@ function buildMessagesState(p: Position): MessagesState {
     reapplyCooldownDays: String(p.reapplyCooldownDays ?? 0),
     onboardingDocs: [...p.onboardingDocs],
     autoCloseOnHired: p.autoCloseOnHired,
+    onboardingTemplate: (p.onboardingTemplate ?? []).map((item) => ({
+      label: item.label,
+      owner: item.owner ?? "",
+      offsetDays: item.offsetDays == null ? "" : String(item.offsetDays),
+    })),
   };
 }
 
@@ -1728,6 +1738,26 @@ export function PositionMessagesPage({
 
   const set = <K extends keyof MessagesState>(key: K, value: MessagesState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  // NR-40 — helper editor template rencana onboarding.
+  const updateTemplateRow = (index: number, patch: Partial<OnboardingTemplateRow>) =>
+    setForm((f) => ({
+      ...f,
+      onboardingTemplate: f.onboardingTemplate.map((row, i) =>
+        i === index ? { ...row, ...patch } : row,
+      ),
+    }));
+  const addTemplateRow = () =>
+    setForm((f) =>
+      f.onboardingTemplate.length >= 20
+        ? f
+        : { ...f, onboardingTemplate: [...f.onboardingTemplate, { label: "", owner: "", offsetDays: "" }] },
+    );
+  const removeTemplateRow = (index: number) =>
+    setForm((f) => ({
+      ...f,
+      onboardingTemplate: f.onboardingTemplate.filter((_, i) => i !== index),
+    }));
 
   return (
     <SettingsPageShell
@@ -1756,6 +1786,16 @@ export function PositionMessagesPage({
           )
             errors.push("Jeda lamar ulang harus angka bulat 0-365 hari.");
         }
+        // NR-40 — H+n tiap item template onboarding (baris tanpa uraian dibuang saat simpan).
+        form.onboardingTemplate.forEach((row, index) => {
+          if (row.label.trim() === "") return;
+          if (
+            row.offsetDays.trim() !== "" &&
+            (!isInt(row.offsetDays) || Number(row.offsetDays) < 0 || Number(row.offsetDays) > 365)
+          ) {
+            errors.push(`H+n item template onboarding #${index + 1} harus angka bulat 0-365.`);
+          }
+        });
         return errors;
       }}
       buildPayload={() => ({
@@ -1770,6 +1810,19 @@ export function PositionMessagesPage({
           form.reapplyCooldownDays.trim() === "" ? 0 : Number(form.reapplyCooldownDays),
         onboardingDocs: form.onboardingDocs.map((d) => d.trim()).filter(Boolean),
         autoCloseOnHired: form.autoCloseOnHired,
+        // NR-40 — baris tanpa uraian dibuang; array kosong = template tidak terpasang.
+        onboardingTemplate: form.onboardingTemplate
+          .map((row) => {
+            const label = row.label.trim();
+            if (!label) return null;
+            const owner = row.owner.trim();
+            return {
+              label,
+              ...(owner ? { owner } : {}),
+              offsetDays: row.offsetDays.trim() === "" ? 0 : Number(row.offsetDays),
+            };
+          })
+          .filter((item): item is { label: string; owner?: string; offsetDays: number } => item !== null),
       })}
     >
       {(errors) => {
@@ -1892,7 +1945,7 @@ export function PositionMessagesPage({
         icon={UserCheck}
         title="Onboarding"
         hint="Sambutan kandidat baru, masa percobaan, dan dokumen onboarding."
-        hasError={hasErr("masa percobaan")}
+        hasError={hasErr("masa percobaan") || hasErr("template onboarding")}
       >
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="pos-welcomeTemplate">Template Pesan Sambutan</Label>
@@ -1939,6 +1992,98 @@ export function PositionMessagesPage({
             placeholder="mis. Kontrak Kerja"
             hint="Daftar ini otomatis jadi checklist dokumen saat pelamar diterima"
           />
+        </div>
+
+        {/* NR-40 — editor template rencana onboarding per posisi */}
+        <div className="flex flex-col gap-2">
+          <Label>Template Rencana Onboarding</Label>
+          <p className="text-xs text-muted-foreground">
+            Daftar kegiatan yang otomatis terpasang sebagai rencana onboarding pelamar saat
+            penawarannya diterima. H+n = hari sejak tanggal mulai kerja (H+0 = hari pertama).
+            Rencana yang sudah diisi manual tidak ditimpa. Kosong = template tidak terpasang.
+          </p>
+          {form.onboardingTemplate.length > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {form.onboardingTemplate.map((row, index) => (
+                <li
+                  key={index}
+                  className="flex flex-col gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40"
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="flex size-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[11px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                      aria-hidden="true"
+                    >
+                      {index + 1}
+                    </span>
+                    <Input
+                      value={row.label}
+                      onChange={(e) => updateTemplateRow(index, { label: e.target.value })}
+                      placeholder="Uraian kegiatan, mis. Orientasi & tur kantor"
+                      maxLength={120}
+                      className="h-10"
+                      aria-label={`Uraian item template onboarding #${index + 1}`}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 shrink-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
+                      onClick={() => removeTemplateRow(index)}
+                      aria-label={`Hapus item template onboarding #${index + 1}`}
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1.5" title="Hari sejak tanggal mulai kerja">
+                      <span className="text-xs font-medium text-muted-foreground">H+</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={365}
+                        step={1}
+                        value={row.offsetDays}
+                        onChange={(e) => updateTemplateRow(index, { offsetDays: e.target.value })}
+                        placeholder="0"
+                        className="h-9 w-20"
+                        aria-label={`H+n item template onboarding #${index + 1} (hari sejak tanggal mulai)`}
+                      />
+                    </div>
+                    <Input
+                      value={row.owner}
+                      onChange={(e) => updateTemplateRow(index, { owner: e.target.value })}
+                      placeholder="Penanggung jawab (opsional)"
+                      maxLength={60}
+                      className="h-9 flex-1 sm:max-w-64"
+                      aria-label={`Penanggung jawab item template onboarding #${index + 1}`}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              Template belum terpasang — rencana onboarding pelamar tidak dibuat otomatis.
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-11 shrink-0 active:scale-[0.99] sm:h-10"
+              onClick={addTemplateRow}
+              disabled={form.onboardingTemplate.length >= 20}
+              aria-label="Tambah item template rencana onboarding"
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              Tambah item
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {form.onboardingTemplate.length}/20 item · Uraian wajib diisi, penanggung jawab opsional
+            </p>
+          </div>
         </div>
       </FormSection>
           </>
