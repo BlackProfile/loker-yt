@@ -420,12 +420,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           );
         }
         const VERDICT_VALUES = new Set(["PASS", "WARN", "FAIL"]);
+        const entries = Object.entries(raw as Record<string, unknown>);
+        // Nilai di luar enum ditolak keras (bukan didiamkan) agar verdict lama
+        // tidak terhapus diam-diam oleh payload yang salah bentuk.
+        for (const [, rawValue] of entries) {
+          if (typeof rawValue !== "string" || !VERDICT_VALUES.has(rawValue)) {
+            return NextResponse.json(
+              { error: "Verdict screening hanya boleh PASS, WARN, atau FAIL." },
+              { status: 400 }
+            );
+          }
+        }
         const verdicts: Record<string, string> = {};
-        for (const [rawKey, rawValue] of Object.entries(raw as Record<string, unknown>)) {
+        for (const [rawKey, rawValue] of entries) {
           const key = rawKey.trim().slice(0, 60);
           if (!key || verdicts[key] !== undefined) continue;
-          if (typeof rawValue !== "string" || !VERDICT_VALUES.has(rawValue)) continue;
-          verdicts[key] = rawValue;
+          verdicts[key] = rawValue as string;
           if (Object.keys(verdicts).length >= 40) break;
         }
         updateData.screeningVerdicts =
