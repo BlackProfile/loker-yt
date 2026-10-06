@@ -5,7 +5,7 @@
 // ({id,label,owner?,dueAt?,done}[] di application.onboardingPlan), dan cek-in 30/60/90 hari.
 // Aksen emerald = onboarding positif; amber/rose sesuai konteks perhatian.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,9 +26,11 @@ import {
   CalendarCheck,
   CalendarClock,
   ClipboardCheck,
+  IdCard,
   Loader2,
   Pencil,
   Plus,
+  Printer,
   RefreshCw,
   Star,
   Trash2,
@@ -36,6 +38,17 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import type { EmployeeCardDto } from "@/lib/types";
+import {
+  EmployeeIdCardBack,
+  EmployeeIdCardFront,
+  type EmployeeIdCardProps,
+} from "@/components/employee-id-card";
+import {
+  CardStatusBadge,
+  EmployeeCardDialog,
+  cardVerifyUrl,
+} from "./employee-card-dialog";
 import { apiGet, apiPatch, apiPost } from "./api";
 import { formatDate } from "./format";
 import { useAdminSession } from "./admin-context";
