@@ -3401,3 +3401,29 @@ Work Log:
 
 Stage Summary:
 - Butir 8 tuntas — NR-40 kini 14/14 butir terimplementasi (entri NR40-MASTER sebelumnya mencatat butir 8 belum dibuat; kini sudah).
+
+---
+Task ID: NR40-VERIFY
+Agent: Z.ai Code (orkestrator — verifikasi akhir)
+Task: NR-40 "Pipeline Lengkap" 14 butir — verifikasi E2E menyeluruh pasca-implementasi gelombang 1-3 (user "semuanya"); pastikan seluruh fitur hidup pada data nyata sebelum dilaporkan selesai.
+
+Work Log:
+- Baca worklog: temukan bahwa NR-40 14/14 sudah diimplementasikan gelombang paralel (NR40-0, PL-1a/1b/1c, PL-2a/2b, NR40-MASTER, NR40-ITEM8) — ringkasan sesi sebelumnya kedaluwarsa; peran berubah menjadi verifikasi.
+- Verifikasi artefak disk: src/lib/talent-match.ts, src/lib/employee-lifecycle.ts, api/admin/hire/probation, api/admin/hire/exit, api/admin/talent-pool, api/admin/waitlist — semua ada.
+- Statik: bunx tsc --noEmit -> 0 error di src/ (filter examples/scripts/skills); bun run lint -> exit 0; dev server :81 HTTP 200, dev.log bersih tanpa error.
+- E2E agent-browser (UI):
+  - Pipeline tab: strip Funnel (Baru 2 > Ditinjau 0 > Wawancara 0 > Diterima 0 > Ditolak 1), tombol "Daftar Tunggu (0)".
+  - Pelamar view Kanban: aging chip per kartu ("0 h"/"5 h"/"8 h" dgn dot warna), median per kolom (0/1/2/4 h), badge "Bottleneck", toggle "Hanya mengendap (1)" -> filter benar (hanya Dewi 8 hari > ambang 7 tersisa), tooltip penjelasan ambang per posisi.
+  - Aksi massal: centang 2 kartu -> bar "2 dipilih | Pindah ke tahap | Pindah | Tolak | Jadwalkan Wawancara | Kosongkan pilihan".
+  - Stage guard via curl (login cookie): NEW->INTERVIEW 422 guard REVIEW_INTERVIEW; NEW->HIRED 422 guard REVIEW_ACCEPTED; NEW->REJECTED 422 guard REVIEW_REJECTED; status pelamar tetap NEW (tidak ada mutasi data).
+  - Peringatan gaji (butir 6): dialog detail Rani Halim (offer pending) -> Ubah/Perpanjang -> isi gaji 4.000.000 -> banner rose live "Di bawah ekspektasi pelamar (Rp 5.600.000)" (screenshot offer-warning.png). Anisa (tanpa ekspektasi) & posisi tanpa rentang memang tidak memicu — perilaku benar.
+  - Tab Karyawan: kartu stat (Total 1, Masa Percobaan 1, Cek-in Jatuh Tempo 0), chip "Masa percobaan 90 hari lagi" + bar, dialog "Edit Cek-in Hari ke-30" (rating bintang 1-5 + Rekomendasi 4 opsi: Belum ada/Lanjut sampai tetap/Rekomendasi perpanjang probasi/Rekomendasi akhiri + Catatan), dialog "Akhiri Kerja" (alasan keluar + tanggal + catatan, penjelasan cabut kartu/checklist/alumni), filter "Aktif (1) | Alumni (0)" dgn empty state alumni.
+  - Dialog "Cari Kandidat Talent Pool": pilih posisi Social Media Officer -> Cocokkan -> Dewi Lestari skor 92 (Posisi sama/Departemen sama/2 tag sama/Rating 5) + Fajar Nugroho 6, "Kirim Undangan (2)"; ditutup tanpa kirim (data demo utuh).
+  - Dialog "Daftar Tunggu — Video Editor": penjelasan + empty state benar.
+  - Cek Status publik (butir 14): login rani.halim98@outlook.com + LM-ZSHN1F -> panel "Aksi yang Diminta dari Anda" + item "Jawab penawaran sebelum 9 Oktober 2026" + tombol "Ke bagian ini" (screenshot status-aksi.png). Email salah pertama (rani.halim@mail.com) gagal login — email asli diverifikasi via DB.
+- Footer: landing panjang -> footer terdorong alami; halaman status tanpa footer (by design). Tidak ada console error.
+
+Stage Summary:
+- NR-40 "Pipeline Lengkap" LOLOS verifikasi E2E penuh: 14/14 butir hidup pada data nyata (aging+filter, median/bottleneck/funnel, 3 stage guard 422, aksi massal, peringatan gaji live, evaluasi cek-in, alumni/offboarding, talent pool matcher 92-skor, daftar tunggu, panel aksi pelamar).
+- Tidak ada kode diubah pada task ini (verifikasi murni); data demo tetap utuh (Rani offer pending, Rina PROBATION 90 hari, status Rizky NEW).
+- Bukti: .verify/pipeline-1.png, kanban-1.png, kanban-2.png, kanban-bulk.png, offer-warning.png, karyawan-1.png, karyawan-2.png, cekin-form.png, talent-pool.png, status-aksi.png.
