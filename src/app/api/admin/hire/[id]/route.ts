@@ -1,60 +1,19 @@
-// PATCH /api/admin/hire/[id] — simpan rencana onboarding (onboardingPlan) seorang karyawan (OWNER/HR).
-// Body: { onboardingPlan: string | {id,label,owner?,dueAt?,done}[] } — disanitasi sebelum disimpan.
-// Setiap simpanan dicatat ke ActivityLog (ONBOARDING_PLAN) dan disebarkan realtime.
+// PATCH /api/admin/hire/[id] — simpan rencana onboarding (onboardingPlan) dan/atau
+// checklist offboarding (offboardingPlan) seorang karyawan (OWNER/HR).
+// Body: { onboardingPlan?, offboardingPlan? } — string JSON atau array item
+// {id,label,owner?,dueAt?,done} — disanitasi dengan aturan identik sebelum disimpan.
+// Setiap simpanan dicatat ke ActivityLog (ONBOARDING_PLAN/OFFBOARDING_PLAN) + realtime.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { sanitizeLifecyclePlan } from "@/lib/employee-lifecycle";
 
 export const dynamic = "force-dynamic";
 
 const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
 const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
 const NOT_FOUND = { error: "Karyawan tidak ditemukan" };
-
-const MAX_ITEMS = 30;
-
-type PlanItem = {
-  id: string;
-  label: string;
-  owner: string | null;
-  dueAt: string | null;
-  done: boolean;
-};
-
-/** Sanitasi daftar item rencana onboarding dari input tak dikenal (array atau JSON string). */
-function sanitizePlan(raw: unknown): PlanItem[] | null {
-  let parsed: unknown = raw;
-  if (typeof raw === "string") {
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return null; // JSON string rusak
-    }
-  }
-  if (!Array.isArray(parsed)) return null;
-
-  const items: PlanItem[] = [];
-  const usedIds = new Set<string>();
-  for (let i = 0; i < parsed.length && items.length < MAX_ITEMS; i++) {
-    const obj = parsed[i] && typeof parsed[i] === "object" && !Array.isArray(parsed[i])
-      ? (parsed[i] as Record<string, unknown>)
-      : {};
-    const label = typeof obj.label === "string" ? obj.label.trim().slice(0, 120) : "";
-    if (!label) continue;
-
-    let id = typeof obj.id === "string" ? obj.id.trim().slice(0, 40) : "";
-    if (!id || usedIds.has(id)) id = `item${Date.now().toString(36)}${i}`;
-    usedIds.add(id);
-
-    const owner = typeof obj.owner === "string" && obj.owner.trim() ? obj.owner.trim().slice(0, 60) : null;
-    const dueAtRaw = typeof obj.dueAt === "string" ? obj.dueAt.trim() : "";
-    const dueAt = dueAtRaw && !Number.isNaN(new Date(dueAtRaw).getTime()) ? new Date(dueAtRaw).toISOString() : null;
-
-    items.push({ id, label, owner, dueAt, done: obj.done === true });
-  }
-  return items;
-}
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -72,13 +31,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Data tidak valid." }, { status: 400 });
     }
     const data = body as Record<string, unknown>;
-    if (data.onboardingPlan === undefined) {
-      return NextResponse.json({ error: "Rencana onboarding tidak dikirim." }, { status: 400 });
+    if (data.onboardingPlan === undefined && data.offboardingPlan === undefined) {
+      return NextResponse.json({ error: "Rencana tidak dikirim." }, { status: 400 });
     }
-    const plan = sanitizePlan(data.onboardingPlan);
-    if (plan === null) {
+
+    // Sanitasi identik untuk kedua jenis rencana (pola onboardingPlan yang lama).
+    const onboardingPlan =
+      data.onboardingPlan !== undefined ? sanitizeLifecyclePlan(data.onboardingPlan) : undefined;
+    if (onboardingPlan === null) {
       return NextResponse.json(
         { error: "Rencana onboarding tidak valid (harus array item atau JSON string)." },
+        { status: 400 },
+      );
+    }
+    const offboardingPlan =
+      data.offboardingPlan !== undefined ? sanitizeLifecyclePlan(data.offboardingPlan) : undefined;
+    if (offboardingPlan === null) {
+      return NextResponse.json(
+        { error: "Checklist offboarding tidak valid (harus array item atau JSON string)." },
         { status: 400 },
       );
     }
@@ -90,23 +60,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     await db.application.update({
       where: { id },
-      data: { onboardingPlan: JSON.stringify(plan) },
-    });
-
-    const doneCount = plan.filter((item) => item.done).length;
-    await db.activityLog.create({
       data: {
-        applicationId: id,
-        actor: session.name,
-        action: "ONBOARDING_PLAN",
-        detail: `Rencana onboarding disimpan (${plan.length} item, ${doneCount} selesai)`,
+        ...(onboardingPlan !== undefined ? { onboardingPlan: JSON.stringify(onboardingPlan) } : {}),
+        ...(offboardingPlan !== undefined ? { offboardingPlan: JSON.stringify(offboardingPlan) } : {}),
       },
     });
 
+    if (onboardingPlan !== undefined) {
+      const doneCount = onboardingPlan.filter((item) => item.done).length;
+      await db.activityLog.create({
+        data: {
+          applicationId: id,
+          actor: session.name,
+          action: "ONBOARDING_PLAN",
+          detail: `Rencana onboarding disimpan (${onboardingPlan.length} item, ${doneCount} selesai)`,
+        },
+      });
+    }
+    if (offboardingPlan !== undefined) {
+      const doneCount = offboardingPlan.filter((item) => item.done).length;
+      await db.activityLog.create({
+        data: {
+          applicationId: id,
+          actor: session.name,
+          action: "OFFBOARDING_PLAN",
+          detail: `Checklist offboarding disimpan (${offboardingPlan.length} item, ${doneCount} selesai)`,
+        },
+      });
+    }
+
     void emitRealtime(REALTIME_EVENTS.applications);
-    return NextResponse.json({ ok: true, onboardingPlan: plan });
+    return NextResponse.json({
+      ok: true,
+      ...(onboardingPlan !== undefined ? { onboardingPlan } : {}),
+      ...(offboardingPlan !== undefined ? { offboardingPlan } : {}),
+    });
   } catch (error) {
     console.error("[PATCH /api/admin/hire/[id]]", error);
-    return NextResponse.json({ error: "Gagal menyimpan rencana onboarding. Coba lagi nanti." }, { status: 500 });
+    return NextResponse.json({ error: "Gagal menyimpan rencana. Coba lagi nanti." }, { status: 500 });
   }
 }

@@ -1,20 +1,34 @@
 // POST /api/admin/applications/bulk — aksi massal: ubah status, hapus (soft),
-// atur talent pool, tolak, atur tag, arsip, atau batalkan arsip (OWNER/HR).
+// atur talent pool, tolak, atur tag, arsip, batalkan arsip, atau jadwalkan
+// wawancara (OWNER/HR).
 // Aksi "reject": status -> REJECTED + alasan terstruktur + tanggal ditolak (per lamaran, lewat transaksi).
 // Aksi "delete": SOFT DELETE (deletedAt=now) — lamaran masuk tong sampah dan
 //                masih bisa dipulihkan dari tab Data.
 // Aksi "tag": gabungkan tag unik (maks 12, masing-masing <=24 karakter) ke tiap lamaran.
 // Aksi "archive"/"unarchive": set/kosongkan archivedAt (+ log ARCHIVE per lamaran,
 //                webhook "application.archived" untuk arsip).
+// Aksi "schedule-interview" (NR-40): buat sesi Interview SCHEDULED ronde berikutnya
+//                (max round + 1) untuk tiap lamaran + isi interviewAt + log
+//                INTERVIEW_SCHEDULED + email undangan (queueEmail, kind INVITE).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
-import { parseTags, sanitizeRejectionReason } from "@/lib/seed";
+import {
+  parseTags,
+  sanitizeInterviewMode,
+  sanitizeInterviewPlatform,
+  sanitizeRejectionReason,
+} from "@/lib/seed";
 import { stageLabel } from "@/lib/stages";
-import { REJECTION_REASON_LABELS, type RejectionReason } from "@/lib/types";
+import {
+  INTERVIEW_PLATFORM_LABELS,
+  REJECTION_REASON_LABELS,
+  type RejectionReason,
+} from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
+import { queueEmail } from "@/lib/notify";
 import { appendStageHistory } from "@/lib/stage-history";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +77,18 @@ export async function POST(req: NextRequest) {
     }
 
     const action = typeof data.action === "string" ? data.action : "";
-    if (!["status", "delete", "talentPool", "reject", "tag", "archive", "unarchive"].includes(action)) {
+    if (
+      ![
+        "status",
+        "delete",
+        "talentPool",
+        "reject",
+        "tag",
+        "archive",
+        "unarchive",
+        "schedule-interview",
+      ].includes(action)
+    ) {
       return NextResponse.json({ error: "Aksi tidak valid." }, { status: 400 });
     }
 
