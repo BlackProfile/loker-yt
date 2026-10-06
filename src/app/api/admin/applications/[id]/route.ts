@@ -144,7 +144,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       // Tahap tujuan: "NEW" bila masih ada di pipeline posisi; bila tidak (posisi
       // mengganti stages kustom), pakai tahap bawaan pertama.
       const pipelineStages = stagesForPosition(
-        parseRequirements(existing.position?.stages ?? null),
+        parseRequirements(existing.position?.stages ?? "[]"),
       );
       const targetStage = pipelineStages.includes("NEW") ? "NEW" : DEFAULT_STAGES[0];
       const stageMoved = targetStage !== existing.status;

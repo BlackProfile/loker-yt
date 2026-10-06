@@ -130,6 +130,8 @@ export async function POST(req: NextRequest) {
         rubricCriteria: JSON.stringify(f.rubricCriteria ?? []),
         checklistTemplate: JSON.stringify(f.checklistTemplate ?? []),
         noteTemplates: JSON.stringify(f.noteTemplates ?? []),
+        // NR-40 — ambang hari "mengendap" kanban (null = default 7)
+        agingWarnDays: f.agingWarnDays ?? null,
       },
     });
 

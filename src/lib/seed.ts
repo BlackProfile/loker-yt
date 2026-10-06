@@ -426,6 +426,9 @@ export function serializePosition(record: PositionRecordModel): Position {
     salaryMin: record.salaryMin ?? null,
     salaryMax: record.salaryMax ?? null,
 
+    // NR-40 — ambang hari "mengendap" kanban per posisi (null = default 7).
+    agingWarnDays: record.agingWarnDays ?? null,
+
     // Rencana ronde wawancara bawaan
     roundPlan: parseRoundPlan(record.roundPlan),
   };
@@ -593,6 +596,13 @@ export function serializeApplication(record: ApplicationRecord): Application {
     hiredAt: record.hiredAt ? record.hiredAt.toISOString() : null,
     probationEnd: record.probationEnd ? record.probationEnd.toISOString() : null,
     onboardingDocs: parseOnboardingDocs(record.onboardingDocs),
+
+    // NR-40 — kontrak types.ts sudah menyiapkan autoShortlistedAt (tag "Auto" +
+    // undo di kanban); serialisasinya dilengkapi di sini agar respons API list
+    // maupun detail membawa field tersebut (aditif, tidak mengubah bentuk lama).
+    autoShortlistedAt: record.autoShortlistedAt
+      ? record.autoShortlistedAt.toISOString()
+      : null,
 
     isDuplicate: record.isDuplicate,
 

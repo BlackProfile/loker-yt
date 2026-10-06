@@ -127,6 +127,8 @@ export type PositionFields = {
   salaryMin?: number | null;
   salaryMax?: number | null;
   roundPlan?: string; // JSON RoundPlanTemplate[]
+  // NR-40 — ambang hari "mengendap" kartu kanban per posisi; null = default 7
+  agingWarnDays?: number | null;
 };
 
 /* ------------------------------- Field sederhana ------------------------------- */
@@ -842,6 +844,18 @@ export async function sanitizePositionInput(
     return err("Gaji wajar minimum tidak boleh lebih besar dari maksimum.");
   }
 
+  // NR-40 — ambang hari "mengendap" kanban (opsional, 0-90): null/kosong = default
+  // bawaan 7 hari. String kosong diterima sebagai pengosongan agar payload form
+  // yang mengirim "" tetap valid (pola sama dengan minAge).
+  const agingWarnDays = sanitizeNullableInt(
+    data.agingWarnDays === "" ? null : data.agingWarnDays,
+    "Ambang hari mengendap",
+    0,
+    90,
+  );
+  if (!agingWarnDays.ok) return agingWarnDays;
+  if (agingWarnDays.value !== undefined) f.agingWarnDays = agingWarnDays.value;
+
   // Rencana ronde wawancara (opsional) — array {round,name,mode?,platform?,durationMin?,interviewers?[]}
   if (data.roundPlan !== undefined) {
     if (data.roundPlan === null || data.roundPlan === "") {
@@ -979,6 +993,8 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.salaryMin !== undefined) out.salaryMin = f.salaryMin;
   if (f.salaryMax !== undefined) out.salaryMax = f.salaryMax;
   if (f.roundPlan !== undefined) out.roundPlan = f.roundPlan;
+  // NR-40 — ambang hari "mengendap" kanban (WAJIB dipetakan — pelajaran NR-22)
+  if (f.agingWarnDays !== undefined) out.agingWarnDays = f.agingWarnDays;
   // coverFileId hanya tersedia lewat relasi pada input update.
   if (f.coverFileId === null) out.coverFile = { disconnect: true };
   else if (f.coverFileId !== undefined) out.coverFile = { connect: { id: f.coverFileId } };
