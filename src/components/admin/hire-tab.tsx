@@ -254,25 +254,47 @@ function ProbationInfo({ employee }: { employee: Employee }) {
   );
 }
 
-/* ------------------------------ Editor rencana onboarding ------------------------------ */
+/* ------------- Editor rencana onboarding & checklist offboarding (generik) ------------- */
 
-function OnboardingPlanEditor({
-  employee,
+type PlanField = "onboardingPlan" | "offboardingPlan";
+
+function PlanChecklistEditor({
+  employeeId,
+  title,
+  titleIcon: TitleIcon,
+  titleIconClass,
+  field,
+  items,
+  emptyHint,
+  addPlaceholder,
+  saveLabel,
+  savedToast,
+  saveButtonClass,
   onPlanSaved,
 }: {
-  employee: Employee;
-  onPlanSaved: (employeeId: string, plan: PlanItem[]) => void;
+  employeeId: string;
+  title: string;
+  titleIcon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
+  titleIconClass: string;
+  field: PlanField;
+  items: PlanItem[];
+  emptyHint: string;
+  addPlaceholder: string;
+  saveLabel: string;
+  savedToast: string;
+  saveButtonClass: string;
+  onPlanSaved: (employeeId: string, field: PlanField, plan: PlanItem[]) => void;
 }) {
   const { canMutate, reportError } = useAdminSession();
-  const [draft, setDraft] = useState<PlanItem[]>(employee.onboardingPlan);
+  const [draft, setDraft] = useState<PlanItem[]>(items);
   const [newLabel, setNewLabel] = useState("");
   const [newOwner, setNewOwner] = useState("");
   const [newDue, setNewDue] = useState("");
   const [saving, setSaving] = useState(false);
 
   const dirty = useMemo(
-    () => JSON.stringify(draft) !== JSON.stringify(employee.onboardingPlan),
-    [draft, employee.onboardingPlan]
+    () => JSON.stringify(draft) !== JSON.stringify(items),
+    [draft, items]
   );
   const doneCount = draft.filter((item) => item.done).length;
 
@@ -309,13 +331,13 @@ function OnboardingPlanEditor({
     if (!dirty || saving) return;
     setSaving(true);
     try {
-      const res = await apiPatch<{ ok: boolean; onboardingPlan: PlanItem[] }>(
-        `/api/admin/hire/${employee.id}`,
-        { onboardingPlan: draft }
-      );
-      setDraft(res.onboardingPlan);
-      onPlanSaved(employee.id, res.onboardingPlan);
-      toast.success("Rencana onboarding disimpan");
+      const res = await apiPatch<
+        { ok: boolean; onboardingPlan?: PlanItem[]; offboardingPlan?: PlanItem[] }
+      >(`/api/admin/hire/${employeeId}`, { [field]: draft });
+      const saved = (field === "onboardingPlan" ? res.onboardingPlan : res.offboardingPlan) ?? draft;
+      setDraft(saved);
+      onPlanSaved(employeeId, field, saved);
+      toast.success(savedToast);
     } catch (err) {
       reportError(err);
     } finally {
@@ -327,11 +349,11 @@ function OnboardingPlanEditor({
     <div className="flex flex-col gap-3 rounded-xl border p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="flex items-center gap-1.5 text-sm font-semibold">
-          <ClipboardCheck className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-          Rencana Onboarding
+          <TitleIcon className={cn("size-4", titleIconClass)} aria-hidden="true" />
+          {title}
         </p>
         {draft.length > 0 ? (
-          <Badge variant="outline" className={BADGE_DONE}>
+          <Badge variant="outline" className={doneCount === draft.length ? BADGE_DONE : BADGE_DUE}>
             {doneCount}/{draft.length} selesai
           </Badge>
         ) : null}
@@ -340,10 +362,7 @@ function OnboardingPlanEditor({
       {/* Daftar item — list panjang dapat digulir */}
       <div className="nice-scrollbar max-h-96 overflow-y-auto">
         {draft.length === 0 ? (
-          <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-            Belum ada item. Tambahkan agenda onboarding di bawah, misalnya orientasi, intro mentor, atau target
-            minggu pertama.
-          </p>
+          <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">{emptyHint}</p>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {draft.map((item) => (
@@ -394,11 +413,11 @@ function OnboardingPlanEditor({
       <div className="flex flex-col gap-2 rounded-lg bg-zinc-50/70 p-2.5 dark:bg-zinc-900/40">
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
-            <Label htmlFor={`plan-label-${employee.id}`} className="text-xs">
+            <Label htmlFor={`plan-${field}-label-${employeeId}`} className="text-xs">
               Item
             </Label>
             <Input
-              id={`plan-label-${employee.id}`}
+              id={`plan-${field}-label-${employeeId}`}
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
               onKeyDown={(e) => {
@@ -407,18 +426,18 @@ function OnboardingPlanEditor({
                   handleAdd();
                 }
               }}
-              placeholder="Misal: Orientasi & tur studio"
+              placeholder={addPlaceholder}
               maxLength={120}
               disabled={!canMutate || saving}
               className="h-9"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label htmlFor={`plan-owner-${employee.id}`} className="text-xs">
+            <Label htmlFor={`plan-${field}-owner-${employeeId}`} className="text-xs">
               PIC (opsional)
             </Label>
             <Input
-              id={`plan-owner-${employee.id}`}
+              id={`plan-${field}-owner-${employeeId}`}
               value={newOwner}
               onChange={(e) => setNewOwner(e.target.value)}
               placeholder="Misal: Tim HR"
@@ -430,11 +449,11 @@ function OnboardingPlanEditor({
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex flex-col gap-1">
-            <Label htmlFor={`plan-due-${employee.id}`} className="text-xs">
+            <Label htmlFor={`plan-${field}-due-${employeeId}`} className="text-xs">
               Tenggat (opsional)
             </Label>
             <Input
-              id={`plan-due-${employee.id}`}
+              id={`plan-${field}-due-${employeeId}`}
               type="date"
               value={newDue}
               onChange={(e) => setNewDue(e.target.value)}
@@ -458,7 +477,7 @@ function OnboardingPlanEditor({
         <Button
           onClick={() => void handleSave()}
           disabled={saving}
-          className="bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.99]"
+          className={saveButtonClass}
         >
           {saving ? (
             <>
@@ -466,11 +485,63 @@ function OnboardingPlanEditor({
               Menyimpan...
             </>
           ) : (
-            "Simpan Rencana"
+            saveLabel
           )}
         </Button>
       ) : null}
     </div>
+  );
+}
+
+/** Editor Rencana Onboarding (agenda hari pertama, mentor, target) — emerald. */
+function OnboardingPlanEditor({
+  employee,
+  onPlanSaved,
+}: {
+  employee: Employee;
+  onPlanSaved: (employeeId: string, field: PlanField, plan: PlanItem[]) => void;
+}) {
+  return (
+    <PlanChecklistEditor
+      employeeId={employee.id}
+      title="Rencana Onboarding"
+      titleIcon={ClipboardCheck}
+      titleIconClass="text-emerald-600 dark:text-emerald-400"
+      field="onboardingPlan"
+      items={employee.onboardingPlan}
+      emptyHint="Belum ada item. Tambahkan agenda onboarding di bawah, misalnya orientasi, intro mentor, atau target minggu pertama."
+      addPlaceholder="Misal: Orientasi & tur studio"
+      saveLabel="Simpan Rencana"
+      savedToast="Rencana onboarding disimpan"
+      saveButtonClass="bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.99]"
+      onPlanSaved={onPlanSaved}
+    />
+  );
+}
+
+/** Checklist Offboarding (serah terima alumni) — tampil untuk karyawan dengan exitAt. */
+function OffboardingChecklistEditor({
+  employee,
+  onPlanSaved,
+}: {
+  employee: Employee;
+  onPlanSaved: (employeeId: string, field: PlanField, plan: PlanItem[]) => void;
+}) {
+  return (
+    <PlanChecklistEditor
+      employeeId={employee.id}
+      title="Checklist Offboarding"
+      titleIcon={LogOut}
+      titleIconClass="text-amber-600 dark:text-amber-400"
+      field="offboardingPlan"
+      items={employee.offboardingPlan}
+      emptyHint="Belum ada item serah terima. Tambahkan langkah keluar di bawah — checklist bawaan juga terbentuk otomatis saat karyawan dicatat keluar."
+      addPlaceholder="Misal: Kembalikan laptop & kunci"
+      saveLabel="Simpan Checklist"
+      savedToast="Checklist offboarding disimpan"
+      saveButtonClass="bg-amber-600 text-white hover:bg-amber-700 active:scale-[0.99]"
+      onPlanSaved={onPlanSaved}
+    />
   );
 }
 
@@ -482,6 +553,7 @@ type CheckInDialogState = {
   recordId: string | null;
   rating: number;
   notes: string;
+  recommendation: CheckInRecommendation | null;
 };
 
 function CheckInSection({
@@ -505,7 +577,7 @@ function CheckInSection({
   }
 
   function openCreate(day: number) {
-    setDialog({ day, mode: "create", recordId: null, rating: 0, notes: "" });
+    setDialog({ day, mode: "create", recordId: null, rating: 0, notes: "", recommendation: null });
   }
 
   function openEdit(record: CheckInDto) {
@@ -515,6 +587,7 @@ function CheckInSection({
       recordId: record.id,
       rating: record.rating ?? 0,
       notes: record.notes ?? "",
+      recommendation: record.recommendation ?? null,
     });
   }
 
@@ -527,6 +600,7 @@ function CheckInSection({
           day: dialog.day,
           rating: dialog.rating > 0 ? dialog.rating : null,
           notes: dialog.notes.trim() ? dialog.notes.trim() : null,
+          recommendation: dialog.recommendation,
         });
         onCheckInSaved(employee.id, created);
         toast.success(`Cek-in hari ke-${dialog.day} disimpan`);
@@ -535,6 +609,7 @@ function CheckInSection({
           id: dialog.recordId,
           rating: dialog.rating > 0 ? dialog.rating : null,
           notes: dialog.notes.trim() ? dialog.notes.trim() : null,
+          recommendation: dialog.recommendation,
         });
         onCheckInSaved(employee.id, updated);
         toast.success(`Cek-in hari ke-${dialog.day} diperbarui`);
@@ -603,9 +678,16 @@ function CheckInSection({
                   )}
                 </div>
               </div>
-              {record && (record.rating != null || record.notes) ? (
+              {record && (record.rating != null || record.notes || record.recommendation) ? (
                 <div className="flex flex-col gap-1 border-t pt-2">
-                  {record.rating != null ? <RatingStars value={record.rating} size="size-3.5" /> : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {record.rating != null ? <RatingStars value={record.rating} size="size-3.5" /> : null}
+                    {record.recommendation ? (
+                      <Badge variant="outline" className={RECOMMENDATION_BADGE[record.recommendation]}>
+                        {CHECKIN_RECOMMENDATION_LABELS[record.recommendation]}
+                      </Badge>
+                    ) : null}
+                  </div>
                   {record.notes ? (
                     <p className="line-clamp-3 text-xs text-muted-foreground">{record.notes}</p>
                   ) : null}
@@ -659,6 +741,34 @@ function CheckInSection({
                   </Button>
                 ))}
               </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`checkin-recommendation-${dialog?.day ?? "x"}`} className="text-sm">
+                Rekomendasi (opsional)
+              </Label>
+              <Select
+                value={dialog?.recommendation ?? "NONE"}
+                onValueChange={(value) =>
+                  setDialog((prev) =>
+                    prev
+                      ? { ...prev, recommendation: value === "NONE" ? null : (value as CheckInRecommendation) }
+                      : prev
+                  )
+                }
+                disabled={saving}
+              >
+                <SelectTrigger id={`checkin-recommendation-${dialog?.day ?? "x"}`} className="w-full">
+                  <SelectValue placeholder="Pilih rekomendasi" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">Belum ada</SelectItem>
+                  {CHECKIN_RECOMMENDATIONS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {CHECKIN_RECOMMENDATION_LABELS[value]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor={`checkin-notes-${dialog?.day ?? "x"}`} className="text-sm">
