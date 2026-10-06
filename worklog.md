@@ -3389,3 +3389,15 @@ Stage Summary:
 - CATATAN butir 8 (ringkasan keputusan wawancara): agregat rerata scorecard multi-ronde BELUM dibuat terpisah — rekomendasi per sesi sudah ada (LANJUT/CADANGAN/TOLAK) dan panel keputusan probasi memakai data cek-in; agregasi lintas ronde bisa jadi tindak lanjut kecil. (Tidak dibuat di gelombang manapun — diakui terlewat dari alokasi gelombang.)
 - File baru: src/app/api/admin/hire/probation|exit/route.ts, src/app/api/admin/waitlist/route.ts, src/app/api/admin/talent-pool/route.ts, src/lib/employee-lifecycle.ts, src/lib/talent-match.ts. Skema: Position.agingWarnDays/onboardingTemplate; Application.autoShortlistedAt/permanentAt/exitAt/exitReason/exitNote/offboardingPlan; CheckIn.recommendation.
 - Isu kecil diketahui: funnel pipeline menghitung status mentah sedangkan bucket kategori memasukkan offer-PENDING ke Diterima (perilaku pra-NR40) — angka bisa beda 1 pada posisi dgn offer pending; bukan regresi.
+---
+Task ID: NR40-ITEM8
+Agent: Z.ai Code (orkestrator)
+Task: Pelengkap NR-40 butir 8 — ringkasan keputusan wawancara (agregat lintas ronde).
+
+Work Log:
+- pipeline-tab.tsx InterviewCard += prop allSessions (dipass sessionsOf(app.id) dari pemanggil); agregat: sesi COMPLETED ber-rekomendasi dihitung (LANJUT/CADANGAN/TOLAK), badge terbanyak (emerald/amber/rose) + teks "n ronde dinilai" + " — terbanyak x/n" bila suara terpecah. Hanya tampil bila >= 1 ronde selesai dinilai.
+- Uji: sesi uji COMPLETED+LANJUT dibuat utk Bagas Saputra (Penulis Naskah) via db -> kartu Wawancara menampilkan badge "Lanjut ke tahap berikutnya — 1 ronde dinilai" -> sesi uji DIHAPUS (kondisi demo: interview kembali 1 baris milik Laila).
+- Verifikasi: tsc src/ 0 error; lint exit 0.
+
+Stage Summary:
+- Butir 8 tuntas — NR-40 kini 14/14 butir terimplementasi (entri NR40-MASTER sebelumnya mencatat butir 8 belum dibuat; kini sudah).
