@@ -388,18 +388,20 @@ export function ApplicationsTable({
               <TableHead className={cn("w-10 text-center text-xs", isCompact ? "px-2 py-2" : "px-2 py-3")}>
                 Bandingkan
               </TableHead>
-              <TableHead className="px-4 py-3">Pelamar</TableHead>
-              <TableHead className="px-4 py-3">Posisi</TableHead>
+              <TableHead className={padHead}>Pelamar</TableHead>
+              <TableHead className={padHead}>Posisi</TableHead>
+              {/* NR38-B fitur 4 — kolom Gaji (desktop, hilang di mode padat). */}
+              {!isCompact ? <TableHead className={padHead}>Gaji</TableHead> : null}
               {/* NR-32 — Data Diri Lengkap: NIK & umur pelamar */}
-              <TableHead className="px-4 py-3">NIK</TableHead>
-              <TableHead className="px-4 py-3">Umur</TableHead>
-              <TableHead className="px-4 py-3">Sumber</TableHead>
-              <TableHead className="px-4 py-3">Skor AI</TableHead>
-              <TableHead className="px-4 py-3">Rating</TableHead>
-              <TableHead className="px-4 py-3">Tags</TableHead>
-              <TableHead className="px-4 py-3">Tanggal</TableHead>
-              <TableHead className="px-4 py-3">Status</TableHead>
-              <TableHead className="px-4 py-3 text-right">Aksi</TableHead>
+              {!isCompact ? <TableHead className={padHead}>NIK</TableHead> : null}
+              <TableHead className={padHead}>Umur</TableHead>
+              {!isCompact ? <TableHead className={padHead}>Sumber</TableHead> : null}
+              <TableHead className={padHead}>Skor AI</TableHead>
+              <TableHead className={padHead}>Rating</TableHead>
+              {!isCompact ? <TableHead className={padHead}>Tags</TableHead> : null}
+              <TableHead className={padHead}>Tanggal</TableHead>
+              <TableHead className={padHead}>Status</TableHead>
+              <TableHead className={cn(padHead, "text-right")}>Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -419,7 +421,7 @@ export function ApplicationsTable({
                   data-state={isSelected ? "selected" : undefined}
                   className="group md:hover:bg-zinc-50/70 md:dark:hover:bg-zinc-900/40"
                 >
-                  <TableCell className="px-4 py-3">
+                  <TableCell className={cn(pad, "px-4")}>
                     <Checkbox
                       checked={isSelected}
                       disabled={!canMutate}
@@ -429,7 +431,7 @@ export function ApplicationsTable({
                       aria-label={`Pilih ${app.name}`}
                     />
                   </TableCell>
-                  <TableCell className="px-2 py-3">
+                  <TableCell className={isCompact ? "px-2 py-1.5" : "px-2 py-3"}>
                     <div className="flex justify-center">
                       {canMutate ? (
                         <Button
@@ -461,7 +463,7 @@ export function ApplicationsTable({
                       ) : null}
                     </div>
                   </TableCell>
-                  <TableCell className="px-2 py-3">
+                  <TableCell className={isCompact ? "px-2 py-1.5" : "px-2 py-3"}>
                     <div className="flex justify-center">
                       <Checkbox
                         checked={isCompared}
@@ -470,22 +472,22 @@ export function ApplicationsTable({
                       />
                     </div>
                   </TableCell>
-                  <TableCell className="max-w-56 px-4 py-3">
+                  <TableCell className={cn("max-w-56", pad)}>
                     <div className="flex items-center gap-3">
-                      <span
-                        className={cn(
-                          "flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-                          // NR-28 (item 7): warna avatar deterministik dari nama.
-                          avatarToneOf(app.name)
-                        )}
-                      >
-                        {initialsOf(app.name)}
-                      </span>
+                      {/* NR38-B fitur 8 — avatar inisial + cincin rose bila ditandai penting. */}
+                      <ApplicantAvatar name={app.name} starred={isStarred} className="size-9" />
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-1">
-                          <span className="max-w-40 truncate text-sm font-semibold">
+                          {/* NR38-B fitur 1 — belum dilihat: nama tebal + badge "Baru". */}
+                          <span
+                            className={cn(
+                              "max-w-40 truncate text-sm",
+                              !app.adminSeenAt ? "font-semibold" : "font-medium"
+                            )}
+                          >
                             {app.name}
                           </span>
+                          {!app.adminSeenAt ? <NewBadge /> : null}
                           {app.isDuplicate === true ? <DuplicateBadge /> : null}
                           {app.archivedAt ? <ArchivedBadge /> : null}
                           {app.doNotHire ? <DoNotHireBadge app={app} /> : null}
@@ -495,7 +497,7 @@ export function ApplicationsTable({
                           {app.email}
                           {app.phone ? ` · ${app.phone}` : ""}
                         </p>
-                        {app.domisili?.trim() || app.komuterPlan ? (
+                        {!isCompact && (app.domisili?.trim() || app.komuterPlan) ? (
                           <div className="mt-1">
                             <DomisiliChip
                               domisili={app.domisili}
@@ -506,24 +508,34 @@ export function ApplicationsTable({
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="max-w-36 px-4 py-3 text-sm">
+                  <TableCell className={cn("max-w-36 text-sm", pad)}>
                     <div className="flex flex-col gap-1">
                       <span className="truncate">{app.positionTitle ?? "-"}</span>
-                      {/* Chip ekspektasi gaji vs rentang posisi (NR-24 fitur 6). */}
-                      <SalaryChip app={app} position={position} />
+                      {!isCompact ? null : (
+                        /* Mode padat: chip gaji kecil tetap menyertai posisi agar info tak hilang total. */
+                        <SalaryVerdictChip app={app} />
+                      )}
                     </div>
                   </TableCell>
+                  {/* NR38-B fitur 4 — kolom Gaji: verdict ekspektasi vs rentang posisi. */}
+                  {!isCompact ? (
+                    <TableCell className={cn("max-w-40", pad, "text-sm")}>
+                      <GajiCell app={app} position={position} />
+                    </TableCell>
+                  ) : null}
                   {/* NR-32 — NIK & umur (item inti Data Diri; "-" bila kosong). */}
-                  <TableCell className="px-4 py-3 text-sm">
-                    {app.nik ? (
-                      <span className="font-mono text-xs" title="NIK pelamar">
-                        {app.nik}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-sm whitespace-nowrap">
+                  {!isCompact ? (
+                    <TableCell className={cn("text-sm", pad)}>
+                      {app.nik ? (
+                        <span className="font-mono text-xs" title="NIK pelamar">
+                          {app.nik}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                  ) : null}
+                  <TableCell className={cn("text-sm whitespace-nowrap", pad)}>
                     {(() => {
                       const age = ageOf(app.birthDate);
                       return age ? (
@@ -533,23 +545,25 @@ export function ApplicationsTable({
                       );
                     })()}
                   </TableCell>
-                  <TableCell className="max-w-32 px-4 py-3">
-                    {app.source ? (
-                      <span
-                        className="inline-flex max-w-28 items-center gap-1.5 text-xs text-muted-foreground"
-                        title={`Sumber: ${app.source}`}
-                      >
-                        <Share2 className="size-3.5 shrink-0" aria-hidden="true" />
-                        <span className="truncate">{app.source}</span>
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
+                  {!isCompact ? (
+                    <TableCell className={cn("max-w-32", pad)}>
+                      {app.source ? (
+                        <span
+                          className="inline-flex max-w-28 items-center gap-1.5 text-xs text-muted-foreground"
+                          title={`Sumber: ${app.source}`}
+                        >
+                          <Share2 className="size-3.5 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{app.source}</span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                  ) : null}
+                  <TableCell className={pad}>
                     <AiScoreBadge score={app.aiScore} />
                   </TableCell>
-                  <TableCell className="px-4 py-3">
+                  <TableCell className={pad}>
                     <RatingStars
                       value={app.rating}
                       size="size-3.5"
@@ -558,33 +572,48 @@ export function ApplicationsTable({
                       ariaLabel={`Rating ${app.name}`}
                     />
                   </TableCell>
-                  <TableCell className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {tagsPreview(app.tags).map((tag) => (
-                        <span
-                          key={tag}
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                            colorClassOf(tag)
-                          )}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      {app.tags.length > 2 ? (
-                        <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
-                          +{app.tags.length - 2}
-                        </span>
-                      ) : null}
-                      {app.tags.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      ) : null}
-                    </div>
+                  {!isCompact ? (
+                    <TableCell className={pad}>
+                      <div className="flex flex-wrap gap-1">
+                        {tagsPreview(app.tags).map((tag) => (
+                          <span
+                            key={tag}
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                              colorClassOf(tag)
+                            )}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        {app.tags.length > 2 ? (
+                          <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
+                            +{app.tags.length - 2}
+                          </span>
+                        ) : null}
+                        {app.tags.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                  ) : null}
+                  {/* NR38-B fitur 3 — umur lamaran berwarna: dot + tooltip di kolom Tanggal. */}
+                  <TableCell className={cn("text-sm whitespace-nowrap text-muted-foreground", pad)}>
+                    <span
+                      className="inline-flex items-center gap-1.5"
+                      title={`Diam di tahap ${stageLabel(app.status)} selama ${shortDuration(stageAgeBasis(app))}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "size-2 shrink-0 rounded-full",
+                          agingDotClass(agingToneFrom(stageAgeBasis(app)))
+                        )}
+                      />
+                      {formatDate(app.createdAt)}
+                    </span>
                   </TableCell>
-                  <TableCell className="px-4 py-3 text-sm whitespace-nowrap text-muted-foreground">
-                    {formatDate(app.createdAt)}
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
+                  <TableCell className={pad}>
                     <div className="flex flex-col items-start gap-1">
                       <StatusBadge status={app.status} />
                       {/* Badge NR-24: tindak lanjut jatuh tempo + dokumen mau kedaluwarsa. */}
@@ -592,7 +621,7 @@ export function ApplicationsTable({
                       {dueDocs.length > 0 ? <DocExpiryBadge docs={dueDocs} /> : null}
                     </div>
                   </TableCell>
-                  <TableCell className="px-4 py-3">
+                  <TableCell className={pad}>
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"

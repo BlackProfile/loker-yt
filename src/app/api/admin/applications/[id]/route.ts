@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import {
   APPLICATION_INCLUDE,
+  maskApplicationForViewer,
   parseDocExpiries,
   parseRequirements,
   parseScoreRecord,
@@ -40,6 +41,54 @@ function labelOf(status: string): string {
 
 function formatDateTimeId(value: Date): string {
   return value.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
+}
+
+// NR38-C fitur 1 — GET detail lamaran: dipakai dialog detail saat membuka satu
+// lamaran. Efek samping: adminSeenAt diisi "now" BILA masih null (tandai sudah
+// dilihat — dasar filter "Belum dilihat" di daftar). Write kecil tidak menahan
+// respons; kegagalan diabaikan. Payload = serializeApplication + field tambahan
+// aditif (adminSeenAt, screeningVerdicts, cvSummary, cvSummaryAt).
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json(UNAUTHORIZED, { status: 401 });
+    }
+    const { id } = await params;
+
+    const record = await db.application.findUnique({
+      where: { id },
+      include: APPLICATION_INCLUDE,
+    });
+    if (!record || record.deletedAt) {
+      return NextResponse.json(NOT_FOUND, { status: 404 });
+    }
+
+    const seenAt = record.adminSeenAt ?? new Date();
+    if (!record.adminSeenAt) {
+      void db.application
+        .update({ where: { id }, data: { adminSeenAt: seenAt } })
+        .catch(() => {
+          // Penandaan dilihat bersifat pelengkap — abaikan kegagalan.
+        });
+    }
+
+    const payload = {
+      ...serializeApplication(record),
+      adminSeenAt: seenAt.toISOString(),
+      screeningVerdicts: record.screeningVerdicts ?? null,
+      cvSummary: record.cvSummary ?? null,
+      cvSummaryAt: record.cvSummaryAt ? record.cvSummaryAt.toISOString() : null,
+    };
+
+    // VIEWER: mask PII (phone & CV) konsisten dengan level respons list.
+    return NextResponse.json(
+      session.role === "VIEWER" ? maskApplicationForViewer(payload) : payload
+    );
+  } catch (error) {
+    console.error("[GET /api/admin/applications/[id]]", error);
+    return NextResponse.json({ error: "Gagal memuat detail lamaran. Coba lagi nanti." }, { status: 500 });
+  }
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -87,7 +136,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       holdReviewAt?: Date | null;
       holdClear?: boolean;
       docExpiries?: string;
-    } = {};
+      screeningVerdicts?: string | null; // NR38-C — verdict admin per jawaban screening
+    };
     // Field yang perlu merge dengan nilai existing — dihitung setelah record diambil.
     let starredToggle: boolean | undefined;
 
@@ -346,6 +396,41 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }))
         .filter((item) => item.expiresAt !== "");
       updateData.docExpiries = JSON.stringify(items.slice(0, 20));
+    }
+
+    // NR38-C — verdict screening: JSON {questionId: "PASS"|"WARN"|"FAIL"}.
+    // Klien mengirim rekaman lengkap hasil merge (verdict lama dipertahankan
+    // berdasarkan id pertanyaan di sisi klien); server hanya menyanitasi.
+    if (data.screeningVerdicts !== undefined) {
+      let raw: unknown = data.screeningVerdicts;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          return NextResponse.json({ error: "Verdict screening tidak valid." }, { status: 400 });
+        }
+      }
+      if (raw === null) {
+        updateData.screeningVerdicts = null;
+      } else {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+          return NextResponse.json(
+            { error: "Verdict screening harus berupa objek {questionId: verdict}." },
+            { status: 400 }
+          );
+        }
+        const VERDICT_VALUES = new Set(["PASS", "WARN", "FAIL"]);
+        const verdicts: Record<string, string> = {};
+        for (const [rawKey, rawValue] of Object.entries(raw as Record<string, unknown>)) {
+          const key = rawKey.trim().slice(0, 60);
+          if (!key || verdicts[key] !== undefined) continue;
+          if (typeof rawValue !== "string" || !VERDICT_VALUES.has(rawValue)) continue;
+          verdicts[key] = rawValue;
+          if (Object.keys(verdicts).length >= 40) break;
+        }
+        updateData.screeningVerdicts =
+          Object.keys(verdicts).length > 0 ? JSON.stringify(verdicts) : null;
+      }
     }
 
     if (Object.keys(updateData).length === 0) {
