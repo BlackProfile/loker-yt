@@ -13,13 +13,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Share2, Star } from "lucide-react";
-import type { Application } from "@/lib/types";
 import { formatDate, formatRupiah } from "./format";
 import { StatusBadge, AiScoreBadge, DomisiliChip } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 import { ApplicantAvatar } from "./applicant-avatar";
 import { salaryVerdict } from "./stage-meta";
-import { ageOf } from "./applicant-row-types";
+import { ageOf, type ApplicationRow } from "./applicant-row-types";
 import { cn } from "@/lib/utils";
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
@@ -40,7 +39,7 @@ export function CompareApplicantsDialog({
   onOpenChange,
   currentUserId,
 }: {
-  apps: Application[];
+  apps: ApplicationRow[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Id admin aktif untuk cek bintang personal (starredBy). */

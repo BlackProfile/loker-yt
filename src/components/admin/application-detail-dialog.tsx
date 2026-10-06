@@ -1131,33 +1131,13 @@ export function ApplicationDetailDialog({
     detailScrollRef.current?.scrollTo({ top: 0 });
   }, [detailTab]);
 
-  // NR38-C — state fitur detail baru.
+  // NR38-C — state fitur detail baru (efek muat data ada setelah applicationId
+  // dideklarasikan di bawah).
   const [screeningVerdicts, setScreeningVerdicts] = useState<Record<string, ScreeningVerdict>>({});
   const [verdictSaving, setVerdictSaving] = useState(false);
   const [cvSummary, setCvSummary] = useState<CvSummary | null>(null);
   const [dossierOpen, setDossierOpen] = useState(false);
   const [quickCallOpen, setQuickCallOpen] = useState(false);
-
-  // NR38-C fitur 1 — tandai lamaran "sudah dilihat admin": dialog memanggil
-  // GET /api/admin/applications/[id] setiap membuka satu lamaran; server
-  // mengisi adminSeenAt bila masih null. Respons dipakai juga untuk memuat
-  // verdict screening (fitur 4) & ringkasan CV (fitur 5) yang tersimpan.
-  useEffect(() => {
-    if (!applicationId) return;
-    let cancelled = false;
-    apiGet<DetailApplication>(`/api/admin/applications/${applicationId}`)
-      .then((detail) => {
-        if (cancelled) return;
-        setScreeningVerdicts(parseScreeningVerdicts(detail.screeningVerdicts));
-        setCvSummary(parseCvSummaryJson(detail.cvSummary));
-      })
-      .catch(() => {
-        // Penandaan dilihat bersifat pelengkap — abaikan kegagalan fetch.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [applicationId]);
 
   // Reset form hanya saat berganti pelamar (bukan tiap update objek) agar
   // pesan penolakan/penawaran yang baru dibuat tidak ikut terhapus.
@@ -1276,6 +1256,28 @@ export function ApplicationDetailDialog({
   }, []);
 
   const applicationId = application?.id ?? null;
+
+  // NR38-C fitur 1 — tandai lamaran "sudah dilihat admin": dialog memanggil
+  // GET /api/admin/applications/[id] setiap membuka satu lamaran; server
+  // mengisi adminSeenAt bila masih null (write kecil, non-blocking). Respons
+  // dipakai juga untuk memuat verdict screening (fitur 4) & ringkasan CV
+  // (fitur 5) yang tersimpan.
+  useEffect(() => {
+    if (!applicationId) return;
+    let cancelled = false;
+    apiGet<DetailApplication>(`/api/admin/applications/${applicationId}`)
+      .then((detail) => {
+        if (cancelled) return;
+        setScreeningVerdicts(parseScreeningVerdicts(detail.screeningVerdicts));
+        setCvSummary(parseCvSummaryJson(detail.cvSummary));
+      })
+      .catch(() => {
+        // Penandaan dilihat bersifat pelengkap — abaikan kegagalan fetch.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applicationId]);
   const positionId = application?.positionId ?? null;
 
   // Muat posisi terkait untuk rubrik/checklist/pertanyaan screening/template.

@@ -1532,7 +1532,7 @@ export function ApplicationsTab() {
           bulkCompareOpen
             ? Array.from(selectedIds)
                 .map((id) => displayedApplications.find((a) => a.id === id))
-                .filter((a): a is Application => Boolean(a))
+                .filter((a): a is ApplicationRow => Boolean(a))
             : []
         }
         open={bulkCompareOpen}
