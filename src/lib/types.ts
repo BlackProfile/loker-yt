@@ -327,8 +327,8 @@ export type Position = {
   autoCloseOnHired: boolean;
 
   // NR-40 — pipeline lengkap
-  agingWarnDays: number | null; // ambang hari "mengendap" di kanban (null = 7)
-  onboardingTemplate: OnboardingTemplateItem[] | null; // rencana onboarding bawaan, auto-terpasang saat diterima
+  agingWarnDays?: number | null; // ambang hari "mengendap" di kanban (null/undefined = 7)
+  onboardingTemplate?: OnboardingTemplateItem[] | null; // rencana onboarding bawaan, auto-terpasang saat diterima
 
   // Rentang gaji wajar (validasi offer) — null = tanpa batas
   salaryMin: number | null;
