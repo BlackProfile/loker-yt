@@ -1371,6 +1371,9 @@ export type EmployeeCardDto = {
   hiredAt: string | null;
   nikMasked: string | null;
   trackingCode: string | null;
+  // NR-40 — siklus hidup karyawan (untuk badge "Karyawan Tetap" / status alumni)
+  permanentAt?: string | null;
+  exitAt?: string | null;
 };
 
 // Payload verifikasi publik — data minimal demi privasi (tanpa NIK/HP/gaji).
