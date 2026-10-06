@@ -4,6 +4,7 @@
 //        hold ("1" — proses ditahan), sort ("newest" default | "oldest" | "aiScore" | "followup").
 // Scope & masking: HR dengan scope posisi hanya melihat lamaran pada posisi terkait;
 // VIEWER menerima PII tersamar (phone & CV disembunyikan di level respons list).
+// NR38-B — payload kini juga memuat adminSeenAt, snoozeUntil, positionSalaryMin/Max.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
@@ -51,13 +52,28 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // NR38-B — include diperluas secara aditif: posisi ikut membawa rentang
+    // gaji (salaryMin/salaryMax) untuk chip "gaji vs range" di tabel admin.
+    // serializeApplication tetap hanya memakai position.title sehingga aman.
     const rows = await db.application.findMany({
       where,
       orderBy,
-      include: APPLICATION_INCLUDE,
+      include: {
+        ...APPLICATION_INCLUDE,
+        position: { select: { title: true, salaryMin: true, salaryMax: true } },
+      },
     });
 
-    const data = rows.map(serializeApplication);
+    // NR38-B — tambahan payload untuk triase cepat: adminSeenAt (dasar filter
+    // "Belum dilihat"), snoozeUntil (panel "Perlu dihubungi hari ini"), dan
+    // rentang gaji posisi. Aditif — bentuk respons lama tidak berubah.
+    const data = rows.map((record) => ({
+      ...serializeApplication(record),
+      adminSeenAt: record.adminSeenAt ? record.adminSeenAt.toISOString() : null,
+      snoozeUntil: record.snoozeUntil ? record.snoozeUntil.toISOString() : null,
+      positionSalaryMin: record.position?.salaryMin ?? null,
+      positionSalaryMax: record.position?.salaryMax ?? null,
+    }));
 
     // VIEWER: mask PII (phone & CV) hanya pada level respons list.
     return NextResponse.json(
