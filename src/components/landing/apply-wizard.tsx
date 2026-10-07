@@ -1233,6 +1233,10 @@ export function ApplyWizard({
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   // Sumber pelamar ("dari mana tahu lowongan ini") — opsional.
   const [source, setSource] = useState("");
+  // NR-41 G13 — sumber terstruktur dari /api/public/referral-sources (aktif saja).
+  // Gagal memuat → kembali ke daftar statis lama (APPLICATION_SOURCES) tanpa error.
+  const [referralSources, setReferralSources] = useState<{ id: string; name: string }[]>([]);
+  const [sourceId, setSourceId] = useState("");
   // NR-24 — ekspektasi gaji bulanan (opsional): disimpan sebagai string digit
   // murni (sanitizeSalaryInput); kosong = tidak dikirim ke server.
   const [expectedSalaryInput, setExpectedSalaryInput] = useState("");
@@ -1513,6 +1517,12 @@ export function ApplyWizard({
   const [draft, setDraft] = useState<StoredDraft | null>(null);
   const submittedRef = useRef(false);
   const draftDismissedRef = useRef(false);
+  // NR-41 J26 — draft lintas perangkat: token server + meta file yang sudah ada.
+  const [draftToken, setDraftToken] = useState("");
+  const draftTokenRef = useRef("");
+  const [draftFiles, setDraftFiles] = useState<DraftFileMeta[]>([]);
+  // Label file yang sedang diunggah ke draft ("cv", "intro", "doc:…", "form:…").
+  const [draftUploadingLabels, setDraftUploadingLabels] = useState<Record<string, boolean>>({});
   // Tautan "lanjutkan draft" lintas perangkat: kirim ke email & pulihkan dari URL.
   const [linkEmail, setLinkEmail] = useState("");
   const [sendingLink, setSendingLink] = useState(false);
@@ -1544,6 +1554,65 @@ export function ApplyWizard({
     } catch {
       // draft rusak -> abaikan
     }
+  }, []);
+
+  // NR-41 G13 — muat daftar sumber lamaran aktif (sekali saat mount). Gagal =
+  // senyap: Select jatuh kembali ke daftar statis lama tanpa mengganggu UI.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/public/referral-sources", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json().catch(() => null) : null))
+      .then((json: unknown) => {
+        if (!alive || !isRecord(json) || !Array.isArray(json.items)) return;
+        const items = json.items
+          .filter(isRecord)
+          .map((item) => ({
+            id: typeof item.id === "string" ? item.id : "",
+            name: typeof item.name === "string" ? item.name : "",
+          }))
+          .filter((item) => item.id !== "" && item.name !== "");
+        if (items.length > 0) setReferralSources(items);
+      })
+      .catch(() => {
+        // daftar tidak tersedia — fallback statis dipakai
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // NR-41 J26 — token draft server tersimpan di perangkat (sisa sesi lama):
+  // validasi senyap + ambil meta file agar chip "sudah ada" tampil tanpa tautan
+  // email. Data isian TIDAK ditimpa — sumber kebenaran isian tetap draft lokal.
+  useEffect(() => {
+    const stored = readStoredDraftToken();
+    if (!stored) return;
+    let alive = true;
+    fetch(`/api/public/apply-draft?token=${encodeURIComponent(stored)}`, {
+      cache: "no-store",
+    })
+      .then((res) => (res.ok ? res.json().catch(() => null) : null))
+      .then((json: unknown) => {
+        if (!alive) return;
+        if (!isRecord(json) || json.ok !== true) {
+          // kedaluwarsa / tidak valid — bersihkan token lokal
+          try {
+            window.localStorage.removeItem(DRAFT_TOKEN_KEY);
+          } catch {
+            // abaikan
+          }
+          return;
+        }
+        draftTokenRef.current = stored;
+        setDraftToken(stored);
+        if (Array.isArray(json.files)) setDraftFiles(parseDraftFiles(json.files));
+      })
+      .catch(() => {
+        // diam — file tetap dikirim normal saat submit
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // Pulihkan draft dari tautan email (?draft=<token>) — sekali saat mount.
@@ -1582,6 +1651,16 @@ export function ApplyWizard({
           return;
         }
         const data = json.data;
+        // NR-41 J26 — simpan token & meta file dari draft server (chip "sudah
+        // ada" + unggahan lanjutan memakai token yang sama).
+        const responseToken =
+          typeof json.token === "string" && json.token ? json.token : "";
+        if (responseToken) {
+          draftTokenRef.current = responseToken;
+          setDraftToken(responseToken);
+          storeDraftToken(responseToken);
+        }
+        if (Array.isArray(json.files)) setDraftFiles(parseDraftFiles(json.files));
         applyDraftRef.current({
           values: isRecord(data.values)
             ? (data.values as StoredDraft["values"])
@@ -1699,6 +1778,11 @@ export function ApplyWizard({
       delete next[errorKey];
       return next;
     });
+    // NR-41 J26 — berkas field form ikut tersimpan di draft server
+    // (label form:<fieldId>) agar aman bila lanjut di perangkat lain.
+    if (value instanceof File) {
+      void uploadDraftFile(`form:${fieldId}`, value);
+    }
   };
 
   /** Catat pesan error jawaban form (mis. berkas ditolak saat dipilih). */
@@ -2342,6 +2426,95 @@ export function ApplyWizard({
     return true;
   }
 
+  /* ---------------- NR-41 J26 — berkas ikut draft lintas perangkat ---------------- */
+
+  /** Meta file draft untuk satu label ("cv" | "intro" | "doc:…" | "form:…"). */
+  function draftFileForLabel(label: string): DraftFileMeta | null {
+    return draftFiles.find((item) => item.label === label) ?? null;
+  }
+
+  /** Label dokumen tambahan posisi — sinkron dengan pasangan extraDoc_<i> server. */
+  function extraDocLabel(index: number): string {
+    const name = customDocs[index] ?? "dokumen";
+    return `doc:${name.slice(0, 115)}`;
+  }
+
+  /**
+   * Pastikan draft SERVER ada untuk isian saat ini (autosave teks) dan
+   * kembalikan token-nya. Mengirim token lama agar baris yang sama di-upsert
+   * (token tetap). Diam bila email/posisi belum siap ATAU API gagal — pemanggil
+   * fallback ke pengiriman file normal saat submit.
+   */
+  async function ensureServerDraft(): Promise<string> {
+    const email = values.email.trim();
+    if (!positionId || !EMAIL_RE.test(email)) return "";
+    try {
+      const res = await fetch("/api/public/apply-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          positionId,
+          email,
+          data: JSON.stringify({
+            values,
+            formAnswers: serializableFormAnswers(formAnswers),
+            expectedSalaryInput,
+          }),
+          // upsert baris draft yang sama bila token sudah ada
+          ...(draftTokenRef.current ? { token: draftTokenRef.current } : {}),
+          // autosave senyap — JANGAN kirim email tautan tiap kali file dipilih
+          sendEmail: false,
+        }),
+      });
+      const json: unknown = await res.json().catch(() => null);
+      if (!res.ok || !isRecord(json) || json.ok !== true) return "";
+      const token = typeof json.token === "string" ? json.token : "";
+      if (!token) return "";
+      draftTokenRef.current = token;
+      setDraftToken(token);
+      storeDraftToken(token);
+      return token;
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * Unggah satu berkas ke draft server (fire-and-forget dari handler file).
+   * Gagal = senyap: berkas tetap dikirim normal (multipart) saat submit final.
+   */
+  async function uploadDraftFile(label: string, file: File): Promise<boolean> {
+    setDraftUploadingLabels((prev) => ({ ...prev, [label]: true }));
+    try {
+      const token = draftTokenRef.current || (await ensureServerDraft());
+      if (!token) return false;
+      const fd = new FormData();
+      fd.append("token", token);
+      fd.append("label", label);
+      fd.append("file", file);
+      const res = await fetch("/api/public/apply-draft-file", {
+        method: "POST",
+        body: fd,
+      });
+      const json: unknown = await res.json().catch(() => null);
+      if (!res.ok || !isRecord(json) || json.ok !== true || !isRecord(json.file)) {
+        return false;
+      }
+      const metas = parseDraftFiles([json.file]);
+      if (metas.length === 0) return false;
+      // Ganti meta label sama (server juga replace-by-label) — chip ikut segar.
+      setDraftFiles((prev) => [
+        ...prev.filter((item) => item.label !== label),
+        metas[0],
+      ]);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setDraftUploadingLabels((prev) => ({ ...prev, [label]: false }));
+    }
+  }
+
   function acceptCv(file: File | null) {
     if (!file) return;
     if (file.type !== "application/pdf") {
@@ -2356,6 +2529,8 @@ export function ApplyWizard({
     }
     setCvFile(file);
     setCvError(null);
+    // NR-41 J26 — simpan CV ke draft server (butuh token; gagal = senyap).
+    void uploadDraftFile("cv", file);
   }
 
   function acceptIntro(file: File | null) {
@@ -2374,6 +2549,8 @@ export function ApplyWizard({
     }
     setIntroFile(file);
     setIntroError(null);
+    // NR-41 J26 — simpan intro ke draft server (butuh token; gagal = senyap).
+    void uploadDraftFile("intro", file);
   }
 
   function onCvInput(event: ChangeEvent<HTMLInputElement>) {
@@ -2403,6 +2580,8 @@ export function ApplyWizard({
     }
     setExtraFiles((prev) => ({ ...prev, [index]: file }));
     setExtraErrors((prev) => ({ ...prev, [index]: undefined }));
+    // NR-41 J26 — simpan dokumen tambahan ke draft server (label doc:<nama>).
+    void uploadDraftFile(extraDocLabel(index), file);
   }
 
   function onExtraInput(index: number) {

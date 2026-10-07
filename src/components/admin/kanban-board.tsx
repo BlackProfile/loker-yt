@@ -360,8 +360,22 @@ function KanbanCard({
         onOpenDetail(app);
       }}
       onKeyDown={(e) => {
-        // Buka detail dengan keyboard (Enter/Space).
-        if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+        // I19 — sensor keyboard dnd-kit (spasi mengangkat kartu) dipanggil manual
+        // karena prop onKeyDown komponen menimpa listener hasil spread
+        // {...listeners}. Hanya aktif bila fokus tepat pada kartu (bukan pada
+        // tombol anak seperti checkbox/bintang/menu), dan bukan saat drag berjalan.
+        const onCardItself = e.target === e.currentTarget;
+        if (
+          onCardItself &&
+          !isDragging &&
+          listeners &&
+          typeof listeners.onKeyDown === "function"
+        ) {
+          listeners.onKeyDown(e);
+        }
+        if (e.defaultPrevented) return;
+        // Buka detail dengan keyboard (Enter/Space) bila bukan mengangkat drag.
+        if (onCardItself && (e.key === "Enter" || e.key === " ")) {
           onOpenDetail(app);
         }
       }}
@@ -423,10 +437,53 @@ function KanbanCard({
           </button>
         ) : null}
         {canMutate ? (
-          <GripVertical
-            className="size-4 shrink-0 text-muted-foreground/40"
-            aria-hidden="true"
-          />
+          <span
+            className="mt-0.5 shrink-0"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* I19 — alternatif aksesibel drag & drop: menu pindah tahap via
+                keyboard. Memilih tahap memanggil onMove yang sama dengan
+                drag & drop sehingga guard + update optimistik konsisten;
+                penolakan gerbang tahap (422) otomatis ditampilkan parent
+                sebagai toast lewat reportError. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`Pindahkan ${app.name} ke tahap lain`}
+                  title="Pindahkan ke tahap lain"
+                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-ring/50 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                >
+                  <GripVertical className="size-4" aria-hidden="true" />
+                  <ChevronDown className="-ml-1.5 size-3" aria-hidden="true" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel>Pindah ke tahap</DropdownMenuLabel>
+                {moveTargets.map((stage) => {
+                  const isCurrent = columnOf(app.status, moveTargets) === stage;
+                  return (
+                    <DropdownMenuItem
+                      key={stage}
+                      disabled={isCurrent}
+                      onSelect={() => {
+                        if (isCurrent) return;
+                        onMove(app.id, stage);
+                      }}
+                    >
+                      {columnMeta(stage).label}
+                      {isCurrent ? (
+                        <span className="ml-auto text-[10px] text-muted-foreground">
+                          Tahap saat ini
+                        </span>
+                      ) : null}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </span>
         ) : null}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -549,6 +606,8 @@ function KanbanColumn({
   onToggleSelect,
   onOpenDetail,
   onUpdated,
+  moveTargets,
+  onMove,
 }: {
   column: StageKey;
   isOther: boolean;
@@ -569,6 +628,10 @@ function KanbanColumn({
   onToggleSelect: (id: string, checked: boolean) => void;
   onOpenDetail: (app: Application) => void;
   onUpdated?: (app: Application) => void;
+  /** I19 — daftar tahap tujuan untuk menu pindah tahap pada kartu. */
+  moveTargets: StageKey[];
+  /** I19 — fungsi pindah tahap yang sama dengan drag & drop. */
+  onMove: (id: string, status: StageKey) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `${COLUMN_ID_PREFIX}${column}` });
   const meta = columnMeta(column);
@@ -652,6 +715,8 @@ function KanbanColumn({
                   onOpenDetail(a);
                 }}
                 onUpdated={onUpdated}
+                moveTargets={moveTargets}
+                onMove={onMove}
               />
             ))
           )}
@@ -689,9 +754,25 @@ export function KanbanBoard({
 }) {
   const { reportError } = useAdminSession();
 
+  // I19 — PointerSensor (perilaku seret sentuh/kursor tetap sama) +
+  // KeyboardSensor dgn sortableKeyboardCoordinates: fokus pada kartu, tekan
+  // spasi untuk mengangkat, tombol panah memilih kolom tujuan, spasi menaruh.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+
+  // I19 — pengumuman pembaca layar via region aria-live (teks Indonesia).
+  const [announcement, setAnnouncement] = useState("");
+  const announceCount = useRef(0);
+  const lastOverIdRef = useRef<string | null>(null);
+  const announce = useCallback((message: string) => {
+    announceCount.current += 1;
+    // Sisipkan karakter nol-lebar bergantian agar pesan yang sama persis
+    // tetap dibacakan ulang oleh pembaca layar.
+    const suffix = announceCount.current % 2 === 0 ? "\u200B" : "";
+    setAnnouncement(`${message}${suffix}`);
+  }, []);
 
   // Kolom nyata + kolom "Lainnya".
   const columns = useMemo<StageKey[]>(() => {
@@ -701,6 +782,13 @@ export function KanbanBoard({
     const hasOutside = apps.some((a) => !base.includes(a.status));
     return hasOutside ? [...base, OTHER_STAGE_KEY] : base;
   }, [stages, hasPositionFilter, apps]);
+
+  // I19 — target tahap untuk menu pindah pada kartu (kolom "Lainnya" dikecualikan:
+  // tahap kustom bukan tujuan pemindahan manual, sama dengan aturan drag & drop).
+  const moveTargets = useMemo(
+    () => columns.filter((c) => c !== OTHER_STAGE_KEY),
+    [columns]
+  );
 
   const appsKey = useMemo(
     () => apps.map((a) => `${a.id}:${a.status}`).join("|"),
@@ -839,21 +927,48 @@ export function KanbanBoard({
     }
   }
 
-  function handleDragStart(_event: DragStartEvent) {
+  function handleDragStart(event: DragStartEvent) {
     justDraggedRef.current = true;
+    lastOverIdRef.current = null;
+    const app = appMap.get(String(event.active.id));
+    announce(app ? `Menyeret kartu ${app.name}` : "Menyeret kartu");
+  }
+
+  /** Label kolom dari id droppable/kartu yang berada di bawah kartu terseret. */
+  function columnLabelOfOverId(overId: string): string | null {
+    if (overId.startsWith(COLUMN_ID_PREFIX)) {
+      const column = overId.slice(COLUMN_ID_PREFIX.length) as StageKey;
+      return columns.includes(column) ? columnMeta(column).label : null;
+    }
+    const overApp = appMap.get(overId);
+    const column = overApp ? columnOf(overApp.status, columns) : null;
+    return column ? columnMeta(column).label : null;
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    if (!event.over) return;
+    const overId = String(event.over.id);
+    if (overId === lastOverIdRef.current) return;
+    lastOverIdRef.current = overId;
+    const label = columnLabelOfOverId(overId);
+    if (label) announce(`Di atas kolom ${label}`);
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const activeId = String(event.active.id);
     const overId = event.over ? String(event.over.id) : null;
+    lastOverIdRef.current = null;
     // Reset sedikit terlambat agar klik pascadrag tidak membuka detail.
     setTimeout(() => {
       justDraggedRef.current = false;
     }, 80);
 
-    if (!overId) return;
-
     const activeApp = appMap.get(activeId);
+
+    if (!overId) {
+      if (activeApp) announce(`Kartu ${activeApp.name} tidak dilepas di atas kolom`);
+      return;
+    }
     if (!activeApp) return;
     const sourceColumn = columnOf(activeApp.status, columns);
 
@@ -870,6 +985,7 @@ export function KanbanBoard({
     // Drop ke kolom "Lainnya" tidak diizinkan: tahap kustom hanya berasal
     // dari pipeline posisi, bukan tujuan pemindahan manual.
     if (targetColumn === OTHER_STAGE_KEY && sourceColumn !== OTHER_STAGE_KEY) {
+      announce(`Kartu ${activeApp.name} tidak bisa dipindah ke tahap kustom`);
       toast.info("Tahap kustom tidak bisa dituju — pindahkan ke tahap pipeline yang tersedia.");
       return;
     }
@@ -877,8 +993,14 @@ export function KanbanBoard({
     if (targetColumn !== sourceColumn) {
       // Pindah kolom: parent melakukan update optimistik + PATCH.
       if (targetColumn === OTHER_STAGE_KEY) return;
+      announce(
+        `Kartu ${activeApp.name} dipindah ke kolom ${columnMeta(targetColumn).label}`
+      );
       onMove(activeId, targetColumn);
     } else {
+      announce(
+        `Urutan kartu ${activeApp.name} di kolom ${columnMeta(sourceColumn).label} diubah`
+      );
       // Reorder dalam kolom yang sama (visual saja).
       const current = overrides[sourceColumn] ?? baseOrder[sourceColumn] ?? [];
       const from = current.indexOf(activeId);
@@ -891,7 +1013,10 @@ export function KanbanBoard({
     }
   }
 
-  function handleDragCancel() {
+  function handleDragCancel(event: DragCancelEvent) {
+    const app = appMap.get(String(event.active.id));
+    announce(app ? `Pemindahan kartu ${app.name} dibatalkan` : "Pemindahan kartu dibatalkan");
+    lastOverIdRef.current = null;
     setTimeout(() => {
       justDraggedRef.current = false;
     }, 80);
@@ -963,9 +1088,20 @@ export function KanbanBoard({
         </p>
       </div>
 
+      {/* I19 — pengumuman pembaca layar untuk peristiwa seret & lepas (sr-only,
+          dibacakan otomatis oleh pembaca layar karena aria-live="polite"). */}
+      <div aria-live="polite" role="status" className="sr-only">
+        {announcement}
+      </div>
+
       <DndContext
         sensors={sensors}
+        accessibility={{
+          announcements: MUTED_ANNOUNCEMENTS,
+          screenReaderInstructions: KANBAN_SR_INSTRUCTIONS,
+        }}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
@@ -995,6 +1131,8 @@ export function KanbanBoard({
                   onOpenDetail(app);
                 }}
                 onUpdated={onUpdated}
+                moveTargets={moveTargets}
+                onMove={onMove}
               />
             );
           })}
