@@ -19,6 +19,7 @@ import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 // NR41-SEC-B (L32): notifikasi backup gagal/tertunda di akhir perawatan.
 import { verifyAndNotifyBackups } from "@/lib/backup-notify";
+import { archiveBeforePurge } from "@/lib/purge-archive";
 // NR41-DATA-B: retry email outbox (lib email-retry.ts buatan DATA-B).
 import { processEmailRetries } from "@/lib/email-retry";
 
@@ -228,9 +229,13 @@ async function runMaintenance() {
   // 2) RETENSI: lamaran ditolak / terarsip yang melewati batas umur -> hapus permanen.
   if (retentionEnabled) {
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
-    // NR41-DATA-B: archiveBeforePurge() dipanggil di sini — bila src/lib/purge-archive.ts
-    // sudah tersedia, panggil `await archiveBeforePurge();` SEBELUM blok purge permanen
-    // di bawah (export-before-purge: data subjek diarsipkan dulu sebelum dihapus).
+    // NR41-DATA-B (G12) — export-before-purge: arsipkan ringkasan data subjek yang
+    // akan dihapus permanen SEBELUM deleteMany (never throws).
+    try {
+      await archiveBeforePurge();
+    } catch (purgeArchiveError) {
+      console.error("[cron/maintenance] archiveBeforePurge gagal:", purgeArchiveError);
+    }
     const expired = await db.application.findMany({
       where: {
         deletedAt: null,
