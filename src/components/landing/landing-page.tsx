@@ -1026,13 +1026,23 @@ function readSubParam(): SubBannerKind | null {
   }
 }
 
+// Langganan "perubahan URL" (popstate) — agar snapshot sinkron ulang saat
+// pengguna menekan tombol kembali. Server snapshot: null (banner tidak tampil).
+function subscribeUrl(notify: () => void) {
+  window.addEventListener("popstate", notify);
+  return () => window.removeEventListener("popstate", notify);
+}
+
 function SubBanner() {
-  const [kind, setKind] = useState<SubBannerKind | null>(null);
+  // NR-41 — dibaca via useSyncExternalStore (pola sama dengan useScrolled):
+  // aman SSR (server = null), tanpa setState sinkron di effect.
+  const kind = useSyncExternalStore(subscribeUrl, readSubParam, () => null);
+  const [closed, setClosed] = useState(false);
 
   useEffect(() => {
-    const initial = readSubParam();
-    if (!initial) return;
-    setKind(initial);
+    if (!kind) return;
+    // Bersihkan parameter "sub" dari URL agar refresh tidak menampilkan ulang
+    // banner (murni manipulasi URL — tanpa setState).
     try {
       const url = new URL(window.location.href);
       if (url.searchParams.has("sub")) {
@@ -1042,11 +1052,12 @@ function SubBanner() {
     } catch {
       // biarkan URL apa adanya
     }
-    const timer = window.setTimeout(() => setKind(null), 9000);
+    // Auto-tutup (setState di callback timer — bukan sinkron di body effect).
+    const timer = window.setTimeout(() => setClosed(true), 9000);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [kind]);
 
-  if (!kind) return null;
+  if (!kind || closed) return null;
   const meta = SUB_BANNER_META[kind];
   const Icon = meta.icon;
   return (

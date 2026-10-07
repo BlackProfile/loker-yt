@@ -322,6 +322,173 @@ function GajiCell({ app, position }: { app: ApplicationRow; position: Position |
   );
 }
 
+/**
+ * NR-41 E1 — footer pagination tabel: "Menampilkan a–b dari c", pilihan
+ * ukuran halaman (25/50/100), tombol Sebelumnya/Berikutnya, dan nomor halaman
+ * ringkas (1 … 4 5 6 … 20) bila jumlah halaman tidak muat.
+ */
+function PaginationFooter({
+  page,
+  pageSize,
+  total,
+  totalPages,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+}) {
+  if (total <= 0) return null;
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
+
+  // Nomor halaman ringkas: semua bila <= 7; selain itu 1 … (p-1) p (p+1) … akhir.
+  const entries: (number | "ellipsis-l" | "ellipsis-r")[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) entries.push(i);
+  } else {
+    entries.push(1);
+    if (page > 3) entries.push("ellipsis-l");
+    for (
+      let i = Math.max(2, page - 1);
+      i <= Math.min(totalPages - 1, page + 1);
+      i++
+    ) {
+      entries.push(i);
+    }
+    if (page < totalPages - 2) entries.push("ellipsis-r");
+    entries.push(totalPages);
+  }
+
+  return (
+    <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        Menampilkan {from}–{to} dari {total} lamaran
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={String(pageSize)}
+          onValueChange={(v) => onPageSizeChange(Number(v))}
+        >
+          <SelectTrigger
+            className="h-9 w-[132px] rounded-xl"
+            aria-label="Baris per halaman"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[25, 50, 100].map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n} / halaman
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <nav
+          aria-label="Navigasi halaman tabel"
+          className="flex items-center gap-1"
+        >
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-9"
+            disabled={page <= 1}
+            onClick={() => onPageChange(page - 1)}
+            aria-label="Halaman sebelumnya"
+          >
+            <ChevronLeft className="size-4" aria-hidden="true" />
+          </Button>
+          {entries.map((entry) =>
+            typeof entry === "number" ? (
+              <Button
+                key={entry}
+                variant={entry === page ? "secondary" : "ghost"}
+                size="icon"
+                className={cn(
+                  "size-9 text-xs tabular-nums",
+                  entry === page && "shadow-xs"
+                )}
+                onClick={() => onPageChange(entry)}
+                aria-label={`Halaman ${entry}`}
+                aria-current={entry === page ? "page" : undefined}
+              >
+                {entry}
+              </Button>
+            ) : (
+              <span
+                key={entry}
+                className="px-1 text-xs text-muted-foreground"
+                aria-hidden="true"
+              >
+                …
+              </span>
+            )
+          )}
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-9"
+            disabled={page >= totalPages}
+            onClick={() => onPageChange(page + 1)}
+            aria-label="Halaman berikutnya"
+          >
+            <ChevronRight className="size-4" aria-hidden="true" />
+          </Button>
+        </nav>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * NR-41 I22 — header kolom yang bisa diklik untuk mengurutkan server-side.
+ * Ikon: ArrowUpDown (netral), ArrowDown (menurun), ArrowUp (menaik).
+ */
+function SortHeaderButton({
+  label,
+  field,
+  activeSort,
+  onToggle,
+}: {
+  label: string;
+  field: HeaderSortField;
+  activeSort: HeaderSort | null;
+  onToggle: (field: HeaderSortField) => void;
+}) {
+  const active = activeSort?.field === field;
+  const dir = active ? (activeSort?.dir ?? "desc") : null;
+  const Icon = !active ? ArrowUpDown : dir === "asc" ? ArrowUp : ArrowDown;
+  const nextAction = !active
+    ? `Urutkan ${label} menurun`
+    : dir === "desc"
+      ? `Urutkan ${label} menaik`
+      : `Hapus urutan ${label}`;
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(field)}
+      className="group inline-flex items-center gap-1 rounded text-left font-medium outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      title={`${nextAction} (klik header untuk siklus urutan)`}
+      aria-label={nextAction}
+    >
+      {label}
+      <Icon
+        className={cn(
+          "size-3.5 shrink-0 transition-colors",
+          active
+            ? "text-rose-600 dark:text-rose-400"
+            : "text-muted-foreground/40 group-hover:text-muted-foreground"
+        )}
+        aria-hidden="true"
+      />
+    </button>
+  );
+}
+
 export function ApplicationsTable({
   applications,
   positions = [],
@@ -338,12 +505,21 @@ export function ApplicationsTable({
   onRate,
   density = "cozy",
   cardMode = false,
+  // NR-41 E1/I22 — pagination + urutan header dikendalikan induk.
+  page = 1,
+  pageSize = 25,
+  total = 0,
+  totalPages = 1,
+  onPageChange,
+  onPageSizeChange,
+  headerSort = null,
+  onHeaderSortToggle,
 }: {
   applications: ApplicationRow[];
   /** Daftar posisi untuk cek ekspektasi gaji vs rentang wajar (NR-24). */
   positions?: Position[];
   canMutate: boolean;
-  /** NR38-B fitur 5: kepadatan tabel — padat menyembunyikan kolom Sumber/Tags/NIK/Gaji. */
+  /** NR38-B fitur 5: kepadatan tabel — padat menyembunyikan kolom Sumber/Tags/NIK/Gaji/Diubah. */
   density?: TableDensity;
   /** NR38-B fitur 9: mode kartu menggantikan tabel & daftar mobile. */
   cardMode?: boolean;
@@ -359,6 +535,17 @@ export function ApplicationsTable({
   onOpenDetail: (app: Application) => void;
   onDeleteRequest: (app: Application) => void;
   onRate: (app: Application, rating: number) => void;
+  /** NR-41 E1 — halaman aktif (1-based). */
+  page?: number;
+  pageSize?: number;
+  /** NR-41 E1 — total baris hasil filter (lintas halaman). */
+  total?: number;
+  totalPages?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  /** NR-41 I22 — urutan header aktif (null = netral). */
+  headerSort?: HeaderSort | null;
+  onHeaderSortToggle?: (field: HeaderSortField) => void;
 }) {
   // Cache pesan WhatsApp (body template OFFER pertama) — dimuat sekali saat pertama dipakai.
   const waTemplateRef = useRef<string | null>(null);
@@ -405,23 +592,61 @@ export function ApplicationsTable({
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
-  // NR38-B fitur 5 — kepadatan: padat = padding sel py-1.5 + kolom Sumber/Tags/NIK/Gaji disembunyikan.
+  // NR38-B fitur 5 — kepadatan: padat = padding sel py-1.5 + kolom Sumber/Tags/NIK/Gaji/Diubah disembunyikan.
   const isCompact = density === "compact";
   const pad = isCompact ? "px-4 py-1.5" : "px-4 py-3";
   const padHead = isCompact ? "px-4 py-2" : "px-4 py-3";
 
+  // NR-41 E1/I22 — footer pagination & handler header (opsional bila induk
+  // tidak menyediakan — mis. pemakaian lama tanpa pagination).
+  const pagination =
+    onPageChange && onPageSizeChange ? (
+      <PaginationFooter
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        totalPages={totalPages}
+        onPageChange={onPageChange}
+        onPageSizeChange={onPageSizeChange}
+      />
+    ) : null;
+  const sortToggle = onHeaderSortToggle
+    ? (field: HeaderSortField) => onHeaderSortToggle(field)
+    : undefined;
+
+  // NR-41 G9 — tombol kecil profil kandidat (ikon UserRound) di baris/kartu.
+  const candidateButton = (app: Application, extraClass?: string) =>
+    canMutate ? (
+      <Button
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "size-9 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400",
+          extraClass
+        )}
+        onClick={() => openCandidateDialog(app.candidateId ?? null)}
+        aria-label={`Buka profil kandidat ${app.name}`}
+        title="Profil kandidat terpusat"
+      >
+        <UserRound className="size-4" aria-hidden="true" />
+      </Button>
+    ) : null;
+
   // NR38-B fitur 9 — mode kartu menggantikan tabel desktop & daftar mobile.
   if (cardMode) {
     return (
-      <ApplicantCardGrid
-        applications={applications}
-        canMutate={canMutate}
-        currentUserId={currentUserId}
-        selectedIds={selectedIds}
-        onToggleSelect={onToggleSelect}
-        onToggleStar={onToggleStar}
-        onOpenDetail={onOpenDetail}
-      />
+      <>
+        <ApplicantCardGrid
+          applications={applications}
+          canMutate={canMutate}
+          currentUserId={currentUserId}
+          selectedIds={selectedIds}
+          onToggleSelect={onToggleSelect}
+          onToggleStar={onToggleStar}
+          onOpenDetail={onOpenDetail}
+        />
+        {pagination}
+      </>
     );
   }
 
