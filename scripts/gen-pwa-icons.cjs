@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- skrip build standalone, bukan bagian bundle app */
 // NR-41 J23 — generator ikon PWA (rasterisasi SVG -> PNG memakai sharp).
 // Jalankan sekali: `node scripts/gen-pwa-icons.cjs` (atau `bun scripts/gen-pwa-icons.cjs`).
 // Output di public/icons/:

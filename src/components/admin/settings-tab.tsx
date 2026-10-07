@@ -251,7 +251,6 @@ function EmailOutboxCard() {
   useEffect(() => {
     void load(1, statusFilter);
     // statusFilter disengaja tidak masuk deps — perubahan filter ditangani handler.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function changeFilter(value: string) {

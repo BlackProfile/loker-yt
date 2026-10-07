@@ -1038,13 +1038,15 @@ function SubBanner() {
   // aman SSR (server = null), tanpa setState sinkron di effect.
   const kind = useSyncExternalStore(subscribeUrl, readSubParam, () => null);
   const [closed, setClosed] = useState(false);
-  // Nilai PERTAMA yang terbaca di klien dilock (URL ?sub dibersihkan di effect,
-  // snapshot store berikutnya jadi null — banner tetap tampil selama sesi ini).
-  const initialKindRef = useRef<SubBannerKind | null>(null);
-  if (initialKindRef.current === null && kind !== null) {
-    initialKindRef.current = kind;
-  }
-  const effectiveKind = initialKindRef.current;
+  // Nilai PERTAMA yang terbaca di klien di-lock ke state (URL ?sub dibersihkan
+  // di effect, snapshot store berikutnya jadi null — banner tetap tampil).
+  const [stickyKind, setStickyKind] = useState<SubBannerKind | null>(null);
+  useEffect(() => {
+    if (kind && !stickyKind) {
+      setStickyKind(kind);
+    }
+  }, [kind, stickyKind]);
+  const effectiveKind = stickyKind;
 
   useEffect(() => {
     if (!effectiveKind) return;
