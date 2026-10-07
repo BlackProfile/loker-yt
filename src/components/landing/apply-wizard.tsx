@@ -2046,9 +2046,13 @@ export function ApplyWizard({
   function validateFormField(field: FormField, value: FormAnswerInput | undefined): string | null {
     const label = formFieldLabel(field, lang);
     const requiredMsg = fillTemplate(t.apply.errors.formRequired, { label });
-    // Field berkas tidak ikut formAnswers — wajib berarti File sudah dipilih.
+    // Field berkas tidak ikut formAnswers — wajib berarti File sudah dipilih
+    // ATAU file untuk field ini sudah ada di draft server (NR-41 J26).
     if (field.type === "file") {
-      return field.required && !(value instanceof File) ? requiredMsg : null;
+      if (field.required && !(value instanceof File) && !draftFileForLabel(`form:${field.id}`)) {
+        return requiredMsg;
+      }
+      return null;
     }
     const empty =
       value === undefined ||
@@ -2189,8 +2193,13 @@ export function ApplyWizard({
       case "files": {
         // CV & audio/video intro wajib per flag bagian Berkas (bukan lagi
         // kolom requireCv/requireIntro posisi — kolom itu tersinkron server).
-        if (isCvRequired(entry.section) && !cvFile) cvMissing = true;
-        if (isIntroRequired(entry.section) && !introFile) introMissing = true;
+        // NR-41 J26 — file yang sudah ada di draft server juga memenuhi syarat.
+        if (isCvRequired(entry.section) && !cvFile && !draftFileForLabel("cv")) {
+          cvMissing = true;
+        }
+        if (isIntroRequired(entry.section) && !introFile && !draftFileForLabel("intro")) {
+          introMissing = true;
+        }
         // Portofolio wajib hanya bila slotnya aktif & ditandai wajib —
         // perilaku lama dipertahankan: portfolioUrl ATAU socialLinks.
         if (
@@ -2410,12 +2419,12 @@ export function ApplyWizard({
 
   /** Berkas wajib per posisi (CV/audio intro + dokumen tambahan) — dipakai sebelum masuk pratinjau. */
   function validateRequiredFiles(): boolean {
-    if (selectedPosition?.requireCv && !cvFile) {
+    if (selectedPosition?.requireCv && !cvFile && !draftFileForLabel("cv")) {
       setCvError(t.apply.errors.cvRequired);
       toast.error(t.apply.errors.cvRequired);
       return false;
     }
-    if (selectedPosition?.requireIntro && !introFile) {
+    if (selectedPosition?.requireIntro && !introFile && !draftFileForLabel("intro")) {
       setIntroError(t.apply.errors.introRequired);
       toast.error(t.apply.errors.introRequired);
       return false;
@@ -2423,7 +2432,7 @@ export function ApplyWizard({
     // customDocs hanya mode klasik — skema aktif memakai field file milik skema.
     if (!schema) {
       for (let i = 0; i < customDocs.length; i++) {
-        if (!extraFiles[i]) {
+        if (!extraFiles[i] && !draftFileForLabel(extraDocLabel(i))) {
           const msg = fillTemplate(t.apply.uploads.extraDocRequired, {
             label: customDocs[i],
           });
@@ -3152,7 +3161,18 @@ export function ApplyWizard({
         fd.append("screeningAnswers", JSON.stringify(record));
       }
       // Sumber pelamar + UTM dari URL saat halaman dibuka.
-      if (source) fd.append("source", source);
+      // NR-41 G13 — bila memilih sumber terstruktur, kirim sourceId (server
+      // menyimpan relasi ReferralSource); else fallback teks bebas lama.
+      if (sourceId) {
+        fd.append("sourceId", sourceId);
+      } else if (source) {
+        fd.append("source", source);
+      }
+      // NR-41 J26 — token draft server: server mengadopsi file yang sudah
+      // diunggah ke draft (CV/intro/dokumen/form) lalu menghapus draft.
+      if (draftTokenRef.current) {
+        fd.append("draftToken", draftTokenRef.current);
+      }
       if (utm.source) fd.append("utmSource", utm.source);
       if (utm.medium) fd.append("utmMedium", utm.medium);
       if (utm.campaign) fd.append("utmCampaign", utm.campaign);
@@ -3247,6 +3267,15 @@ export function ApplyWizard({
       } catch {
         // abaikan
       }
+      // NR-41 J26 — draft server dikonsumsi saat submit; bersihkan token & meta.
+      draftTokenRef.current = "";
+      setDraftToken("");
+      setDraftFiles([]);
+      try {
+        window.localStorage.removeItem(DRAFT_TOKEN_KEY);
+      } catch {
+        // abaikan
+      }
       setSuccess({
         name: values.name.trim(),
         trackingCode,
@@ -3326,6 +3355,7 @@ export function ApplyWizard({
     setConfirmOpen(false);
     setDirection(1);
     setSource("");
+    setSourceId("");
     setExpectedSalaryInput("");
     setScreeningAnswers({});
     setFormAnswers({});
@@ -3339,6 +3369,15 @@ export function ApplyWizard({
     if (!lockPosition) onPositionIdChange("");
     try {
       window.localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      // abaikan
+    }
+    // NR-41 J26 — mulai dari awal: token & meta file draft server juga direset.
+    draftTokenRef.current = "";
+    setDraftToken("");
+    setDraftFiles([]);
+    try {
+      window.localStorage.removeItem(DRAFT_TOKEN_KEY);
     } catch {
       // abaikan
     }
@@ -3430,10 +3469,24 @@ export function ApplyWizard({
             // NR-24 — ekspektasi gaji ikut terkirim dalam tautan draft.
             expectedSalaryInput,
           }),
+          // NR-41 J26 — kirim token tersimpan agar baris draft sama yang di-update
+          // (upsert; token & unggahan file sebelumnya tetap hidup).
+          ...(draftTokenRef.current ? { token: draftTokenRef.current } : {}),
         }),
       });
       const json: unknown = await res.json().catch(() => null);
       if (res.ok && isRecord(json) && json.ok === true) {
+        // NR-41 J26 — simpan token respons agar unggahan file berikutnya
+        // memakai baris draft yang sama (upsert; token tetap).
+        const responseToken =
+          isRecord(json) && typeof json.token === "string" && json.token
+            ? json.token
+            : "";
+        if (responseToken) {
+          draftTokenRef.current = responseToken;
+          setDraftToken(responseToken);
+          storeDraftToken(responseToken);
+        }
         setLinkStatus({
           ok: true,
           message: "Tautan dikirim. Cek email kamu (berlaku 7 hari).",
@@ -3736,9 +3789,8 @@ export function ApplyWizard({
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Lanjutkan mengisi di perangkat lain</p>
             <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-              Kirim tautan draft ke email kamu. Isian teks dan pilihan ikut tersimpan;
-              berkas (CV, intro, dokumen) perlu diunggah ulang. Tautan berlaku 7 hari
-              dan hanya bisa dipakai sekali.
+              Kirim tautan draft ke email kamu. Isian teks, pilihan, dan berkas yang
+              sudah tersimpan di draft ikut terbawa. Tautan berlaku 7 hari.
             </p>
             <form
               onSubmit={handleSendDraftLink}
@@ -4235,24 +4287,67 @@ export function ApplyWizard({
               </p>
             ) : null}
 
-            {/* Sumber pelamar (opsional) — membantu pemilik melacak kanal rekrutmen */}
+            {/* Sumber pelamar (opsional) — membantu pemilik melacak kanal rekrutmen.
+                NR-41 G13 — daftar dinamis dari /api/public/referral-sources +
+                opsi "Lainnya" (teks bebas); gagal memuat → daftar statis lama. */}
             <div className="flex flex-col gap-2">
               <Label htmlFor="apply-source">{t.apply.fields.source}</Label>
-              <Select
-                value={source || undefined}
-                onValueChange={(value) => setSource(value)}
-              >
-                <SelectTrigger id="apply-source" className="h-11 w-full">
-                  <SelectValue placeholder={t.apply.fields.sourcePh} />
-                </SelectTrigger>
-                <SelectContent>
-                  {APPLICATION_SOURCES.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {referralSources.length > 0 ? (
+                <>
+                  <Select
+                    value={sourceOptionValue}
+                    onValueChange={handleSourceSelect}
+                  >
+                    <SelectTrigger id="apply-source" className="h-11 w-full">
+                      <SelectValue placeholder={t.apply.fields.sourcePh} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {referralSources.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value={SOURCE_OTHER}>
+                        {lang === "en" ? "Other" : "Lainnya"}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {sourceOptionValue === SOURCE_OTHER ? (
+                    <Input
+                      id="apply-source-other"
+                      value={source}
+                      onChange={(event) => setSource(event.target.value)}
+                      placeholder={
+                        lang === "en"
+                          ? "Tell us how you found this opening"
+                          : "Tulis dari mana kamu tahu lowongan ini"
+                      }
+                      maxLength={120}
+                      className="h-11"
+                      aria-label={t.apply.fields.source}
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <Select
+                  value={source || undefined}
+                  onValueChange={(value) => {
+                    setSource(value);
+                    setSourceId("");
+                  }}
+                >
+                  <SelectTrigger id="apply-source" className="h-11 w-full">
+                    <SelectValue placeholder={t.apply.fields.sourcePh} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {APPLICATION_SOURCES.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             {/* Pertanyaan kustom milik bagian Data Diri (mode skema aktif) */}

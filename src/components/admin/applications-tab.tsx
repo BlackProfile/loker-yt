@@ -78,6 +78,7 @@ import {
   type RejectionReason,
   type StageKey,
 } from "@/lib/types";
+import type { PaginatedApplications } from "@/lib/types";
 import {
   DEFAULT_STAGES,
   OTHER_STAGE_KEY,
@@ -125,6 +126,61 @@ const KOMUTER_FILTER_OPTIONS: { value: KomuterPlan; label: string }[] = [
 
 type ViewMode = "table" | "kanban";
 
+// NR-41 I22 — urutan server-side dari klik header (format "field:dir").
+export type HeaderSort = { field: HeaderSortField; dir: "asc" | "desc" };
+type HeaderSortField = "name" | "createdAt" | "updatedAt" | "aiScore" | "status";
+
+const HEADER_SORT_FIELDS: HeaderSortField[] = [
+  "name",
+  "createdAt",
+  "updatedAt",
+  "aiScore",
+  "status",
+];
+
+function isHeaderSortField(value: string): value is HeaderSortField {
+  return (HEADER_SORT_FIELDS as string[]).includes(value);
+}
+
+/** Pembanding client-side untuk legacy mode / sort followup pada halaman. */
+function compareRows(
+  a: ApplicationRow,
+  b: ApplicationRow,
+  field: HeaderSortField,
+  dir: "asc" | "desc"
+): number {
+  const mul = dir === "asc" ? 1 : -1;
+  switch (field) {
+    case "name":
+      return a.name.localeCompare(b.name, "id") * mul;
+    case "createdAt":
+      return (
+        (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * mul
+      );
+    case "updatedAt":
+      return (
+        (new Date(a.updatedAt ?? a.createdAt).getTime() -
+          new Date(b.updatedAt ?? b.createdAt).getTime()) * mul
+      );
+    case "aiScore":
+      return ((a.aiScore ?? -1) - (b.aiScore ?? -1)) * mul;
+    case "status":
+      return stageLabel(a.status).localeCompare(stageLabel(b.status), "id") * mul;
+    default:
+      return 0;
+  }
+}
+
+/** Urutan snooze terdekat di atas (null paling bawah) — tiruan sort followup. */
+function compareSnoozeAsc(a: ApplicationRow, b: ApplicationRow): number {
+  const aKey = a.snoozeUntil ?? a.followUpAt ?? null;
+  const bKey = b.snoozeUntil ?? b.followUpAt ?? null;
+  if (aKey === bKey) return 0;
+  if (!aKey) return 1;
+  if (!bKey) return -1;
+  return new Date(aKey).getTime() - new Date(bKey).getTime();
+}
+
 // Hasil pencarian semantik AI (POST /api/admin/applications/semantic-search).
 type SemanticSearchEntryUI = { id: string; name: string; score: number; reason: string };
 
@@ -159,6 +215,13 @@ export function ApplicationsTab() {
   // NR38-B fitur 1 — filter "Belum dilihat": hanya lamaran yang belum pernah
   // dibuka admin (adminSeenAt null). Pencatatan adminSeenAt dikerjakan dialog detail.
   const [unseenOnly, setUnseenOnly] = useState(false);
+
+  // NR-41 E1/I22 — pagination server + urutan header.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [serverTotalPages, setServerTotalPages] = useState(1);
+  const [headerSort, setHeaderSort] = useState<HeaderSort | null>(null);
 
   const [allTags, setAllTags] = useState<string[]>([]);
   const [view, setView] = useState<ViewMode>("table");
