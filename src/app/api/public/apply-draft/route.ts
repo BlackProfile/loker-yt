@@ -66,6 +66,18 @@ export async function POST(req: NextRequest) {
       typeof payload.positionId === "string" ? payload.positionId.trim() : "";
     const email = typeof payload.email === "string" ? payload.email.trim() : "";
     const data = typeof payload.data === "string" ? payload.data : null;
+    // NR-41 J26 — bila wizard sudah punya token draft di localStorage, perbarui
+    // baris yang sama (token tetap) alih-alih membuat baris baru tiap autosave.
+    const existingToken =
+      typeof payload.token === "string" ? payload.token.trim() : "";
+    // NR-41 J26 — bila wizard sudah punya token draft di localStorage, perbarui
+    // baris yang sama (token tetap) alih-alih membuat baris baru tiap autosave.
+    const existingToken =
+      typeof payload.token === "string" ? payload.token.trim() : "";
+    // NR-41 J26 — bila wizard sudah punya token draft di localStorage, perbarui
+    // baris yang sama (token tetap) alih-alih membuat baris baru tiap autosave.
+    const existingToken =
+      typeof payload.token === "string" ? payload.token.trim() : "";
 
     if (!email || !EMAIL_REGEX.test(email)) {
       return NextResponse.json({ error: "Format email tidak valid." }, { status: 400 });
@@ -104,18 +116,38 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Token 32 karakter hex acak; berlaku 7 hari.
-    const token = randomBytes(16).toString("hex");
+    // Token 32 karakter hex acak; berlaku 7 hari. NR-41 J26 — upsert: bila wizard
+    // mengirim token lama yang masih berlaku untuk email+posisi sama, pakai baris itu.
     const expiresAt = new Date(Date.now() + EXPIRES_MS);
-    await db.applicationDraft.create({
-      data: {
-        token,
-        positionId: position.id,
-        email: email.toLowerCase(),
-        data,
-        expiresAt,
-      },
-    });
+    let token = randomBytes(16).toString("hex");
+    let reused = false;
+    if (/^[a-f0-9]{32}$/.test(existingToken)) {
+      const existing = await db.applicationDraft.findUnique({ where: { token: existingToken } });
+      if (
+        existing &&
+        existing.expiresAt.getTime() > Date.now() &&
+        existing.email === email.toLowerCase() &&
+        existing.positionId === positionId
+      ) {
+        await db.applicationDraft.update({
+          where: { id: existing.id },
+          data: { data: data as string, expiresAt },
+        });
+        token = existing.token;
+        reused = true;
+      }
+    }
+    if (!reused) {
+      await db.applicationDraft.create({
+        data: {
+          token,
+          positionId: position.id,
+          email: email.toLowerCase(),
+          data,
+          expiresAt,
+        },
+      });
+    }
 
     const origin =
       req.headers.get("origin") ?? process.env.NEXT_PUBLIC_SITE_URL ?? "";
