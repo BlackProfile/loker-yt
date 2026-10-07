@@ -1390,3 +1390,165 @@ export type VerifyCardResponse = {
   };
   verifiedAt: string;
 };
+
+/* ===================== NR-41 — Tambahan Paket E–L (platform) =====================
+ * Kontrak tipe untuk fitur platform: kandidat terpusat, tag terstruktur, sumber
+ * lamaran, saved views server-side, pagination, health, kepatuhan email, dsb.
+ * Agent NR-41 WAJIB menambahkan tipe baru di bawah penanda ini (edit aditif saja).
+ * ========================================================================== */
+
+// G9 — profil kandidat terpusat (ringkasan, dari API admin)
+export type CandidateSummary = {
+  id: string;
+  email: string;
+  name: string;
+  phone: string | null;
+  doNotHire: boolean;
+  doNotHireReason: string | null;
+  notes: string | null;
+  firstSeenAt: string;
+  lastAppliedAt: string | null;
+  applicationCount: number;
+  positions: string[]; // judul posisi yang pernah/sedang dilamar
+  activeStatuses: string[]; // status pipeline aktif terbaru per posisi
+  bestAiScore: number | null;
+};
+
+export type CandidateDetailResponse = {
+  ok: true;
+  candidate: CandidateSummary;
+  applications: Array<{
+    id: string;
+    positionTitle: string | null;
+    status: string;
+    stageUpdatedAt: string | null;
+    createdAt: string;
+    aiScore: number | null;
+    talentPool: boolean;
+    doNotHire: boolean;
+    trackingCode: string | null;
+  }>;
+};
+
+// G10 — tag terstruktur (model Tag) — kontrak klien tetap string[] via serialize
+export type TagStat = { name: string; color: string; usageCount: number };
+
+// G13 — sumber lamaran terstruktur
+export type ReferralSourceKind = "JOB_BOARD" | "SOCIAL" | "REFERRAL" | "DIRECT" | "OTHER";
+export const REFERRAL_SOURCE_KINDS: ReferralSourceKind[] = ["JOB_BOARD", "SOCIAL", "REFERRAL", "DIRECT", "OTHER"];
+export const REFERRAL_SOURCE_KIND_LABELS: Record<ReferralSourceKind, string> = {
+  JOB_BOARD: "Job Board",
+  SOCIAL: "Media Sosial",
+  REFERRAL: "Referral",
+  DIRECT: "Langsung",
+  OTHER: "Lainnya",
+};
+export type ReferralSourceDto = {
+  id: string;
+  name: string;
+  kind: ReferralSourceKind;
+  isActive: boolean;
+  sortOrder: number;
+  usageCount: number;
+};
+
+// G14 — saved views server-side
+export type SavedViewDto = {
+  id: string;
+  name: string;
+  tab: string;
+  query: Record<string, unknown>;
+  ownerId: string | null;
+  ownerName: string | null;
+  shared: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// E1 — envelope respons terpaginasi (opt-in via ?paginate=1; respons lama tetap array)
+export type PaginatedApplications = {
+  items: Application[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+// H16 — tampilan kotak keluar email utk admin (dgn log percobaan)
+export type EmailOutboxAdminRow = {
+  id: string;
+  toEmail: string;
+  subject: string;
+  kind: string;
+  status: "QUEUED" | "SENT" | "FAILED" | "SKIPPED";
+  attempts: number;
+  lastError: string | null;
+  error: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  nextRetryAt: string | null;
+};
+
+// H17 — bundel ekspor data subjek (portabilitas)
+export type DataSubjectExport = {
+  exportedAt: string;
+  application: Record<string, unknown>;
+  interviews: Array<Record<string, unknown>>;
+  comments: Array<Record<string, unknown>>;
+  questions: Array<Record<string, unknown>>;
+  checkIns: Array<Record<string, unknown>>;
+  surveys: Array<Record<string, unknown>>;
+  files: Array<{ id: string; filename: string; mimeType: string; size: number; url: string }>;
+  cards: Array<Record<string, unknown>>;
+};
+
+// G11 — laporan kesehatan data (tab Data)
+export type DataHealthReport = {
+  checkedAt: string;
+  issues: Array<{
+    code: string; // INVALID_EMAIL | ORPHAN_FILE | ORPHAN_DISK | NO_POSITION | EXPIRED_DOC | DUPLICATE_PAIR | STALE_DRAFT | UNCONFIRMED_SUBSCRIBER
+    label: string;
+    count: number;
+    sample: string[]; // maks 5 contoh identitas (id / email / filename)
+    severity: "INFO" | "WARN" | "CRIT";
+  }>;
+  ok: boolean;
+};
+
+// L31 — laporan kesehatan sistem (/api/health + panel admin)
+export type SystemHealth = {
+  ok: boolean;
+  uptimeSec: number;
+  db: { ok: boolean; applicationCount: number; latencyMs: number };
+  backup: { ok: boolean; latestAt: string | null; latestFile: string | null; ageHours: number | null };
+  email: { queued: number; failed: number; sentToday: number };
+  cron: { lastMaintenanceAt: string | null; lastRemindersAt: string | null };
+  disk: { dbBytes: number; uploadsBytes: number; backupsBytes: number };
+  errors: { recent: number; lastError: string | null };
+  checkedAt: string;
+};
+
+// K30 — e-signature offer
+export type OfferSignature = {
+  name: string; // nama lengkap yang diketik pelamar
+  method: "TYPED";
+  at: string; // ISO timestamp
+  ip: string | null;
+  ua: string | null;
+};
+
+// J26 — file draft wizard (ApplicationDraft.files JSON)
+export type DraftFileMeta = {
+  fileId: string; // id FileAsset kind=DRAFT
+  label: string; // cv | intro | doc:<fieldId>
+  filename: string;
+  mimeType: string;
+  size: number;
+};
+
+// F8 — respons login bila OWNER wajib memasang 2FA dulu
+export type LoginRequired2FA = { ok: false; mustSetup2FA: true; setupToken: string; redirect: string };
+
+// E3 — kategori kind FileAsset
+export const FILE_ASSET_KINDS = ["CV", "INTRO", "COVER", "DOC", "OFFER_PDF", "DRAFT", "OTHER"] as const;
+export type FileAssetKind = (typeof FILE_ASSET_KINDS)[number];
