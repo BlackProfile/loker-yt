@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CollapsibleCard } from "./collapsible-card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,13 +47,14 @@ import {
   Save,
   Send,
   ShieldAlert,
+  Stethoscope,
   Trash2,
   TriangleAlert,
   Upload,
   Webhook,
 } from "lucide-react";
 import { toast } from "sonner";
-import { WEBHOOK_EVENTS, WEBHOOK_EVENT_LABELS, type SiteContent } from "@/lib/types";
+import { WEBHOOK_EVENTS, WEBHOOK_EVENT_LABELS, type DataHealthReport, type SiteContent } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { apiDelete, apiGet, apiPost, apiPut } from "./api";
 import { formatDateTime, formatRelative } from "./format";
@@ -192,6 +194,181 @@ function toImportRows(records: string[][]): CsvRow[] {
       return row;
     })
     .filter((row) => Object.values(row).some((value) => value !== ""));
+}
+
+/* --------------------- Kesehatan Data (NR-41 G11) --------------------- */
+
+const DATA_HEALTH_SEVERITY: Record<
+  string,
+  { label: string; dot: string; text: string; border: string; bg: string }
+> = {
+  CRIT: {
+    label: "Kritis",
+    dot: "bg-rose-600",
+    text: "text-rose-700 dark:text-rose-400",
+    border: "border-rose-200 dark:border-rose-900",
+    bg: "bg-rose-50 dark:bg-rose-950/40",
+  },
+  WARN: {
+    label: "Perlu diperhatikan",
+    dot: "bg-amber-500",
+    text: "text-amber-700 dark:text-amber-400",
+    border: "border-amber-200 dark:border-amber-900",
+    bg: "bg-amber-50 dark:bg-amber-950/40",
+  },
+  INFO: {
+    label: "Info",
+    dot: "bg-zinc-400",
+    text: "text-zinc-600 dark:text-zinc-400",
+    border: "border-zinc-200 dark:border-zinc-700",
+    bg: "bg-zinc-50 dark:bg-zinc-900/40",
+  },
+};
+
+/** Pemeriksaan kesehatan data: email invalid, file yatim, dokumen kedaluwarsa, dll. */
+function DataHealthCard() {
+  const { reportError } = useAdminSession();
+  const [report, setReport] = useState<DataHealthReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await apiGet<DataHealthReport>("/api/admin/data-health");
+      setReport(data);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const issues = report?.issues ?? [];
+  const critCount = issues.filter((issue) => issue.severity === "CRIT").length;
+  const warnCount = issues.filter((issue) => issue.severity === "WARN").length;
+
+  return (
+    <DataCard
+      icon={Stethoscope}
+      title="Kesehatan Data"
+      description="Pemeriksaan otomatis: email tidak valid, berkas yatim, dokumen kedaluwarsa, draft basi, dan anomali lain."
+    >
+      {loading ? (
+        <div className="space-y-2" aria-busy="true">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-2/3" />
+        </div>
+      ) : loadError ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400">
+          <span className="flex items-center gap-2">
+            <TriangleAlert className="size-4" aria-hidden="true" />
+            {loadError}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => void load()}>
+            <RotateCcw className="size-4" aria-hidden="true" />
+            Coba lagi
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm">
+              {issues.length === 0 ? (
+                <span className="flex items-center gap-2 font-medium text-emerald-700 dark:text-emerald-400">
+                  <CheckCircle2 className="size-4" aria-hidden="true" />
+                  Tidak ada masalah terdeteksi
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  {critCount > 0 && (
+                    <Badge className="bg-rose-600 text-white hover:bg-rose-600">
+                      {critCount} kritis
+                    </Badge>
+                  )}
+                  {warnCount > 0 && (
+                    <Badge className="bg-amber-500 text-white hover:bg-amber-500">
+                      {warnCount} perlu diperhatikan
+                    </Badge>
+                  )}
+                  {issues.length - critCount - warnCount > 0 && (
+                    <Badge variant="outline">
+                      {issues.length - critCount - warnCount} info
+                    </Badge>
+                  )}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {report && (
+                <span className="text-xs text-muted-foreground">
+                  Diperiksa {formatDateTime(report.checkedAt)}
+                </span>
+              )}
+              <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+                <RotateCcw className="size-4" aria-hidden="true" />
+                Periksa Ulang
+              </Button>
+            </div>
+          </div>
+
+          {issues.length > 0 && (
+            <ul className="space-y-2">
+              {issues.map((issue) => {
+                const severity =
+                  DATA_HEALTH_SEVERITY[issue.severity] ?? DATA_HEALTH_SEVERITY.INFO;
+                return (
+                  <li
+                    key={issue.code}
+                    className={cn(
+                      "rounded-lg border px-3 py-2",
+                      severity.border,
+                      severity.bg,
+                    )}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={cn("size-2 shrink-0 rounded-full", severity.dot)}
+                        aria-hidden="true"
+                      />
+                      <span className={cn("text-sm font-medium", severity.text)}>
+                        {issue.label}
+                      </span>
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {issue.count}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className={cn("ml-auto text-xs", severity.text)}
+                      >
+                        {severity.label}
+                      </Badge>
+                    </div>
+                    {issue.sample.length > 0 && (
+                      <ul className="mt-1.5 space-y-0.5 pl-4 font-mono text-xs text-muted-foreground">
+                        {issue.sample.map((sample, index) => (
+                          <li key={`${issue.code}-${index}`} className="truncate">
+                            {sample}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+    </DataCard>
+  );
 }
 
 /* --------------------------- Kartu (pattern UI) --------------------------- */
@@ -1484,6 +1661,9 @@ export function DataTab() {
           </div>
         )}
       </DataCard>
+
+      {/* --------------------- Kesehatan Data (NR-41 G11) --------------------- */}
+      <DataHealthCard />
 
       {/* ------------------------- Backup Otomatis ------------------------- */}
       <AutoBackupCard />
