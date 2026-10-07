@@ -5,7 +5,16 @@
 // Offer. Selalu tampak (tidak dilipat) — disembunyikan bila tahap final Ditolak.
 
 import type { Dispatch, SetStateAction } from "react";
-import { BadgeCheck, BadgeX, Clock, Download, Loader2, Sparkles } from "lucide-react";
+import { useState } from "react";
+import {
+  BadgeCheck,
+  BadgeX,
+  Clock,
+  Download,
+  Loader2,
+  PenLine,
+  Sparkles,
+} from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,6 +27,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { fillTemplate, formatDateId, formatDateTimeId } from "@/components/landing/landing-utils";
@@ -29,6 +40,7 @@ export function OfferCard({
   offer,
   offerDaysLeft,
   t,
+  applicantName,
   offerBusy,
   declineOpen,
   setDeclineOpen,
@@ -41,15 +53,28 @@ export function OfferCard({
   offer: TrackOfferInfo;
   offerDaysLeft: number | null;
   t: Dict;
+  /** NR-41 K30 — nama pelamar untuk kalimat persetujuan e-signature. */
+  applicantName?: string | null;
   offerBusy: "ACCEPT" | "DECLINE" | null;
   declineOpen: boolean;
   setDeclineOpen: Dispatch<SetStateAction<boolean>>;
   declineReason: string;
   setDeclineReason: (value: string) => void;
-  onAccept: () => Promise<void>;
+  onAccept: (signatureName: string) => Promise<void>;
   onDecline: () => Promise<void>;
   onOpenLetter: () => void;
 }) {
+  // NR-41 K30 — e-signature: persetujuan + nama lengkap diketik wajib sebelum
+  // tombol "Ya, Terima" dieksekusi; nama dikirim sebagai signatureName.
+  const [agreeChecked, setAgreeChecked] = useState(false);
+  const [signatureName, setSignatureName] = useState("");
+  const [signError, setSignError] = useState<string | null>(null);
+
+  const signatureValid =
+    agreeChecked &&
+    signatureName.trim().length >= 3 &&
+    signatureName.trim().length <= 120;
+
   return (
     <div>
       {offer.status === "PENDING" ? (
@@ -111,6 +136,50 @@ export function OfferCard({
                     {t.status.offer.acceptDesc}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
+                {/* NR-41 K30 — kotak persetujuan e-signature sebelum menerima. */}
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+                  <div className="flex items-start gap-2.5">
+                    <Checkbox
+                      id="offer-agree-check"
+                      checked={agreeChecked}
+                      onCheckedChange={(value) => {
+                        setAgreeChecked(value === true);
+                        setSignError(null);
+                      }}
+                      className="mt-0.5"
+                    />
+                    <Label
+                      htmlFor="offer-agree-check"
+                      className="text-xs font-medium leading-relaxed"
+                    >
+                      Saya, {applicantName?.trim() || signatureName.trim() || "…"},
+                      menyetujui penawaran ini dan data yang tercantum di dalamnya.
+                    </Label>
+                  </div>
+                  <Label
+                    htmlFor="offer-signature-name"
+                    className="mt-3 block text-xs font-medium"
+                  >
+                    Ketik nama lengkap Anda sebagai tanda tangan
+                  </Label>
+                  <Input
+                    id="offer-signature-name"
+                    value={signatureName}
+                    onChange={(event) => {
+                      setSignatureName(event.target.value);
+                      setSignError(null);
+                    }}
+                    maxLength={120}
+                    autoComplete="name"
+                    placeholder="cth. Rizky Pratama"
+                    className="mt-1 h-10 bg-background text-sm"
+                  />
+                  {signError ? (
+                    <p role="alert" className="mt-1.5 text-xs text-rose-600 dark:text-rose-400">
+                      {signError}
+                    </p>
+                  ) : null}
+                </div>
                 <AlertDialogFooter>
                   <AlertDialogCancel disabled={offerBusy === "ACCEPT"}>
                     {t.status.formCancel}
@@ -118,7 +187,24 @@ export function OfferCard({
                   <AlertDialogAction
                     className="bg-emerald-600 text-white hover:bg-emerald-700"
                     disabled={offerBusy === "ACCEPT"}
-                    onClick={() => void onAccept()}
+                    onClick={(event) => {
+                      if (!agreeChecked) {
+                        event.preventDefault();
+                        setSignError(
+                          "Centang pernyataan persetujuan terlebih dahulu.",
+                        );
+                        return;
+                      }
+                      const name = signatureName.trim();
+                      if (name.length < 3 || name.length > 120) {
+                        event.preventDefault();
+                        setSignError(
+                          "Ketik nama lengkap Anda (minimal 3 karakter) sebagai tanda tangan.",
+                        );
+                        return;
+                      }
+                      void onAccept(name);
+                    }}
                   >
                     {offerBusy === "ACCEPT" ? (
                       <Loader2
@@ -219,6 +305,25 @@ export function OfferCard({
                 time: formatDateTimeId(offer.respondedAt),
               })}
             </p>
+          ) : null}
+          {/* NR-41 K30 — blok tanda tangan elektronik (bila ada). */}
+          {offer.offerSignature ? (
+            <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-emerald-200/80 bg-background/70 p-3 dark:border-emerald-500/20 dark:bg-background/40">
+              <PenLine
+                className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                aria-hidden="true"
+              />
+              <div className="min-w-0 text-xs leading-relaxed">
+                <p className="font-semibold text-emerald-800 dark:text-emerald-200">
+                  Ditandatangani elektronik oleh {offer.offerSignature.name} pada{" "}
+                  {formatDateTimeId(offer.offerSignature.at)}
+                </p>
+                <p className="mt-0.5 text-emerald-700/70 dark:text-emerald-300/70">
+                  Metode: nama yang diketik (TYPED). Tanda tangan ini menyatakan
+                  persetujuan Anda atas isi penawaran.
+                </p>
+              </div>
+            </div>
           ) : null}
           <div className="mt-3 pl-8">
             <Button

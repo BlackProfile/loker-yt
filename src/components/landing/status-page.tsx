@@ -205,6 +205,8 @@ function StatusPageInner({
   // Tidak bisa hadir: konfirmasi inline per sesi.
   const [cancelOpenFor, setCancelOpenFor] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // NR-41 H17 — unduh salinan data milik pelamar (track-export).
+  const [exportBusy, setExportBusy] = useState(false);
 
   const recheckTimerRef = useRef<number | null>(null);
   const selectedCodeRef = useRef<string | null>(null);
@@ -804,12 +806,14 @@ function StatusPageInner({
     });
   }
 
-  async function acceptOffer() {
+  async function acceptOffer(signatureName: string) {
     if (!selectedCode) return;
     setOfferBusy("ACCEPT");
     const out = await postAction("/api/public/offer/respond", {
       code: selectedCode,
       action: "ACCEPT",
+      // NR-41 K30 — e-signature: nama lengkap yang diketik pelamar.
+      signatureName,
     });
     setOfferBusy(null);
     if (!out.ok) {
@@ -944,6 +948,48 @@ function StatusPageInner({
     toast.success(t.status.interview.attendanceCancelledToast);
     setCancelOpenFor(null);
     scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
+  }
+
+  /**
+   * NR-41 H17 — unduh salinan data pelamar dari /api/public/track-export
+   * (kredensial sesi yang sama seperti endpoint track lain: email + kode).
+   * Hasil diunduh sebagai file JSON "data-saya.json" (blob + a.download).
+   */
+  async function downloadMyData() {
+    if (!session || !selectedCode || exportBusy) return;
+    setExportBusy(true);
+    try {
+      const params = new URLSearchParams({
+        code: selectedCode,
+        email: session.email,
+      });
+      const res = await fetch(`/api/public/track-export?${params.toString()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { error?: unknown }
+          | null;
+        const serverError =
+          data && typeof data.error === "string" && data.error ? data.error : null;
+        toast.error(serverError ?? t.status.actionFailed);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "data-saya.json";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast.success("Salinan data Anda sedang diunduh.");
+    } catch {
+      toast.error(t.status.actionFailed);
+    } finally {
+      setExportBusy(false);
+    }
   }
 
   /** Unggah dokumen onboarding (multipart) langsung saat file dipilih. */
@@ -1396,6 +1442,7 @@ function StatusPageInner({
                         offer={offer}
                         offerDaysLeft={offerDaysLeft}
                         t={t}
+                        applicantName={detail.applicantName}
                         offerBusy={offerBusy}
                         declineOpen={declineOpen}
                         setDeclineOpen={setDeclineOpen}
@@ -1486,6 +1533,36 @@ function StatusPageInner({
                   {detail.surveyToken ? (
                     <SurveyCard surveyToken={detail.surveyToken} p={p} />
                   ) : null}
+
+                  {/* NR-41 H17 — portabilitas data: unduh salinan data milik pelamar */}
+                  <section
+                    aria-label="Pengaturan data"
+                    className="rounded-xl border border-zinc-200 bg-card p-4 dark:border-zinc-800"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">Pengaturan data</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Unduh salinan data lamaran Anda dalam format JSON
+                          (portabilitas data).
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 shrink-0 gap-2 sm:h-9"
+                        onClick={() => void downloadMyData()}
+                        disabled={exportBusy}
+                      >
+                        {exportBusy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Download className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        Unduh data saya
+                      </Button>
+                    </div>
+                  </section>
                 </motion.div>
               ) : detail && !detail.found ? (
                 /* Pasangan sesi tidak valid lagi (lamaran dihapus dsb.) — minta login ulang */
