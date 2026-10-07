@@ -9,6 +9,9 @@ import { getSession } from "@/lib/server-auth";
 import { withTimeout, withZaiRetry } from "@/lib/ai";
 import type { AiCoverResponse } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+// NR41-SEC-B (E3): varian WebP cover + verifikasi magic bytes.
+import { createWebpVariant } from "@/lib/upload";
+import { verifyMagicBytes } from "@/lib/verify-upload";
 
 export const dynamic = "force-dynamic";
 
@@ -101,14 +104,30 @@ export async function POST(req: NextRequest) {
     await mkdir(uploadsDir, { recursive: true });
     const storedName = `${cuidLike()}-ai-cover-${sanitizeFilename(`${position.title}.png`)}`;
     const buffer = Buffer.from(base64, "base64");
+
+    // NR41-SEC-B (F7): deteksi tipe asli dari magic bytes (AI bisa kirim JPEG/PNG)
+    // supaya mimeType tersimpan akurat. Bila tidak dikenali → gagal aman.
+    const isPng = buffer.length > 8 && buffer[0] === 0x89 && buffer[1] === 0x50;
+    const isJpeg = buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+    const actualMime = isPng ? "image/png" : isJpeg ? "image/jpeg" : null;
+    const imageVerdict = verifyMagicBytes(buffer, actualMime ?? "image/png");
+    if (!imageVerdict.ok || !actualMime) {
+      const fail: AiCoverResponse = { ok: false, error: "Gagal membuat cover. Coba lagi." };
+      return NextResponse.json(fail, { status: 502 });
+    }
+
     await writeFile(path.join(uploadsDir, storedName), buffer);
+
+    // NR41-SEC-B (E3): buat varian WebP terkompresi (maks lebar 1600, kualitas 82).
+    await createWebpVariant(path.join(uploadsDir, storedName), buffer);
 
     const asset = await db.fileAsset.create({
       data: {
         filename: `cover-${position.title}.png`,
-        mimeType: "image/png",
+        mimeType: actualMime,
         size: buffer.byteLength,
         path: `uploads/${storedName}`,
+        kind: "COVER",
       },
       select: { id: true },
     });
