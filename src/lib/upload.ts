@@ -39,7 +39,11 @@ export type SavedUpload = { id: string };
  * F7 — magic bytes diverifikasi dulu; bila palsu → UploadInvalidError (JANGAN tulis ke disk).
  * Melempar error bila penulisan gagal — pemanggil wajib try/catch.
  */
-export async function saveUpload(file: File, fallbackMime: string): Promise<SavedUpload> {
+export async function saveUpload(
+  file: File,
+  fallbackMime: string,
+  opts?: { kind?: string }, // NR-41 — kategori FileAsset (CV | INTRO | COVER | DOC | OFFER_PDF | DRAFT | OTHER)
+): Promise<SavedUpload> {
   const uploadsDir = path.join(process.cwd(), "uploads");
   await mkdir(uploadsDir, { recursive: true });
   const storedName = `${cuidLike()}-${sanitizeFilename(file.name)}`;
@@ -61,6 +65,7 @@ export async function saveUpload(file: File, fallbackMime: string): Promise<Save
       mimeType,
       size: file.size,
       path: `uploads/${storedName}`,
+      kind: opts?.kind ?? null,
     },
     select: { id: true },
   });
