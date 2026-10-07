@@ -17,7 +17,7 @@ import {
   lockRemainingSec,
   recordAuthFail,
 } from "@/lib/status-gate";
-import { isPdfFile, MAX_UPLOAD_BYTES, saveUpload } from "@/lib/upload";
+import { isPdfFile, MAX_UPLOAD_BYTES, saveUpload, UploadInvalidError } from "@/lib/upload";
 
 export const dynamic = "force-dynamic";
 
@@ -108,7 +108,21 @@ export async function POST(req: NextRequest) {
     try {
       const asset = await saveUpload(file, "application/pdf");
       assetId = asset.id;
-    } catch {
+    } catch (err) {
+      // NR41-SEC-B (F7): berkas palsu/rusak (magic bytes tidak cocok) → 400 + log audit.
+      if (err instanceof UploadInvalidError) {
+        await db.activityLog
+          .create({
+            data: {
+              applicationId: application.id,
+              actor: "Pelamar",
+              action: "UPLOAD_DITOLAK",
+              detail: `CV diperbarui ditolak: tipe file tidak valid (${file.name})`,
+            },
+          })
+          .catch(() => undefined);
+        return NextResponse.json({ ok: false, error: "Tipe file tidak valid (berkas rusak atau palsu)" }, { status: 400 });
+      }
       return NextResponse.json(
         { ok: false, error: "Gagal menyimpan berkas. Coba lagi nanti." },
         { status: 500 },

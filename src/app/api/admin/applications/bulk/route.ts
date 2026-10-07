@@ -30,6 +30,7 @@ import { emitWebhook } from "@/lib/webhooks";
 import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
 import { queueEmail } from "@/lib/notify";
 import { appendStageHistory } from "@/lib/stage-history";
+import { syncApplicationTags } from "@/lib/tags-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -244,6 +245,17 @@ export async function POST(req: NextRequest) {
             where: { id: row.id },
             data: { tags: JSON.stringify(merged.slice(0, MAX_TAGS)) },
           });
+        }),
+      );
+      // NR-41 G10 — dual-write tag terstruktur: sinkron Tag + ApplicationTag
+      // untuk tiap lamaran setelah legacy tags ditulis (fire-and-forget per baris).
+      await Promise.all(
+        rows.map((row) => {
+          const merged = [...parseTags(row.tags)];
+          for (const tag of incoming) {
+            if (!merged.includes(tag)) merged.push(tag);
+          }
+          return syncApplicationTags(row.id, merged.slice(0, MAX_TAGS), session.name);
         }),
       );
       affected = rows.length;

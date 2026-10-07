@@ -2,10 +2,23 @@
 // publik: file ditulis ke folder uploads/, metadata dicatat sebagai FileAsset,
 // dilayani via /api/files/{id}. Dipakai endpoint pelamar NR-15 (perbarui CV &
 // unggah dokumen onboarding).
+// NR41-SEC-B (F7): setiap berkas diverifikasi magic bytes SEBELUM ditulis ke disk —
+// berkas palsu/rusak melempar UploadInvalidError (respons 400 di route pemanggil).
+// NR41-SEC-B (E3): helper createWebpVariant() — varian WebP terkompresi untuk cover
+// posisi (maks lebar 1600px, kualitas 82), disimpan sebagai `${path}.webp`.
 import { mkdir, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { db } from "@/lib/db";
+import { verifyMagicBytes, UPLOAD_REJECTED_MESSAGE } from "@/lib/verify-upload";
+
+/** Error unggahan ditolak karena magic bytes tidak cocok → route harus 400. */
+export class UploadInvalidError extends Error {
+  constructor(message: string = UPLOAD_REJECTED_MESSAGE) {
+    super(message);
+    this.name = "UploadInvalidError";
+  }
+}
 
 /** Nama file aman: buang path, simpan karakter umum, batasi panjang. */
 export function sanitizeFilename(name: string): string {
@@ -23,6 +36,7 @@ export type SavedUpload = { id: string };
 
 /**
  * Simpan File (Web API) ke uploads/ + buat record FileAsset. Return id aset.
+ * F7 — magic bytes diverifikasi dulu; bila palsu → UploadInvalidError (JANGAN tulis ke disk).
  * Melempar error bila penulisan gagal — pemanggil wajib try/catch.
  */
 export async function saveUpload(file: File, fallbackMime: string): Promise<SavedUpload> {
@@ -31,12 +45,20 @@ export async function saveUpload(file: File, fallbackMime: string): Promise<Save
   const storedName = `${cuidLike()}-${sanitizeFilename(file.name)}`;
   const absolutePath = path.join(uploadsDir, storedName);
   const buffer = Buffer.from(await file.arrayBuffer());
+
+  // F7 — tolak berkas yang klaim MIME-nya tidak cocok dengan isi sebenarnya.
+  const mimeType = file.type || fallbackMime;
+  const verdict = verifyMagicBytes(buffer, mimeType);
+  if (!verdict.ok) {
+    throw new UploadInvalidError();
+  }
+
   await writeFile(absolutePath, buffer);
 
   const asset = await db.fileAsset.create({
     data: {
       filename: file.name,
-      mimeType: file.type || fallbackMime,
+      mimeType,
       size: file.size,
       path: `uploads/${storedName}`,
     },
@@ -47,6 +69,32 @@ export async function saveUpload(file: File, fallbackMime: string): Promise<Save
 
 /** Ukuran maksimum unggahan pelamar (10 MB). */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+// E3 — parameter kompresi cover: maks lebar 1600px, WebP kualitas 82.
+const COVER_MAX_WIDTH = 1600;
+const COVER_WEBP_QUALITY = 82;
+
+/**
+ * E3 — buat varian WebP untuk cover/gambar: resize maks lebar 1600px,
+ * format WebP kualitas 82, disimpan sebagai `${absolutePath}.webp`.
+ * Tidak pernah melempar error — gagal kompresi tidak boleh merusak unggahan asli.
+ * Return path varian bila sukses, null bila gagal/tidak perlu.
+ */
+export async function createWebpVariant(absolutePath: string, sourceBuffer?: Buffer): Promise<string | null> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const input = sourceBuffer ?? absolutePath;
+    const output = `${absolutePath}.webp`;
+    await sharp(input)
+      .resize({ width: COVER_MAX_WIDTH, withoutEnlargement: true })
+      .webp({ quality: COVER_WEBP_QUALITY })
+      .toFile(output);
+    return output;
+  } catch (error) {
+    console.error("[upload] gagal membuat varian WebP:", error);
+    return null;
+  }
+}
 
 /** True bila file berupa PDF (MIME application/pdf atau ekstensi .pdf). */
 export function isPdfFile(file: File): boolean {

@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { APPLICATION_INCLUDE, parseDocExpiries, parseExtraDocs, parseTags, serializeApplication } from "@/lib/seed";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { syncApplicationTags } from "@/lib/tags-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -144,6 +145,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           rating: main.rating === 0 ? dup.rating : main.rating,
         },
       });
+
+      // NR-41 G10 — dual-write tag terstruktur: selaraskan Tag + ApplicationTag
+      // lamaran utama dengan hasil gabungan (di luar transaksi, tidak melempar error).
+      void syncApplicationTags(main.id, mergedTags, session.name);
 
       // 3. Tandai duplikat: digabungkan ke utama + diarsipkan (muncul di filter Diarsip).
       await tx.application.update({

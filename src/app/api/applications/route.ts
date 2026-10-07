@@ -141,6 +141,13 @@ async function saveUpload(file: File, fallbackMime: string): Promise<SavedFile> 
   const storedName = `${cuidLike()}-${sanitizeFilename(file.name)}`;
   const absolutePath = path.join(uploadsDir, storedName);
   const buffer = Buffer.from(await file.arrayBuffer());
+
+  // NR41-SEC-B (F7): verifikasi magic bytes SEBELUM menulis ke disk.
+  const verdict = verifyMagicBytes(buffer, file.type || fallbackMime);
+  if (!verdict.ok) {
+    throw new UploadInvalidError();
+  }
+
   await writeFile(absolutePath, buffer);
 
   const asset = await db.fileAsset.create({
@@ -809,6 +816,10 @@ export async function POST(req: NextRequest) {
     void emitRealtime(REALTIME_EVENTS.applications);
     return NextResponse.json(body, { status: 201 });
   } catch (error) {
+    // NR41-SEC-B (F7): berkas palsu/rusak (magic bytes tidak cocok) → 400, bukan 500.
+    if (error instanceof UploadInvalidError) {
+      return NextResponse.json({ error: "Tipe file tidak valid (berkas rusak atau palsu)" }, { status: 400 });
+    }
     console.error("[POST /api/applications]", error);
     return NextResponse.json({ error: "Gagal mengirim lamaran. Coba lagi nanti." }, { status: 500 });
   }

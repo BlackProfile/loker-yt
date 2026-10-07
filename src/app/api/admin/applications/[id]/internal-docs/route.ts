@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
-import { MAX_UPLOAD_BYTES, saveUpload } from "@/lib/upload";
+import { MAX_UPLOAD_BYTES, saveUpload, UploadInvalidError } from "@/lib/upload";
 import type { InternalDoc } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -111,7 +111,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Simpan berkas ke uploads/ + catat sebagai FileAsset (pola /api/admin/upload).
-    const asset = await saveUpload(file, "application/octet-stream");
+    let asset: { id: string };
+    try {
+      asset = await saveUpload(file, "application/octet-stream");
+    } catch (err) {
+      // NR41-SEC-B (F7): berkas palsu/rusak (magic bytes tidak cocok) → 400 + log audit.
+      if (err instanceof UploadInvalidError) {
+        await db.activityLog
+          .create({
+            data: {
+              applicationId: id,
+              actor: session.name,
+              action: "UPLOAD_DITOLAK",
+              detail: `Dokumen internal "${label}" ditolak: tipe file tidak valid (${file.name})`,
+            },
+          })
+          .catch(() => undefined);
+        return NextResponse.json({ ok: false, error: "Tipe file tidak valid (berkas rusak atau palsu)" }, { status: 400 });
+      }
+      throw err;
+    }
 
     await db.internalDoc.create({
       data: {
@@ -121,7 +140,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         uploadedBy: session.name,
       },
     });
-
     await db.activityLog.create({
       data: {
         applicationId: id,
