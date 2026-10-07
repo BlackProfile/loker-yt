@@ -19,6 +19,8 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { generateUniqueTrackingCode } from "@/lib/tracking";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+// NR41-SEC-B (F7): verifikasi magic bytes berkas impor.
+import { verifyMagicBytes } from "@/lib/verify-upload";
 
 export const dynamic = "force-dynamic";
 
@@ -280,6 +282,23 @@ export async function POST(req: NextRequest) {
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());
+
+      // NR41-SEC-B (F7): verifikasi magic bytes (XLSX=PK\x03\x04, XLS=OLE2, CSV=teks bersih).
+      const importMime =
+        file.type ||
+        (file.name.toLowerCase().endsWith(".xlsx")
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : file.name.toLowerCase().endsWith(".xls")
+            ? "application/vnd.ms-excel"
+            : "text/csv");
+      const importVerdict = verifyMagicBytes(buffer, importMime);
+      if (!importVerdict.ok) {
+        return NextResponse.json(
+          { error: "Tipe file tidak valid (berkas rusak atau palsu)" },
+          { status: 400 },
+        );
+      }
+
       const parsedRows = parseImportFile(buffer);
       if (parsedRows.length === 0) {
         return NextResponse.json(

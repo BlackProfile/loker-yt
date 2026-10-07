@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+// NR41-SEC-B (F7): verifikasi magic bytes unggahan.
+import { verifyMagicBytes, UPLOAD_REJECTED_MESSAGE } from "@/lib/verify-upload";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +92,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await mkdir(uploadsDir, { recursive: true });
     const storedName = `${cuidLike()}-${sanitizeFilename(file.name)}`;
     const buffer = Buffer.from(await file.arrayBuffer());
+
+    // NR41-SEC-B (F7): verifikasi magic bytes SEBELUM menulis ke disk.
+    const verdict = verifyMagicBytes(buffer, mimeType);
+    if (!verdict.ok) {
+      await db.activityLog
+        .create({
+          data: {
+            applicationId: interview.applicationId,
+            actor: session.name,
+            action: "UPLOAD_DITOLAK",
+            detail: `Rekaman wawancara ditolak: tipe file tidak valid (${file.name})`,
+          },
+        })
+        .catch(() => undefined);
+      return NextResponse.json({ ok: false, error: UPLOAD_REJECTED_MESSAGE }, { status: 400 });
+    }
+
     await writeFile(path.join(uploadsDir, storedName), buffer);
 
     const asset = await db.fileAsset.create({

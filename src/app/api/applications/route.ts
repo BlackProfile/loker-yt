@@ -29,6 +29,9 @@ import { CV_MAX_BYTES, INTRO_MAX_BYTES, KOMUTER_PLANS, SHIFT_PREFS, type ApplySu
 import { startBackgroundProcessing } from "@/lib/processing";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { ensureCandidate } from "@/lib/candidates";
+// NR41-SEC-B (F7): verifikasi magic bytes unggahan.
+import { UploadInvalidError } from "@/lib/upload";
+import { verifyMagicBytes } from "@/lib/verify-upload";
 
 export const dynamic = "force-dynamic";
 
