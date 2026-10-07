@@ -30,6 +30,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { fillTemplate, formatDateTimeId, safeExternalUrl } from "@/components/landing/landing-utils";
+import { buildGcalUrl } from "@/lib/gcal";
 import type { Dict } from "@/components/landing/strings";
 import {
   INTERVIEW_STATUS_LABELS,
@@ -39,11 +40,7 @@ import {
   type TrackSlotInfo,
 } from "@/lib/types";
 import { DetailRow } from "./status-shared";
-import {
-  INTERVIEW_BADGE_CLASS,
-  PLATFORM_LABELS,
-  buildGoogleCalendarUrl,
-} from "./status-types";
+import { INTERVIEW_BADGE_CLASS, PLATFORM_LABELS } from "./status-types";
 
 export function InterviewsSection({
   t,
@@ -134,26 +131,17 @@ export function InterviewsSection({
                 ? safeExternalUrl(interview.meetingLink)
                 : null;
               const icsUrl = `/api/public/interview/ics?code=${encodeURIComponent(selectedCode ?? "")}&id=${encodeURIComponent(interview.id)}`;
-              const gcalUrl = buildGoogleCalendarUrl({
-                title: `${fillTemplate(t.status.interview.round, { n: interview.round })} — Lumina Studio`,
-                startIso: interview.scheduledAt,
-                durationMin: interview.durationMin,
-                details: [
-                  detail.positionTitle
-                    ? `${t.status.positionLabel}: ${detail.positionTitle}`
-                    : null,
-                  isOnline
-                    ? `${t.status.interview.platformLabel}: ${platformLabel}`
-                    : null,
-                  interview.interviewers.length > 0
-                    ? `${t.status.interview.interviewersLabel}: ${interview.interviewers.join(", ")}`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join("\n"),
-                location: isOnline
-                  ? (meetingUrl ?? platformLabel)
-                  : (interview.address ?? "Lumina Studio"),
+              // NR-41 K27 — Google Calendar (template link resmi) via buildGcalUrl —
+              // tersedia untuk SEMUA sesi (online maupun on-site).
+              const gcalUrl = buildGcalUrl({
+                title: `Wawancara ${detail.positionTitle ?? "Lumina Studio"} — Lumina Studio`,
+                startAt: interview.scheduledAt,
+                durationMin: interview.durationMin ?? 60,
+                location:
+                  interview.meetingLink ??
+                  interview.address ??
+                  undefined,
+                details: "Jangan lupa hadir 10 menit lebih awal.",
               });
               const canRespond =
                 interview.status === "SCHEDULED" ||
@@ -229,6 +217,22 @@ export function InterviewsSection({
                     ) : null}
                   </div>
 
+                  {/* NR-41 K27 — tambahkan sesi ke Google Calendar (semua mode). */}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-11 sm:h-9"
+                      onClick={() =>
+                        window.open(gcalUrl, "_blank", "noopener,noreferrer")
+                      }
+                      aria-label={t.status.interview.gcalAria}
+                    >
+                      <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+                      {t.status.interview.gcal}
+                    </Button>
+                  </div>
+
                   {/* Link meeting & kalender (hanya ONLINE dengan link valid) */}
                   {isOnline && meetingUrl ? (
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -249,24 +253,6 @@ export function InterviewsSection({
                           {t.status.interview.saveCalendar}
                         </a>
                       </Button>
-                      {gcalUrl ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-11 sm:h-9"
-                          asChild
-                        >
-                          <a
-                            href={gcalUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={t.status.interview.gcalAria}
-                          >
-                            <CalendarPlus className="h-4 w-4" aria-hidden="true" />
-                            {t.status.interview.gcal}
-                          </a>
-                        </Button>
-                      ) : null}
                     </div>
                   ) : null}
 

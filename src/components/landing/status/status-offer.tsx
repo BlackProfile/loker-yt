@@ -70,11 +70,6 @@ export function OfferCard({
   const [signatureName, setSignatureName] = useState("");
   const [signError, setSignError] = useState<string | null>(null);
 
-  const signatureValid =
-    agreeChecked &&
-    signatureName.trim().length >= 3 &&
-    signatureName.trim().length <= 120;
-
   return (
     <div>
       {offer.status === "PENDING" ? (

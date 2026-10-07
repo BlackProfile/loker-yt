@@ -5,6 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -12,7 +19,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Bell, Eye, MessageCircle, Share2, Star, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Bell,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  MessageCircle,
+  Share2,
+  Star,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   HOLD_REASON_LABELS,
@@ -49,9 +69,19 @@ import {
   ApplicantCardGrid,
   NewBadge,
 } from "./applicant-card-grid";
+import { openCandidateDialog } from "./candidate-detail-dialog";
 
 /** Mode kepadatan tabel: "compact" (padat) atau "cozy" (nyaman). */
 export type TableDensity = "compact" | "cozy";
+
+// NR-41 I22 — kolom yang bisa diurutkan dari header tabel (server-side).
+export type HeaderSortField =
+  | "name"
+  | "createdAt"
+  | "updatedAt"
+  | "aiScore"
+  | "status";
+export type HeaderSort = { field: HeaderSortField; dir: "asc" | "desc" };
 
 // Baris template dari /api/admin/templates (dipakai untuk pesan WhatsApp).
 type TemplateRow = {
