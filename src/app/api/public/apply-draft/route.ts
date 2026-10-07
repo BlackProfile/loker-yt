@@ -70,14 +70,6 @@ export async function POST(req: NextRequest) {
     // baris yang sama (token tetap) alih-alih membuat baris baru tiap autosave.
     const existingToken =
       typeof payload.token === "string" ? payload.token.trim() : "";
-    // NR-41 J26 — bila wizard sudah punya token draft di localStorage, perbarui
-    // baris yang sama (token tetap) alih-alih membuat baris baru tiap autosave.
-    const existingToken =
-      typeof payload.token === "string" ? payload.token.trim() : "";
-    // NR-41 J26 — bila wizard sudah punya token draft di localStorage, perbarui
-    // baris yang sama (token tetap) alih-alih membuat baris baru tiap autosave.
-    const existingToken =
-      typeof payload.token === "string" ? payload.token.trim() : "";
 
     if (!email || !EMAIL_REGEX.test(email)) {
       return NextResponse.json({ error: "Format email tidak valid." }, { status: 400 });
@@ -253,17 +245,23 @@ export async function GET(req: NextRequest) {
       parsedData = null;
     }
 
-    // Sekali pakai: hapus baris sebelum merespons.
+    // NR-41 J26 — meta file draft ikut dikirim; baris TIDAK dihapus di sini.
+    // Draft dikonsumsi (dihapus) oleh route submit lamaran setelah adopsi file,
+    // atau kedaluwarsa alami 7 hari. Tautan email tetap aman karena berisi data
+    // milik pelamar itu sendiri.
+    let draftFiles: unknown = [];
     try {
-      await db.applicationDraft.delete({ where: { id: draft.id } });
+      draftFiles = JSON.parse(draft.files);
     } catch {
-      // penghapusan gagal — draft tetap diberikan agar pelamar tidak kehilangan isian
+      draftFiles = [];
     }
 
     return NextResponse.json({
       ok: true,
       positionId: draft.positionId,
       data: parsedData,
+      files: draftFiles,
+      token: draft.token,
     });
   } catch (error) {
     console.error("[GET /api/public/apply-draft]", error);
