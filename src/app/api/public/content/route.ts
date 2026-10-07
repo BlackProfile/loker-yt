@@ -1,12 +1,14 @@
 // GET /api/public/content — konten landing page publik (site + posisi tayang + statistik + kuota).
-import { NextResponse } from "next/server";
+// NR-41 E2 — respons dibungkus etagJson: ETag + Cache-Control + 304 bila If-None-Match cocok.
+import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { closeExpiredPositions, ensureSeeded, parseSiteContent, serializePosition } from "@/lib/seed";
+import { etagJson } from "@/lib/http-cache";
 import type { PositionPublicStats, PublicContentResponse } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     await ensureSeeded();
     await closeExpiredPositions();
@@ -65,7 +67,8 @@ export async function GET() {
       },
       positionStats,
     };
-    return NextResponse.json(body);
+    // NR-41 E2 — ETag + Cache-Control (kontrak body tidak berubah).
+    return etagJson(req, body);
   } catch (error) {
     console.error("[GET /api/public/content]", error);
     return NextResponse.json({ error: "Gagal memuat konten situs. Coba lagi nanti." }, { status: 500 });

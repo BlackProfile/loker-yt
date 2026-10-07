@@ -17,6 +17,8 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
+// NR41-SEC-B (L32): notifikasi backup gagal/tertunda di akhir perawatan.
+import { verifyAndNotifyBackups } from "@/lib/backup-notify";
 
 export const dynamic = "force-dynamic";
 
@@ -133,6 +135,10 @@ async function readJsonSetting(key: string): Promise<Record<string, unknown>> {
 async function runMaintenance() {
   const now = new Date();
 
+  // NR41-DATA-B: processEmailRetries() dipanggil di sini — bila src/lib/email-retry.ts
+  // sudah tersedia, panggil `await processEmailRetries();` SEBELUM backup harian
+  // (retry email outbox ber-backoff nextRetryAt).
+
   // 0) BACKUP HARIAN — dijalankan sebelum guard 1x/jam agar tetap idempoten per hari
   //    walaupun perawatan arsip/retensi dilewati guard.
   const dailyBackup = await runDailyBackup(now);
@@ -216,6 +222,9 @@ async function runMaintenance() {
   // 2) RETENSI: lamaran ditolak / terarsip yang melewati batas umur -> hapus permanen.
   if (retentionEnabled) {
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
+    // NR41-DATA-B: archiveBeforePurge() dipanggil di sini — bila src/lib/purge-archive.ts
+    // sudah tersedia, panggil `await archiveBeforePurge();` SEBELUM blok purge permanen
+    // di bawah (export-before-purge: data subjek diarsipkan dulu sebelum dihapus).
     const expired = await db.application.findMany({
       where: {
         deletedAt: null,
@@ -274,6 +283,9 @@ async function handle(req: NextRequest) {
     }
 
     const result = await runMaintenance();
+    // NR41-SEC-B (L32): verifikasi kesehatan backup + notifikasi (dibungkus try/catch
+    // di dalamnya — tidak pernah menggagalkan endpoint perawatan).
+    await verifyAndNotifyBackups();
     return NextResponse.json(result.body);
   } catch (error) {
     console.error("[POST /api/cron/maintenance]", error);
