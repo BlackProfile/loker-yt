@@ -127,6 +127,10 @@ export async function POST(req: NextRequest) {
         assignmentUrl: f.assignmentUrl ?? null,
         assignmentNote: f.assignmentNote ?? null,
 
+        // NR-42 — Form Builder: schema harus terpersist saat CREATE (sebelumnya
+        // hanya PATCH yang menyimpannya — schema hilang pada posisi baru).
+        formSchema: f.formSchema ?? null,
+
         rubricCriteria: JSON.stringify(f.rubricCriteria ?? []),
         checklistTemplate: JSON.stringify(f.checklistTemplate ?? []),
         noteTemplates: JSON.stringify(f.noteTemplates ?? []),
