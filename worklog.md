@@ -3544,3 +3544,26 @@ Work Log:
 
 Stage Summary:
 - 18/18 butir Paket E–L hidup. Kontrak API wave-1 dikonsumsi frontend sesuai entri NR41-DATA-B. Catatan: login OWNER tanpa TOTP kini WAJIB setup 2FA (perilaku sesuai F8); sesi lama tetap valid.
+
+---
+Task ID: NR41-VERIFY (Wave 4 — verifikasi E2E menyeluruh)
+Agent: orchestrator (Z.ai Code)
+Task: Verifikasi end-to-end Paket E–L pada data nyata via curl + agent-browser (gateway :81), perbaikan bug yang ditemukan, dan penutupan.
+
+Work Log:
+- API smoke (cookie OWNER sintetis): paginate=1 (envelope {items,total,...}), /api/admin/candidates (6 kandidat), /api/admin/data-health (ok, issues[]), /api/admin/saved-views, /api/admin/emails (QUEUED + attempts/lastError), /api/health — semua 200.
+- Browser E2E (agent-browser):
+  - Landing: manifest:true, FAQ JSON-LD:true, lang=id, canonical + hreflang id/en ter-render, footer mt-auto terdorong alami (5030px doc, bottom=docH), subscribe POST → pendingConfirm:true, unsubscribe → 302 /?sub=unsub.
+  - PWA: /manifest.webmanifest 200, /sw.js 200, /icons/icon-192.png 200.
+  - Wizard: combobox "Dari mana kamu tahu lowongan ini?" berisi Instagram/TikTok/YouTube/Teman-Rekan/Lainnya (G13).
+  - Admin (cookie injeksi): 15 tab hidup; keyboard "g+p/g+a/g+b/g+s/g+k" pindah tab (I18); Pipeline funnel strip; tabel Pelamar: klik header → request ?paginate=1&sort=name:desc 200 (E1+I22); Data: kartu "Kesehatan Data" → "Tidak ada masalah terdeteksi" + tombol Periksa Ulang (G11); Pengaturan: kartu "Kotak Keluar Email" tabel + filter (H16) dan kartu "Sumber Lamaran" → tambah "Test Sumber NR41" → muncul di API publik → dihapus lagi (G13 E2E); Ctrl+K → grup "Kandidat (profil terpusat)" → dialog kandidat (catatan + do-not-hire) (G9); tema terang→gelap→sistem (I21); kanban: aria-live region + combobox "Pindah tahap untuk <nama>" berisi 5 tahap (I19); Kalender render (I20).
+  - F8 gate E2E: keluar (cookie clear) → login admin@lumina.id/admin123 → langkah WAJIB "Aktifkan 2FA" (QR data-image + Kode 6 digit + Verifikasi & Masuk disabled). Siklus penuh dibuktikan programatik: login → setupToken → bootstrap QR (secret base32) → kode TOTP dihitung node (HMAC-SHA1) → POST verify → {ok:true,totpEnabled:true} + cookie sesi. KEMUDIAN di-reset (totpEnabled=false, secret null, pending dibersihkan) agar login demo OWNER tetap password-only.
+  - K28 PDF E2E: kirim offer via POST /offer (Dewi Lestari, ACCEPTED) → GET /offer-pdf → 200 application/pdf 2194 bytes (%PDF-) → FileAsset kind=OFFER_PDF "surat-penawaran-LM-O8PW6S.pdf" terarsip.
+  - Header middleware terverifikasi: CSP+frame-ancestors 'self', XFO SAMEORIGIN, nosniff, Referrer-Policy, Permissions-Policy; ?embed=1 tanpa XFO (embed tetap jalan). /api/admin/health/errors 200 (OWNER); /export-data 200; email-inbound tanpa secret → 403.
+- BUG ditemukan & diperbaiki saat verifikasi: route totp/pending kontrak token 32-hex (bukan 64), dan token setup TIDAK boleh dikonsumsi saat bootstrap — dikonsumsi hanya saat verifikasi sukses (validasi tanpa-konsumsi utk 2 panggilan; consumePending2FASetup dipanggil saat aktivasi). Lint: SubBanner ditulis ulang tanpa ref-during-render/setState-in-effect (pindah ke callback timer 9 dtk + bersih-bersih URL); eslint-disable utk scripts/gen-pwa-icons.cjs; directive tak terpakai dihapus.
+- Final: bunx tsc --noEmit → src/ 0 error; bun run lint exit 0; dev 200; dev.log bersih (tanpa error runtime baru).
+
+Stage Summary:
+- Paket E–L 18/18 butir LOLOS verifikasi E2E pada data nyata (curl + agent-browser), termasuk satu siklus penuh 2FA wajib OWNER yang kemudian direset, satu arsip PDF offer, satu siklus tambah/hapus sumber, dan alur unsubscribe.
+- Bukti visual: .verify/nr41-landing.png, nr41-pipeline.png, nr41-data-health.png, nr41-candidate-dialog.png, nr41-2fa-gate.png, nr41-calendar.png, nr41-mobile-landing.png, offer-test.pdf.
+- Catatan operasional: OWNER tanpa TOTP kini WAJIB memasang 2FA saat login baru (sesi lama tetap berlaku); Setting baru: session_idle_minutes (default 720), newsletter_double_optin (default true), backup_notify_enabled (default true), inbound_email_secret (kosong = inbound email mati), backup_alert_sent_at, pending_2fa_*.
