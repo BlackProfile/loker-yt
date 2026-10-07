@@ -9,7 +9,10 @@ import {
   PauseCircle,
   Phone,
   Quote,
+  ShieldX,
   Sparkles,
+  UserCheck,
+  UserX,
 } from "lucide-react";
 import type {
   Position,
@@ -301,6 +304,7 @@ function HeroVisual() {
             width={1152}
             height={864}
             loading="eager"
+            fetchPriority="high"
             decoding="async"
             className="h-auto w-full object-cover"
           />
@@ -677,8 +681,29 @@ function VoicesSection({ content }: { content: SiteContent }) {
 function FaqSection({ content }: { content: SiteContent }) {
   const { t } = useLang();
 
+  // NR-41 J25 — JSON-LD FAQPage (render statis, aman hydration): hanya bila
+  // ada >= 1 FAQ. "<" di-escape agar konten tak bisa menutup tag <script>.
+  const faqJsonLd =
+    content.faqs.length > 0
+      ? JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          mainEntity: content.faqs.map((faq) => ({
+            "@type": "Question",
+            name: faq.question,
+            acceptedAnswer: { "@type": "Answer", text: faq.answer },
+          })),
+        }).replace(/</g, "\\u003c")
+      : null;
+
   return (
     <section id="faq" className="scroll-mt-24 bg-muted/40 py-16 md:py-24">
+      {faqJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: faqJsonLd }}
+        />
+      ) : null}
       <Container>
         <FadeIn className="mx-auto max-w-3xl">
           <div className="text-center">
