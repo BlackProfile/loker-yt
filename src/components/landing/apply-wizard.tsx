@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   CheckCircle2,
   ClipboardList,
+  CloudUpload,
   Copy,
   Download,
   ExternalLink,
@@ -34,6 +35,7 @@ import {
   SHIFT_PREFS,
   SHIFT_PREF_LABELS,
   type ApplySuccessResponse,
+  type DraftFileMeta,
   type KomuterPlan,
   type Position,
   type ShiftPref,
@@ -115,6 +117,9 @@ import {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DRAFT_KEY = "lumina-draft";
+// NR-41 J26 — token draft SERVER (ApplicationDraft) disimpan terpisah agar file
+// yang sudah diunggah ke draft tetap dikenali lintas reload halaman.
+const DRAFT_TOKEN_KEY = "lumina-draft-token";
 const AUTOSAVE_DELAY_MS = 500;
 const MIN_TEXT_LENGTH = 10;
 const SCREENING_MAX = 500; // batas karakter tiap jawaban screening (sinkron dengan server)
@@ -312,6 +317,82 @@ function serializableFormAnswers(
   return out;
 }
 
+/* --------------------- NR-41 J26 — draft lintas perangkat --------------------- */
+
+/** Baca token draft server dari localStorage (kosong bila tidak ada/rusak). */
+function readStoredDraftToken(): string {
+  try {
+    return window.localStorage.getItem(DRAFT_TOKEN_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** Simpan token draft server ke localStorage (diam bila penyimpanan gagal). */
+function storeDraftToken(token: string) {
+  try {
+    window.localStorage.setItem(DRAFT_TOKEN_KEY, token);
+  } catch {
+    // penyimpanan tidak tersedia — abaikan
+  }
+}
+
+/** Sanitasi meta file draft dari respons API — buang entri rusak. */
+function parseDraftFiles(raw: unknown): DraftFileMeta[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (item): item is DraftFileMeta =>
+      isRecord(item) &&
+      typeof item.fileId === "string" &&
+      typeof item.label === "string" &&
+      typeof item.filename === "string",
+  );
+}
+
+/**
+ * Catatan kecil di bawah input berkas: chip "sudah ada di draft" (pemulihan
+ * lintas perangkat) atau konfirmasi "tersimpan di draft" (unggahan baru).
+ * Dipakai blok CV/intro/dokumen tambahan DAN field berkas Form Builder.
+ */
+function DraftFileNote({
+  meta,
+  localName,
+  uploading,
+}: {
+  meta: DraftFileMeta | null;
+  localName: string | null;
+  uploading: boolean;
+}) {
+  if (uploading) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <CloudUpload className="h-3.5 w-3.5 shrink-0 animate-pulse" aria-hidden="true" />
+        Menyimpan berkas ke draft…
+      </p>
+    );
+  }
+  if (!meta) return null;
+  if (localName && meta.filename === localName) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
+        <CloudUpload className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        Tersimpan di draft — aman bila lanjut di perangkat lain.
+      </p>
+    );
+  }
+  if (!localName) {
+    return (
+      <p className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-1.5 text-xs text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+        <CloudUpload className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate">
+          Sudah ada: {meta.filename} ({formatMb(meta.size)}) — ganti bila perlu.
+        </span>
+      </p>
+    );
+  }
+  return null;
+}
+
 type FormFieldRendererProps = {
   field: FormField;
   value: FormAnswerInput | undefined;
@@ -320,6 +401,10 @@ type FormFieldRendererProps = {
   onAnswer: (fieldId: string, value: FormAnswerInput | undefined) => void;
   /** Catat pesan error field (mis. berkas ditolak saat dipilih). */
   onAnswerError: (fieldId: string, message: string) => void;
+  /** NR-41 J26 — meta file draft server untuk field berkas ini (bila ada). */
+  draftFile?: DraftFileMeta | null;
+  /** NR-41 J26 — true bila file field ini sedang diunggah ke draft. */
+  draftUploading?: boolean;
 };
 
 /** Jenis pratinjau yang mampu dirender browser untuk satu berkas. */
@@ -461,6 +546,8 @@ function FormFieldRenderer({
   error,
   onAnswer,
   onAnswerError,
+  draftFile = null,
+  draftUploading = false,
 }: FormFieldRendererProps) {
   const { t, lang } = useLang();
   const anchorId = `apply-form-${field.id}`;
@@ -917,6 +1004,12 @@ function FormFieldRenderer({
               </div>
             </div>
           ) : null}
+          {/* NR-41 J26 — status file draft lintas perangkat utk field ini. */}
+          <DraftFileNote
+            meta={draftFile}
+            localName={file?.name ?? null}
+            uploading={draftUploading}
+          />
           {/* NR-36 — dialog pratinjau berkas lokal (blob:) untuk field form */}
           <LocalFileViewerDialog file={file} open={viewOpen} onOpenChange={setViewOpen} />
         </div>

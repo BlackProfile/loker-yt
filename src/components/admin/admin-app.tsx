@@ -894,6 +894,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
           (item) => !item.roles || item.roles.includes(role),
         )}
         activeTab={effectiveTab}
+        canSearchCandidates={isOwnerOrHr}
       />
       {/* NR-28 (item 14): overlay pintasan keyboard — dibuka via "?" atau
           tombol ikon Keyboard di header. */}

@@ -3,21 +3,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
+  KeyboardSensor,
   PointerSensor,
   useDroppable,
   useSensor,
   useSensors,
+  type Announcements,
+  type DragCancelEvent,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
+  type ScreenReaderInstructions,
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
   CalendarClock,
+  ChevronDown,
   Copy,
   GripVertical,
   Hourglass,
@@ -59,6 +66,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -79,6 +93,25 @@ import { useLiveRefresh } from "./use-live-refresh";
 import { cn } from "@/lib/utils";
 
 const COLUMN_ID_PREFIX = "col-";
+
+/* ------------------- I19 — operasi papan via keyboard & a11y ------------------- */
+
+// Redam pengumuman bawaan dnd-kit (teks Inggris) — pengumuman berbahasa
+// Indonesia disalurkan lewat region aria-live milik komponen ini sendiri
+// (announce()) agar pembaca layar tidak mendengar pengumuman ganda.
+const MUTED_ANNOUNCEMENTS: Announcements = {
+  onDragStart: () => "",
+  onDragMove: () => "",
+  onDragOver: () => "",
+  onDragEnd: () => "",
+  onDragCancel: () => "",
+};
+
+// Instruksi papan untuk pengguna keyboard (mengganti teks bawaan dnd-kit).
+const KANBAN_SR_INSTRUCTIONS: ScreenReaderInstructions = {
+  draggable:
+    "Untuk mengangkat kartu, tekan spasi. Saat terangkat, gunakan tombol panah untuk memilih kolom tujuan, tekan spasi lagi untuk menaruh, atau tekan Escape untuk membatalkan.",
+};
 
 // Set kosong bersama agar prop duplicateIds opsional tidak membuat Set baru tiap render.
 const EMPTY_SET: Set<string> = new Set();
@@ -223,6 +256,8 @@ function KanbanCard({
   onToggleSelect,
   onOpenDetail,
   onUpdated,
+  moveTargets,
+  onMove,
 }: {
   app: Application;
   canMutate: boolean;
@@ -236,6 +271,10 @@ function KanbanCard({
   onToggleSelect: (checked: boolean) => void;
   onOpenDetail: (app: Application) => void;
   onUpdated?: (app: Application) => void;
+  /** I19 — daftar tahap tujuan untuk menu keyboard pindah tahap. */
+  moveTargets: StageKey[];
+  /** I19 — fungsi pindah tahap yang sama dengan drag & drop (jalur parent). */
+  onMove: (id: string, status: StageKey) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({

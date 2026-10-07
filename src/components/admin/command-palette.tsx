@@ -8,7 +8,7 @@
 // "lumina-open-application" + id yang ditahan untuk lintas-tab mount).
 
 import { useEffect, useRef, useState } from "react";
-import { Briefcase, Loader2, UserRound } from "lucide-react";
+import { Briefcase, ContactRound, Loader2, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   CommandDialog,
@@ -19,8 +19,10 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
+import type { CandidateSummary } from "@/lib/types";
 import { stageLabel } from "@/lib/stages";
 import { apiGet } from "./api";
+import { openCandidateDialog } from "./candidate-detail-dialog";
 
 export type PaletteNavItem = {
   value: string;
@@ -40,6 +42,7 @@ type SearchResponse = {
 };
 
 const EMPTY_RESULTS: SearchResponse = { positions: [], applications: [] };
+const EMPTY_CANDIDATES: CandidateSummary[] = [];
 
 // ---------------------------------------------------------------------------
 // Transport id lamaran lintas-komponen: palet mengirim event
@@ -68,15 +71,19 @@ export function CommandPalette({
   onNavigate,
   navItems,
   activeTab,
+  canSearchCandidates = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNavigate: (tab: string) => void;
   navItems: PaletteNavItem[];
   activeTab: string;
+  /** NR-41 G9 — aktifkan grup "Cari kandidat" (OWNER/HR saja; API menolak VIEWER). */
+  canSearchCandidates?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<SearchResponse>(EMPTY_RESULTS);
+  const [candidates, setCandidates] = useState<CandidateSummary[]>(EMPTY_CANDIDATES);
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef<number | null>(null);
   const seqRef = useRef(0);
@@ -91,17 +98,31 @@ export function CommandPalette({
   async function runSearch(query: string) {
     const seq = ++seqRef.current;
     try {
-      const data = await apiGet<SearchResponse>(
-        `/api/admin/search?q=${encodeURIComponent(query)}`,
-      );
+      // NR-41 G9 — kandidat dicari paralel dari /api/admin/candidates?q=.
+      const [data, candidateRows] = await Promise.all([
+        apiGet<SearchResponse>(
+          `/api/admin/search?q=${encodeURIComponent(query)}`
+        ),
+        canSearchCandidates
+          ? apiGet<CandidateSummary[]>(
+              `/api/admin/candidates?q=${encodeURIComponent(query)}`
+            )
+          : Promise.resolve(EMPTY_CANDIDATES),
+      ]);
       if (seq !== seqRef.current) return; // respons basi — abaikan
       setResults({
         positions: Array.isArray(data.positions) ? data.positions : [],
         applications: Array.isArray(data.applications) ? data.applications : [],
       });
+      setCandidates(
+        Array.isArray(candidateRows)
+          ? candidateRows.slice(0, 8)
+          : EMPTY_CANDIDATES
+      );
     } catch {
       if (seq !== seqRef.current) return;
       setResults(EMPTY_RESULTS);
+      setCandidates(EMPTY_CANDIDATES);
     } finally {
       if (seq === seqRef.current) setSearching(false);
     }
@@ -115,6 +136,7 @@ export function CommandPalette({
       seqRef.current += 1; // batalkan respons in-flight
       setSearching(false);
       setResults(EMPTY_RESULTS);
+      setCandidates(EMPTY_CANDIDATES);
       return;
     }
     setSearching(true);
@@ -152,10 +174,18 @@ export function CommandPalette({
     );
   }
 
+  // NR-41 G9 — buka dialog profil kandidat (global, via event window; dialog
+  // dipasang di AdminApp sehingga tidak perlu berpindah tab).
+  function selectCandidate(candidate: CandidateSummary) {
+    onOpenChange(false);
+    openCandidateDialog(candidate.id);
+  }
+
   const query = search.trim();
   const hasQuery = query.length >= 2;
   const showPositions = hasQuery && results.positions.length > 0;
   const showApplications = hasQuery && results.applications.length > 0;
+  const showCandidates = hasQuery && candidates.length > 0;
 
   return (
     <CommandDialog
@@ -251,6 +281,31 @@ export function CommandPalette({
                   </span>
                   <span className="text-muted-foreground shrink-0 text-xs">
                     {stageLabel(app.status)}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </>
+        ) : null}
+
+        {showCandidates ? (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="Kandidat (profil terpusat)">
+              {candidates.map((candidate) => (
+                <CommandItem
+                  key={candidate.id}
+                  value={`${candidate.name} ${candidate.email} ${candidate.phone ?? ""}`}
+                  onSelect={() => selectCandidate(candidate)}
+                >
+                  <ContactRound className="size-4" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-medium">{candidate.name}</span>
+                    <span className="text-muted-foreground"> · {candidate.email}</span>
+                  </span>
+                  <span className="text-muted-foreground shrink-0 text-xs">
+                    {candidate.applicationCount} lamaran
+                    {candidate.doNotHire ? " · do-not-hire" : ""}
                   </span>
                 </CommandItem>
               ))}
