@@ -781,39 +781,6 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [phase]);
 
-  // NR-41 I18 — navigasi keyboard "g" + tombol (jendela 1200 ms). Diabaikan
-  // saat mengetik atau saat ada dialog/modal terbuka; tidak menyentuh Ctrl+K
-  // maupun "?" (listener ShortcutOverlay terpisah).
-  useEffect(() => {
-    if (phase !== "ready") return;
-    let gPressedAt = 0;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
-      if (isTypingTargetElement(event.target)) return;
-      if (document.querySelector('[role="dialog"]')) return;
-
-      const key = event.key.toLowerCase();
-      if (key === "g") {
-        gPressedAt = Date.now();
-        return;
-      }
-      if (gPressedAt === 0 || Date.now() - gPressedAt > KEY_NAV_CHAIN_MS) {
-        return;
-      }
-      gPressedAt = 0;
-      const tab = KEY_NAV_TARGETS[key];
-      if (!tab) return;
-      const item = ALL_NAV_ITEMS.find((nav) => nav.value === tab);
-      if (!item) return;
-      // Hormati batasan peran: tab ber-role tidak boleh dibuka via keyboard.
-      if (item.roles && !item.roles.includes(role)) return;
-      event.preventDefault();
-      handleNavigate(tab);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [phase, role, handleNavigate]);
-
   // NR-41 G9 — dialog kandidat global: komponen mana pun (command palette,
   // baris tabel pelamar) mengirim event "lumina-open-candidate" dengan
   // candidateId (null = lamaran belum punya profil kandidat).
@@ -850,6 +817,39 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     setActiveTab(value);
     setMobileOpen(false);
   }, []);
+
+  // NR-41 I18 — navigasi keyboard "g" + tombol (jendela 1200 ms). Diabaikan
+  // saat mengetik atau saat ada dialog/modal terbuka; tidak menyentuh Ctrl+K
+  // maupun "?" (listener ShortcutOverlay terpisah).
+  useEffect(() => {
+    if (phase !== "ready") return;
+    let gPressedAt = 0;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (isTypingTargetElement(event.target)) return;
+      if (document.querySelector('[role="dialog"]')) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "g") {
+        gPressedAt = Date.now();
+        return;
+      }
+      if (gPressedAt === 0 || Date.now() - gPressedAt > KEY_NAV_CHAIN_MS) {
+        return;
+      }
+      gPressedAt = 0;
+      const tab = KEY_NAV_TARGETS[key];
+      if (!tab) return;
+      const item = ALL_NAV_ITEMS.find((nav) => nav.value === tab);
+      if (!item) return;
+      // Hormati batasan peran: tab ber-role tidak boleh dibuka via keyboard.
+      if (item.roles && !item.roles.includes(role)) return;
+      event.preventDefault();
+      handleNavigate(tab);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, role, handleNavigate]);
 
   if (phase === "checking") {
     return (
