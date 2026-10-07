@@ -168,6 +168,7 @@ model FileAsset {
   mimeType       String
   size           Int
   path           String
+  kind           String? // NR-41: CV | INTRO | COVER | DOC | OFFER_PDF | DRAFT | OTHER
   createdAt      DateTime      @default(now())
   cvApplications Application[] @relation("cvFile")
   introApp       Application[] @relation("introFile")
@@ -293,6 +294,20 @@ model Application {
   callLogs     CallLog[]
   internalDocs InternalDoc[]
 
+  // NR-41 — profil kandidat terpusat (1 orang = 1 Candidate lintas posisi)
+  candidateId String?    // satu Candidate punya banyak Application
+  candidate   Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+
+  // NR-41 — sumber lamaran terstruktur (model ReferralSource; field lama "source" tetap sebagai fallback teks)
+  sourceId   String?         // satu ReferralSource dipakai banyak Application
+  sourceRef  ReferralSource? @relation("appSource", fields: [sourceId], references: [id], onDelete: SetNull)
+
+  // NR-41 — tautan tag terstruktur (model Tag); field lama "tags" (JSON) tetap untuk kompatibilitas
+  tagLinks ApplicationTag[]
+
+  // NR-41 — e-signature sederhana saat pelamar menerima offer (JSON {name,method,at,ip,ua})
+  offerSignature String?
+
   // NR-39 — kartu karyawan digital untuk verifikasi (versi aktif: isCurrent)
   employeeCards EmployeeCard[]
 
@@ -313,6 +328,9 @@ model Application {
   slotBooking InterviewSlot[] @relation("slotBooking")
   surveys     CandidateSurvey[] @relation("surveys")
   questions   ApplicationQuestion[]
+
+  @@index([email])
+  @@index([candidateId])
 
   interviews       Interview[]
   createdAt        DateTime   @default(now())
@@ -380,6 +398,13 @@ model Subscriber {
   id        String   @id @default(cuid())
   email     String   @unique
   createdAt DateTime @default(now())
+
+  // NR-41 — double opt-in & unsubscribe (kepatuhan anti-spam)
+  confirmToken   String?   @unique // token konfirmasi email — null = tidak pakai double opt-in
+  confirmedAt    DateTime? // saat langganan dikonfirmasi via tautan email
+  unsubToken     String?   @unique // token tautan berhenti berlangganan (ditanam di footer email)
+  unsubscribedAt DateTime? // saat berhenti berlangganan — non-null = jangan kirim newsletter
+  source         String?   // konteks pendaftaran (mis. "landing", "posisi:<slug>")
 }
 
 // Diskusi internal antar admin pada satu kandidat
@@ -482,6 +507,11 @@ model EmailOutbox {
   application   Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
   createdAt     DateTime     @default(now())
   sentAt        DateTime?
+
+  // NR-41 — log pengiriman & retry
+  attempts      Int      @default(0) // berapa kali sudah dicoba kirim
+  lastError     String?  // pesan error percobaan terakhir
+  nextRetryAt   DateTime? // jadwal retry otomatis (backoff); null = tidak dijadwalkan
 
   @@index([status])
 }
@@ -596,10 +626,76 @@ model ApplicationDraft {
   position   Position? @relation("drafts", fields: [positionId], references: [id], onDelete: Cascade)
   email      String
   data       String // JSON isi draft wizard (jawaban per langkah)
+  files      String    @default("[]") // NR-41: JSON {fileId,label,filename,mimeType,size}[] — file draft tersimpan lintas perangkat
   expiresAt  DateTime
   createdAt  DateTime  @default(now())
 
   @@index([email])
+}
+
+// NR-41 — profil kandidat terpusat: satu orang (email unik) bisa melamar banyak posisi,
+// seluruh Application tertaut ke satu Candidate agar riwayat & dedupe lintas posisi utuh.
+model Candidate {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String
+  phone           String?
+  doNotHire       Boolean  @default(false) // bendera global lintas posisi (diagregasi dari Application.doNotHire)
+  doNotHireReason String?
+  notes           String?  // catatan internal gabungan
+  firstSeenAt     DateTime @default(now()) // lamaran pertama
+  lastAppliedAt   DateTime? // lamaran terakhir
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  applications Application[]
+}
+
+// NR-41 — tag terstruktur global (menggantikan JSON string di Application.tags)
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String   @default("zinc") // rose | amber | emerald | teal | orange | zinc
+  createdAt DateTime @default(now())
+
+  links ApplicationTag[]
+}
+
+// NR-41 — tautan banyak-ke-banyak Application <-> Tag
+model ApplicationTag {
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  tagId         String
+  tag           Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  addedBy       String? // nama admin penambah tag
+  createdAt     DateTime    @default(now())
+
+  @@id([applicationId, tagId])
+  @@index([tagId])
+}
+
+// NR-41 — sumber lamaran terstruktur (job board, sosial, referral, dll)
+model ReferralSource {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  kind      String   @default("OTHER") // JOB_BOARD | SOCIAL | REFERRAL | DIRECT | OTHER
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  applications Application[] @relation("appSource")
+}
+
+// NR-41 — tampilan tersimpan server-side (lintas perangkat & bisa dibagikan antar admin)
+model SavedView {
+  id        String   @id @default(cuid())
+  name      String
+  tab       String   @default("applications") // applications | pipeline | lainnya
+  query     String // JSON filter/sort/density sesuai tab
+  ownerId   String? // AdminUser pembuat — null = sistem
+  shared    Boolean  @default(false) // true = tampil untuk semua admin
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Survei pengalaman kandidat 1 pertanyaan setelah keputusan (diterima/ditolak).
