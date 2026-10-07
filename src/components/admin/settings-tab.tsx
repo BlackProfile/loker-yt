@@ -78,6 +78,7 @@ import {
   Rocket,
   Save,
   Send,
+  Share2,
   ShieldCheck,
   Smartphone,
   Sparkles,
@@ -605,6 +606,376 @@ function formatPairExpiry(iso: string): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+// ------------------------- Sumber Lamaran (NR-41 G13) -------------------------
+
+const REFERRAL_KIND_BADGE: Record<ReferralSourceKind, string> = {
+  JOB_BOARD: "bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700",
+  SOCIAL: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-900",
+  REFERRAL: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-900",
+  DIRECT: "bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-950 dark:text-teal-400 dark:border-teal-900",
+  OTHER: "bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700",
+};
+
+/** Kelola sumber lamaran terstruktur (job board, sosial, referral, dll). */
+function ReferralSourcesCard() {
+  const { role, reportError } = useAdminSession();
+  const canWrite = role === "OWNER" || role === "HR";
+
+  const [items, setItems] = useState<ReferralSourceDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newKind, setNewKind] = useState<ReferralSourceKind>("JOB_BOARD");
+  const [creating, setCreating] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  // Baris yang menunggu konfirmasi hapus (AlertDialog).
+  const [deleteTarget, setDeleteTarget] = useState<ReferralSourceDto | null>(null);
+  // Edit nama inline: id yang sedang diedit + nilai draft.
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await apiGet<ReferralSourceDto[]>("/api/admin/referral-sources");
+      setItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleCreate() {
+    const name = newName.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      await apiPost<ReferralSourceDto>("/api/admin/referral-sources", {
+        name,
+        kind: newKind,
+        sortOrder: items.length,
+      });
+      setNewName("");
+      setNewKind("JOB_BOARD");
+      toast.success(`Sumber "${name}" ditambahkan.`);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menambah sumber.");
+      reportError(err);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleToggleActive(item: ReferralSourceDto, isActive: boolean) {
+    if (savingId) return;
+    setSavingId(item.id);
+    const prev = items;
+    setItems((current) =>
+      current.map((row) => (row.id === item.id ? { ...row, isActive } : row)),
+    );
+    try {
+      await apiPatch<ReferralSourceDto>(`/api/admin/referral-sources/${item.id}`, {
+        isActive,
+      });
+      toast.success(
+        isActive
+          ? `Sumber "${item.name}" diaktifkan.`
+          : `Sumber "${item.name}" dinonaktifkan.`,
+      );
+    } catch (err) {
+      setItems(prev);
+      toast.error(err instanceof Error ? err.message : "Gagal menyimpan sumber.");
+      reportError(err);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function handleRenameSave(item: ReferralSourceDto) {
+    const name = editName.trim();
+    if (!name || name === item.name) {
+      setEditId(null);
+      return;
+    }
+    if (savingId) return;
+    setSavingId(item.id);
+    try {
+      await apiPatch<ReferralSourceDto>(`/api/admin/referral-sources/${item.id}`, { name });
+      setEditId(null);
+      toast.success("Nama sumber diperbarui.");
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mengubah nama.");
+      reportError(err);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function handleDeleteConfirmed() {
+    if (!deleteTarget || savingId) return;
+    const target = deleteTarget;
+    setSavingId(target.id);
+    try {
+      await apiDelete(`/api/admin/referral-sources/${target.id}`);
+      toast.success(`Sumber "${target.name}" dihapus.`);
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      // 409 = dipakai lamaran → sarankan nonaktifkan.
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Gagal menghapus sumber. Nonaktifkan bila masih dipakai.",
+      );
+      reportError(err);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  return (
+    <CollapsibleCard
+      id="referral-sources"
+      icon={Share2}
+      title="Sumber Lamaran"
+      description="Daftar saluran perolehan pelamar (job board, media sosial, referral). Dipakai wizard lamaran publik & laporan sumber."
+    >
+      {loading ? (
+        <div className="space-y-2" aria-busy="true">
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-2/3" />
+        </div>
+      ) : loadError ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400">
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="size-4" aria-hidden="true" />
+            {loadError}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => void load()}>
+            <RefreshCw className="size-4" aria-hidden="true" />
+            Coba lagi
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Daftar sumber */}
+          {items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Belum ada sumber. Tambahkan saluran seperti &quot;JobStreet&quot; atau
+              &quot;Instagram&quot; agar laporan sumber lamaran lebih akurat.
+            </p>
+          ) : (
+            <ul className="divide-y rounded-lg border">
+              {items.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex flex-wrap items-center gap-2 px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    {editId === item.id ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={editName}
+                          onChange={(event) => setEditName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") void handleRenameSave(item);
+                            if (event.key === "Escape") setEditId(null);
+                          }}
+                          className="h-8 max-w-xs"
+                          aria-label="Nama sumber baru"
+                          autoFocus
+                        />
+                        <Button
+                          size="sm"
+                          className="h-8"
+                          onClick={() => void handleRenameSave(item)}
+                          disabled={savingId === item.id}
+                        >
+                          {savingId === item.id ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Save className="size-4" aria-hidden="true" />
+                          )}
+                          Simpan
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8"
+                          onClick={() => setEditId(null)}
+                        >
+                          Batal
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate font-medium">{item.name}</span>
+                        <Badge
+                          variant="outline"
+                          className={REFERRAL_KIND_BADGE[item.kind] ?? REFERRAL_KIND_BADGE.OTHER}
+                        >
+                          {REFERRAL_SOURCE_KIND_LABELS[item.kind] ?? item.kind}
+                        </Badge>
+                        <span
+                          className="text-xs text-muted-foreground"
+                          title="Jumlah lamaran yang memakai sumber ini"
+                        >
+                          {item.usageCount} lamaran
+                        </span>
+                        {!item.isActive && (
+                          <Badge
+                            variant="outline"
+                            className="bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
+                          >
+                            Nonaktif
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {canWrite && editId !== item.id && (
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={item.isActive}
+                        disabled={savingId === item.id}
+                        onCheckedChange={(checked) =>
+                          void handleToggleActive(item, checked)
+                        }
+                        aria-label={`Aktifkan sumber ${item.name}`}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => {
+                          setEditId(item.id);
+                          setEditName(item.name);
+                        }}
+                        aria-label={`Ubah nama sumber ${item.name}`}
+                      >
+                        <PenTool className="size-4" aria-hidden="true" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-rose-600 hover:text-rose-700 dark:text-rose-400"
+                        onClick={() => setDeleteTarget(item)}
+                        aria-label={`Hapus sumber ${item.name}`}
+                        disabled={item.usageCount > 0}
+                      >
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Form tambah */}
+          {canWrite && (
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="referral-new-name" className="text-xs">
+                  Nama sumber
+                </Label>
+                <Input
+                  id="referral-new-name"
+                  value={newName}
+                  onChange={(event) => setNewName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void handleCreate();
+                  }}
+                  placeholder="mis. JobStreet"
+                  className="h-10 w-48"
+                  maxLength={60}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="referral-new-kind" className="text-xs">
+                  Jenis
+                </Label>
+                <Select
+                  value={newKind}
+                  onValueChange={(value) => setNewKind(value as ReferralSourceKind)}
+                >
+                  <SelectTrigger id="referral-new-kind" className="h-10 w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REFERRAL_SOURCE_KINDS.map((kind) => (
+                      <SelectItem key={kind} value={kind}>
+                        {REFERRAL_SOURCE_KIND_LABELS[kind]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                className="h-10"
+                onClick={() => void handleCreate()}
+                disabled={creating || newName.trim().length === 0}
+              >
+                {creating ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Plus className="size-4" aria-hidden="true" />
+                )}
+                Tambah
+              </Button>
+            </div>
+          )}
+          {!canWrite && (
+            <p className="text-xs text-muted-foreground">
+              Hanya OWNER/HR yang dapat mengubah daftar sumber.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Konfirmasi hapus sumber */}
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus sumber lamaran?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Sumber &quot;{deleteTarget?.name}&quot; akan dihapus permanen. Bila masih
+              dipakai lamaran, nonaktifkan saja agar riwayat tetap utuh.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDeleteConfirmed();
+              }}
+            >
+              {savingId ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="size-4" aria-hidden="true" />
+              )}
+              Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </CollapsibleCard>
+  );
 }
 
 // Kartu mandiri: data dimuat sendiri via GET /api/admin/telegram/bot dan setiap aksi
@@ -3025,6 +3396,9 @@ export function SettingsTab() {
 
       {/* Kotak Keluar Email (arsip + kirim ulang, ketergantungan SMTP) */}
       <EmailOutboxCard />
+
+      {/* Sumber Lamaran terstruktur (NR-41 G13 — wizard publik & laporan sumber) */}
+      <ReferralSourcesCard />
 
       {/* Laporan Email Terjadwal (NR-19 — toggle mingguan/bulanan, OWNER saja) */}
       <ReportEmailScheduleCard />
