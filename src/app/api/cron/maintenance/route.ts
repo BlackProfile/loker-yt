@@ -19,6 +19,8 @@ import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { emitWebhook } from "@/lib/webhooks";
 // NR41-SEC-B (L32): notifikasi backup gagal/tertunda di akhir perawatan.
 import { verifyAndNotifyBackups } from "@/lib/backup-notify";
+// NR41-DATA-B: retry email outbox (lib email-retry.ts buatan DATA-B).
+import { processEmailRetries } from "@/lib/email-retry";
 
 export const dynamic = "force-dynamic";
 
@@ -135,9 +137,13 @@ async function readJsonSetting(key: string): Promise<Record<string, unknown>> {
 async function runMaintenance() {
   const now = new Date();
 
-  // NR41-DATA-B: processEmailRetries() dipanggil di sini — bila src/lib/email-retry.ts
-  // sudah tersedia, panggil `await processEmailRetries();` SEBELUM backup harian
-  // (retry email outbox ber-backoff nextRetryAt).
+  // NR41-DATA-B — retry email outbox (backoff nextRetryAt) SEBELUM backup harian.
+  // Gagal retry tidak boleh menggagalkan perawatan (fungsi sudah try/catch internal).
+  try {
+    await processEmailRetries();
+  } catch (emailRetryError) {
+    console.error("[maintenance] processEmailRetries gagal:", emailRetryError);
+  }
 
   // 0) BACKUP HARIAN — dijalankan sebelum guard 1x/jam agar tetap idempoten per hari
   //    walaupun perawatan arsip/retensi dilewati guard.
