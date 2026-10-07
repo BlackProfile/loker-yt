@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // NR-41 — Skrip migrasi data (G9/G10/G13) — dijalankan SEKALI, idempotent.
 //   1. Konsolidasi kandidat: kelompokkan Application by lower(trim(email)) ->
 //      buat/ambil Candidate (nama/telepon dari lamaran terbaru, firstSeenAt =
