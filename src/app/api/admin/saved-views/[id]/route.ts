@@ -2,6 +2,8 @@
 // PATCH: rename / ubah query / ubah shared — hanya pemilik view ATAU OWNER
 //        (shared=true hanya bisa dipasang OWNER).
 // DELETE: pemilik view ATAU OWNER.
+// Catatan: SavedView.ownerId adalah string biasa (tanpa relasi di skema) — nama
+// pemilik di-resolve terpisah dari AdminUser.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/server-auth";
@@ -28,7 +30,8 @@ function parseQueryObject(raw: string): Record<string, unknown> {
   return {};
 }
 
-function toDto(row: {
+/** Susun DTO dari row SavedView + nama pemilik via AdminUser. */
+async function toDto(row: {
   id: string;
   name: string;
   tab: string;
@@ -37,15 +40,22 @@ function toDto(row: {
   shared: boolean;
   createdAt: Date;
   updatedAt: Date;
-  owner?: { name: string } | null;
-}): SavedViewDto {
+}): Promise<SavedViewDto> {
+  let ownerName: string | null = null;
+  if (row.ownerId) {
+    const owner = await db.adminUser.findUnique({
+      where: { id: row.ownerId },
+      select: { name: true },
+    });
+    ownerName = owner?.name ?? null;
+  }
   return {
     id: row.id,
     name: row.name,
     tab: row.tab,
     query: parseQueryObject(row.query),
     ownerId: row.ownerId,
-    ownerName: row.owner?.name ?? null,
+    ownerName,
     shared: row.shared,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -63,10 +73,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
 
     const { id } = await ctx.params;
-    const existing = await db.savedView.findUnique({
-      where: { id },
-      include: { owner: { select: { name: true } } },
-    });
+    const existing = await db.savedView.findUnique({ where: { id } });
     if (!existing) return NextResponse.json(NOT_FOUND, { status: 404 });
 
     // Hanya pemilik ATAU OWNER yang boleh mengubah.
@@ -105,12 +112,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       updateData.shared = data.shared && session.role === "OWNER";
     }
 
-    const updated = await db.savedView.update({
-      where: { id },
-      data: updateData,
-      include: { owner: { select: { name: true } } },
-    });
-    return NextResponse.json(toDto(updated));
+    const updated = await db.savedView.update({ where: { id }, data: updateData });
+    return NextResponse.json(await toDto(updated));
   } catch (error) {
     console.error("[PATCH /api/admin/saved-views/[id]]", error);
     return NextResponse.json({ error: "Gagal menyimpan perubahan tampilan. Coba lagi nanti." }, { status: 500 });

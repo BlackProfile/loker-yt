@@ -1,6 +1,6 @@
 // GET /api/public/content — konten landing page publik (site + posisi tayang + statistik + kuota).
 // NR-41 E2 — respons dibungkus etagJson: ETag + Cache-Control + 304 bila If-None-Match cocok.
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { closeExpiredPositions, ensureSeeded, parseSiteContent, serializePosition } from "@/lib/seed";
 import { etagJson } from "@/lib/http-cache";

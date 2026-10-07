@@ -71,7 +71,6 @@ export async function syncApplicationTags(
           tagId,
           addedBy: addedBy?.trim() || null,
         })),
-        skipDuplicates: true,
       });
     }
 
