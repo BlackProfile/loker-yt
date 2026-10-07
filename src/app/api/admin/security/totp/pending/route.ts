@@ -25,6 +25,23 @@ function pendingSecretKey(userId: string): string {
   return `pending_2fa_secret:${userId}`;
 }
 
+/**
+ * Validasi token setup TANPA mengkonsumsi (token dipakai di dua panggilan:
+ * bootstrap lalu verifikasi; dikonsumsi via consumePending2FASetup saat sukses).
+ */
+async function validatePending2FASetup(userId: string, token: string): Promise<boolean> {
+  try {
+    const row = await db.setting.findUnique({ where: { key: `pending_2fa_setup:${userId}` } });
+    if (!row) return false;
+    const parsed: unknown = JSON.parse(row.value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    const data = parsed as Record<string, unknown>;
+    return data.token === token && typeof data.exp === "number" && data.exp > Date.now();
+  } catch {
+    return false;
+  }
+}
+
 async function writePendingSecret(userId: string, secret: string): Promise<void> {
   const payload: PendingSecret = { secret, exp: Date.now() + PENDING_SECRET_TTL_MS };
   await db.setting.upsert({
@@ -99,7 +116,7 @@ export async function POST(req: NextRequest) {
         // baris rusak — lanjut kandidat berikutnya
       }
     }
-    if (!userId || !(await consumePending2FASetup(userId, setupToken))) {
+    if (!userId || !validatePending2FASetup(userId, setupToken)) {
       return NextResponse.json(
         { error: "Sesi pemasangan 2FA kedaluwarsa. Login ulang." },
         { status: 401 },
@@ -142,6 +159,7 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    await consumePending2FASetup(user.id, setupToken);
     await db.adminUser.update({
       where: { id: user.id },
       data: { totpSecret: secret, totpEnabled: true },
