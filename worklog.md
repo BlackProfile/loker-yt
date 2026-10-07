@@ -3427,3 +3427,42 @@ Stage Summary:
 - NR-40 "Pipeline Lengkap" LOLOS verifikasi E2E penuh: 14/14 butir hidup pada data nyata (aging+filter, median/bottleneck/funnel, 3 stage guard 422, aksi massal, peringatan gaji live, evaluasi cek-in, alumni/offboarding, talent pool matcher 92-skor, daftar tunggu, panel aksi pelamar).
 - Tidak ada kode diubah pada task ini (verifikasi murni); data demo tetap utuh (Rani offer pending, Rina PROBATION 90 hari, status Rizky NEW).
 - Bukti: .verify/pipeline-1.png, kanban-1.png, kanban-2.png, kanban-bulk.png, offer-warning.png, karyawan-1.png, karyawan-2.png, cekin-form.png, talent-pool.png, status-aksi.png.
+
+---
+Task ID: NR41-0 (Wave 0 — orkestrator)
+Agent: orchestrator (Z.ai Code)
+Task: Fondasi Paket E–L (18 fitur platform) — audit gap, batch skema Prisma, tipe TS, kontrak API & kepemilikan file untuk gelombang paralel.
+
+Work Log:
+- Audit menyeluruh via Explore agent: 29 model, ~120 endpoint, 15 tab admin, landing, auth, a11y, performa. Temuan: NR-40 (14 butir pipeline) SUDAH 100% selesai & terverifikasi — cakupan "semuanya" kini = Paket E–L saja.
+- Batch skema NR-41 di prisma/schema.prisma (db:push sukses, Prisma Client regenerated):
+  - Model baru: Candidate (profil terpusat, email unique, doNotHire global), Tag + ApplicationTag (tag terstruktur; Application.tags JSON tetap sebagai legacy write-through), ReferralSource (sumber terstruktur), SavedView (server-side, shared antar admin).
+  - Field baru: Application.candidateId/sourceId/offerSignature(JSON)/tagLinks + index [email],[candidateId]; Subscriber.confirmToken/confirmedAt/unsubToken/unsubscribedAt/source (double opt-in); EmailOutbox.attempts/lastError/nextRetryAt (log+retry); FileAsset.kind (CV|INTRO|COVER|DOC|OFFER_PDF|DRAFT|OTHER); ApplicationDraft.files (JSON DraftFileMeta[]).
+- types.ts: seksi baru "NR-41" di akhir file (CandidateSummary, CandidateDetailResponse, ReferralSourceDto, SavedViewDto, PaginatedApplications, EmailOutboxAdminRow, DataSubjectExport, DataHealthReport, SystemHealth, OfferSignature, DraftFileMeta, LoginRequired2FA, FILE_ASSET_KINDS). ATURAN: tipe NR-41 hanya boleh ditambah (aditif) di bawah penanda seksi tsb.
+- Install: bcryptjs + @types/bcryptjs, pdf-lib. sharp SUDAH ada di deps.
+- Verifikasi: bunx tsc --noEmit → src/ 0 error; dev server 200 di port 3000.
+
+Stage Summary (KONTRAK GELOMBANG — WAJIB dibaca agent gelombang berikutnya):
+- KEPEMILIKAN FILE (agar tak bentrok paralel):
+  - SEC-B (backend keamanan): src/lib/server-auth.ts, src/middleware.ts (BARU), src/lib/verify-upload.ts (BARU), src/lib/upload.ts, src/app/api/files/[id]/route.ts, src/app/api/admin/login/route.ts, src/app/api/cron/maintenance/route.ts, src/lib/instrumentation.ts (BARU), src/app/api/admin/health/route.ts (BARU), src/app/api/admin/health/errors/route.ts (BARU). JANGAN sentuh file milik agent lain.
+  - DATA-B (backend data/kepatuhan): src/app/api/admin/applications/route.ts (pagination opt-in ?paginate=1 → envelope PaginatedApplications; tanpa param respons array tetap), src/lib/http-cache.ts (BARU: etagJson(req,obj)), penerapan ETag di api/public/content + api/public/site + api/positions, src/lib/candidates.ts (BARU: ensureCandidate(email..)+migrasi skrip), src/lib/tags-sync.ts (BARU: syncTags(applicationId,names,addedBy) dual-write), src/app/api/admin/candidates/route.ts + [id]/route.ts (BARU), src/app/api/admin/saved-views/route.ts (+[id]) (BARU), src/app/api/admin/referral-sources/route.ts (BARU), src/app/api/public/subscribe/route.ts + confirm/unsubscribe (BARU), src/app/api/admin/emails/route.ts (BARU list+retry), src/app/api/admin/applications/[id]/export-data/route.ts (BARU), src/app/api/public/track-export/route.ts (BARU), src/app/api/public/email-inbound/route.ts (BARU), skrip migrasi scripts/nr41-migrate.cjs (candidate konsolidasi + tag JSON→model + ReferralSource seed awal), purge arsip di cron maintenance (HANYA bagian export-before-purge — koordinasi dgn SEC-B via worklog), data-health endpoint src/app/api/admin/data-health/route.ts (BARU).
+  - Wave 2 (frontend, mulai SETELAH wave 1 selesai): PIPE-F = kanban-board.tsx + calendar-tab.tsx; ADMIN-F = applications-table.tsx, admin-app.tsx, shortcut-overlay.tsx, settings-tab.tsx, data-tab.tsx, command-palette.tsx; PUB-F = landing-page.tsx, apply-wizard.tsx, status-page.tsx, subscribe-section.tsx, src/app/layout.tsx, public/manifest.webmanifest + sw.js + ikon.
+  - K28 PDF offer letter → diambil orkestrator di Wave 3 (pdf-lib; FileAsset kind=OFFER_PDF).
+- KONTRAK API KUNCI (diimplement wave 1, dikonsumsi wave 2):
+  1) GET /api/admin/applications?paginate=1&page=1&pageSize=25&sort=name:asc → PaginatedApplications; sort diizinkan: name,createdAt,updatedAt,aiScore,stage,status (asc/desc). Tanpa paginate=1 → array (kompatibel).
+  2) GET /api/admin/candidates?q= → CandidateSummary[]; GET /api/admin/candidates/[id] → CandidateDetailResponse; PATCH [id] {notes,doNotHire,doNotHireReason}.
+  3) GET/POST /api/admin/saved-views; PATCH/DELETE /api/admin/saved-views/[id]; query JSON bebas per tab; shared:true hanya OWNER.
+  4) GET/POST/PATCH/DELETE /api/admin/referral-sources (+usageCount agregat). Wizard publik: GET /api/public/referral-sources → {id,name}[] aktif.
+  5) POST /api/public/subscribe {email,source} → 202 {pendingConfirm:true} bila double opt-in aktif (Setting "newsletter_double_optin" default true); GET /api/public/subscribe/confirm?token= → redirect /?sub=ok; GET /api/public/unsubscribe?token= → halaman/HALAMAN status; subscriber tanpa confirmedAt TIDAK boleh menerima blast.
+  6) GET /api/admin/emails?status=&page= → {items:EmailOutboxAdminRow[],total}; POST /api/admin/emails {id} → retry kirim (attempts++, backoff 5/15/60 menit via nextRetryAt); cron maintenance memproses nextRetryAt<=now.
+  7) GET /api/admin/applications/[id]/export-data → DataSubjectExport (JSON unduh); GET /api/public/track-export (sesi status-gate) → sama utk pelamar.
+  8) GET /api/admin/data-health → DataHealthReport; GET /api/health (publik, tanpa PII) + /api/admin/health/errors (OWNER, ring buffer in-memory max 200).
+  9) POST /api/public/email-inbound header X-Inbound-Secret (Setting "inbound_email_secret") body {from,to,subject,text} → cocokkan Application by email → Comment(authorRole "CANDIDATE") + notifikasi.
+  10) Login: POST /api/admin/login {password, rememberMe?} → bila OWNER & !totpEnabled → {ok:false,mustSetup2FA:true,setupToken} (token pendek 10 menit utk arahkan ke alur setup 2FA sebelum sesi penuh). Sesi: sliding — cookie 7d default / 30d dgn rememberMe; idle timeout via SessionToken.lastSeenAt (Setting "session_idle_minutes" default 720, 0=nonaktif).
+  11) ETag: etagJson() → header ETag + If-None-Match 304 + Cache-Control "private, max-age=15, stale-while-revalidate=60" (endpoint publik content/site/positions).
+  12) Upload magic bytes (verify-upload.ts): PDF %PDF-, JPEG FFD8FF, PNG 89504E47, WEBP RIFF..WEBP, DOCX/XLSX PK\x03\x04, MP3/OGG ID3/OggS, WAV RIFF, MP4 ftyp — dipakai semua route upload (cv, intro, docs, draft-file).
+  13) Draft file: POST /api/public/apply-draft-file {token,label,file} → simpan FileAsset kind=DRAFT + append ApplicationDraft.files; submit wizard memindahkan meta → FileAsset tetap, create application memakai fileId tsb (cv/intro/extraDocs).
+  14) serializeApplication (seed.ts): += candidateId, sourceId, sourceName (nama ReferralSource), offerSignature (parsed) — TANPA mengubah field lama.
+  15) Data health & health WAJIB tanpa PII mentah (email di-masking bila perlu di panel; export-data PII penuh hanya utk pemilik/admin ber-role).
+- KEAMANAN: password hash migrasi bcrypt (prefiks "$2a$"/"$2b$"; legacy sha256-hex dikenali & di-upgrade saat login sukses). Middleware: X-Content-Type-Options, Referrer-Policy strict-origin-when-cross-origin, Permissions-Policy, CSP longgar (unsafe-inline utk Next), X-Frame-Options SAMEORIGIN KECUALI request dgn ?embed=1/frame-ancestors *; HSTS hanya saat x-forwarded-proto=https.
+- LARANGAN: warna biru/indigo, emoji, alert(), server actions, z-ai di client. UI Bahasa Indonesia. Hormati prefers-reduced-motion. Footer sticky. Jangan jalankan db:push lagi tanpa koordinasi (skema wave 0 final).
