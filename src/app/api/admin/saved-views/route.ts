@@ -3,6 +3,8 @@
 // POST /api/admin/saved-views — buat {name, tab, query(object), shared} (OWNER/HR;
 //        shared=true hanya OWNER — non-OWNER dipaksa false).
 // Query disimpan sebagai JSON string di SavedView.query; DTO mengembalikan objek.
+// Catatan: SavedView.ownerId adalah string biasa (tanpa relasi di skema) — nama
+// pemilik di-resolve terpisah dari AdminUser.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/server-auth";
@@ -29,28 +31,41 @@ function parseQueryObject(raw: string): Record<string, unknown> {
   return {};
 }
 
-function toDto(row: {
-  id: string;
-  name: string;
-  tab: string;
-  query: string;
-  ownerId: string | null;
-  shared: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-  owner?: { name: string } | null;
-}): SavedViewDto {
-  return {
+/**
+ * Susun DTO dari row SavedView + map nama pemilik (AdminUser.name).
+ * ownerId bisa milik admin yang sudah dihapus → fallback null.
+ */
+async function toDtos(
+  rows: Array<{
+    id: string;
+    name: string;
+    tab: string;
+    query: string;
+    ownerId: string | null;
+    shared: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  }>,
+): Promise<SavedViewDto[]> {
+  const ownerIds = [...new Set(rows.map((row) => row.ownerId).filter((id): id is string => Boolean(id)))];
+  const owners = ownerIds.length > 0
+    ? await db.adminUser.findMany({
+        where: { id: { in: ownerIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const nameById = new Map(owners.map((owner) => [owner.id, owner.name]));
+  return rows.map((row) => ({
     id: row.id,
     name: row.name,
     tab: row.tab,
     query: parseQueryObject(row.query),
     ownerId: row.ownerId,
-    ownerName: row.owner?.name ?? null,
+    ownerName: row.ownerId ? nameById.get(row.ownerId) ?? null : null,
     shared: row.shared,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-  };
+  }));
 }
 
 export async function GET() {
@@ -61,10 +76,9 @@ export async function GET() {
     const rows = await db.savedView.findMany({
       where: { OR: [{ ownerId: session.id }, { shared: true }] },
       orderBy: { updatedAt: "desc" },
-      include: { owner: { select: { name: true } } },
     });
 
-    return NextResponse.json(rows.map(toDto));
+    return NextResponse.json(await toDtos(rows));
   } catch (error) {
     console.error("[GET /api/admin/saved-views]", error);
     return NextResponse.json({ error: "Gagal memuat tampilan tersimpan. Coba lagi nanti." }, { status: 500 });
@@ -111,9 +125,8 @@ export async function POST(req: NextRequest) {
         ownerId: session.id,
         shared,
       },
-      include: { owner: { select: { name: true } } },
     });
-    return NextResponse.json(toDto(created), { status: 201 });
+    return NextResponse.json((await toDtos([created]))[0], { status: 201 });
   } catch (error) {
     console.error("[POST /api/admin/saved-views]", error);
     return NextResponse.json({ error: "Gagal menyimpan tampilan. Coba lagi nanti." }, { status: 500 });
