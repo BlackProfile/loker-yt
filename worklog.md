@@ -3567,3 +3567,18 @@ Stage Summary:
 - Paket E–L 18/18 butir LOLOS verifikasi E2E pada data nyata (curl + agent-browser), termasuk satu siklus penuh 2FA wajib OWNER yang kemudian direset, satu arsip PDF offer, satu siklus tambah/hapus sumber, dan alur unsubscribe.
 - Bukti visual: .verify/nr41-landing.png, nr41-pipeline.png, nr41-data-health.png, nr41-candidate-dialog.png, nr41-2fa-gate.png, nr41-calendar.png, nr41-mobile-landing.png, offer-test.pdf.
 - Catatan operasional: OWNER tanpa TOTP kini WAJIB memasang 2FA saat login baru (sesi lama tetap berlaku); Setting baru: session_idle_minutes (default 720), newsletter_double_optin (default true), backup_notify_enabled (default true), inbound_email_secret (kosong = inbound email mati), backup_alert_sent_at, pending_2fa_*.
+
+---
+Task ID: NR41-HMRFIX
+Agent: Z.ai Code (orchestrator)
+Task: Memperbaiki error HMR Turbopack "Module ... mail-warning.js ... module factory is not available" pada src/components/admin/settings-tab.tsx (dilaporkan user).
+
+Work Log:
+- Diagnosis: ikon MailWarning ADA di lucide-react 0.525.0 (dist/esm/icons/mail-warning.js) dan import di settings-tab.tsx valid → murni cache modul Turbopack basi setelah update HMR, bukan kesalahan kode.
+- Restart bersih: hentikan dev-keepalive + semua proses next dev/next-server/bun run dev; rm -rf .next; jalankan ulang nohup bun run dev >> dev.log 2>&1; nyalakan lagi dev-keepalive.sh (pid baru). Guard lain (db-guard, auto-push, realtime, telegram) dibiarkan berjalan.
+- Verifikasi E2E (agent-browser): login OWNER → terkena gate setup 2FA (perilaku F8 yang disetujui, karena TOTP direset nonaktif pada NR41-VERIFY); selesaikan siklus 2FA secara penuh di UI — bootstrap QR via /api/admin/security/totp/pending, baca secret browser dari Setting pending_2fa_secret:<id> di DB, hitung kode TOTP (HMAC-SHA1, node crypto), isi form "Kode 6 digit" → Verifikasi & Masuk → sesi penuh.
+- Tab Pengaturan (file yang error) dirender penuh: semua kartu tampil termasuk "Kotak Keluar Email" & "Sumber Lamaran"; 78 ikon lucide hidup; screenshot .verify/hmr-fix-settings.png. dev.log bersih tanpa "module factory" / runtime error; semua API 200.
+- Reset pasca-verifikasi: AdminUser.totpEnabled=false, totpSecret=null, hapus Setting pending_2fa_setup/pending_2fa_secret → login demo OWNER kembali ke alur yang dirancang (login baru → gate setup 2FA sekali; sesi lama tetap berlaku). Skrip tmp dihapus.
+
+Stage Summary:
+- Error HMR Turbopack terselesaikan dengan restart bersih + pembersihan .next (bukan bug kode). Aplikasi terverifikasi hidup kembali: login → panel admin → Pengaturan aman. Tidak ada perubahan kode sumber pada task ini. Catatan: warning "middleware file convention deprecated (use proxy)" bersifat kosmetik, tidak berdampak — kandidat perbaikan opsional di masa depan.
