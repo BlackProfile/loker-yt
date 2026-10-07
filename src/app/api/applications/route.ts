@@ -138,7 +138,57 @@ function cuidLike(): string {
 
 type SavedFile = { id: string };
 
-async function saveUpload(file: File, fallbackMime: string): Promise<SavedFile> {
+// NR-41 J26 — meta file draft (mirror DraftFileMeta types.ts, sisi server).
+type DraftFileMetaLocal = {
+  fileId: string;
+  label: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+};
+
+/**
+ * NR-41 J26 — muat file-file draft wizard (lintas perangkat) dari token.
+ * Return null bila token kosong/tidak valid/kedaluwarsa — TIDAK pernah melempar.
+ * Label: "cv" | "intro" | "doc:<nama>" | "form:<fieldId>".
+ */
+async function loadDraftFiles(
+  token: string | null,
+): Promise<{ draftId: string; byLabel: Map<string, DraftFileMetaLocal> } | null> {
+  const clean = token?.trim() ?? "";
+  if (!clean) return null;
+  try {
+    const draft = await db.applicationDraft.findUnique({ where: { token: clean } });
+    if (!draft || draft.expiresAt.getTime() <= Date.now()) return null;
+    let metas: DraftFileMetaLocal[] = [];
+    try {
+      const parsed: unknown = JSON.parse(draft.files);
+      if (Array.isArray(parsed)) {
+        metas = parsed.filter(
+          (item): item is DraftFileMetaLocal =>
+            !!item &&
+            typeof item === "object" &&
+            typeof (item as DraftFileMetaLocal).fileId === "string" &&
+            typeof (item as DraftFileMetaLocal).label === "string",
+        );
+      }
+    } catch {
+      metas = [];
+    }
+    // Pastikan FileAsset-nya benar-benar ada (hindari fileId yatim).
+    const byLabel = new Map<string, DraftFileMetaLocal>();
+    for (const meta of metas) {
+      const asset = await db.fileAsset.findUnique({ where: { id: meta.fileId }, select: { id: true } });
+      if (asset) byLabel.set(meta.label, meta);
+    }
+    return { draftId: draft.id, byLabel };
+  } catch (draftError) {
+    console.error("[POST /api/applications] loadDraftFiles gagal:", draftError);
+    return null;
+  }
+}
+
+async function saveUpload(file: File, fallbackMime: string, kind?: string): Promise<SavedFile> {
   const uploadsDir = path.join(process.cwd(), "uploads");
   await mkdir(uploadsDir, { recursive: true });
   const storedName = `${cuidLike()}-${sanitizeFilename(file.name)}`;
@@ -159,6 +209,7 @@ async function saveUpload(file: File, fallbackMime: string): Promise<SavedFile> 
       mimeType: file.type || fallbackMime,
       size: file.size,
       path: `uploads/${storedName}`,
+      kind: kind ?? null, // NR-41 — kategori aset (CV | INTRO | DOC | OTHER)
     },
     select: { id: true },
   });
@@ -462,11 +513,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Validasi berkas wajib sesuai konfigurasi posisi.
-    if (position.requireCv && !cvFile) {
+    // NR-41 J26 — adopsi file draft wizard (lintas perangkat): bila pelamar
+    // melanjutkan draft dari perangkat lain, berkas yang sudah diunggah ke draft
+    // dipakai tanpa perlu unggah ulang. Token dikirim sebagai field "draftToken".
+    const draftFiles = await loadDraftFiles(fields.draftToken ?? null);
+    const draftCv = draftFiles?.byLabel.get("cv") ?? null;
+    const draftIntro = draftFiles?.byLabel.get("intro") ?? null;
+
+    // Validasi berkas wajib sesuai konfigurasi posisi (file langsung ATAU file draft).
+    if (position.requireCv && !cvFile && !draftCv) {
       return NextResponse.json({ error: "CV wajib diunggah untuk posisi ini." }, { status: 400 });
     }
-    if (position.requireIntro && !introFile) {
+    if (position.requireIntro && !introFile && !draftIntro) {
       return NextResponse.json({ error: "Audio perkenalan wajib diunggah untuk posisi ini." }, { status: 400 });
     }
     if (position.requirePortfolio && !portfolioUrl && !socialLinks) {
@@ -526,6 +584,12 @@ export async function POST(req: NextRequest) {
         if (deadSectionIds.has(field.sectionId)) continue;
         const file = formFieldFiles.get(field.id) ?? null;
         if (!file) {
+          // NR-41 J26 — fallback: adopsi berkas draft "form:<fieldId>" (lintas perangkat).
+          const draftFormFile = draftFiles?.byLabel.get(`form:${field.id}`) ?? null;
+          if (draftFormFile) {
+            cleaned[field.id] = { fileId: draftFormFile.fileId, filename: draftFormFile.filename };
+            continue;
+          }
           if (field.required) {
             return NextResponse.json(
               { error: `Berkas "${field.label}" wajib diunggah.` },
@@ -546,7 +610,7 @@ export async function POST(req: NextRequest) {
             { status: 400 },
           );
         }
-        const asset = await saveUpload(file, "application/octet-stream");
+        const asset = await saveUpload(file, "application/octet-stream", "DOC");
         cleaned[field.id] = { fileId: asset.id, filename: file.name.slice(0, 200) };
       }
       // Berkas tak dikenal (field sudah dihapus admin) diabaikan senyap.
@@ -598,7 +662,13 @@ export async function POST(req: NextRequest) {
       ? []
       : parseRequirements(position.customDocs).slice(0, EXTRA_DOC_MAX_COUNT);
     if (customDocs.length > 0) {
-      if (extraDocFiles.length < customDocs.length) {
+      // NR-41 J26 — dokumen yang tidak ikut di request boleh diadopsi dari file draft
+      // dengan label "doc:<nama dokumen>".
+      const missingDocLabels = customDocs.slice(extraDocFiles.length);
+      const draftDocsCoverMissing =
+        draftFiles !== null &&
+        missingDocLabels.every((label) => draftFiles.byLabel.has(`doc:${label}`));
+      if (extraDocFiles.length < customDocs.length && !draftDocsCoverMissing) {
         const missing = customDocs[extraDocFiles.length] ?? customDocs[0];
         return NextResponse.json(
           { error: `Dokumen "${missing}" wajib diunggah untuk posisi ini.` },
@@ -621,11 +691,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Simpan file (opsional) ke folder uploads + catat FileAsset
-    const cvAsset = cvFile ? await saveUpload(cvFile, "application/pdf") : null;
+    // Simpan file (opsional) ke folder uploads + catat FileAsset.
+    // NR-41 — kind aset dicatat (CV/INTRO) dan file draft diadopsi bila tak ada unggahan langsung.
+    const cvAsset = cvFile
+      ? await saveUpload(cvFile, "application/pdf", "CV")
+      : draftCv
+        ? { id: draftCv.fileId }
+        : null;
     const introAsset = introFile
-      ? await saveUpload(introFile, AUDIO_EXT_MIME[introFile.name.slice(introFile.name.lastIndexOf(".")).toLowerCase()] ?? "audio/mpeg")
-      : null;
+      ? await saveUpload(
+          introFile,
+          AUDIO_EXT_MIME[introFile.name.slice(introFile.name.lastIndexOf(".")).toLowerCase()] ?? "audio/mpeg",
+          "INTRO",
+        )
+      : draftIntro
+        ? { id: draftIntro.fileId }
+        : null;
 
     const trackingCode = await generateUniqueTrackingCode();
 
@@ -655,11 +736,18 @@ export async function POST(req: NextRequest) {
       const docs: { label: string; filename: string; fileId: string }[] = [];
       for (let i = 0; i < customDocs.length; i++) {
         const file = extraDocFiles[i];
-        if (!file) break; // sudah divalidasi wajib di atas
-        const asset = await saveUpload(file, "application/octet-stream");
-        docs.push({ label: customDocs[i], filename: file.name, fileId: asset.id });
+        if (file) {
+          const asset = await saveUpload(file, "application/octet-stream", "DOC");
+          docs.push({ label: customDocs[i], filename: file.name, fileId: asset.id });
+          continue;
+        }
+        // NR-41 J26 — fallback: adopsi dari file draft "doc:<label>".
+        const draftDoc = draftFiles?.byLabel.get(`doc:${customDocs[i]}`) ?? null;
+        if (draftDoc) {
+          docs.push({ label: customDocs[i], filename: draftDoc.filename, fileId: draftDoc.fileId });
+        }
       }
-      extraDocsJson = JSON.stringify(docs);
+      if (docs.length > 0) extraDocsJson = JSON.stringify(docs);
     }
 
     const created = await db.application.create({
@@ -711,6 +799,16 @@ export async function POST(req: NextRequest) {
         detail: `Lamaran masuk untuk posisi ${position.title}`,
       },
     });
+
+    // NR-41 J26 — draft terkonsumsi: hapus baris draft agar token tak bisa dipakai lagi
+    // (FileAsset yang diadopsi tetap hidup dan kini terhubung ke lamaran).
+    if (draftFiles) {
+      try {
+        await db.applicationDraft.delete({ where: { id: draftFiles.draftId } });
+      } catch {
+        // penghapusan gagal — biarkan kedaluwarsa alami
+      }
+    }
 
     // Deteksi duplikat (fitur Task 20-a): email ATAU telepon sama dengan lamaran
     // lain pada POSISI YANG SAMA dalam 90 hari terakhir -> tandai isDuplicate +
