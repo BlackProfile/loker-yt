@@ -3614,3 +3614,21 @@ Work Log:
 
 Stage Summary:
 - Tidak ada perbaikan server yang diperlukan pada task ini — server terbukti sehat untuk sesi segar. Solusi bagi user: hard refresh tab preview (Ctrl+Shift+R) atau tutup-buka tab; sesi HMR baru akan memuat grafik yang benar. Lapisan pertahanan dari NR41-HMRFIX-2 (heap cap, keepalive anti-race, double-fork) tetap terpasang dan berfungsi pasca-reboot.
+
+---
+Task ID: NR42-MEME
+Agent: Z.ai Code (orchestrator)
+Task: Permintaan user — tambahkan lowongan "Editor Video Meme" beserta form lamaran khusus (Form Builder) yang sesuai.
+
+Work Log:
+- Riset struktur: Position.formSchema (JSON FormSchema v2 — sections biodata/experience/files bawaan + custom), sanitizer sanitizeFormSchemaInput (batas: 5 bagian custom, 25 field, 12 opsi, ID_RE), API POST/PATCH /api/admin/positions (OWNER/HR).
+- Session API: HR password tidak dikenal → login OWNER via TOTP (secret dibaca dari DB totpSecret — 2FA saat ini AKTIF milik user, TIDAK direset).
+- BUG DIPERBAIKI (NR42): POST /api/admin/positions TIDAK mempersist formSchema (disanitasi tapi tidak ada di data create — hanya PATCH yang menyimpan). Ditambahkan `formSchema: f.formSchema ?? null` di create data + komentar NR-42. Dampak: sebelumnya posisi baru dengan form builder selalu kehilangan skemanya saat create.
+- Posisi dibuat via API: "Editor Video Meme" (slug editor-video-meme, Video Editing, Full-time Remote, gaji Rp 3-4,5 jt tampil, featured, portfolio wajib).
+- Form kustom 6 bagian / 11 field: Data Diri (bawaan) → Pengalaman (label kustom: "Pengalaman bikin/edit video atau meme" + "Meme terakhir yang bikin kamu ketawa keras?") → Berkas (CV opsional, intro video mati, portofolio WAJIB) → Kemampuan Editing (f_software checkbox 8 opsi+Lainnya, f_turnaround radio, f_motion rating 1-5 opsional) → Gaya & Tren Meme (f_platforms checkbox 5 opsi, f_viral radio, f_viral_link URL KONDISIONAL showIf f_viral="Ya, pernah", f_meme_refs textarea, f_cringe radio opsional) → Kesiapan Kerja (f_output radio, f_revisi radio, f_showreel file opsional maks 20MB).
+- E2E browser penuh: detail posisi via /?posisi=editor-video-meme → wizard 7 langkah sesuai urutan skema → field kondisional muncul saat pilih "Ya, pernah" → pratinjau menampilkan seluruh jawaban → kirim → sukses "Lamaran Terkirim" kode LM-BL3TQW → admin API menampilkan aplikasi dgn seluruh formAnswers benar (field opsional kosong benar) + AI skor 85.
+- Catatan kejadian: posisi sempat ter-nonaktifkan (isActive=false, updatedAt 13:19:14) tanpa jejak ActivityLog — satu-satunya penulis kode adalah closeExpiredPositions (tidak match: tanpa closesAt/kuota) dan PATCH admin eksplisit. Sesi admin user aktif saat itu; paling mungkin di-toggle manual dari panel (form edit menginisialisasi isActive dengan benar — bukan bug UI). Dipulihkan ke aktif via PATCH.
+- Kualitas: tsc src/ 0 error; lint exit 0 (setelah tmp file dibersihkan). Screenshot: .verify/nr42-meme-position.png, .verify/nr42-meme-success.png.
+
+Stage Summary:
+- Lowongan "Editor Video Meme" hidup + form lamaran kustom lengkap & teruji E2E end-to-end (public wizard → submit → admin data). Bug create-route formSchema diperbaiki permanen. 2FA OWNER dibiarkan AKTIF (milik user; login admin sekarang butuh kode 6 digit dari authenticator user).
