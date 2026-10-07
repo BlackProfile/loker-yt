@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -2924,6 +2924,20 @@ export function ApplicationDetailDialog({
                 <FileText className="size-4" aria-hidden="true" />
                 Surat Penawaran (PDF)
               </Button>
+              {/* NR-41 K28 — arsip PDF server-side (pdf-lib), tersimpan sebagai FileAsset */}
+              {app.offerStatus && (
+                <a
+                  href={`/api/admin/applications/${app.id}/offer-pdf`}
+                  className={cn(
+                    buttonVariants({ variant: "outline" }),
+                    "h-11 sm:h-9",
+                  )}
+                  aria-label="Unduh arsip surat penawaran PDF dari server"
+                >
+                  <Archive className="size-4" aria-hidden="true" />
+                  Arsip PDF Server
+                </a>
+              )}
               {canMutate && !app.hiredAt ? (
                 <AlertDialog
                   open={anonymizeConfirmOpen}
