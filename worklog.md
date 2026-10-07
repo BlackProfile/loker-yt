@@ -3600,3 +3600,17 @@ Work Log:
 
 Stage Summary:
 - Akar masalah error user = kombinasi OOM (server dibunuh kernel) + race keepalive (dua instance berbagi .next → korupsi modul Turbopack). Tiga lapis perbaikan permanen terpasang: heap cap V8 1792MB, keepalive anti-race berbasis ambang+probe port, dan pola spawn double-fork yang terbukti selamat dari pembersihan sandbox. Stack kini: 1 next-server sehat (heap cap aktif), keepalive 2186 hidup & tenang, guard lain utuh. Error tidak seharusnya muncul lagi; bila server OOM pun keepalive menghidupkan ulang tanpa duplikasi .next.
+
+---
+Task ID: NR41-HMRFIX-3
+Agent: Z.ai Code (orchestrator)
+Task: Laporan ketiga error "module factory is not available" (mail-warning di settings-tab) — verifikasi menyeluruh pasca reboot sandbox 12:47.
+
+Work Log:
+- Kondisi server pasca-reboot sandbox: 1 pasang node next dev + next-server (uptime sehat), health 200, memori aman (1.8GB tersedia), keepalive baru hidup 12:47:59. Satu race kecil saat boot (EADDRINUSE :::3000 di dev.log) — yang kalah keluar bersih, yang menang sehat; tanpa duplikasi yang menetap.
+- Uji browser sesi SEGAR (agent-browser): open /#admin → login OWNER → gate 2FA (siklus penuh: secret dari Setting pending_2fa_secret, TOTP dihitung node) → tab Pengaturan → errorOverlay:false, 77 ikon lucide hidup, kartu Kotak Keluar Email + Sumber Lamaran ada, `agent-browser errors` dan console BERSIH (nol error mail-warning/factory).
+- Kesimpulan: grafik modul Turbopack sisi server SEHAT; error yang dilihat user adalah sisa sesi HMR lama di tab browsernya — overlay dev Next.js tidak hilang sendiri saat server di-restart/reboot, dan koneksi HMR lama tidak bisa rekonsiliasi dengan grafik baru.
+- Pasca-verifikasi: 2FA OWNER direset (totpEnabled=false, secret null, pending dihapus); browser ditutup.
+
+Stage Summary:
+- Tidak ada perbaikan server yang diperlukan pada task ini — server terbukti sehat untuk sesi segar. Solusi bagi user: hard refresh tab preview (Ctrl+Shift+R) atau tutup-buka tab; sesi HMR baru akan memuat grafik yang benar. Lapisan pertahanan dari NR41-HMRFIX-2 (heap cap, keepalive anti-race, double-fork) tetap terpasang dan berfungsi pasca-reboot.
