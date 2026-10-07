@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { motion, MotionConfig, useReducedMotion } from "framer-motion";
 import {
   BellOff,
@@ -1038,9 +1038,16 @@ function SubBanner() {
   // aman SSR (server = null), tanpa setState sinkron di effect.
   const kind = useSyncExternalStore(subscribeUrl, readSubParam, () => null);
   const [closed, setClosed] = useState(false);
+  // Nilai PERTAMA yang terbaca di klien dilock (URL ?sub dibersihkan di effect,
+  // snapshot store berikutnya jadi null — banner tetap tampil selama sesi ini).
+  const initialKindRef = useRef<SubBannerKind | null>(null);
+  if (initialKindRef.current === null && kind !== null) {
+    initialKindRef.current = kind;
+  }
+  const effectiveKind = initialKindRef.current;
 
   useEffect(() => {
-    if (!kind) return;
+    if (!effectiveKind) return;
     // Bersihkan parameter "sub" dari URL agar refresh tidak menampilkan ulang
     // banner (murni manipulasi URL — tanpa setState).
     try {
@@ -1055,10 +1062,10 @@ function SubBanner() {
     // Auto-tutup (setState di callback timer — bukan sinkron di body effect).
     const timer = window.setTimeout(() => setClosed(true), 9000);
     return () => window.clearTimeout(timer);
-  }, [kind]);
+  }, [effectiveKind]);
 
-  if (!kind || closed) return null;
-  const meta = SUB_BANNER_META[kind];
+  if (!effectiveKind || closed) return null;
+  const meta = SUB_BANNER_META[effectiveKind];
   const Icon = meta.icon;
   return (
     <div role="status" className={meta.tone}>
