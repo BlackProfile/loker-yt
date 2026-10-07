@@ -11,11 +11,40 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2, Lock, MailPlus } from "lucide-react";
+import {
+  Copy,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  MailPlus,
+  ShieldCheck,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { AdminSession } from "@/lib/types";
-import { ApiError, apiPost } from "./api";
+import { ApiError, apiGet, apiPost } from "./api";
+import { copyText } from "./format";
 import { Reveal } from "./motion-primitives";
+
+// NR-41 F8 — respons login 200: sukses ATAU wajib setup 2FA (OWNER tanpa TOTP).
+type LoginResponse =
+  | { ok: true; session: AdminSession }
+  | {
+      ok: false;
+      mustSetup2FA: true;
+      setupToken: string;
+      redirect: string;
+    };
+
+// Respons bootstrap pemasangan TOTP (tahap 1 & 2).
+type TotpSetupResponse = {
+  ok: true;
+  stage?: string;
+  email?: string;
+  uri?: string;
+  secret?: string;
+  qrDataUrl?: string;
+};
 
 const DEMO_ACCOUNTS = [
   { role: "Owner", email: "admin@lumina.id", password: "admin123" },
@@ -49,6 +78,19 @@ export function LoginCard({
   // 2FA: muncul setelah server membalas 401 { error: "KODE_2FA" }.
   const [needsTotp, setNeedsTotp] = useState(false);
   const [totpCode, setTotpCode] = useState("");
+
+  // NR-41 F8 — gate pemasangan 2FA wajib utk OWNER tanpa TOTP. Tidak bisa
+  // dilewati: form login diganti langkah "Aktifkan 2FA" sampai selesai.
+  const [setup2fa, setSetup2fa] = useState<{
+    setupToken: string;
+    email: string | null;
+    qrDataUrl: string | null;
+    secret: string | null;
+  } | null>(null);
+  const [setupCode, setSetupCode] = useState("");
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [setupVerifying, setSetupVerifying] = useState(false);
 
   // NR-19 — mode penerimaan undangan admin (hash "#admin/invite?token=...").
   const [inviteToken, setInviteToken] = useState<string | null>(null);
@@ -133,13 +175,97 @@ export function LoginCard({
     }
   }
 
+  // NR-41 F8 — mulai alur setup 2FA: kirim setupToken, tampilkan QR + secret.
+  async function startTwoFactorSetup(setupToken: string) {
+    setSetupError(null);
+    setSetupLoading(true);
+    try {
+      const res = await apiPost<TotpSetupResponse>(
+        "/api/admin/security/totp/pending",
+        { setupToken }
+      );
+      setSetup2fa({
+        setupToken,
+        email: res.email ?? null,
+        qrDataUrl: res.qrDataUrl ?? null,
+        secret: res.secret ?? null,
+      });
+      setSetupCode("");
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Gagal menyiapkan 2FA. Coba lagi."
+      );
+    } finally {
+      setSetupLoading(false);
+    }
+  }
+
+  // Tahap 2 — verifikasi kode 6 digit; sukses = sesi penuh (cookie dipasang
+  // server) → lanjutkan alur post-login yang sama (ambil sesi → onSuccess).
+  async function handleVerifyTwoFactor(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!setup2fa || setupVerifying) return;
+    if (!/^\d{6}$/.test(setupCode)) {
+      setSetupError("Masukkan 6 digit kode dari aplikasi autentikator.");
+      return;
+    }
+    setSetupError(null);
+    setSetupVerifying(true);
+    try {
+      await apiPost<{ ok: boolean }>("/api/admin/security/totp/pending", {
+        setupToken: setup2fa.setupToken,
+        code: setupCode,
+      });
+      const data = await apiGet<{
+        authenticated: boolean;
+        session: AdminSession | null;
+      }>("/api/admin/session");
+      if (data.authenticated && data.session) {
+        toast.success("2FA aktif — Berhasil masuk");
+        setSetup2fa(null);
+        onSuccess(data.session);
+      } else {
+        setSetupError(
+          "2FA aktif, tetapi sesi gagal dimuat. Muat ulang halaman lalu login lagi."
+        );
+      }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 401 || err.status === 400) {
+          // Token setup kedaluwarsa / tidak valid → wajib login ulang.
+          setSetupError(
+            `${err.message} Tekan "Login ulang" untuk mulai dari awal.`
+          );
+        } else {
+          setSetupError(err.message);
+        }
+      } else {
+        setSetupError("Verifikasi gagal. Coba lagi.");
+      }
+    } finally {
+      setSetupVerifying(false);
+    }
+  }
+
+  /** Kembali ke form login (token setup hilang — server tetap menggate). */
+  function exitTwoFactorSetup() {
+    setSetup2fa(null);
+    setSetupCode("");
+    setSetupError(null);
+    setNeedsTotp(false);
+    setTotpCode("");
+    setError(null);
+  }
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (loading) return;
     setError(null);
     setLoading(true);
     try {
-      const data = await apiPost<{ ok: boolean; session: AdminSession }>(
+      const data = await apiPost<LoginResponse>(
         "/api/admin/login",
         {
           email: email.trim(),
@@ -147,8 +273,16 @@ export function LoginCard({
           ...(needsTotp || totpCode ? { totpCode } : {}),
         }
       );
-      toast.success("Berhasil masuk");
-      onSuccess(data.session);
+      // NR-41 F8 — OWNER tanpa TOTP: jangan lanjut, tampilkan langkah setup 2FA.
+      if ("mustSetup2FA" in data && data.mustSetup2FA) {
+        setLoading(false);
+        await startTwoFactorSetup(data.setupToken);
+        return;
+      }
+      if (data.ok && data.session) {
+        toast.success("Berhasil masuk");
+        onSuccess(data.session);
+      }
     } catch (err) {
       handleLoginError(err);
     } finally {
@@ -157,7 +291,8 @@ export function LoginCard({
   }
 
   // Masuk cepat satu klik: kirim kredensial demo langsung ke server.
-  // Bila akun ternyata mengaktifkan 2FA, isi form + minta kode (fallback).
+  // Bila akun ternyata mengaktifkan 2FA, isi form + minta kode (fallback);
+  // OWNER tanpa TOTP diarahkan ke langkah wajib "Aktifkan 2FA" (NR-41 F8).
   async function handleDemoLogin(account: (typeof DEMO_ACCOUNTS)[number]) {
     if (loading || demoRole) return;
     setError(null);
@@ -165,12 +300,21 @@ export function LoginCard({
     setTotpCode("");
     setDemoRole(account.role);
     try {
-      const data = await apiPost<{ ok: boolean; session: AdminSession }>(
+      const data = await apiPost<LoginResponse>(
         "/api/admin/login",
         { email: account.email, password: account.password }
       );
-      toast.success(`Berhasil masuk sebagai ${account.role}`);
-      onSuccess(data.session);
+      if ("mustSetup2FA" in data && data.mustSetup2FA) {
+        setDemoRole(null);
+        setEmail(account.email);
+        setPassword(account.password);
+        await startTwoFactorSetup(data.setupToken);
+        return;
+      }
+      if (data.ok && data.session) {
+        toast.success(`Berhasil masuk sebagai ${account.role}`);
+        onSuccess(data.session);
+      }
     } catch (err) {
       handleLoginError(err);
       // Isi form agar user tinggal melengkapi (mis. kode 2FA) bila perlu.
@@ -281,6 +425,134 @@ export function LoginCard({
                   disabled={inviteLoading}
                 >
                   Kembali ke halaman masuk
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </Reveal>
+      </div>
+    );
+  }
+
+  // ------------- NR-41 F8 — langkah wajib "Aktifkan 2FA" (OWNER) -------------
+  // Tidak bisa dilewati: tidak ada tombol lewati/kembali ke panel. Token setup
+  // hanya berlaku 10 menit; bila kedaluwarsa pengguna wajib login ulang.
+  if (setup2fa) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-background">
+        <Reveal slideX={0} slideY={16} duration={0.35} className="w-full max-w-sm">
+          <Card className="w-full rounded-2xl p-8 shadow-sm">
+            <CardHeader className="items-center px-0 text-center">
+              <div className="mx-auto mb-2 flex size-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950">
+                <ShieldCheck className="size-6 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+              </div>
+              <CardTitle className="text-xl font-bold">Aktifkan 2FA</CardTitle>
+              <CardDescription>
+                Akun OWNER wajib memakai verifikasi dua langkah. Pindai QR di
+                bawah dengan aplikasi autentikator (Google Authenticator, Authy,
+                dsb.) untuk menyelesaikan login.
+                {setup2fa.email ? (
+                  <span className="mt-1 block font-medium text-foreground">
+                    {setup2fa.email}
+                  </span>
+                ) : null}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              <form onSubmit={handleVerifyTwoFactor} className="flex flex-col gap-4">
+                {setupLoading ? (
+                  <div className="flex flex-col items-center gap-2 py-4" aria-live="polite">
+                    <Loader2 className="size-6 animate-spin text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                    <p className="text-sm text-muted-foreground">Menyiapkan QR 2FA...</p>
+                  </div>
+                ) : (
+                  <>
+                    {setup2fa.qrDataUrl ? (
+                      <div className="flex justify-center">
+                        <img
+                          src={setup2fa.qrDataUrl}
+                          alt="QR 2FA"
+                          width={180}
+                          height={180}
+                          className="rounded-xl border bg-white p-2"
+                        />
+                      </div>
+                    ) : null}
+                    {setup2fa.secret ? (
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="totp-secret">Kode rahasia (manual)</Label>
+                        <div className="flex items-center gap-2">
+                          <code
+                            id="totp-secret"
+                            className="min-w-0 flex-1 truncate rounded-lg border bg-muted px-2.5 py-2 font-mono text-xs"
+                          >
+                            {setup2fa.secret}
+                          </code>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="size-11 shrink-0 sm:size-9"
+                            onClick={() =>
+                              void copyText(setup2fa.secret ?? "").then((ok) => {
+                                if (ok) toast.success("Kode rahasia disalin");
+                                else toast.error("Gagal menyalin kode.");
+                              })
+                            }
+                            aria-label="Salin kode rahasia 2FA"
+                          >
+                            <Copy className="size-4" aria-hidden="true" />
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="totp-setup-code">Kode 6 digit</Label>
+                      <Input
+                        id="totp-setup-code"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        value={setupCode}
+                        onChange={(e) => {
+                          setSetupCode(e.target.value.replace(/\D/g, ""));
+                          if (setupError) setSetupError(null);
+                        }}
+                        placeholder="123456"
+                        className="h-11 text-center font-mono tracking-[0.35em]"
+                        autoFocus
+                        required
+                      />
+                      {setupError ? (
+                        <p className="text-sm text-rose-600 dark:text-rose-400" role="alert">
+                          {setupError}
+                        </p>
+                      ) : null}
+                    </div>
+                    <Button
+                      type="submit"
+                      className="h-11 w-full active:scale-[0.99]"
+                      disabled={setupVerifying || setupCode.length !== 6}
+                    >
+                      {setupVerifying ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          Memverifikasi...
+                        </>
+                      ) : (
+                        "Verifikasi & Masuk"
+                      )}
+                    </Button>
+                  </>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-10 text-muted-foreground"
+                  onClick={exitTwoFactorSetup}
+                  disabled={setupLoading || setupVerifying}
+                >
+                  Login ulang
                 </Button>
               </form>
             </CardContent>

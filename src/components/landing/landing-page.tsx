@@ -3,16 +3,16 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { motion, MotionConfig, useReducedMotion } from "framer-motion";
 import {
+  BellOff,
   Instagram,
   Mail,
+  MailCheck,
   Menu,
   PauseCircle,
   Phone,
   Quote,
   ShieldX,
   Sparkles,
-  UserCheck,
-  UserX,
 } from "lucide-react";
 import type {
   Position,
@@ -985,6 +985,80 @@ function useJobPostingJsonLd(
   }, [positions, siteName, focusSlug]);
 }
 
+/**
+ * NR-41 H15 — banner status langganan dari tautan email (?sub=ok|unsub|invalid|unsub-invalid).
+ * Dibaca sekali saat mount dari window.location (pola sama dengan home-view);
+ * parameter "sub" dibersihkan dari URL agar refresh tidak menampilkannya ulang.
+ * Auto-tutup setelah 9 detik. Palet zinc/rose/emerald, tanpa emoji.
+ */
+type SubBannerKind = "ok" | "unsub" | "invalid";
+
+const SUB_BANNER_META: Record<
+  SubBannerKind,
+  { text: string; icon: typeof MailCheck; tone: string }
+> = {
+  ok: {
+    text: "Langganan terkonfirmasi. Terima kasih!",
+    icon: MailCheck,
+    tone: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200",
+  },
+  unsub: {
+    text: "Anda telah berhenti berlangganan.",
+    icon: BellOff,
+    tone: "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-500/30 dark:bg-zinc-500/10 dark:text-zinc-300",
+  },
+  invalid: {
+    text: "Tautan tidak valid atau sudah kedaluwarsa.",
+    icon: ShieldX,
+    tone: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300",
+  },
+};
+
+function readSubParam(): SubBannerKind | null {
+  try {
+    const value = new URLSearchParams(window.location.search).get("sub");
+    if (value === "ok") return "ok";
+    if (value === "unsub") return "unsub";
+    if (value === "invalid" || value === "unsub-invalid") return "invalid";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function SubBanner() {
+  const [kind, setKind] = useState<SubBannerKind | null>(null);
+
+  useEffect(() => {
+    const initial = readSubParam();
+    if (!initial) return;
+    setKind(initial);
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("sub")) {
+        url.searchParams.delete("sub");
+        window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      }
+    } catch {
+      // biarkan URL apa adanya
+    }
+    const timer = window.setTimeout(() => setKind(null), 9000);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (!kind) return null;
+  const meta = SUB_BANNER_META[kind];
+  const Icon = meta.icon;
+  return (
+    <div role="status" className={meta.tone}>
+      <Container className="flex items-center gap-2.5 py-2.5">
+        <Icon className="size-4 shrink-0" aria-hidden="true" />
+        <p className="text-sm font-medium">{meta.text}</p>
+      </Container>
+    </div>
+  );
+}
+
 function LandingShell({
   content,
   positions,
@@ -996,6 +1070,11 @@ function LandingShell({
   const sections = content.sections;
   // Mode tutup rekrutmen (Setting "site") — banner amber + CTA Lamar nonaktif.
   const recruitment = useRecruitmentStatus();
+  // NR-41 J24 — <html lang> mengikuti bahasa aktif (bawaan dokumen: "id").
+  const { lang } = useLang();
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   useJobPostingJsonLd(positions, content.siteName);
 
@@ -1025,6 +1104,7 @@ function LandingShell({
             </Container>
           </div>
         ) : null}
+        <SubBanner />
         <main
           className={cn(
             "flex-1",
