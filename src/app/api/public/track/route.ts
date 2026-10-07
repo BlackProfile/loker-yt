@@ -41,7 +41,7 @@ import {
   type TrackResponse,
   type TrackSlotInfo,
 } from "@/lib/types";
-import { parseOnboardingDocs } from "@/lib/seed";
+import { parseOnboardingDocs, parseOfferSignature } from "@/lib/seed";
 
 export const dynamic = "force-dynamic";
 
@@ -368,6 +368,8 @@ export async function POST(req: NextRequest) {
         respondedAt: application.offerRespondedAt ? application.offerRespondedAt.toISOString() : null,
         declineReason: application.offerDeclineReason,
         message,
+        // NR-41 K30 — e-signature (ditandatangani elektronik oleh pelamar).
+        offerSignature: parseOfferSignature(application.offerSignature),
       };
     }
 
@@ -407,6 +409,8 @@ export async function POST(req: NextRequest) {
       status,
       positionTitle: application.position?.title ?? null,
       positionSlug: application.position?.slug ?? null,
+      // NR-41 K30 — nama pelamar untuk kalimat persetujuan e-signature.
+      applicantName: application.name,
       submittedAt: application.createdAt.toISOString(),
       updatedAt: application.updatedAt.toISOString(),
       steps,

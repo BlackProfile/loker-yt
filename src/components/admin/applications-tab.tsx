@@ -130,18 +130,6 @@ type ViewMode = "table" | "kanban";
 export type HeaderSort = { field: HeaderSortField; dir: "asc" | "desc" };
 type HeaderSortField = "name" | "createdAt" | "updatedAt" | "aiScore" | "status";
 
-const HEADER_SORT_FIELDS: HeaderSortField[] = [
-  "name",
-  "createdAt",
-  "updatedAt",
-  "aiScore",
-  "status",
-];
-
-function isHeaderSortField(value: string): value is HeaderSortField {
-  return (HEADER_SORT_FIELDS as string[]).includes(value);
-}
-
 /** Pembanding client-side untuk legacy mode / sort followup pada halaman. */
 function compareRows(
   a: ApplicationRow,
@@ -605,6 +593,7 @@ export function ApplicationsTab() {
     setArchiveFilter("ACTIVE");
     setKomuterFilter(ALL);
     setDomisiliFilter("");
+    setHeaderSort(null);
   }
 
   // NR38-B fitur 2 — snapshot filter aktif utk tampilan tersimpan.
@@ -666,6 +655,21 @@ export function ApplicationsTab() {
     setArchiveFilter(filters.archive ?? "ACTIVE");
     setKomuterFilter(filters.komuter ?? ALL);
     setDomisiliFilter(filters.domisili ?? "");
+    setHeaderSort(null);
+  }
+
+  // NR-41 I22 — klik header: siklus desc → asc → netral.
+  function cycleHeaderSort(field: HeaderSortField) {
+    setHeaderSort((prev) => {
+      if (!prev || prev.field !== field) return { field, dir: "desc" };
+      if (prev.dir === "desc") return { field, dir: "asc" };
+      return null;
+    });
+  }
+
+  // NR-41 E1 — ganti ukuran halaman (25/50/100); reset halaman lewat efek.
+  function changePageSize(next: number) {
+    setPageSize(next);
   }
 
   function toggleSelect(id: string, checked: boolean) {
@@ -707,6 +711,20 @@ export function ApplicationsTab() {
     if (unseenOnly) {
       list = list.filter((a) => !a.adminSeenAt);
     }
+    // NR-41 I22 — sort client-side:
+    // - legacy mode + header sort → urutkan seluruh daftar di klien
+    //   (server legacy tidak memahami format "field:dir");
+    // - server mode + sort "followup" → urutkan halaman ini berdasarkan
+    //   snooze terdekat (sort snooze tidak didukung parseSortedOrderBy server).
+    if (needsFullList) {
+      if (headerSort) {
+        list = [...list].sort((a, b) =>
+          compareRows(a, b, headerSort.field, headerSort.dir)
+        );
+      }
+    } else if (!headerSort && sort === "followup") {
+      list = [...list].sort(compareSnoozeAsc);
+    }
     return list;
   }, [
     applications,
@@ -717,7 +735,25 @@ export function ApplicationsTab() {
     starredOnly,
     unseenOnly,
     session.id,
+    needsFullList,
+    headerSort,
+    sort,
   ]);
+
+  // NR-41 E1 — baris halaman untuk tabel: server mode = halaman dari API;
+  // legacy mode = potongan dari daftar penuh hasil filter.
+  const pageRows = useMemo(() => {
+    if (!needsFullList) return displayedApplications;
+    const start = (page - 1) * pageSize;
+    return displayedApplications.slice(start, start + pageSize);
+  }, [needsFullList, displayedApplications, page, pageSize]);
+
+  const paginationTotal = needsFullList
+    ? displayedApplications.length
+    : serverTotal;
+  const paginationTotalPages = needsFullList
+    ? Math.max(1, Math.ceil(displayedApplications.length / pageSize))
+    : serverTotalPages;
 
   // NR38-B fitur 1 — hitung lamaran yang belum dilihat admin (adminSeenAt kosong).
   const unseenCount = useMemo(
@@ -1355,7 +1391,14 @@ export function ApplicationsTab() {
             </SelectContent>
           </Select>
 
-          <Select value={sort} onValueChange={setSort}>
+          {/* NR-41 I22 — nilai kustom saat urutan diatur dari header tabel. */}
+          <Select
+            value={headerSort ? "__custom" : sort}
+            onValueChange={(v) => {
+              setSort(v);
+              setHeaderSort(null);
+            }}
+          >
             <SelectTrigger className={FILTER_TRIGGER_CLASS} aria-label="Urutkan">
               <SelectValue placeholder="Urutkan" />
             </SelectTrigger>
@@ -1365,6 +1408,11 @@ export function ApplicationsTab() {
                   {opt.label}
                 </SelectItem>
               ))}
+              {headerSort ? (
+                <SelectItem value="__custom" disabled>
+                  Urutan kolom (klik header tabel)
+                </SelectItem>
+              ) : null}
             </SelectContent>
           </Select>
 
@@ -1520,7 +1568,7 @@ export function ApplicationsTab() {
           <p className="ml-auto text-xs text-muted-foreground">
             {loading
               ? "Memuat..."
-              : `${displayedApplications.length} lamaran ditampilkan${
+              : `${paginationTotal} lamaran ditampilkan${
                   archiveFilter === "ALL" && archivedCount > 0
                     ? ` · ${archivedCount} diarsip`
                     : ""
@@ -1537,7 +1585,7 @@ export function ApplicationsTab() {
             <Skeleton key={i} className="h-14 w-full rounded-xl" />
           ))}
         </div>
-      ) : displayedApplications.length === 0 ? (
+      ) : paginationTotal === 0 ? (
         <Card className="rounded-2xl">
           <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
             <Inbox className="size-10 text-muted-foreground/50" aria-hidden="true" />
@@ -1548,7 +1596,7 @@ export function ApplicationsTab() {
         </Card>
       ) : view === "table" ? (
         <ApplicationsTable
-          applications={displayedApplications}
+          applications={pageRows}
           positions={positions}
           canMutate={canMutate}
           currentUserId={session.id}
@@ -1563,6 +1611,14 @@ export function ApplicationsTab() {
           onRate={(app, rating) => void handleRate(app, rating)}
           density={density}
           cardMode={cardMode}
+          page={page}
+          pageSize={pageSize}
+          total={paginationTotal}
+          totalPages={paginationTotalPages}
+          onPageChange={setPage}
+          onPageSizeChange={changePageSize}
+          headerSort={headerSort}
+          onHeaderSortToggle={cycleHeaderSort}
         />
       ) : (
         <KanbanBoard
