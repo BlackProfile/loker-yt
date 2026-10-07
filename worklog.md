@@ -3496,3 +3496,34 @@ Stage Summary:
   6) GET /api/files/{id}: sekarang streaming + ETag/304 + Cache-Control (private 300 dtk; public 86400 hanya cover) + varian WebP otomatis utk cover bila browser dukung. PDF kini inline (bukan attachment) sesuai instruksi tugas — tombol Unduh UI tetap bekerja via browser download.
   7) Cron maintenance: ditambah retry email (processEmailRetries) + verifyAndNotifyBackups di akhir; purge permanen retensi menunggu archiveBeforePurge() (placeholder komentar; purge-archive.ts belum ada → Wave 3).
 - DEVISI & CATATAN: (a) instrumentation di src/instrumentation.ts (bukan src/lib/) — alasan teknis Next.js; (b) verifyMagicBytes whitelist diperluas OLE2/SQLite/AAC/teks-bersih agar fitur lama (doc, impor CSV/XLSX) tidak pecah — prinsip tetap: octet-stream tanpa signature dikenal DITOLAK; (c) admin/restore tidak diintegrasikan magic bytes (sudah divalidasi restore-db.ts); (d) perbaikan rute hilang /api/admin/upload masuk scope E3/F7 (dipakai UI form posisi); (e) owner OWNER tanpa TOTP akan selalu dapat mustSetup2FA sampai 2FA dipasang — gate UI (#admin-2fa) dikerjakan agent lain; gunakan setupToken + consumePending2FASetup(userId, token).
+
+---
+Task ID: NR41-DATA-B (pelengkap — diselesaikan orkestrator setelah agent terputus)
+Agent: orchestrator (Z.ai Code)
+Task: Menuntaskan sisa pekerjaan DATA-B yang terputus di tengah jalan (error transport subagent) — verifikasi kelengkapan 11 fitur data + melengkapi gap.
+
+Work Log:
+- Verifikasi: seluruh file DATA-B ternyata SUDAH ada & tsc src/ 0 error (candidates lib+API, tags-sync, referral-sources API admin+publik, saved-views API, pagination E1 di applications route, http-cache + ETag di 3 endpoint publik, subscribe/confirm/unsubscribe, filter blast report-email, admin/emails list+retry, email-retry lib, track-export, export-data, email-inbound, data-health, migrasi scripts/nr41-migrate.cjs).
+- Migrasi SUDAH dijalankan agent: Candidate=6, Tag=7, ReferralSource=4, seluruh 6 Application terlink candidateId (dicek langsung ke DB).
+- GAP yang ditambal orkestrator:
+  1. Wiring archiveBeforePurge() di cron/maintenance (placeholder SEC-B kini pemanggilan nyata + import lib purge-archive) — G12 export-before-purge hidup.
+  2. serializeApplication (seed.ts) += candidateId, sourceId, sourceName, offerSignature (parseOfferSignature helper); APPLICATION_INCLUDE += sourceRef{name}, candidate{id}; ApplicationRecord += relasi opsional; types.ts Application += 4 field opsional NR-41.
+  3. Endpoint BARU /api/public/apply-draft-file (POST multipart {token,label,file}) — J26: validasi draft aktif, saveUpload kind=DRAFT, meta replace-by-label di ApplicationDraft.files, rate limit 20/jam.
+  4. Route submit lamaran (api/applications): loadDraftFiles() + adopsi file draft untuk CV/intro/customDocs/formBuilder (label cv|intro|doc:<nama>|form:<fieldId>), requireCv/requireIntro lolos bila file draft ada, draft dihapus setelah create (konsumsi), local saveUpload += kind param (CV|INTRO|DOC).
+  5. lib/upload.ts saveUpload += opts.kind (FileAsset.kind).
+- tsc src/ 0 error; lint exit 0; dev 200; /api/health hidup (db ok, backup age terbaca).
+
+Stage Summary:
+- Kontrak final utk agent Wave 2:
+  - GET /api/admin/applications?paginate=1&page&pageSize&sort=<name|createdAt|updatedAt|aiScore|status>:<asc|desc> → PaginatedApplications; tanpa paginate → array (lama).
+  - GET /api/admin/candidates?q= → CandidateSummary[]; GET/PATCH /api/admin/candidates/[id].
+  - Saved views: GET/POST /api/admin/saved-views; PATCH/DELETE /[id] (query = objek bebas JSON; shared hanya OWNER).
+  - Referral: GET/POST/PATCH/DELETE /api/admin/referral-sources; GET /api/public/referral-sources → {items:[{id,name}]}.
+  - Subscribe publik: POST /api/public/subscribe {email,source} → {ok, pendingConfirm|confirmed}; GET /api/public/subscribe/confirm?token= → redirect /?sub=ok|invalid; GET /api/public/unsubscribe?token= → redirect /?sub=unsub|unsub-invalid. Blast hanya ke confirmedAt!=null && unsubscribedAt==null.
+  - Email admin: GET /api/admin/emails?status&page → {items:EmailOutboxAdminRow[],total}; POST {id} retry.
+  - Export: GET /api/admin/applications/[id]/export-data; GET /api/public/track-export (sesi status).
+  - Health: GET /api/health (publik) → SystemHealth; GET /api/admin/health/errors (OWNER).
+  - Data health: GET /api/admin/data-health → DataHealthReport.
+  - Inbound: POST /api/public/email-inbound (x-inbound-secret vs Setting inbound_email_secret).
+  - Draft file: POST /api/public/apply-draft-file {token,label,file} → {ok,file:DraftFileMeta}; submit final kirim field draftToken → server adopsi file (label cv|intro|doc:<nama>|form:<fieldId>) + hapus draft.
+  - serializeApplication sekarang membawa candidateId/sourceId/sourceName/offerSignature.
