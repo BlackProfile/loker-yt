@@ -126,7 +126,7 @@ export function ShortcutOverlay({
         {/* Daftar pintasan NYATA yang terpasang di panel admin. */}
         <div className="flex flex-col gap-2">
           <ShortcutRow
-            label="Buka palet perintah (cari tab, posisi, pelamar)"
+            label="Buka palet perintah (cari tab, posisi, pelamar, kandidat)"
             keys={["Ctrl", "K"]}
           />
           <ShortcutRow
@@ -137,6 +137,28 @@ export function ShortcutOverlay({
             label="Tutup dialog atau palet yang terbuka"
             keys={["Esc"]}
           />
+        </div>
+
+        {/* NR-41 I18 — navigasi keyboard dua tahap */}
+        <div className="flex flex-col gap-2 rounded-xl border border-rose-200 bg-rose-50/50 p-3 dark:border-rose-900 dark:bg-rose-950/20">
+          <p className="text-sm font-semibold">Navigasi (tekan g lalu …)</p>
+          <p className="text-xs text-muted-foreground">
+            Tekan <Kbd>g</Kbd> lalu tombol huruf dalam 1,2 detik untuk berpindah
+            tab. Tidak berlaku saat sedang mengetik atau ada dialog terbuka.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {NAV_KEY_TARGETS.map((target) => (
+              <NavKeyChip
+                key={target.keyChar}
+                keyChar={target.keyChar}
+                label={target.label}
+                ownerOnly={target.ownerOnly}
+              />
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Bertanda OWNER hanya tersedia untuk pemilik studio.
+          </p>
         </div>
 
         <p className="text-xs text-muted-foreground">
