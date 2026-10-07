@@ -96,12 +96,17 @@ import {
 import { toast } from "sonner";
 import {
   BENEFIT_ICONS,
+  REFERRAL_SOURCE_KINDS,
+  REFERRAL_SOURCE_KIND_LABELS,
   ROLE_LABELS,
   TAG_COLORS,
   TAG_COLOR_CLASSES,
   TELEGRAM_ALERT_KEYS,
   TELEGRAM_ALERT_LABELS,
+  type EmailOutboxAdminRow,
   type FaqItem,
+  type ReferralSourceDto,
+  type ReferralSourceKind,
   type TelegramAlertKey,
   type Role,
   type SectionKey,
@@ -173,25 +178,7 @@ function Field({
   );
 }
 
-// ----------------------------- Kotak Keluar Email -----------------------------
-
-type OutboxRow = {
-  id: string;
-  toEmail: string;
-  subject: string;
-  kind: string;
-  status: string;
-  error: string | null;
-  applicationId: string | null;
-  applicationName: string | null;
-  createdAt: string;
-  sentAt: string | null;
-};
-
-type OutboxResponse = {
-  smtpConfigured: boolean;
-  emails: OutboxRow[];
-};
+// ----------------------------- Kotak Keluar Email (NR-41 H16) -----------------------------
 
 const OUTBOX_STATUS_LABELS: Record<string, string> = {
   QUEUED: "Menunggu",
@@ -214,51 +201,110 @@ function outboxStatusBadgeClass(status: string): string {
   }
 }
 
+const OUTBOX_PAGE_SIZE = 50;
+
 function EmailOutboxCard() {
-  const [rows, setRows] = useState<OutboxRow[]>([]);
-  const [smtpConfigured, setSmtpConfigured] = useState(false);
+  const [rows, setRows] = useState<EmailOutboxAdminRow[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("ALL");
+  // Baris yang menunggu konfirmasi kirim ulang (AlertDialog).
+  const [resendTarget, setResendTarget] = useState<EmailOutboxAdminRow | null>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const data = await apiGet<OutboxResponse>("/api/admin/outbox");
-      setRows(data.emails ?? []);
-      setSmtpConfigured(data.smtpConfigured ?? false);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  /**
+   * Muat halaman log email (50/halaman, urut terbaru). `pages` = jumlah halaman
+   * yang diambil (1 saat pertama / refresh penuh; tambah 1 saat "Muat lagi").
+   */
+  const load = useCallback(
+    async (pages: number, filter: string) => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const collected: EmailOutboxAdminRow[] = [];
+        let totalCount = 0;
+        for (let page = 1; page <= pages; page++) {
+          const qs = new URLSearchParams({ page: String(page), pageSize: String(OUTBOX_PAGE_SIZE) });
+          if (filter !== "ALL") qs.set("status", filter);
+          const data = await apiGet<{ items: EmailOutboxAdminRow[]; total: number }>(
+            `/api/admin/emails?${qs.toString()}`
+          );
+          totalCount = data.total;
+          collected.push(...(data.items ?? []));
+          if (collected.length >= data.total) break;
+        }
+        setRows(collected);
+        setTotal(totalCount);
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(1, statusFilter);
+    // statusFilter disengaja tidak masuk deps — perubahan filter ditangani handler.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const filtered =
-    statusFilter === "ALL" ? rows : rows.filter((row) => row.status === statusFilter);
+  function changeFilter(value: string) {
+    setStatusFilter(value);
+    void load(1, value);
+  }
 
-  async function handleResend(row: OutboxRow) {
+  function refresh() {
+    // Ambil ulang seluruh halaman yang sudah termuat (biasanya 1-2 halaman).
+    const pages = Math.max(1, Math.ceil(rows.length / OUTBOX_PAGE_SIZE));
+    void load(pages, statusFilter);
+  }
+
+  function loadMore() {
+    if (loading || loadingMore) return;
+    const nextPage = Math.floor(rows.length / OUTBOX_PAGE_SIZE) + 1;
+    setLoadingMore(true);
+    void (async () => {
+      try {
+        const qs = new URLSearchParams({ page: String(nextPage), pageSize: String(OUTBOX_PAGE_SIZE) });
+        if (statusFilter !== "ALL") qs.set("status", statusFilter);
+        const data = await apiGet<{ items: EmailOutboxAdminRow[]; total: number }>(
+          `/api/admin/emails?${qs.toString()}`
+        );
+        setTotal(data.total);
+        setRows((prev) => {
+          const seen = new Set(prev.map((r) => r.id));
+          return [...prev, ...(data.items ?? []).filter((r) => !seen.has(r.id))];
+        });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+      } finally {
+        setLoadingMore(false);
+      }
+    })();
+  }
+
+  /**
+   * Kirim ulang email FAILED/SKIPPED — POST /api/admin/emails {id}; respons
+   * membawa baris terbaru (item) agar tabel bisa disegarkan tanpa fetch ulang.
+   */
+  async function handleResend(row: EmailOutboxAdminRow) {
     if (resendingId) return;
     setResendingId(row.id);
     try {
-      const res = await apiPatch<{
+      const res = await apiPost<{
         ok: boolean;
         status: string;
         message?: string;
-      }>("/api/admin/outbox", { id: row.id });
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === row.id
-            ? { ...r, status: res.status, error: res.status === "FAILED" ? (res.message ?? null) : null }
-            : r
-        )
-      );
+        item?: EmailOutboxAdminRow;
+      }>("/api/admin/emails", { id: row.id });
+      if (res.item) {
+        setRows((prev) => prev.map((r) => (r.id === row.id ? res.item! : r)));
+      }
       if (res.status === "SENT") {
         toast.success("Email berhasil dikirim ulang");
       } else if (res.status === "SKIPPED") {
@@ -270,8 +316,225 @@ function EmailOutboxCard() {
       toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
     } finally {
       setResendingId(null);
+      setResendTarget(null);
     }
   }
+
+  const canLoadMore = rows.length < total;
+
+  return (
+    <CollapsibleCard
+      id="outbox"
+      icon={Mailbox}
+      title="Kotak Keluar Email"
+      description="Log pengiriman email transaksional (offer, penolakan, pengingat) — 50 per halaman. Email gagal/dilewati bisa dikirim ulang manual."
+      actions={
+        <>
+          <Select value={statusFilter} onValueChange={changeFilter}>
+            <SelectTrigger className="h-9 w-[140px]" aria-label="Filter status email">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Semua status</SelectItem>
+              <SelectItem value="QUEUED">Menunggu</SelectItem>
+              <SelectItem value="SENT">Terkirim</SelectItem>
+              <SelectItem value="FAILED">Gagal</SelectItem>
+              <SelectItem value="SKIPPED">Dilewati</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-9 shrink-0"
+            onClick={refresh}
+            disabled={loading}
+            aria-label="Segarkan kotak keluar email"
+          >
+            <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} aria-hidden="true" />
+          </Button>
+        </>
+      }
+    >
+      {loading && rows.length === 0 ? (
+        <div className="flex flex-col gap-2" aria-live="polite">
+          <Skeleton className="h-9 w-full rounded-xl" />
+          <Skeleton className="h-9 w-full rounded-xl" />
+          <Skeleton className="h-9 w-full rounded-xl" />
+        </div>
+      ) : loadError ? (
+        <div className="flex flex-col items-center gap-3 py-8">
+          <p className="text-sm text-muted-foreground">{loadError}</p>
+          <Button variant="outline" className="h-9" onClick={() => void load(1, statusFilter)}>
+            Coba Lagi
+          </Button>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 py-8 text-center">
+          <Inbox className="size-5 text-muted-foreground" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground">
+            {total === 0
+              ? "Belum ada email pada log. Email offer/penolakan/pengingat akan muncul di sini."
+              : "Tidak ada email dengan status ini."}
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="nice-scrollbar max-h-96 overflow-x-auto overflow-y-auto rounded-xl border">
+            <Table className="min-w-[900px]">
+              <TableHeader>
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead className="w-36 px-3 py-2.5">Waktu</TableHead>
+                  <TableHead className="px-3 py-2.5">Tujuan</TableHead>
+                  <TableHead className="px-3 py-2.5">Perihal</TableHead>
+                  <TableHead className="w-24 px-3 py-2.5">Jenis</TableHead>
+                  <TableHead className="w-28 px-3 py-2.5">Status</TableHead>
+                  <TableHead className="w-16 px-3 py-2.5 text-center">Percobaan</TableHead>
+                  <TableHead className="max-w-44 px-3 py-2.5">Pesan gagal</TableHead>
+                  <TableHead className="w-28 px-3 py-2.5 text-right">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="px-3 py-2.5 text-xs whitespace-nowrap text-muted-foreground">
+                      {formatShortDateTime(row.createdAt)}
+                      {row.sentAt ? (
+                        <span className="block text-[11px] text-emerald-700 dark:text-emerald-400">
+                          terkirim {formatShortDateTime(row.sentAt)}
+                        </span>
+                      ) : row.nextRetryAt ? (
+                        <span className="block text-[11px] text-amber-700 dark:text-amber-400">
+                          coba lagi {formatShortDateTime(row.nextRetryAt)}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="max-w-44 px-3 py-2.5">
+                      <p className="truncate text-sm" title={row.toEmail}>
+                        {row.toEmail}
+                      </p>
+                    </TableCell>
+                    <TableCell className="max-w-56 px-3 py-2.5">
+                      <p className="truncate text-sm" title={row.subject}>
+                        {row.subject}
+                      </p>
+                    </TableCell>
+                    <TableCell className="px-3 py-2.5">
+                      <Badge variant="outline" className="text-[11px]">
+                        {row.kind}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="px-3 py-2.5">
+                      <Badge className={`border ${outboxStatusBadgeClass(row.status)}`}>
+                        {OUTBOX_STATUS_LABELS[row.status] ?? row.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="px-3 py-2.5 text-center text-sm tabular-nums">
+                      {row.attempts}
+                    </TableCell>
+                    <TableCell className="max-w-44 px-3 py-2.5">
+                      {row.lastError || row.error ? (
+                        <p
+                          className="truncate text-xs text-rose-600 dark:text-rose-400"
+                          title={row.lastError ?? row.error ?? ""}
+                        >
+                          {row.lastError ?? row.error}
+                        </p>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-3 py-2.5 text-right">
+                      {row.status === "FAILED" || row.status === "SKIPPED" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5 px-2 text-xs"
+                          onClick={() => setResendTarget(row)}
+                          disabled={resendingId !== null}
+                          aria-label={`Kirim ulang email "${row.subject}"`}
+                        >
+                          {resendingId === row.id ? (
+                            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <RefreshCw className="size-3.5" aria-hidden="true" />
+                          )}
+                          Kirim ulang
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              Menampilkan {rows.length} dari {total} email
+              {statusFilter !== "ALL" ? ` (status ${OUTBOX_STATUS_LABELS[statusFilter] ?? statusFilter})` : ""}
+            </p>
+            {canLoadMore ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 gap-1.5"
+                onClick={loadMore}
+                disabled={loading || loadingMore}
+              >
+                {loadingMore ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="size-4" aria-hidden="true" />
+                )}
+                Muat 50 lagi
+              </Button>
+            ) : null}
+          </div>
+        </>
+      )}
+
+      {/* Konfirmasi kirim ulang — mencegah klik tak sengaja mengirim dobel */}
+      <AlertDialog
+        open={resendTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setResendTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Kirim ulang email ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {resendTarget
+                ? `Email "${resendTarget.subject}" ke ${resendTarget.toEmail} akan dikirim lagi sekarang (percobaan ke-${resendTarget.attempts + 1}).`
+                : "Email akan dikirim ulang."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resendingId !== null}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (resendTarget) void handleResend(resendTarget);
+              }}
+              disabled={resendingId !== null}
+            >
+              {resendingId !== null ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Mengirim...
+                </>
+              ) : (
+                "Ya, Kirim Ulang"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </CollapsibleCard>
+  );
+}
 
   return (
     <CollapsibleCard
