@@ -1037,36 +1037,29 @@ function SubBanner() {
   // NR-41 — dibaca via useSyncExternalStore (pola sama dengan useScrolled):
   // aman SSR (server = null), tanpa setState sinkron di effect.
   const kind = useSyncExternalStore(subscribeUrl, readSubParam, () => null);
-  const [closed, setClosed] = useState(false);
-  // Nilai PERTAMA yang terbaca di klien di-lock ke state (URL ?sub dibersihkan
-  // di effect, snapshot store berikutnya jadi null — banner tetap tampil).
-  const [stickyKind, setStickyKind] = useState<SubBannerKind | null>(null);
-  useEffect(() => {
-    if (kind && !stickyKind) {
-      setStickyKind(kind);
-    }
-  }, [kind, stickyKind]);
-  const effectiveKind = stickyKind;
+  const [dismissed, setDismissed] = useState(false);
+  const effectiveKind = dismissed ? null : kind;
 
   useEffect(() => {
-    if (!effectiveKind) return;
-    // Bersihkan parameter "sub" dari URL agar refresh tidak menampilkan ulang
-    // banner (murni manipulasi URL — tanpa setState).
-    try {
-      const url = new URL(window.location.href);
-      if (url.searchParams.has("sub")) {
-        url.searchParams.delete("sub");
-        window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    if (!kind) return;
+    const timer = window.setTimeout(() => {
+      // Bersihkan parameter "sub" dari URL agar refresh tidak menampilkan ulang
+      // banner (murni manipulasi URL), lalu tutup banner.
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has("sub")) {
+          url.searchParams.delete("sub");
+          window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+        }
+      } catch {
+        // biarkan URL apa adanya
       }
-    } catch {
-      // biarkan URL apa adanya
-    }
-    // Auto-tutup (setState di callback timer — bukan sinkron di body effect).
-    const timer = window.setTimeout(() => setClosed(true), 9000);
+      setDismissed(true);
+    }, 9000);
     return () => window.clearTimeout(timer);
-  }, [effectiveKind]);
+  }, [kind]);
 
-  if (!effectiveKind || closed) return null;
+  if (!effectiveKind) return null;
   const meta = SUB_BANNER_META[effectiveKind];
   const Icon = meta.icon;
   return (
