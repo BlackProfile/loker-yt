@@ -1875,6 +1875,16 @@ export function ApplyWizard({
             error={formErrors[`${FORM_KEY_PREFIX}${field.id}`]}
             onAnswer={handleFormAnswer}
             onAnswerError={handleFormAnswerError}
+            draftFile={
+              field.type === "file"
+                ? draftFileForLabel(`form:${field.id}`)
+                : undefined
+            }
+            draftUploading={
+              field.type === "file"
+                ? !!draftUploadingLabels[`form:${field.id}`]
+                : undefined
+            }
           />
         </Fragment>
       );
@@ -2693,6 +2703,12 @@ export function ApplyWizard({
             </div>
           </div>
         ) : null}
+        {/* NR-41 J26 — status file draft lintas perangkat (CV). */}
+        <DraftFileNote
+          meta={draftFileForLabel("cv")}
+          localName={cvFile?.name ?? null}
+          uploading={!!draftUploadingLabels["cv"]}
+        />
         {cvError ? <p className="text-sm text-rose-600">{cvError}</p> : null}
       </div>
     );
@@ -2789,6 +2805,12 @@ export function ApplyWizard({
             </div>
           </div>
         ) : null}
+        {/* NR-41 J26 — status file draft lintas perangkat (intro). */}
+        <DraftFileNote
+          meta={draftFileForLabel("intro")}
+          localName={introFile?.name ?? null}
+          uploading={!!draftUploadingLabels["intro"]}
+        />
         {introError ? (
           <p className="text-sm text-rose-600">{introError}</p>
         ) : null}
@@ -4772,6 +4794,12 @@ export function ApplyWizard({
                           </div>
                         </div>
                       ) : null}
+                      {/* NR-41 J26 — status file draft lintas perangkat (dokumen tambahan). */}
+                      <DraftFileNote
+                        meta={draftFileForLabel(extraDocLabel(index))}
+                        localName={file?.name ?? null}
+                        uploading={!!draftUploadingLabels[extraDocLabel(index)]}
+                      />
                       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
                     </div>
                   );
