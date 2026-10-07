@@ -3632,3 +3632,21 @@ Work Log:
 
 Stage Summary:
 - Lowongan "Editor Video Meme" hidup + form lamaran kustom lengkap & teruji E2E end-to-end (public wizard → submit → admin data). Bug create-route formSchema diperbaiki permanen. 2FA OWNER dibiarkan AKTIF (milik user; login admin sekarang butuh kode 6 digit dari authenticator user).
+
+---
+Task ID: NR42-HMRSW
+Agent: Z.ai Code (orchestrator)
+Task: Laporan user keempat — error "module factory is not available" (mail-warning, settings-tab.tsx) MUNCUL TERUS pada setiap reload normal, hanya sembuh dengan Ctrl+Shift+R. Digali akar masalah sebenarnya dan diperbaiki permanen.
+
+Work Log:
+- Forensik server: 1 instance sehat (heap cap aktif, health 200, keepalive anti-race jalan). dev-keepalive.log: server MATI ~60 dtk (13:29, proses hilang/port bebas) lalu di-restart otomatis 13:30:09 — restart ini memicu sesi HMR tab user menjadi basi, TAPI belum menjelaskan kenapa reload normal tidak menyembuhkan.
+- AKAR MASALAH SEBENARNYA DITEMUKAN: public/sw.js (PWA NR-41 J23) memakai CACHE-FIRST untuk /_next/static/ dengan `caches.match(request, { ignoreSearch: true })`. Dev Turbopack membedakan versi chunk lewat query URL; ignoreSearch membuat SW menyajikan chunk BASI walau server sudah membuat grafik modul baru → "module factory is not available" pada SETIAP reload normal. Ctrl+Shift+R satu-satunya obat karena browser mem-bypass service worker. Deadlock tambahan: saat bundle gagal dievaluasi, PwaRegister (komponen React) tidak pernah dieksekusi → SW baru tidak mungkin terpasang dari tab yang rusak.
+- FIX 1 — public/sw.js ditulis ulang (VERSION v2): SEMUA permintaan network-first (cache hanya fallback offline), /api/* tidak pernah di-cache, TANPA ignoreSearch (URL harus cocok persis), trimCache FIFO (nav 5 / statis 80), activate menghapus semua cache versi lama → cache beracun v1 di browser user otomatis bersih saat SW v2 meng-activate.
+- FIX 2 — layout.tsx: RECOVERY_SCRIPT inline sebagai elemen pertama <body>, tahan-gagal modul (tetap jalan walau bundle halaman error): (a) registrasi /sw.js; (b) reload otomatis SATU kali saat SW baru mengambil kendali (guard hadController + sessionStorage lumina-sw-cc) — tab beracun menyembuhkan dirinya sendiri; (c) auto-recovery error HMR "module factory is not available" via window error/unhandledrejection → reload cache-bust (param lumina_recover), guard maks 2x/30 detik anti-loop.
+- FIX 3 — src/components/landing/pwa-register.tsx dihapus (digantikan inline script; registrasi kini tidak bergantung pada hydration React).
+- Verifikasi E2E (agent-browser): open / → SW v2 aktif & mengendalikan halaman (controller:true, caches hanya lumina-static-v2), inline script ada di DOM, console bersih ([HMR] connected); RELOAD NORMAL tanpa error (errors kosong, title benar); lowongan "Editor Video Meme" tampil di landing (heading + tombol "Lihat detail & lamar"); form kustom NR42 utuh (heading posisi, "BERKAS WAJIB", "Tautan portofolio"); pasca navigasi cache lumina-nav-v2 terisi sesuai desain network-first.
+- Catatan transien: 1x ReferenceError "PwaRegister is not defined" di dev.log berasal dari kondisi antara dua edit layout (import dihapus lebih dulu, pemakaian menyusul) — state final bersih, kompilasi lanjutan sukses, halaman 200.
+- Kualitas: bunx tsc --noEmit → src/ 0 error (satu error lama di skills/stock-analysis-skill di luar lingkup); bun run lint exit 0. DB dibackup ke backups/custom.db.
+
+Stage Summary:
+- Error "module factory is not available" yang selalu kembali akar masalahnya SERVICE WORKER PWA (cache-first + ignoreSearch pada chunk dev Turbopack), bukan kode aplikasi maupun Turbopack. SW v2 network-first membuang seluruh strategi cache-first; cache beracun lama terhapus otomatis saat activate; tab yang sudah error pulih sendiri lewat reload otomatis sekali saat SW baru claim, plus auto-recovery HMR ber-guard. Reload biasa kini dijamin segar tanpa Ctrl+Shift+R. Fitur offline PWA tetap ada (cache hanya dipakai saat network gagal).
