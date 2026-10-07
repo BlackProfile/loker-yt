@@ -1,9 +1,18 @@
 // POST /api/admin/login — login admin multi-user (email+password) dengan kompatibilitas legacy (password saja).
 // Keamanan: audit LoginAudit untuk semua percobaan, lockout brute force (>= 5 gagal / 15 menit),
 // verifikasi kode 2FA TOTP bila aktif, dan delay kecil saat password salah.
+// NR41-SEC-B (F4): verifikasi bcrypt + upgrade transparan hash legacy SHA-256 saat login sukses;
+// OWNER tanpa TOTP aktif TIDAK langsung mendapat sesi penuh — respons mustSetup2FA + setupToken
+// (10 menit) untuk diarahkan ke alur pemasangan 2FA (#admin-2fa).
+// NR41-SEC-B (F6): body.rememberMe (boolean, opsional) → cookie sesi 30 hari, selain itu 7 hari.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { setSessionCookie, verifyPassword } from "@/lib/server-auth";
+import {
+  setSessionCookie,
+  storePending2FASetup,
+  upgradePasswordHashIfNeeded,
+  verifyPasswordWithMeta,
+} from "@/lib/server-auth";
 import { ensureSeeded } from "@/lib/seed";
 import { verifyTotpCode } from "@/lib/totp";
 import { ROLES, type AdminSession, type Role } from "@/lib/types";
@@ -62,6 +71,8 @@ export async function POST(req: NextRequest) {
     const password = typeof data.password === "string" ? data.password : "";
     const email = typeof data.email === "string" ? data.email.trim() : "";
     const totpCode = typeof data.totpCode === "string" ? data.totpCode : "";
+    // F6 — "ingat saya": cookie & sesi 30 hari bila dicentang (UI datang terpisah).
+    const rememberMe = data.rememberMe === true;
 
     if (!password) {
       return NextResponse.json({ error: "Password wajib diisi." }, { status: 400 });
@@ -112,7 +123,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "LOCKOUT" }, { status: 429 });
     }
 
-    if (!user || !verifyPassword(password, user.passwordHash)) {
+    // Verifikasi password (bcrypt / legacy SHA-256) — hanya bila user ditemukan.
+    const passwordCheck = user
+      ? await verifyPasswordWithMeta(password, user.passwordHash)
+      : { ok: false, needsUpgrade: false };
+    if (!user || !passwordCheck.ok) {
       // Delay kecil: waktu respons salah password tidak informatif.
       await new Promise((resolve) => setTimeout(resolve, 300));
       await writeLoginAudit({
@@ -124,6 +139,32 @@ export async function POST(req: NextRequest) {
         userAgent,
       });
       return NextResponse.json({ error: "Email atau password salah" }, { status: 401 });
+    }
+
+    // F4 — upgrade transparan hash legacy SHA-256 → bcrypt (fire-and-forget, tanpa menggagalkan login).
+    if (passwordCheck.needsUpgrade) {
+      void upgradePasswordHashIfNeeded(user.id, password, user.passwordHash);
+    }
+
+    // F4/F8 — OWNER tanpa TOTP aktif: jangan buat sesi penuh. Beri setupToken 10 menit
+    // agar UI mengarahkan ke pemasangan 2FA lebih dulu (#admin-2fa).
+    if (user.role === "OWNER" && !user.totpEnabled) {
+      let setupToken = "";
+      try {
+        setupToken = await storePending2FASetup(user.id);
+      } catch (err) {
+        console.error("[POST /api/admin/login] gagal menyimpan token setup 2FA", err);
+        return NextResponse.json({ error: "Gagal menyiapkan pemasangan 2FA. Coba lagi nanti." }, { status: 500 });
+      }
+      await writeLoginAudit({
+        email: auditEmail,
+        userId: user.id,
+        success: true,
+        reason: "MUST_SETUP_2FA",
+        ip,
+        userAgent,
+      });
+      return NextResponse.json({ ok: false, mustSetup2FA: true, setupToken, redirect: "/#admin-2fa" });
     }
 
     // 2FA TOTP: bila aktif, kode wajib valid sebelum sesi dibuat.
@@ -155,7 +196,8 @@ export async function POST(req: NextRequest) {
 
     const response = NextResponse.json({ ok: true, session: toSession(user) });
     // Task 27: catat sesi per perangkat (SessionToken) — gagal pencatatan tidak menggagalkan login.
-    await setSessionCookie(response, user.id, { ip, userAgent });
+    // F6: rememberMe → cookie 30 hari, selain itu 7 hari.
+    await setSessionCookie(response, user.id, { ip, userAgent }, { rememberMe });
     return response;
   } catch (error) {
     console.error("[POST /api/admin/login]", error);

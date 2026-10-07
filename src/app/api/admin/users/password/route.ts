@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json(UNAUTHORIZED, { status: 401 });
     }
-    if (!verifyPassword(currentPassword, user.passwordHash)) {
+    if (!(await verifyPassword(currentPassword, user.passwordHash))) {
       return NextResponse.json({ error: "Password saat ini salah" }, { status: 400 });
     }
 
