@@ -54,6 +54,7 @@ import {
   Contact,
   Copy,
   ExternalLink,
+  Archive,
   Eye,
   FileDown,
   FileText,
