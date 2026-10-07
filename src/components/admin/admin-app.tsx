@@ -33,6 +33,7 @@ import {
   Loader2,
   LogOut,
   Menu,
+  Monitor,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -82,6 +83,7 @@ import { NotificationBell } from "./notification-bell";
 import { AdminAskWidget } from "./admin-ask-widget";
 import { CommandPalette } from "./command-palette";
 import { ShortcutOverlay } from "./shortcut-overlay";
+import { CandidateDetailDialog } from "./candidate-detail-dialog";
 
 type Phase = "checking" | "login" | "ready";
 
@@ -150,27 +152,81 @@ const NAV_GROUPS: NavGroupDef[] = [
 
 const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 
+// NR-41 I18 — navigasi keyboard dua tahap: tekan "g" lalu (dalam 1200 ms)
+// satu tombol huruf untuk berpindah tab. Pemetaan ke value tab sidebar.
+const KEY_NAV_TARGETS: Record<string, string> = {
+  d: "dashboard", // Dashboard
+  a: "applications", // Pelamar
+  p: "pipeline", // Pipeline
+  w: "interview", // Wawancara
+  k: "calendar", // Kalender
+  m: "hire", // Karyawan (Hire)
+  n: "analytics", // Analitik
+  r: "reports", // Laporan
+  t: "tasks", // Tugas
+  u: "users", // Pengguna
+  j: "templates", // Template
+  s: "settings", // Pengaturan
+  o: "logs", // Log
+  b: "data", // Data
+  i: "positions", // Posisi
+};
+
+const KEY_NAV_CHAIN_MS = 1200;
+
+/** True bila fokus sedang berada di elemen ketik (input, textarea, dst). */
+function isTypingTargetElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    target.isContentEditable
+  );
+}
+
 // NR-28 (item 5): transisi antar-tab memakai AnimatePresence mode="wait" +
 // motion.div per tab aktif (lihat <main> pada AdminApp) — konten tab lama
 // keluar dulu sebelum tab baru masuk, dengan pola unmount yang sama seperti
 // sebelumnya (kondisional per tab), sehingga state/dialog tidak berubah cara
 // hidupnya. TabReveal lama digantikan pendekatan ini.
 
+// NR-41 I21 — toggle tema SIKLUS: light → dark → system (→ light kembali).
+// Ikon mengikuti mode terpilih: Sun (terang), Moon (gelap), Monitor (sistem).
 function ThemeToggle() {
-  const { resolvedTheme, setTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
+  const { theme, setTheme } = useTheme();
+  const THEME_CYCLE = ["light", "dark", "system"] as const;
+  type ThemeChoice = (typeof THEME_CYCLE)[number];
+  const current: ThemeChoice =
+    theme === "light" || theme === "dark" ? theme : "system";
+  const next =
+    THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
+  const THEME_LABEL: Record<ThemeChoice, string> = {
+    light: "Tema: terang",
+    dark: "Tema: gelap",
+    system: "Tema: ikuti sistem",
+  };
+  const THEME_NEXT_HINT: Record<ThemeChoice, string> = {
+    light: "Klik untuk mode gelap",
+    dark: "Klik untuk ikuti sistem",
+    system: "Klik untuk mode terang",
+  };
   return (
     <Button
       variant="ghost"
       size="icon"
       className="size-11 sm:size-9"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      aria-label={isDark ? "Aktifkan mode terang" : "Aktifkan mode gelap"}
+      onClick={() => setTheme(next)}
+      aria-label={`${THEME_LABEL[current]} — ${THEME_NEXT_HINT[current]}`}
+      title={`${THEME_LABEL[current]} — ${THEME_NEXT_HINT[current]}`}
     >
-      {isDark ? (
+      {current === "light" ? (
         <Sun className="size-4" aria-hidden="true" />
-      ) : (
+      ) : current === "dark" ? (
         <Moon className="size-4" aria-hidden="true" />
+      ) : (
+        <Monitor className="size-4" aria-hidden="true" />
       )}
     </Button>
   );
@@ -725,6 +781,60 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [phase]);
 
+  // NR-41 I18 — navigasi keyboard "g" + tombol (jendela 1200 ms). Diabaikan
+  // saat mengetik atau saat ada dialog/modal terbuka; tidak menyentuh Ctrl+K
+  // maupun "?" (listener ShortcutOverlay terpisah).
+  useEffect(() => {
+    if (phase !== "ready") return;
+    let gPressedAt = 0;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (isTypingTargetElement(event.target)) return;
+      if (document.querySelector('[role="dialog"]')) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "g") {
+        gPressedAt = Date.now();
+        return;
+      }
+      if (gPressedAt === 0 || Date.now() - gPressedAt > KEY_NAV_CHAIN_MS) {
+        return;
+      }
+      gPressedAt = 0;
+      const tab = KEY_NAV_TARGETS[key];
+      if (!tab) return;
+      const item = ALL_NAV_ITEMS.find((nav) => nav.value === tab);
+      if (!item) return;
+      // Hormati batasan peran: tab ber-role tidak boleh dibuka via keyboard.
+      if (item.roles && !item.roles.includes(role)) return;
+      event.preventDefault();
+      handleNavigate(tab);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, role, handleNavigate]);
+
+  // NR-41 G9 — dialog kandidat global: komponen mana pun (command palette,
+  // baris tabel pelamar) mengirim event "lumina-open-candidate" dengan
+  // candidateId (null = lamaran belum punya profil kandidat).
+  const [candidateDialogOpen, setCandidateDialogOpen] = useState(false);
+  const [candidateDialogId, setCandidateDialogId] = useState<string | null>(null);
+  useEffect(() => {
+    if (phase !== "ready") return;
+    const onOpenCandidate = (event: Event) => {
+      const detail = (event as CustomEvent<{ candidateId?: unknown }>).detail;
+      const id =
+        typeof detail?.candidateId === "string" && detail.candidateId.trim()
+          ? detail.candidateId
+          : null;
+      setCandidateDialogId(id);
+      setCandidateDialogOpen(true);
+    };
+    window.addEventListener("lumina-open-candidate", onOpenCandidate);
+    return () =>
+      window.removeEventListener("lumina-open-candidate", onOpenCandidate);
+  }, [phase]);
+
   async function handleLogout() {
     try {
       await apiPost<{ ok: boolean }>("/api/admin/logout");
@@ -788,6 +898,12 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
       {/* NR-28 (item 14): overlay pintasan keyboard — dibuka via "?" atau
           tombol ikon Keyboard di header. */}
       <ShortcutOverlay open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      {/* NR-41 G9 — dialog profil kandidat global (dibuka via event global). */}
+      <CandidateDetailDialog
+        open={candidateDialogOpen}
+        candidateId={candidateDialogId}
+        onOpenChange={setCandidateDialogOpen}
+      />
       {/* FAB "Tanya Data" — WAJIB di luar <header>: backdrop-blur pada header
           menciptakan containing block sehingga position:fixed tombol salah
           anchor (menempel di header, menutupi tombol Keluar). Di samping root

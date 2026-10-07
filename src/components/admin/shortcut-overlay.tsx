@@ -53,6 +53,40 @@ function ShortcutRow({ label, keys }: { label: string; keys: string[] }) {
   );
 }
 
+/** Chip navigasi "g + tombol": kbd tombol + label tab (NR-41 I18). */
+function NavKeyChip({ keyChar, label, ownerOnly }: { keyChar: string; label: string; ownerOnly?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs">
+      <Kbd>g</Kbd>
+      <span aria-hidden="true" className="text-muted-foreground">+</span>
+      <Kbd>{keyChar}</Kbd>
+      <span className="font-medium">{label}</span>
+      {ownerOnly ? (
+        <span className="text-[10px] font-semibold text-rose-600 dark:text-rose-400">OWNER</span>
+      ) : null}
+    </span>
+  );
+}
+
+// Pemetaan navigasi I18 — HARUS sinkron dengan KEY_NAV_TARGETS di admin-app.tsx.
+const NAV_KEY_TARGETS: { keyChar: string; label: string; ownerOnly?: boolean }[] = [
+  { keyChar: "d", label: "Dashboard" },
+  { keyChar: "a", label: "Pelamar" },
+  { keyChar: "p", label: "Pipeline" },
+  { keyChar: "w", label: "Wawancara" },
+  { keyChar: "k", label: "Kalender" },
+  { keyChar: "m", label: "Karyawan" },
+  { keyChar: "n", label: "Analitik" },
+  { keyChar: "r", label: "Laporan" },
+  { keyChar: "t", label: "Tugas" },
+  { keyChar: "u", label: "Pengguna", ownerOnly: true },
+  { keyChar: "j", label: "Template" },
+  { keyChar: "s", label: "Pengaturan", ownerOnly: true },
+  { keyChar: "o", label: "Log", },
+  { keyChar: "b", label: "Data", ownerOnly: true },
+  { keyChar: "i", label: "Posisi", ownerOnly: true },
+];
+
 export function ShortcutOverlay({
   open,
   onOpenChange,
