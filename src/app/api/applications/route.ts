@@ -28,6 +28,7 @@ import {
 import { CV_MAX_BYTES, INTRO_MAX_BYTES, KOMUTER_PLANS, SHIFT_PREFS, type ApplySuccessResponse } from "@/lib/types";
 import { startBackgroundProcessing } from "@/lib/processing";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { ensureCandidate } from "@/lib/candidates";
 
 export const dynamic = "force-dynamic";
 
@@ -211,6 +212,9 @@ export async function POST(req: NextRequest) {
     const motivation = asTrimmedString(fields.motivation);
     // Sumber pelamar & UTM (metadata non-kritis: dipotong bila melebihi batas).
     const source = asOptionalString(fields.source)?.slice(0, 40) ?? null;
+    // NR-41 G13 — sumber terstruktur: sourceId merujuk ReferralSource aktif
+    // (divalidasi setelah posisi dibaca); tanpa sourceId, teks "source" lama tetap jalan.
+    const rawSourceId = asTrimmedString(fields.sourceId);
     const utmSource = asOptionalString(fields.utmSource)?.slice(0, 60) ?? null;
     const utmMedium = asOptionalString(fields.utmMedium)?.slice(0, 60) ?? null;
     const utmCampaign = asOptionalString(fields.utmCampaign)?.slice(0, 60) ?? null;
@@ -615,6 +619,26 @@ export async function POST(req: NextRequest) {
 
     const trackingCode = await generateUniqueTrackingCode();
 
+    // NR-41 G13 — validasi sourceId: harus ada & aktif; selain itu diabaikan (null)
+    // agar field teks "source" lama tetap menjadi fallback.
+    let validSourceId: string | null = null;
+    if (rawSourceId) {
+      try {
+        const ref = await db.referralSource.findUnique({ where: { id: rawSourceId } });
+        if (ref && ref.isActive) validSourceId = ref.id;
+      } catch (sourceError) {
+        console.error("[POST /api/applications] validasi sourceId gagal:", sourceError);
+      }
+    }
+
+    // NR-41 G9 — kandidat terpusat: pastikan ada Candidate untuk email ini
+    // (dibuat bila belum ada) lalu tautkan lamaran via candidateId. Gagal
+    // resolve tidak pernah menggagalkan submit (ensureCandidate return null).
+    let candidateId: string | null = null;
+    if (email) {
+      candidateId = await ensureCandidate(email, name, phone);
+    }
+
     // Simpan dokumen wajib tambahan (urut sesuai customDocs posisi) sebagai JSON.
     let extraDocsJson: string | null = null;
     if (customDocs.length > 0) {
@@ -643,6 +667,9 @@ export async function POST(req: NextRequest) {
         introFileId: introAsset?.id ?? null,
         extraDocs: extraDocsJson ?? "[]",
         source,
+        // NR-41 — profil kandidat terpusat + sumber terstruktur (null aman).
+        candidateId,
+        sourceId: validSourceId,
         utmSource,
         utmMedium,
         utmCampaign,
