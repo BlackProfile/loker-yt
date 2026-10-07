@@ -12,6 +12,28 @@ import { STATUS_LABELS, type ApplicationStatus } from "@/lib/types";
 
 export type ReportEmailVariant = "WEEKLY" | "MONTHLY";
 
+/**
+ * NR-41 H15 — penerima newsletter/blast ke Subscriber.
+ * KEPATUHAN: hanya email yang SUDAH dikonfirmasi (confirmedAt != null) dan
+ * BELUM berhenti berlangganan (unsubscribedAt == null) boleh menerima blast.
+ * Seluruh pengiriman massal ke pelanggan WAJIB lewat helper ini.
+ */
+export async function listNewsletterRecipients(): Promise<string[]> {
+  try {
+    const rows = await db.subscriber.findMany({
+      where: {
+        confirmedAt: { not: null },
+        unsubscribedAt: null,
+      },
+      select: { email: true },
+    });
+    return rows.map((row) => row.email);
+  } catch (error) {
+    console.error("[report-email] listNewsletterRecipients gagal:", error);
+    return [];
+  }
+}
+
 export type ReportEmailData = {
   subject: string;
   periodLabel: string;
