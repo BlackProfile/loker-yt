@@ -146,6 +146,9 @@ const SHIFT_PREF_LABELS_EN: Record<ShiftPref, string> = {
 
 // Form Builder per posisi (mode skema aktif).
 const FORM_KEY_PREFIX = "form:"; // kunci error jawaban: "form:"+fieldId
+// NR-41 G13 — nilai Select opsi "Lainnya" pada pemilih sumber lamaran (dipakai
+// sebagai nilai sentinel; bukan nama sumber yang dikirim ke server).
+const SOURCE_OTHER = "__source_other__";
 // Sentinel pilihan "Lainnya" (radio/dropdown/checkbox allowOther) — memakai
 // karakter kontrol sehingga tidak mungkin bentrok dengan opsi buatan admin.
 const FORM_OTHER_VALUE = "\u0000__other__";
@@ -2456,6 +2459,35 @@ export function ApplyWizard({
   function extraDocLabel(index: number): string {
     const name = customDocs[index] ?? "dokumen";
     return `doc:${name.slice(0, 115)}`;
+  }
+
+  /* ------------------ NR-41 G13 — pilih sumber lamaran ------------------ */
+
+  /**
+   * Nilai Select sumber: id sumber terstruktur bila dipilih; "Lainnya" bila
+   * isian teks bebas (termasuk nilai statis lama dari draft yang tidak cocok
+   * dengan daftar terstruktur); undefined = belum dipilih (placeholder).
+   */
+  const sourceOptionValue = sourceId
+    ? sourceId
+    : source
+      ? SOURCE_OTHER
+      : undefined;
+
+  /** Pilih opsi sumber: id terstruktur → kirim sourceId; "Lainnya" → teks bebas. */
+  function handleSourceSelect(value: string) {
+    if (value === SOURCE_OTHER) {
+      setSourceId("");
+      // Bila sebelumnya memilih sumber terstruktur, kosongkan teks agar
+      // pengguna menulis sumber bebas yang baru.
+      setSource((prev) =>
+        referralSources.some((item) => item.name === prev) ? "" : prev,
+      );
+      return;
+    }
+    const picked = referralSources.find((item) => item.id === value);
+    setSourceId(value);
+    if (picked) setSource(picked.name);
   }
 
   /**

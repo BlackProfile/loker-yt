@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 // NR-41 J23 — pendaftar Service Worker PWA.
 // Dirender dari layout root; hanya berjalan di browser, sekali per sesi halaman.
 // Pendaftaran ditunda sampai window "load" agar tidak bersaing dengan hydration
