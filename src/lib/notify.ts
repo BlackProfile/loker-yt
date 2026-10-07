@@ -13,6 +13,11 @@ import {
 
 const WEBHOOK_TIMEOUT_MS = 8_000; // 8 detik per channel
 
+/** NR-41 H16 — backoff retry email otomatis (menit) per index attempts-1. */
+export const EMAIL_RETRY_BACKOFF_MINUTES = [5, 15, 60, 240, 720];
+/** NR-41 H16 — batas maksimal percobaan kirim per email. */
+export const EMAIL_MAX_ATTEMPTS = 5;
+
 const DISCORD_WEBHOOK_PREFIXES = [
   "https://discord.com/api/webhooks",
   "https://discordapp.com/api/webhooks",
@@ -577,10 +582,50 @@ export async function pushNotification(params: {
 }
 
 /**
+ * NR-41 H16 — kirim email via SMTP dari env (dipakai queueEmail, retry manual
+ * admin, dan proses retry otomatis). Tidak pernah melempar error:
+ * return { ok: true } bila terkirim, { ok: false, error } bila gagal/tak ada SMTP.
+ */
+export async function sendEmailViaSmtp(params: {
+  toEmail: string;
+  subject: string;
+  body: string;
+}): Promise<{ ok: boolean; error: string | null }> {
+  const host = process.env.SMTP_HOST;
+  if (!host) {
+    return { ok: false, error: "SMTP belum dikonfigurasi" };
+  }
+  try {
+    const nodemailer = await import("nodemailer");
+    const transport = nodemailer.createTransport({
+      host,
+      port: Number(process.env.SMTP_PORT ?? 587),
+      secure: process.env.SMTP_SECURE === "true",
+      auth:
+        process.env.SMTP_USER && process.env.SMTP_PASS
+          ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+          : undefined,
+    });
+    await transport.sendMail({
+      from: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "lumina@localhost",
+      to: params.toEmail,
+      subject: params.subject,
+      text: params.body,
+    });
+    return { ok: true, error: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: message.slice(0, 300) };
+  }
+}
+
+/**
  * Masukkan email ke kotak keluar (EmailOutbox). Bila SMTP terkonfigurasi lewat
  * env (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM), email dicoba
  * dikirim langsung; selain itu tetap tersimpan berstatus QUEUED untuk arsip
  * dan bisa dikirim ulang manual dari admin.
+ * NR-41 H16 — bila kirim GAGAL: attempts++, lastError, dan nextRetryAt =
+ * now + 5 menit (tahap backoff pertama) agar retry otomatis hidup.
  * Tidak pernah melempar error.
  */
 export async function queueEmail(params: {
@@ -610,41 +655,51 @@ export async function queueEmail(params: {
   const host = process.env.SMTP_HOST;
   if (!host) return; // tanpa SMTP — email tetap terarsip berstatus QUEUED
 
-  try {
-    const nodemailer = await import("nodemailer");
-    const transport = nodemailer.createTransport({
-      host,
-      port: Number(process.env.SMTP_PORT ?? 587),
-      secure: process.env.SMTP_SECURE === "true",
-      auth:
-        process.env.SMTP_USER && process.env.SMTP_PASS
-          ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-          : undefined,
-    });
-    await transport.sendMail({
-      from: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "lumina@localhost",
-      to: params.toEmail,
-      subject: params.subject,
-      text: params.body,
-    });
-    await db.emailOutbox.update({
-      where: { id: recordId },
-      data: { status: "SENT", sentAt: new Date() },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  const result = await sendEmailViaSmtp({
+    toEmail: params.toEmail,
+    subject: params.subject,
+    body: params.body,
+  });
+
+  if (result.ok) {
     try {
       await db.emailOutbox.update({
         where: { id: recordId },
-        data: { status: "FAILED", error: message.slice(0, 300) },
+        data: {
+          status: "SENT",
+          sentAt: new Date(),
+          attempts: { increment: 1 },
+          error: null,
+          lastError: null,
+          nextRetryAt: null,
+        },
       });
     } catch {
       // diam
     }
-    // Alert bot Telegram: email gagal terkirim (digate toggle; fire-and-forget).
-    void sendTelegramAlert(
-      "emailFailed",
-      `Email Gagal Terkirim\nKepada: ${params.toEmail}\nSubjek: ${params.subject}\nPenyebab: ${message.slice(0, 200)}`,
-    );
+    return;
   }
+
+  const message = result.error ?? "Gagal mengirim email";
+  try {
+    // Backoff pertama: attempts kini = 1 → nextRetryAt = now + 5 menit.
+    const nextRetryAt = new Date(Date.now() + EMAIL_RETRY_BACKOFF_MINUTES[0] * 60 * 1000);
+    await db.emailOutbox.update({
+      where: { id: recordId },
+      data: {
+        status: "FAILED",
+        error: message,
+        attempts: { increment: 1 },
+        lastError: message,
+        nextRetryAt,
+      },
+    });
+  } catch {
+    // diam
+  }
+  // Alert bot Telegram: email gagal terkirim (digate toggle; fire-and-forget).
+  void sendTelegramAlert(
+    "emailFailed",
+    `Email Gagal Terkirim\nKepada: ${params.toEmail}\nSubjek: ${params.subject}\nPenyebab: ${message.slice(0, 200)}`,
+  );
 }
