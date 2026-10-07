@@ -104,7 +104,11 @@ import { formatDate } from "./format";
 import { SavedViewsBar, type AdminFilterSnapshot } from "./saved-views";
 import { CompareApplicantsDialog } from "./compare-applicants-dialog";
 import { ageOf, type ApplicationRow } from "./applicant-row-types";
-import type { TableDensity } from "./applications-table";
+import type {
+  TableDensity,
+  HeaderSort,
+  HeaderSortField,
+} from "./applications-table";
 
 const ALL = "ALL";
 
@@ -126,9 +130,8 @@ const KOMUTER_FILTER_OPTIONS: { value: KomuterPlan; label: string }[] = [
 
 type ViewMode = "table" | "kanban";
 
-// NR-41 I22 — urutan server-side dari klik header (format "field:dir").
-export type HeaderSort = { field: HeaderSortField; dir: "asc" | "desc" };
-type HeaderSortField = "name" | "createdAt" | "updatedAt" | "aiScore" | "status";
+// NR-41 I22 — tipe HeaderSort/HeaderSortField diimpor dari applications-table
+// (menghindari impor melingkar); pembanding client-side di bawah.
 
 /** Pembanding client-side untuk legacy mode / sort followup pada halaman. */
 function compareRows(
@@ -146,9 +149,11 @@ function compareRows(
         (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * mul
       );
     case "updatedAt":
+      // Aplikasi tidak membawa updatedAt di payload daftar — proxy klien:
+      // perubahan tahap terakhir (stageUpdatedAt).
       return (
-        (new Date(a.updatedAt ?? a.createdAt).getTime() -
-          new Date(b.updatedAt ?? b.createdAt).getTime()) * mul
+        (new Date(a.stageUpdatedAt ?? a.createdAt).getTime() -
+          new Date(b.stageUpdatedAt ?? b.createdAt).getTime()) * mul
       );
     case "aiScore":
       return ((a.aiScore ?? -1) - (b.aiScore ?? -1)) * mul;

@@ -654,7 +654,7 @@ export function ApplicationsTable({
     <>
       {/* Desktop: table */}
       <Card className="hidden gap-0 overflow-hidden rounded-2xl py-0 md:block">
-        <Table className="min-w-[1160px]">
+        <Table className="min-w-[1240px]">
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
               <TableHead className={cn("w-10", padHead)}>
@@ -672,7 +672,23 @@ export function ApplicationsTable({
               <TableHead className={cn("w-10 text-center text-xs", isCompact ? "px-2 py-2" : "px-2 py-3")}>
                 Bandingkan
               </TableHead>
-              <TableHead className={padHead}>Pelamar</TableHead>
+              {/* NR-41 I22 — header bisa diklik untuk urutan server-side. */}
+              <TableHead
+                className={padHead}
+                aria-sort={
+                  headerSort?.field === "name"
+                    ? headerSort.dir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : undefined
+                }
+              >
+                {sortToggle ? (
+                  <SortHeaderButton label="Nama" field="name" activeSort={headerSort} onToggle={sortToggle} />
+                ) : (
+                  "Nama"
+                )}
+              </TableHead>
               <TableHead className={padHead}>Posisi</TableHead>
               {/* NR38-B fitur 4 — kolom Gaji (desktop, hilang di mode padat). */}
               {!isCompact ? <TableHead className={padHead}>Gaji</TableHead> : null}
@@ -680,11 +696,77 @@ export function ApplicationsTable({
               {!isCompact ? <TableHead className={padHead}>NIK</TableHead> : null}
               <TableHead className={padHead}>Umur</TableHead>
               {!isCompact ? <TableHead className={padHead}>Sumber</TableHead> : null}
-              <TableHead className={padHead}>Skor AI</TableHead>
+              <TableHead
+                className={padHead}
+                aria-sort={
+                  headerSort?.field === "aiScore"
+                    ? headerSort.dir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : undefined
+                }
+              >
+                {sortToggle ? (
+                  <SortHeaderButton label="Skor AI" field="aiScore" activeSort={headerSort} onToggle={sortToggle} />
+                ) : (
+                  "Skor AI"
+                )}
+              </TableHead>
               <TableHead className={padHead}>Rating</TableHead>
               {!isCompact ? <TableHead className={padHead}>Tags</TableHead> : null}
-              <TableHead className={padHead}>Tanggal</TableHead>
-              <TableHead className={padHead}>Status</TableHead>
+              <TableHead
+                className={padHead}
+                aria-sort={
+                  headerSort?.field === "createdAt"
+                    ? headerSort.dir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : undefined
+                }
+              >
+                {sortToggle ? (
+                  <SortHeaderButton label="Dibuat" field="createdAt" activeSort={headerSort} onToggle={sortToggle} />
+                ) : (
+                  "Dibuat"
+                )}
+              </TableHead>
+              {/* NR-41 I22 — kolom "Diubah" (hilang di mode padat). Nilai klien
+                  memakai stageUpdatedAt (perubahan tahap terakhir); urutan
+                  server memakai kolom updatedAt model. */}
+              {!isCompact ? (
+                <TableHead
+                  className={padHead}
+                  aria-sort={
+                    headerSort?.field === "updatedAt"
+                      ? headerSort.dir === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : undefined
+                  }
+                >
+                  {sortToggle ? (
+                    <SortHeaderButton label="Diubah" field="updatedAt" activeSort={headerSort} onToggle={sortToggle} />
+                  ) : (
+                    "Diubah"
+                  )}
+                </TableHead>
+              ) : null}
+              <TableHead
+                className={padHead}
+                aria-sort={
+                  headerSort?.field === "status"
+                    ? headerSort.dir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : undefined
+                }
+              >
+                {sortToggle ? (
+                  <SortHeaderButton label="Status" field="status" activeSort={headerSort} onToggle={sortToggle} />
+                ) : (
+                  "Status"
+                )}
+              </TableHead>
               <TableHead className={cn(padHead, "text-right")}>Aksi</TableHead>
             </TableRow>
           </TableHeader>
@@ -875,7 +957,7 @@ export function ApplicationsTable({
                       </div>
                     </TableCell>
                   ) : null}
-                  {/* NR38-B fitur 3 — umur lamaran berwarna: dot + tooltip di kolom Tanggal. */}
+                  {/* NR38-B fitur 3 — umur lamaran berwarna: dot + tooltip di kolom Dibuat. */}
                   <TableCell className={cn("text-sm whitespace-nowrap text-muted-foreground", pad)}>
                     <span
                       className="inline-flex items-center gap-1.5"
@@ -891,6 +973,12 @@ export function ApplicationsTable({
                       {formatDate(app.createdAt)}
                     </span>
                   </TableCell>
+                  {/* NR-41 I22 — kolom Diubah (hilang di mode padat). */}
+                  {!isCompact ? (
+                    <TableCell className={cn("text-sm whitespace-nowrap text-muted-foreground", pad)}>
+                      {formatDate(app.stageUpdatedAt ?? app.createdAt)}
+                    </TableCell>
+                  ) : null}
                   <TableCell className={pad}>
                     <div className="flex flex-col items-start gap-1">
                       <StatusBadge status={app.status} />
@@ -901,6 +989,7 @@ export function ApplicationsTable({
                   </TableCell>
                   <TableCell className={pad}>
                     <div className="flex items-center justify-end gap-1">
+                      {candidateButton(app, "md:opacity-0 md:transition-opacity md:duration-150 md:group-hover:opacity-100 md:group-focus-within:opacity-100 focus-visible:opacity-100")}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1072,6 +1161,8 @@ export function ApplicationsTable({
                     />
                     Bandingkan
                   </label>
+                  {/* NR-41 G9 — profil kandidat terpusat (juga di kartu mobile). */}
+                  {candidateButton(app)}
                   {/* Toggle bintang personal (NR-24 fitur 2). */}
                   {canMutate ? (
                     <Button
@@ -1135,6 +1226,9 @@ export function ApplicationsTable({
           );
         })}
       </div>
+
+      {/* NR-41 E1 — footer pagination tabel (juga untuk daftar mobile). */}
+      {pagination}
     </>
   );
 }
