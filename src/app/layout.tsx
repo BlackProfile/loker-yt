@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import { PwaRegister } from "@/components/landing/pwa-register";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,7 +15,11 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// NR-41 J24 — metadataBase supaya URL kanonik & OpenGraph relatif ter-resolve.
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Lumina Studio — Rekrutmen Tim Kreatif",
   description:
     "Halaman rekrutmen resmi Lumina Studio. Bergabunglah dengan tim kreatif konten digital: video editor, desainer thumbnail, penulis naskah, dan lainnya. Remote, on-site, dan hybrid — fleksibel.",
@@ -22,12 +27,23 @@ export const metadata: Metadata = {
   icons: {
     icon: "/logo.svg",
   },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Lumina",
+    statusBarStyle: "default",
+  },
   openGraph: {
     title: "Rekrutmen Tim Kreatif — Lumina Studio",
     description: "Bergabung dengan tim kreatif konten digital. Remote, on-site, dan hybrid — fleksibel, penuh peluang bertumbuh.",
     siteName: "Lumina Studio",
     type: "website",
   },
+};
+
+// NR-41 J23 — warna tema PWA (bilah browser Android / iOS Safari).
+export const viewport: Viewport = {
+  themeColor: "#e11d48",
 };
 
 export default function RootLayout({
@@ -44,6 +60,8 @@ export default function RootLayout({
           {children}
           <Toaster position="top-center" richColors closeButton />
         </ThemeProvider>
+        {/* NR-41 J23 — daftarkan service worker /sw.js (client-only, sekali). */}
+        <PwaRegister />
       </body>
     </html>
   );

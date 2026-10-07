@@ -23,11 +23,27 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const params = await searchParams;
   const slug = firstSlug(params.posisi);
-  if (!slug) return {};
+  if (!slug) {
+    // NR-41 J24 — kanonik & varian bahasa untuk landing (basis) — pola URL
+    // bahasa: / (ID, bawaan) dan /?lang=en (EN).
+    return {
+      alternates: {
+        canonical: "/",
+        languages: { id: "/", en: "/?lang=en" },
+      },
+    };
+  }
 
   try {
     const position = await db.position.findUnique({ where: { slug } });
-    if (!position || !position.isActive) return {};
+    if (!position || !position.isActive) {
+      return {
+        alternates: {
+          canonical: "/",
+          languages: { id: "/", en: "/?lang=en" },
+        },
+      };
+    }
 
     const description =
       position.description.length > 155
@@ -37,10 +53,19 @@ export async function generateMetadata({
     const images = position.coverFileId
       ? [{ url: `/api/files/${position.coverFileId}`, width: 1344, height: 768 }]
       : [{ url: `/api/og?posisi=${slug}`, width: 1200, height: 630 }];
+    // NR-41 J24 — kanonik & varian bahasa mengikuti pola URL posisi (?posisi=slug).
+    const positionUrl = `/?posisi=${encodeURIComponent(slug)}`;
 
     return {
       title,
       description,
+      alternates: {
+        canonical: positionUrl,
+        languages: {
+          id: positionUrl,
+          en: `${positionUrl}&lang=en`,
+        },
+      },
       openGraph: {
         title,
         description,
