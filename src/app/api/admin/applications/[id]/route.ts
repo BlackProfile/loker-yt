@@ -31,6 +31,7 @@ import { emitWebhook } from "@/lib/webhooks";
 import { sendCandidateStatusEmail } from "@/lib/candidate-emails";
 import { appendStageHistory } from "@/lib/stage-history";
 import { ensureEmployeeCard, syncCardOnStatusChange } from "@/lib/employee-cards";
+import { syncApplicationTags } from "@/lib/tags-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -836,6 +837,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await db.activityLog.createMany({
         data: logs.map((log) => ({ ...log, applicationId: id })),
       });
+    }
+
+    // NR-41 G10 — dual-write tag terstruktur: setelah legacy tags ditulis,
+    // sinkronkan Tag + ApplicationTag agar model baru selalu segaris.
+    if (updateData.tags !== undefined) {
+      await syncApplicationTags(id, parseTags(updateData.tags), session.name);
     }
 
     // Webhook keluar: tahap pelamar berubah — fire-and-forget ke endpoint berlangganan.
