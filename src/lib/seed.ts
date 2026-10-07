@@ -68,6 +68,7 @@ import {
   type ShiftPref,
   type DocExpiry,
   type HoldReason,
+  type OfferSignature,
   HOLD_REASONS,
 } from "@/lib/types";
 
@@ -77,6 +78,9 @@ type ApplicationRecord = ApplicationRecordModel & {
   position: { title: string } | null;
   cvFile?: { filename: string } | null;
   introFile?: { filename: string } | null;
+  // NR-41 — relasi opsional untuk sumber terstruktur (sourceName) & kandidat terpusat
+  sourceRef?: { name: string } | null;
+  candidate?: { id: string } | null;
 };
 
 /** Include standar untuk query Application agar serialisasi lengkap. */
@@ -84,6 +88,8 @@ export const APPLICATION_INCLUDE = {
   position: { select: { title: true } },
   cvFile: { select: { filename: true } },
   introFile: { select: { filename: true } },
+  sourceRef: { select: { name: true } },
+  candidate: { select: { id: true } },
 } satisfies Prisma.ApplicationInclude;
 
 /** Parse requirements / daftar string dari JSON string menjadi string[]. */
@@ -522,6 +528,27 @@ export function parseVideoNotes(raw: string | null | undefined): VideoNote[] {
   }
 }
 
+/** Parse JSON e-signature offer (NR-41 K30) — {name,method,at,ip,ua}, aman terhadap data rusak. */
+export function parseOfferSignature(raw: string | null | undefined): OfferSignature | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const rec = parsed as Record<string, unknown>;
+    if (typeof rec.name !== "string" || rec.name.trim().length === 0) return null;
+    if (typeof rec.at !== "string") return null;
+    return {
+      name: rec.name.trim().slice(0, 120),
+      method: "TYPED",
+      at: rec.at,
+      ip: typeof rec.ip === "string" ? rec.ip : null,
+      ua: typeof rec.ua === "string" ? rec.ua : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Parse JSON masa berlaku dokumen (NR-24) — {id,label,expiresAt}[], aman terhadap data rusak. */
 export function parseDocExpiries(raw: string | null | undefined): DocExpiry[] {
   if (!raw) return [];
@@ -677,6 +704,12 @@ export function serializeApplication(record: ApplicationRecord): Application {
     doNotHire: record.doNotHire,
     doNotHireReason: record.doNotHireReason,
     mergedIntoId: record.mergedIntoId,
+
+    // NR-41 — kandidat terpusat, sumber terstruktur, e-signature offer
+    candidateId: record.candidateId ?? record.candidate?.id ?? null,
+    sourceId: record.sourceId,
+    sourceName: record.sourceRef?.name ?? null,
+    offerSignature: parseOfferSignature(record.offerSignature),
 
     createdAt: record.createdAt.toISOString(),
   };

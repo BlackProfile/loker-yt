@@ -428,6 +428,11 @@ export type Application = {
   aiAnalyzedAt: string | null;
   transcript: string | null; // hasil ASR audio intro
   source: string | null; // jawaban "dari mana tahu lowongan ini"
+  // NR-41 — kandidat terpusat & sumber terstruktur & e-signature offer
+  candidateId?: string | null;
+  sourceId?: string | null;
+  sourceName?: string | null; // nama ReferralSource (bila lamaran memakai sourceId)
+  offerSignature?: OfferSignature | null;
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
