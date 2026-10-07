@@ -386,7 +386,65 @@ export function ApplicationsTab() {
     unseenOnly ||
     archiveFilter !== "ACTIVE" ||
     komuterFilter !== ALL ||
+    domisiliFilter.trim() !== "" ||
+    headerSort !== null;
+
+  // ---------------------------------------------------------------------
+  // NR-41 E1 — dua mode fetch daftar lamaran:
+  // 1) SERVER (paginate=1): tampilan tabel tanpa filter yang hanya bisa
+  //    diputuskan di klien → halaman + urutan dihitung server (envelope
+  //    PaginatedApplications).
+  // 2) LEGACY (array penuh): tampilan kanban ATAU filter arsip ARCHIVED/ALL,
+  //    tahap "Lainnya", belum-dilihat, komuter, atau domisili — semuanya
+  //    menyaring field yang tidak didukung server, sehingga butuh seluruh
+  //    data untuk hasil yang benar (perilaku lama dipertahankan).
+  // ---------------------------------------------------------------------
+  const needsFullList =
+    view !== "table" ||
+    archiveFilter === "ARCHIVED" ||
+    archiveFilter === "ALL" ||
+    isOtherStageFilter ||
+    unseenOnly ||
+    komuterFilter !== ALL ||
     domisiliFilter.trim() !== "";
+
+  // NR-41 I22 — param sort API: header sort (field:dir) lebih diutamakan,
+  // lalu pemetaan nilai select lama ke format server (mode paginate hanya
+  // memahami "field:dir"). followup & newest memakai urutan default server.
+  const sortParam = useMemo(() => {
+    if (headerSort) return `${headerSort.field}:${headerSort.dir}`;
+    if (sort === "oldest") return "createdAt:asc";
+    if (sort === "aiScore") return "aiScore:desc";
+    return undefined;
+  }, [headerSort, sort]);
+
+  const fetchUrl = useMemo(() => {
+    if (needsFullList) {
+      // Mode legacy: query lama persis (server memahami sort newest/oldest/...).
+      return `/api/admin/applications${activeQuery}`;
+    }
+    const sp = new URLSearchParams(
+      activeQuery.startsWith("?") ? activeQuery.slice(1) : activeQuery
+    );
+    sp.set("paginate", "1");
+    sp.set("page", String(page));
+    sp.set("pageSize", String(pageSize));
+    if (sortParam) sp.set("sort", sortParam);
+    const qs = sp.toString();
+    return `/api/admin/applications${qs ? `?${qs}` : ""}`;
+  }, [needsFullList, activeQuery, page, pageSize, sortParam]);
+
+  // Kembali ke halaman 1 tiap filter/urutan/ukuran halaman berubah.
+  const pageResetKey = `${activeQuery}|${needsFullList ? "full" : "paged"}|${
+    sortParam ?? ""
+  }|${pageSize}`;
+  const prevPageResetKeyRef = useRef(pageResetKey);
+  useEffect(() => {
+    if (prevPageResetKeyRef.current !== pageResetKey) {
+      prevPageResetKeyRef.current = pageResetKey;
+      setPage(1);
+    }
+  }, [pageResetKey]);
 
   const loadPositions = useCallback(async () => {
     try {
@@ -419,28 +477,50 @@ export function ApplicationsTab() {
 
   // silent: refresh senyap (dipakai event realtime) — daftar lama tetap tampil
   // sampai data baru siap, tanpa skeleton ulang dan tanpa flash kosong.
+  // Guard seq: respons paling baru selalu menang (mencegah balapan saat
+  // filter berubah dan halaman direset dalam satu commit).
+  const fetchSeqRef = useRef(0);
+  const fetchUrlRef = useRef(fetchUrl);
   const loadApplications = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true);
+      const seq = ++fetchSeqRef.current;
       try {
-        const data = await apiGet<ApplicationRow[]>(
-          `/api/admin/applications${activeQuery}`
-        );
-        setApplications(data);
-        openPendingApplication(data);
-        // Kumpulkan tag unik untuk pilihan filter.
-        setAllTags((prev) => {
-          const set = new Set(prev);
-          for (const app of data) for (const t of app.tags) set.add(t);
-          return Array.from(set).sort((a, b) => a.localeCompare(b, "id"));
-        });
+        const url = fetchUrlRef.current;
+        if (url.includes("paginate=1")) {
+          const data = await apiGet<PaginatedApplications>(url);
+          if (seq !== fetchSeqRef.current) return;
+          const items = Array.isArray(data.items) ? (data.items as ApplicationRow[]) : [];
+          setApplications(items);
+          setServerTotal(data.total);
+          setServerTotalPages(data.totalPages);
+          openPendingApplication(items);
+          // Kumpulkan tag unik untuk pilihan filter.
+          setAllTags((prev) => {
+            const set = new Set(prev);
+            for (const app of items) for (const t of app.tags) set.add(t);
+            return Array.from(set).sort((a, b) => a.localeCompare(b, "id"));
+          });
+        } else {
+          const data = await apiGet<ApplicationRow[]>(url);
+          if (seq !== fetchSeqRef.current) return;
+          setApplications(data);
+          openPendingApplication(data);
+          // Kumpulkan tag unik untuk pilihan filter.
+          setAllTags((prev) => {
+            const set = new Set(prev);
+            for (const app of data) for (const t of app.tags) set.add(t);
+            return Array.from(set).sort((a, b) => a.localeCompare(b, "id"));
+          });
+        }
       } catch (err) {
+        if (seq !== fetchSeqRef.current) return;
         reportError(err);
       } finally {
-        if (!silent) setLoading(false);
+        if (seq === fetchSeqRef.current && !silent) setLoading(false);
       }
     },
-    [activeQuery, reportError, openPendingApplication]
+    [reportError, openPendingApplication]
   );
 
   useEffect(() => {
@@ -451,9 +531,13 @@ export function ApplicationsTab() {
     void loadDuplicates();
   }, [loadDuplicates]);
 
+  // Fetch daftar: effect bergantung pada URL final (filter + paginate + sort).
+  // Ref diperbarui di sini agar refresh senyap realtime selalu memakai URL
+  // terkini tanpa membuat loadApplications berganti identitas.
   useEffect(() => {
+    fetchUrlRef.current = fetchUrl;
     void loadApplications();
-  }, [loadApplications]);
+  }, [fetchUrl, loadApplications]);
 
   // Realtime: lamaran baru/perubahan status/skor AI → segarkan daftar senyap.
   useLiveRefresh("applications:changed", () => {

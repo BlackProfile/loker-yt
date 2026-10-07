@@ -1,5 +1,6 @@
 // POST /api/public/offer/respond — pelamar menjawab penawaran dari halaman status:
-//   ACCEPT  -> offerStatus ACCEPTED, status ACCEPTED, hiredAt + probationEnd diisi, welcome message,
+//   ACCEPT  -> WAJIB signatureName (e-signature, K30): offerStatus ACCEPTED, status ACCEPTED,
+//              offerSignature disimpan, hiredAt + probationEnd diisi, welcome message,
 //              NR-40: template rencana onboarding posisi terpasang otomatis bila pelamar belum punya rencana
 //   DECLINE -> offerStatus DECLINED (+ alasan)
 import { NextRequest, NextResponse } from "next/server";
@@ -84,6 +85,18 @@ export async function POST(req: NextRequest) {
       await db.application.update({ where: { id: application.id }, data: { offerStatus: "EXPIRED" } });
       void emitRealtime(REALTIME_EVENTS.applications);
       return NextResponse.json({ error: "Batas waktu jawaban penawaran sudah terlewat." }, { status: 400 });
+    }
+
+    // NR-41 K30 — e-signature: menerima penawaran WAJIB disertai nama lengkap
+    // yang diketik pelamar (3–120 karakter). Tanpa itu -> 400 (alur DECLINE
+    // dan kedaluwarsa tidak berubah).
+    const signatureName =
+      typeof data.signatureName === "string" ? data.signatureName.trim() : "";
+    if (action === "ACCEPT" && (signatureName.length < 3 || signatureName.length > 120)) {
+      return NextResponse.json(
+        { error: "Tanda tangan (nama lengkap) wajib diisi untuk menerima penawaran." },
+        { status: 400 },
+      );
     }
 
     if (action === "DECLINE") {
@@ -184,6 +197,17 @@ export async function POST(req: NextRequest) {
         offerStatus: "ACCEPTED",
         offerRespondedAt: nowDate,
         status: "ACCEPTED",
+        // NR-41 K30 — e-signature tersimpan sebagai JSON OfferSignature.
+        offerSignature: JSON.stringify({
+          name: signatureName,
+          method: "TYPED",
+          at: nowDate.toISOString(),
+          ip:
+            req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+            req.headers.get("x-real-ip")?.trim() ||
+            null,
+          ua: req.headers.get("user-agent")?.slice(0, 300) || null,
+        }),
         // Riwayat tahap (NR-15): penerimaan offer tercatat sebagai perpindahan tahap.
         stageHistory: appendStageHistory(application.stageHistory, "ACCEPTED", application.status),
         hiredAt: nowDate,
@@ -219,6 +243,12 @@ export async function POST(req: NextRequest) {
         detail: `${installedTemplateCount} item dari template posisi`,
       });
     }
+    acceptLogs.push({
+      applicationId: application.id,
+      actor: "Pelamar",
+      action: "OFFER_SIGNED",
+      detail: `Ditandatangani elektronik oleh ${signatureName} (TYPED)`,
+    });
     await db.activityLog.createMany({ data: acceptLogs });
 
     // Webhook keluar (Task 27): pelamar sudah menjawab penawaran (fire-and-forget).

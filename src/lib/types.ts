@@ -659,6 +659,8 @@ export type TrackResponse = {
   status?: StageKey; // tahap pipeline (bawaan atau kustom per posisi)
   positionTitle?: string | null;
   positionSlug?: string | null;
+  // NR-41 K30 — nama pelamar (untuk kalimat persetujuan e-signature offer)
+  applicantName?: string | null;
   submittedAt?: string;
   updatedAt?: string; // terakhir kali lamaran berubah apa pun (untuk "terakhir diperbarui")
   steps?: { key: string; label: string; done: boolean; at: string | null }[];
@@ -1196,6 +1198,8 @@ export type TrackOfferInfo = {
   respondedAt: string | null;
   declineReason: string | null;
   message: string | null; // teks penawaran (dari template posisi, sudah diisi variabel)
+  // NR-41 K30 — e-signature (tampil setelah diterima; null bila lamaran lama)
+  offerSignature?: OfferSignature | null;
 };
 
 export type TrackInterviewInfo = {

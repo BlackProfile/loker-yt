@@ -70,6 +70,9 @@ export async function POST(req: NextRequest) {
     // baris yang sama (token tetap) alih-alih membuat baris baru tiap autosave.
     const existingToken =
       typeof payload.token === "string" ? payload.token.trim() : "";
+    // NR-41 J26 — autosave senyap (saat pelamar memilih berkas) TIDAK boleh
+    // mengirim email tiap kali; wizard mengirim sendEmail:false untuk itu.
+    const sendEmail = payload.sendEmail !== false;
 
     if (!email || !EMAIL_REGEX.test(email)) {
       return NextResponse.json({ error: "Format email tidak valid." }, { status: 400 });
@@ -152,26 +155,30 @@ export async function POST(req: NextRequest) {
       timeStyle: "short",
     }).format(expiresAt);
 
-    await queueEmail({
-      toEmail: email,
-      subject: `Lanjutkan lamaran Anda — ${position.title}`,
-      kind: "REMINDER",
-      body: [
-        "Halo,",
-        "",
-        `Draf lamaran Anda untuk posisi ${position.title} sudah tersimpan. Lanjutkan pengisian dari perangkat mana pun melalui tautan berikut:`,
-        "",
-        link,
-        "",
-        `Tautan berlaku sampai ${expiresLabel} dan hanya dapat dipakai satu kali.`,
-        "",
-        "Catatan: berkas yang sudah diunggah (CV, video/audio intro, dokumen tambahan) tidak ikut tersimpan dalam draf dan perlu diunggah ulang saat melanjutkan.",
-        "",
-        "Tim Lumina Studio",
-      ].join("\n"),
-    });
+    if (sendEmail) {
+      await queueEmail({
+        toEmail: email,
+        subject: `Lanjutkan lamaran Anda — ${position.title}`,
+        kind: "REMINDER",
+        body: [
+          "Halo,",
+          "",
+          `Draf lamaran Anda untuk posisi ${position.title} sudah tersimpan. Lanjutkan pengisian dari perangkat mana pun melalui tautan berikut:`,
+          "",
+          link,
+          "",
+          `Tautan berlaku sampai ${expiresLabel}.`,
+          "",
+          "Catatan: isian teks, pilihan, dan berkas yang sudah tersimpan pada draf ini ikut terbawa — berkas yang belum diunggah tetap perlu diunggah ulang saat melanjutkan.",
+          "",
+          "Tim Lumina Studio",
+        ].join("\n"),
+      });
+    }
 
-    return NextResponse.json({ ok: true });
+    // NR-41 J26 — respons kini menyertakan token (dipakai wizard untuk upsert
+    // autosave & unggah file draft; token tetap sama bila baris di-reuse).
+    return NextResponse.json({ ok: true, token, reused });
   } catch (error) {
     console.error("[POST /api/public/apply-draft]", error);
     return NextResponse.json(
