@@ -44,6 +44,21 @@ type ImportRow = {
 
 type SkipEntry = { row: number; reason: string };
 
+/** XL-BE — satu baris hasil pratinjau impor (validasi tanpa menyimpan). */
+type PreviewRow = {
+  row: number;
+  name: string;
+  email: string;
+  phone: string;
+  positionTitle: string;
+  experience: string;
+  motivation: string;
+  positionFound: boolean;
+  duplicate: boolean;
+  errors: string[];
+  warnings: string[];
+};
+
 /** Ambil teks aman dari field body (string saja, di-trim, dibatasi panjang). */
 function pickText(value: unknown, maxLen: number): string {
   if (typeof value !== "string") return "";
@@ -205,6 +220,16 @@ async function processImportRows(
       continue;
     }
 
+    // XL-BE — duplikat: email yang sama sudah melamar posisi yang sama (lamaran aktif).
+    const duplicate = await db.application.findFirst({
+      where: { email: item.email, positionId: position.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (duplicate) {
+      fail(`Duplikat: ${item.email} sudah melamar posisi ${position.title}.`);
+      continue;
+    }
+
     const trackingCode = await generateUniqueTrackingCode();
     const application = await db.application.create({
       data: {
@@ -233,6 +258,82 @@ async function processImportRows(
   }
 
   return { created, skipped };
+}
+
+/* ------------------------- XL-BE — pratinjau impor ------------------------- */
+
+/**
+ * Bangun pratinjau impor: validasi per baris TANPA menyimpan apa pun.
+ * Aturan identik dengan processImportRows agar baris tanpa error di pratinjau
+ * persis yang akan diproses saat commit (duplikat ditandai, akan di-skip).
+ */
+async function buildPreviewRows(rawRows: unknown[]): Promise<PreviewRow[]> {
+  const positions = await db.position.findMany({ select: { id: true, title: true } });
+  const byTitle = new Map<string, { id: string; title: string }>();
+  for (const position of positions) {
+    byTitle.set(position.title.trim().toLowerCase(), position);
+  }
+
+  const preview: PreviewRow[] = [];
+  for (let index = 0; index < rawRows.length; index++) {
+    const raw = rawRows[index];
+    const row = (raw && typeof raw === "object" && !Array.isArray(raw)
+      ? raw
+      : {}) as Record<string, unknown>;
+    const item: ImportRow = {
+      name: pickText(row.name, 120),
+      email: pickText(row.email, 200),
+      phone: pickText(row.phone, 40),
+      positionTitle: pickText(row.positionTitle, 120),
+      experience: pickText(row.experience, MAX_TEXT),
+      motivation: pickText(row.motivation, MAX_TEXT),
+    };
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (!item.name) errors.push("Nama kosong.");
+    if (!item.email) {
+      errors.push("Email kosong.");
+    } else if (!EMAIL_RE.test(item.email)) {
+      errors.push(`Email tidak valid: ${item.email}`);
+    }
+    if (!item.phone) errors.push("Nomor telepon/WA kosong.");
+    if (!item.positionTitle) {
+      errors.push("Posisi kosong.");
+    } else if (!byTitle.has(item.positionTitle.toLowerCase())) {
+      errors.push(`Posisi tidak ditemukan: ${item.positionTitle}`);
+    }
+
+    let duplicate = false;
+    const position = byTitle.get(item.positionTitle.toLowerCase());
+    if (position && item.email && EMAIL_RE.test(item.email)) {
+      const existing = await db.application.findFirst({
+        where: { email: item.email, positionId: position.id, deletedAt: null },
+        select: { id: true },
+      });
+      if (existing) {
+        duplicate = true;
+        warnings.push(
+          `Duplikat: email ini sudah melamar posisi ${position.title} — baris akan dilewati saat impor.`,
+        );
+      }
+    }
+
+    preview.push({
+      row: index + 1,
+      name: item.name,
+      email: item.email,
+      phone: item.phone,
+      positionTitle: item.positionTitle,
+      experience: item.experience,
+      motivation: item.motivation,
+      positionFound: position !== undefined,
+      duplicate,
+      errors,
+      warnings,
+    });
+  }
+  return preview;
 }
 
 export async function POST(req: NextRequest) {
@@ -308,6 +409,21 @@ export async function POST(req: NextRequest) {
       }
       if (parsedRows.length > MAX_ROWS) {
         return NextResponse.json({ error: `Maksimal ${MAX_ROWS} baris per impor.` }, { status: 400 });
+      }
+
+      // XL-BE — mode pratinjau: validasi saja, tidak menyimpan apa pun.
+      const mode = String(form.get("mode") ?? "").trim().toLowerCase();
+      if (mode === "preview") {
+        const rows = await buildPreviewRows(parsedRows);
+        const validCount = rows.filter((r) => r.errors.length === 0).length;
+        return NextResponse.json({
+          ok: true,
+          preview: true,
+          totalRows: rows.length,
+          validCount,
+          issueCount: rows.length - validCount,
+          rows,
+        });
       }
 
       const { created, skipped } = await processImportRows(parsedRows, session.name);

@@ -358,13 +358,7 @@ export async function GET(req: NextRequest) {
           offerStatus: true,
         },
       });
-      const interviewDone = await db.interview.groupBy({
-        by: ["applicationId"],
-        where: { status: "COMPLETED", application: baseWhere },
-        _count: { _all: true },
-      });
-      const interviewDoneByApp = new Set(interviewDone.map((g) => g.applicationId));
-      // Wawancara selesai per posisi butuh relasi — ambil ringan.
+      // Wawancara selesai per posisi — ambil ringan dengan relasi minimal.
       const interviewsForCount = await db.interview.findMany({
         where: { status: "COMPLETED", application: baseWhere },
         select: { applicationId: true, application: { select: { positionId: true } } },
@@ -374,7 +368,6 @@ export async function GET(req: NextRequest) {
         const pid = iv.application?.positionId ?? "(tanpa)";
         interviewDoneByPosition.set(pid, (interviewDoneByPosition.get(pid) ?? 0) + 1);
       }
-      void interviewDoneByApp;
 
       type PosStat = {
         total: number;
@@ -392,7 +385,7 @@ export async function GET(req: NextRequest) {
         funnel: Map<string, number>;
       };
       const stats = new Map<string, PosStat>();
-      const ensure = (pid: string, title: string): PosStat => {
+      const ensure = (pid: string): PosStat => {
         let s = stats.get(pid);
         if (!s) {
           s = {
@@ -412,20 +405,18 @@ export async function GET(req: NextRequest) {
           };
           stats.set(pid, s);
         }
-        void title;
         return s;
       };
 
       const positionById = new Map(positions.map((p) => [p.id, p]));
       const stageListByPosition = new Map<string, string[]>();
       for (const p of positions) {
-        stageListByPosition.set(p.id, stagesForPosition((p as { stages: string }).stages).map((s) => stageLabel(s)));
+        stageListByPosition.set(p.id, stagesForPosition(p.stages).map((s) => stageLabel(s)));
       }
 
       for (const row of rows) {
         const pid = row.positionId ?? "(tanpa)";
-        const title = row.positionId ? (positionById.get(row.positionId)?.title ?? "(posisi terhapus)") : "(tanpa posisi)";
-        const s = ensure(pid, title);
+        const s = ensure(pid);
         s.total += 1;
         if (row.status === "ACCEPTED") s.accepted += 1;
         if (row.status === "REJECTED") s.rejected += 1;
