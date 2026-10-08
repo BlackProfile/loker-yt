@@ -1422,6 +1422,862 @@ function AutoBackupCard() {
   );
 }
 
+/* --------------------- Excel & Pendataan (XL-FE) --------------------- */
+
+// Tipe pratinjau impor lamaran — POST /api/admin/import-applications dengan
+// multipart field mode=preview (commit memakai bentuk lama).
+type ImportPreviewRow = {
+  row: number;
+  name: string;
+  email: string;
+  phone: string;
+  positionTitle: string;
+  experience: string;
+  motivation: string;
+  positionFound: boolean;
+  duplicate: boolean;
+  errors: string[];
+  warnings: string[];
+};
+
+type ImportPreviewResponse = {
+  ok: true;
+  preview: true;
+  totalRows: number;
+  validCount: number;
+  issueCount: number;
+  rows: ImportPreviewRow[];
+};
+
+// Tipe pratinjau update status massal — POST /api/admin/applications/bulk-status
+// dengan multipart field mode=preview.
+type BulkStatusPreviewRow = {
+  row: number;
+  trackingCode: string;
+  newStageLabel: string;
+  note: string;
+  found: boolean;
+  currentStage: string;
+  valid: boolean;
+  error: string;
+};
+
+type BulkStatusPreviewResponse = {
+  ok: true;
+  preview: true;
+  totalRows: number;
+  validCount: number;
+  issueCount: number;
+  rows: BulkStatusPreviewRow[];
+};
+
+type BulkStatusCommitResponse = {
+  ok: true;
+  updated: number;
+  skipped: { row: number; reason: string }[];
+};
+
+const EXCEL_EXPORT_ENDPOINT = "/api/admin/applications/export";
+
+type ExcelExportEntity =
+  | "applications"
+  | "analytics"
+  | "template-import"
+  | "template-status"
+  | "form-answers";
+
+// Bentuk respons GET /api/admin/settings: nilai key-value laporan mingguan
+// bisa berada di dalam objek "settings" atau langsung di level atas.
+type WeeklyReportSettings = {
+  settings?: Record<string, string>;
+  weekly_report_enabled?: string;
+  weekly_report_chat_id?: string;
+};
+
+/** Escape teks agar aman disisipkan sebagai isi sel tabel HTML (clipboard). */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Unduh file Excel dari endpoint ekspor: fetch -> validasi respons -> blob ->
+ *  klik anchor sementara. Melempar Error (pesan dari body {error} bila ada)
+ *  agar pemanggil cukup memanggil reportError — UI tidak pernah crash. */
+async function downloadExportFile(url: string, fallbackName: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => null);
+    const detail =
+      data && typeof data === "object" && "error" in data
+        ? String((data as { error: unknown }).error)
+        : null;
+    throw new Error(detail ?? `Gagal mengunduh file Excel (${res.status}).`);
+  }
+  const blob = await res.blob();
+  const dispo = res.headers.get("Content-Disposition") ?? "";
+  const filename = dispo.match(/filename="([^"]+)"/)?.[1] ?? fallbackName;
+  const objUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objUrl);
+}
+
+/** Badge status satu baris pratinjau — dipakai kartu impor & update status massal. */
+function PreviewStatusBadge({
+  ok,
+  duplicate = false,
+  okLabel = "Siap",
+  issueLabel = "Masalah",
+}: {
+  ok: boolean;
+  duplicate?: boolean;
+  okLabel?: string;
+  issueLabel?: string;
+}) {
+  if (!ok) {
+    return (
+      <Badge className="border-transparent bg-rose-600 text-white hover:bg-rose-600">
+        {issueLabel}
+      </Badge>
+    );
+  }
+  if (duplicate) {
+    return (
+      <Badge
+        variant="outline"
+        className="border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
+      >
+        Duplikat
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="border-transparent bg-emerald-600 text-white hover:bg-emerald-600">
+      {okLabel}
+    </Badge>
+  );
+}
+
+/** Kartu "Excel & Pendataan": ekspor multi-entitas ke .xlsx dengan filter
+ *  bersama, jawaban form kustom per posisi, salin tabel ke clipboard, dan
+ *  pengaturan laporan Excel mingguan via Telegram. */
+function ExcelDataCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+
+  // --- Daftar posisi (filter + jawaban form kustom) ---
+  const [positions, setPositions] = useState<{ id: string; title: string }[]>([]);
+
+  // --- Filter bersama (dipertahankan antar tombol) ---
+  const [filterPositionId, setFilterPositionId] = useState("ALL");
+  const [filterStatus, setFilterStatus] = useState("ALL");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
+
+  // --- Unduh ekspor ---
+  const [downloading, setDownloading] = useState<ExcelExportEntity | null>(null);
+
+  // --- Jawaban form kustom ---
+  const [formPositionId, setFormPositionId] = useState("ALL");
+
+  // --- Salin sebagai tabel ---
+  const [copying, setCopying] = useState(false);
+
+  // --- Laporan mingguan via Telegram ---
+  const [weeklyEnabled, setWeeklyEnabled] = useState(false);
+  const [weeklyChatId, setWeeklyChatId] = useState("");
+  const [weeklySaving, setWeeklySaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    apiGet<{ id: string; title: string }[]>("/api/admin/positions")
+      .then((rows) => {
+        if (alive) setPositions((rows ?? []).map((p) => ({ id: p.id, title: p.title })));
+      })
+      .catch((err) => reportError(err));
+    return () => {
+      alive = false;
+    };
+  }, [reportError]);
+
+  // Muat nilai awal laporan mingguan — default mati bila belum pernah disimpan
+  // atau endpoint belum menyediakan key-nya.
+  useEffect(() => {
+    let alive = true;
+    apiGet<WeeklyReportSettings>("/api/admin/settings")
+      .then((data) => {
+        if (!alive) return;
+        const values = data.settings ?? data;
+        setWeeklyEnabled(String(values.weekly_report_enabled ?? "false") === "true");
+        setWeeklyChatId(
+          typeof values.weekly_report_chat_id === "string" ? values.weekly_report_chat_id : "",
+        );
+      })
+      .catch(() => {
+        // Diamkan: nilai default (false, chat default bot) tetap dipakai.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /** Query string filter bersama — dipakai tombol unduh pelamar & salin tabel. */
+  function buildFilterQuery(): string {
+    return buildQuery({
+      positionId: filterPositionId,
+      status: filterStatus,
+      from: filterFrom,
+      to: filterTo,
+    });
+  }
+
+  async function handleDownload(entity: ExcelExportEntity) {
+    if (downloading) return;
+    if (entity === "form-answers" && (formPositionId === "ALL" || formPositionId === "")) {
+      return;
+    }
+    setDownloading(entity);
+    try {
+      const sp = new URLSearchParams();
+      if (entity === "form-answers") {
+        sp.set("entity", "form-answers");
+        sp.set("positionId", formPositionId);
+      } else if (entity === "applications") {
+        sp.set("format", "xlsx");
+        sp.set("entity", "applications");
+        // Sertakan hanya filter yang benar-benar dipilih.
+        if (filterPositionId !== "ALL") sp.set("positionId", filterPositionId);
+        if (filterStatus !== "ALL") sp.set("status", filterStatus);
+        if (filterFrom) sp.set("from", filterFrom);
+        if (filterTo) sp.set("to", filterTo);
+      } else {
+        sp.set("entity", entity);
+      }
+      await downloadExportFile(
+        `${EXCEL_EXPORT_ENDPOINT}?${sp.toString()}`,
+        "lumina-export.xlsx",
+      );
+      toast.success("File Excel berhasil diunduh.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  /** Ambil daftar lamaran dengan filter yang sama, bentuk tabel HTML + TSV,
+   *  lalu salin ke clipboard (prioritas text/html, fallback TSV polos). */
+  async function handleCopyTable() {
+    if (copying) return;
+    setCopying(true);
+    try {
+      const apps = await apiGet<Application[]>(`/api/admin/applications${buildFilterQuery()}`);
+      const rows = Array.isArray(apps) ? apps : [];
+      const headers = ["Nama", "Email", "Telepon", "Posisi", "Tahap", "Skor AI", "Tanggal Lamar"];
+      const body = rows.map((a) => [
+        a.name ?? "",
+        a.email ?? "",
+        a.phone ?? "",
+        a.positionTitle ?? "",
+        STATUS_LABELS[a.status as ApplicationStatus] ?? (a.status ?? ""),
+        a.aiScore === null || a.aiScore === undefined ? "" : String(a.aiScore),
+        a.createdAt ? formatDateTime(a.createdAt) : "",
+      ]);
+      const tsv = [headers, ...body]
+        .map((cells) => cells.map((cell) => cell.replace(/[\t\r\n]+/g, " ")).join("\t"))
+        .join("\n");
+      const cellStyle = 'border:1px solid #d4d4d8;padding:6px 10px;';
+      const html = `<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px"><thead><tr>${headers
+        .map(
+          (head) =>
+            `<th style="${cellStyle}background:#f4f4f5;font-weight:bold;text-align:left">${escapeHtml(head)}</th>`,
+        )
+        .join("")}</tr></thead><tbody>${body
+        .map(
+          (cells) =>
+            `<tr>${cells
+              .map((cell) => `<td style="${cellStyle}">${escapeHtml(cell)}</td>`)
+              .join("")}</tr>`,
+        )
+        .join("")}</tbody></table>`;
+
+      const canWriteHtml =
+        typeof ClipboardItem !== "undefined" && !!navigator.clipboard?.write;
+      if (canWriteHtml) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([tsv], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        // Fallback lama: textarea tersembunyi + execCommand (tanpa format HTML).
+        const textarea = document.createElement("textarea");
+        textarea.value = tsv;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand("copy");
+        textarea.remove();
+        if (!copied) {
+          throw new Error("Gagal menyalin tabel ke clipboard.");
+        }
+      }
+      toast.success("Tabel disalin — tempel di Excel.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setCopying(false);
+    }
+  }
+
+  async function handleSaveWeekly() {
+    if (weeklySaving) return;
+    setWeeklySaving(true);
+    try {
+      await apiPost("/api/admin/settings", {
+        settings: {
+          weekly_report_enabled: weeklyEnabled ? "true" : "false",
+          weekly_report_chat_id: weeklyChatId.trim(),
+        },
+      });
+      toast.success("Pengaturan laporan mingguan disimpan.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setWeeklySaving(false);
+    }
+  }
+
+  return (
+    <DataCard
+      icon={FileSpreadsheet}
+      title="Excel & Pendataan"
+      description="Unduh data lamaran dan analitik ke Excel, jawaban form kustom, salin tabel siap tempel, atur laporan mingguan Telegram, serta unduh template impor/update status."
+    >
+      <div className="flex flex-col gap-4">
+        {/* Filter bersama — dipertahankan antar tombol */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="excel-filter-posisi">Posisi</Label>
+            <Select value={filterPositionId} onValueChange={setFilterPositionId}>
+              <SelectTrigger id="excel-filter-posisi" className="w-full">
+                <SelectValue placeholder="Semua Posisi" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Semua Posisi</SelectItem>
+                {positions.map((position) => (
+                  <SelectItem key={position.id} value={position.id}>
+                    {position.title || "(tanpa judul)"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="excel-filter-status">Tahap</Label>
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger id="excel-filter-status" className="w-full">
+                <SelectValue placeholder="Semua Tahap" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Semua Tahap</SelectItem>
+                {APPLICATION_STATUSES.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {STATUS_LABELS[status]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="excel-filter-dari">Dari Tanggal</Label>
+            <Input
+              id="excel-filter-dari"
+              type="date"
+              value={filterFrom}
+              onChange={(e) => setFilterFrom(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="excel-filter-sampai">Sampai Tanggal</Label>
+            <Input
+              id="excel-filter-sampai"
+              type="date"
+              value={filterTo}
+              onChange={(e) => setFilterTo(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Tombol unduh & salin */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <Button
+            onClick={() => void handleDownload("applications")}
+            disabled={downloading !== null || copying}
+            className="h-11 active:scale-[0.99] sm:h-9"
+          >
+            {downloading === "applications" ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Download className="size-4" aria-hidden="true" />
+            )}
+            Unduh Excel Pelamar
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void handleDownload("analytics")}
+            disabled={downloading !== null || copying}
+            className="h-11 active:scale-[0.99] sm:h-9"
+          >
+            {downloading === "analytics" ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <BarChart3 className="size-4" aria-hidden="true" />
+            )}
+            Unduh Rekap Analitik
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void handleCopyTable()}
+            disabled={downloading !== null || copying}
+            className="h-11 active:scale-[0.99] sm:h-9"
+          >
+            {copying ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Copy className="size-4" aria-hidden="true" />
+            )}
+            Salin sebagai Tabel
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void handleDownload("template-import")}
+            disabled={downloading !== null || copying}
+            className="h-11 active:scale-[0.99] sm:h-9"
+          >
+            {downloading === "template-import" ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FileDown className="size-4" aria-hidden="true" />
+            )}
+            Unduh Template Impor
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void handleDownload("template-status")}
+            disabled={downloading !== null || copying}
+            className="h-11 active:scale-[0.99] sm:h-9"
+          >
+            {downloading === "template-status" ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FileDown className="size-4" aria-hidden="true" />
+            )}
+            Unduh Template Update Status
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Filter posisi, tahap, dan tanggal berlaku untuk &quot;Unduh Excel Pelamar&quot; dan
+          &quot;Salin sebagai Tabel&quot;. Workbook pelamar berisi sheet Lamaran, Interview, dan
+          Ringkasan.
+        </p>
+
+        {/* Jawaban form kustom per posisi */}
+        <div className="flex flex-col gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Jawaban Form Kustom (Excel)</p>
+            <p className="text-xs text-muted-foreground">
+              Unduh jawaban form lamaran kustom satu posisi — kolom mengikuti pertanyaan form
+              builder posisi tersebut. Posisi tanpa form tidak punya file jawaban.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label htmlFor="excel-form-posisi">Posisi</Label>
+              <Select value={formPositionId} onValueChange={setFormPositionId}>
+                <SelectTrigger id="excel-form-posisi" className="w-full">
+                  <SelectValue placeholder="Pilih posisi" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Pilih posisi</SelectItem>
+                  {positions.map((position) => (
+                    <SelectItem key={position.id} value={position.id}>
+                      {position.title || "(tanpa judul)"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              variant="outline"
+              className="h-11 shrink-0 active:scale-[0.99] sm:h-9"
+              disabled={
+                formPositionId === "ALL" || formPositionId === "" || downloading !== null || copying
+              }
+              onClick={() => void handleDownload("form-answers")}
+            >
+              {downloading === "form-answers" ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Download className="size-4" aria-hidden="true" />
+              )}
+              Unduh Jawaban Form
+            </Button>
+          </div>
+        </div>
+
+        {/* Laporan mingguan via Telegram */}
+        <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Laporan Mingguan via Telegram</p>
+              <p className="text-xs text-muted-foreground">
+                Rekap Excel mingguan dikirim otomatis oleh bot Telegram ke chat admin.
+              </p>
+            </div>
+            <Switch
+              checked={weeklyEnabled}
+              disabled={!isOwner || weeklySaving}
+              onCheckedChange={setWeeklyEnabled}
+              aria-label="Kirim laporan Excel mingguan via Telegram"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="weekly-telegram-chat">Chat ID Telegram (opsional)</Label>
+            <Input
+              id="weekly-telegram-chat"
+              value={weeklyChatId}
+              onChange={(e) => setWeeklyChatId(e.target.value)}
+              placeholder="Kosongkan untuk memakai chat default bot"
+              disabled={!isOwner || weeklySaving}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              {!isOwner
+                ? "Hanya OWNER yang dapat mengubah pengaturan ini."
+                : "Simpan agar toggle dan Chat ID terbaru dipakai pada pengiriman berikutnya."}
+            </p>
+            <Button
+              variant="outline"
+              className="h-11 shrink-0 active:scale-[0.99] sm:h-9"
+              disabled={!isOwner || weeklySaving}
+              onClick={() => void handleSaveWeekly()}
+            >
+              {weeklySaving ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Save className="size-4" aria-hidden="true" />
+              )}
+              Simpan
+            </Button>
+          </div>
+        </div>
+      </div>
+    </DataCard>
+  );
+}
+
+/** Kartu "Update Status Massal (Excel)": unggah template yang sudah diisi,
+ *  pratinjau per baris (kode tracking ditemukan / tahap valid), lalu commit. */
+function BulkStatusCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+
+  const [templateDownloading, setTemplateDownloading] = useState(false);
+  const [bulkPreviewFile, setBulkPreviewFile] = useState<File | null>(null);
+  const [bulkPreview, setBulkPreview] = useState<BulkStatusPreviewResponse | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkCommitting, setBulkCommitting] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{
+    updated: number;
+    skipped: { row: number; reason: string }[];
+  } | null>(null);
+  const bulkInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleDownloadTemplate() {
+    if (templateDownloading) return;
+    setTemplateDownloading(true);
+    try {
+      await downloadExportFile(
+        `${EXCEL_EXPORT_ENDPOINT}?entity=template-status`,
+        "lumina-template-update-status.xlsx",
+      );
+      toast.success("Template update status berhasil diunduh.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setTemplateDownloading(false);
+    }
+  }
+
+  function clearBulkPreview() {
+    setBulkPreview(null);
+    setBulkPreviewFile(null);
+    if (bulkInputRef.current) bulkInputRef.current.value = "";
+  }
+
+  async function handleBulkPreview(file: File) {
+    if (bulkBusy) return;
+    if (!isOwner) {
+      toast.error("Update status massal hanya dapat dilakukan oleh OWNER dan HR.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Ukuran file melebihi batas 5 MB.");
+      return;
+    }
+    setBulkBusy(true);
+    setBulkResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("mode", "preview");
+      const res = await fetch("/api/admin/applications/bulk-status", {
+        method: "POST",
+        body: fd,
+      });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message =
+          data && typeof data === "object" && "error" in data
+            ? String((data as { error: unknown }).error)
+            : "Gagal membaca file update status.";
+        throw new Error(message);
+      }
+      setBulkPreviewFile(file);
+      setBulkPreview(data as BulkStatusPreviewResponse);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleBulkCommit() {
+    if (!bulkPreviewFile || !bulkPreview || bulkCommitting) return;
+    if (!isOwner || bulkPreview.validCount === 0) return;
+    setBulkCommitting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", bulkPreviewFile);
+      fd.append("mode", "commit");
+      const res = await fetch("/api/admin/applications/bulk-status", {
+        method: "POST",
+        body: fd,
+      });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message =
+          data && typeof data === "object" && "error" in data
+            ? String((data as { error: unknown }).error)
+            : "Gagal memperbarui status massal.";
+        throw new Error(message);
+      }
+      const result = data as BulkStatusCommitResponse;
+      const skipped = result.skipped ?? [];
+      setBulkResult({ updated: result.updated, skipped });
+      toast.success(`${result.updated} status lamaran diperbarui.`);
+      clearBulkPreview();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBulkCommitting(false);
+    }
+  }
+
+  return (
+    <DataCard
+      icon={Upload}
+      title="Update Status Massal (Excel)"
+      description="Pindahkan banyak pelamar ke tahap lain sekaligus: unduh template, isi kolom Kode Tracking, Tahap Baru, dan Catatan (opsional), unggah, pratinjau, lalu konfirmasi."
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">1. Unduh &amp; isi template</p>
+            <p className="text-xs text-muted-foreground">
+              Template berisi daftar kode tracking dan tahap yang berlaku. Isi kolom
+              &quot;Kode Tracking&quot;, &quot;Tahap Baru&quot;, dan &quot;Catatan (opsional)&quot;.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            className="h-11 shrink-0 active:scale-[0.99] sm:h-9"
+            disabled={templateDownloading || bulkBusy || bulkCommitting}
+            onClick={() => void handleDownloadTemplate()}
+          >
+            {templateDownloading ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FileDown className="size-4" aria-hidden="true" />
+            )}
+            Unduh Template
+          </Button>
+        </div>
+
+        <div className="flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">2. Unggah file &amp; pratinjau</p>
+            <p className="text-xs text-muted-foreground">
+              Unggah .xlsx atau .csv (maks 5 MB). Setiap baris diperiksa terlebih dahulu —
+              pratinjau menampilkan tahap saat ini dan masalahnya sebelum diterapkan.
+            </p>
+            {bulkPreviewFile ? (
+              <p className="mt-1 truncate text-xs font-medium text-rose-600 dark:text-rose-400">
+                File dipilih: {bulkPreviewFile.name} ({Math.max(1, Math.round(bulkPreviewFile.size / 1024))} KB)
+              </p>
+            ) : null}
+          </div>
+          <Button
+            variant="outline"
+            className="h-11 shrink-0 active:scale-[0.99] sm:h-9"
+            disabled={bulkBusy || bulkCommitting || templateDownloading || !isOwner}
+            onClick={() => bulkInputRef.current?.click()}
+          >
+            {bulkBusy ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FileSpreadsheet className="size-4" aria-hidden="true" />
+            )}
+            Pilih File
+          </Button>
+          <input
+            ref={bulkInputRef}
+            type="file"
+            accept=".xlsx,.csv"
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void handleBulkPreview(file);
+            }}
+          />
+        </div>
+
+        {!isOwner ? (
+          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+            <Info className="size-3.5 shrink-0" aria-hidden="true" />
+            Update status massal hanya dapat dilakukan oleh OWNER dan HR.
+          </p>
+        ) : null}
+
+        {bulkPreview ? (
+          <div className="flex flex-col gap-2 rounded-lg border p-3">
+            <p className="text-sm font-medium" aria-live="polite">
+              {bulkPreview.validCount} siap diperbarui, {bulkPreview.issueCount} bermasalah, total{" "}
+              {bulkPreview.totalRows} baris.
+            </p>
+            <div className="max-h-72 overflow-x-auto overflow-y-auto nice-scrollbar">
+              <Table className="text-xs">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">No.</TableHead>
+                    <TableHead className="whitespace-nowrap">Kode Tracking</TableHead>
+                    <TableHead className="whitespace-nowrap">Tahap Saat Ini</TableHead>
+                    <TableHead className="whitespace-nowrap">Tahap Baru</TableHead>
+                    <TableHead className="whitespace-nowrap">Status</TableHead>
+                    <TableHead>Pesan</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bulkPreview.rows.map((row) => (
+                    <TableRow key={row.row}>
+                      <TableCell className="font-mono">{row.row}</TableCell>
+                      <TableCell className="font-mono">{row.trackingCode || "-"}</TableCell>
+                      <TableCell>{row.currentStage || "-"}</TableCell>
+                      <TableCell className="font-medium">{row.newStageLabel || "-"}</TableCell>
+                      <TableCell>
+                        <PreviewStatusBadge ok={row.valid} okLabel="Valid" />
+                      </TableCell>
+                      <TableCell>
+                        {row.error ? (
+                          <span className="text-rose-600 dark:text-rose-400">{row.error}</span>
+                        ) : !row.found ? (
+                          <span className="text-amber-600 dark:text-amber-400">
+                            Kode tracking tidak ditemukan.
+                          </span>
+                        ) : row.note ? (
+                          <span className="text-muted-foreground">Catatan: {row.note}</span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                variant="outline"
+                className="h-11 active:scale-[0.99] sm:h-9"
+                disabled={bulkBusy || bulkCommitting}
+                onClick={clearBulkPreview}
+              >
+                Batal
+              </Button>
+              <Button
+                className="h-11 active:scale-[0.99] sm:h-9"
+                disabled={
+                  bulkBusy ||
+                  bulkCommitting ||
+                  bulkPreview.validCount === 0 ||
+                  !isOwner
+                }
+                onClick={() => void handleBulkCommit()}
+              >
+                {bulkCommitting ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <CheckCircle2 className="size-4" aria-hidden="true" />
+                )}
+                Konfirmasi Update ({bulkPreview.validCount})
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {bulkResult ? (
+          <div className="flex flex-col gap-2 rounded-lg border p-3 text-sm">
+            <p className="flex items-center gap-2 font-medium">
+              <CheckCircle2
+                className="size-4 text-emerald-600 dark:text-emerald-400"
+                aria-hidden="true"
+              />
+              {bulkResult.updated} status diperbarui
+              {bulkResult.skipped.length > 0
+                ? `, ${bulkResult.skipped.length} baris dilewati`
+                : ", tanpa baris yang dilewati"}
+              .
+            </p>
+            {bulkResult.skipped.length > 0 ? (
+              <ul className="list-inside list-disc space-y-0.5 text-xs text-muted-foreground">
+                {bulkResult.skipped.map((item) => (
+                  <li key={`${item.row}-${item.reason}`}>
+                    Baris {item.row + 1}: {item.reason}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </DataCard>
+  );
+}
+
 /* --------------------------------- Tab --------------------------------- */
 
 export function DataTab() {
