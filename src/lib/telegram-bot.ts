@@ -315,8 +315,8 @@ async function tgApiForm<T = unknown>(
   }
 }
 
-/** Kirim dokumen (byte buffer) ke chat dengan caption opsional. */
-async function tgSendDocument(
+/** Kirim dokumen (byte buffer) ke chat dengan caption opsional. XL-BE: diekspor untuk laporan Excel mingguan. */
+export async function tgSendDocument(
   token: string,
   chatId: number | string,
   buffer: Buffer,

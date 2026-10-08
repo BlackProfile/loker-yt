@@ -958,6 +958,20 @@ export type ParsedApplicationFilters = {
   valid: boolean;
 };
 
+/** XL-BE — Parse "YYYY-MM-DD" menjadi Date (endOfDay=true -> akhir hari 23:59:59.999). Gagal -> null. */
+function parseDateOnly(raw: string | null, endOfDay = false): Date | null {
+  if (!raw) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return endOfDay
+    ? new Date(year, month - 1, day, 23, 59, 59, 999)
+    : new Date(year, month - 1, day, 0, 0, 0, 0);
+}
+
 /**
  * Bangun where/orderBy untuk GET /api/admin/applications & /export dari query params:
  * status, positionId, q, ratingMin, tag, talentPool ("1"/"true"), hasInterview ("1"),
@@ -985,6 +999,17 @@ export function parseApplicationFilters(
 
   const positionId = searchParams.get("positionId");
   if (positionId) where.positionId = positionId;
+
+  // XL-BE — rentang tanggal daftar (dipakai export Excel): from & to (YYYY-MM-DD,
+  // inklusif; "to" mencakup sepanjang hari). Nilai tidak valid diabaikan senyap.
+  const fromDate = parseDateOnly(searchParams.get("from"));
+  const toDate = parseDateOnly(searchParams.get("to"), true);
+  if (fromDate || toDate) {
+    where.createdAt = {
+      ...(fromDate ? { gte: fromDate } : {}),
+      ...(toDate ? { lte: toDate } : {}),
+    };
+  }
 
   const q = searchParams.get("q")?.trim();
   if (q) {
