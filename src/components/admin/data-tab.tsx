@@ -2303,8 +2303,12 @@ export function DataTab() {
   } | null>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Impor dari file (CSV/Excel, NR-19-b) ---
-  const [importFileBusy, setImportFileBusy] = useState(false);
+  // --- Impor dari file (CSV/Excel, NR-19-b) — alur pratinjau dua langkah (XL-FE):
+  // pilih file -> mode=preview -> tabel pratinjau -> mode=commit ---
+  const [xlsxPreviewFile, setXlsxPreviewFile] = useState<File | null>(null);
+  const [xlsxPreview, setXlsxPreview] = useState<ImportPreviewResponse | null>(null);
+  const [xlsxPreviewing, setXlsxPreviewing] = useState(false);
+  const [xlsxCommitting, setXlsxCommitting] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Tutup rekrutmen ---
@@ -2429,8 +2433,8 @@ export function DataTab() {
     }
   }
 
-  async function handleImportFile(file: File) {
-    if (importFileBusy) return;
+  async function handleImportFilePreview(file: File) {
+    if (xlsxPreviewing) return;
     if (!isOwner) {
       toast.error("Impor lamaran hanya dapat dilakukan oleh OWNER dan HR.");
       return;
@@ -2439,11 +2443,48 @@ export function DataTab() {
       toast.error("Ukuran file melebihi batas 5 MB.");
       return;
     }
-    setImportFileBusy(true);
+    setXlsxPreviewing(true);
     setImportResult(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("mode", "preview");
+      const res = await fetch("/api/admin/import-applications", {
+        method: "POST",
+        body: fd,
+      });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message =
+          data && typeof data === "object" && "error" in data
+            ? String((data as { error: unknown }).error)
+            : "Gagal membaca file lamaran.";
+        throw new Error(message);
+      }
+      setXlsxPreviewFile(file);
+      setXlsxPreview(data as ImportPreviewResponse);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setXlsxPreviewing(false);
+    }
+  }
+
+  function clearImportFilePreview() {
+    setXlsxPreview(null);
+    setXlsxPreviewFile(null);
+    if (importFileInputRef.current) importFileInputRef.current.value = "";
+  }
+
+  async function handleImportFileCommit() {
+    if (!xlsxPreviewFile || !xlsxPreview || xlsxCommitting) return;
+    if (!isOwner || xlsxPreview.validCount === 0) return;
+    setXlsxCommitting(true);
+    try {
+      // Kirim ulang file yang sama dengan mode=commit (perilaku lama).
+      const fd = new FormData();
+      fd.append("file", xlsxPreviewFile);
+      fd.append("mode", "commit");
       const res = await fetch("/api/admin/import-applications", {
         method: "POST",
         body: fd,
@@ -2466,10 +2507,11 @@ export function DataTab() {
       toast.success(
         `${result.created} baris diimpor, ${result.skippedRows ?? skipped.length} dilewati.`,
       );
+      clearImportFilePreview();
     } catch (err) {
       reportError(err);
     } finally {
-      setImportFileBusy(false);
+      setXlsxCommitting(false);
     }
   }
 
@@ -2544,6 +2586,9 @@ export function DataTab() {
           </div>
         )}
       </DataCard>
+
+      {/* ---------------------- Excel & Pendataan (XL-FE) ---------------------- */}
+      <ExcelDataCard />
 
       {/* --------------------- Kesehatan Data (NR-41 G11) --------------------- */}
       <DataHealthCard />
