@@ -1486,12 +1486,11 @@ type ExcelExportEntity =
   | "template-status"
   | "form-answers";
 
-// Bentuk respons GET /api/admin/settings: nilai key-value laporan mingguan
-// bisa berada di dalam objek "settings" atau langsung di level atas.
+// Bentuk respons GET/PUT /api/admin/weekly-report (XL-BE) — pengaturan
+// laporan Excel mingguan via Telegram.
 type WeeklyReportSettings = {
-  settings?: Record<string, string>;
-  weekly_report_enabled?: string;
-  weekly_report_chat_id?: string;
+  enabled?: boolean;
+  chatId?: string;
 };
 
 /** Escape teks agar aman disisipkan sebagai isi sel tabel HTML (clipboard). */
@@ -1607,18 +1606,15 @@ function ExcelDataCard() {
     };
   }, [reportError]);
 
-  // Muat nilai awal laporan mingguan — default mati bila belum pernah disimpan
-  // atau endpoint belum menyediakan key-nya.
+  // Muat nilai awal laporan mingguan dari endpoint khusus (XL-BE) — default
+  // mati bila belum pernah disimpan atau endpoint belum siap.
   useEffect(() => {
     let alive = true;
-    apiGet<WeeklyReportSettings>("/api/admin/settings")
+    apiGet<WeeklyReportSettings>("/api/admin/weekly-report")
       .then((data) => {
         if (!alive) return;
-        const values = data.settings ?? data;
-        setWeeklyEnabled(String(values.weekly_report_enabled ?? "false") === "true");
-        setWeeklyChatId(
-          typeof values.weekly_report_chat_id === "string" ? values.weekly_report_chat_id : "",
-        );
+        setWeeklyEnabled(data.enabled === true);
+        setWeeklyChatId(typeof data.chatId === "string" ? data.chatId : "");
       })
       .catch(() => {
         // Diamkan: nilai default (false, chat default bot) tetap dipakai.
@@ -1743,11 +1739,9 @@ function ExcelDataCard() {
     if (weeklySaving) return;
     setWeeklySaving(true);
     try {
-      await apiPost("/api/admin/settings", {
-        settings: {
-          weekly_report_enabled: weeklyEnabled ? "true" : "false",
-          weekly_report_chat_id: weeklyChatId.trim(),
-        },
+      await apiPut("/api/admin/weekly-report", {
+        enabled: weeklyEnabled,
+        chatId: weeklyChatId.trim(),
       });
       toast.success("Pengaturan laporan mingguan disimpan.");
     } catch (err) {
