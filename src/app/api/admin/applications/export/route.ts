@@ -411,7 +411,16 @@ export async function GET(req: NextRequest) {
       const positionById = new Map(positions.map((p) => [p.id, p]));
       const stageListByPosition = new Map<string, string[]>();
       for (const p of positions) {
-        stageListByPosition.set(p.id, stagesForPosition(p.stages).map((s) => stageLabel(s)));
+        let rawStages: string[] | null = null;
+        try {
+          const parsedStages: unknown = JSON.parse(p.stages || "[]");
+          if (Array.isArray(parsedStages)) {
+            rawStages = parsedStages.filter((s): s is string => typeof s === "string");
+          }
+        } catch {
+          rawStages = null;
+        }
+        stageListByPosition.set(p.id, stagesForPosition(rawStages).map((s) => stageLabel(s)));
       }
 
       for (const row of rows) {

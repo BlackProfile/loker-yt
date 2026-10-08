@@ -133,7 +133,16 @@ async function validateRows(
           found = true;
           applicationId = application.id;
           currentStage = stageLabel(application.status.trim() || "NEW");
-          const stages = stagesForPosition(application.position?.stages ?? null);
+          let rawStages: string[] | null = null;
+          try {
+            const parsedStages: unknown = JSON.parse(application.position?.stages || "[]");
+            if (Array.isArray(parsedStages)) {
+              rawStages = parsedStages.filter((s): s is string => typeof s === "string");
+            }
+          } catch {
+            rawStages = null;
+          }
+          const stages = stagesForPosition(rawStages);
           targetStage = resolveStage(stages, raw.stage);
           if (!targetStage) {
             error = `Tahap "${raw.stage}" tidak ada pada posisi ${application.position?.title ?? "(tanpa posisi)"} (pilihan: ${stages.map((s) => stageLabel(s)).join(", ")})`;
