@@ -18,6 +18,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -32,9 +47,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Archive,
+  BarChart3,
   CheckCircle2,
+  Copy,
   DatabaseBackup,
   Download,
+  FileDown,
   FileSpreadsheet,
   FileUp,
   History,
@@ -54,7 +72,16 @@ import {
   Webhook,
 } from "lucide-react";
 import { toast } from "sonner";
-import { WEBHOOK_EVENTS, WEBHOOK_EVENT_LABELS, type DataHealthReport, type SiteContent } from "@/lib/types";
+import {
+  APPLICATION_STATUSES,
+  STATUS_LABELS,
+  WEBHOOK_EVENTS,
+  WEBHOOK_EVENT_LABELS,
+  type Application,
+  type ApplicationStatus,
+  type DataHealthReport,
+  type SiteContent,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { apiDelete, apiGet, apiPost, apiPut } from "./api";
 import { formatDateTime, formatRelative } from "./format";
