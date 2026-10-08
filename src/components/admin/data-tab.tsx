@@ -2831,13 +2831,19 @@ export function DataTab() {
                             <span className="text-muted-foreground">-</span>
                           ) : (
                             <ul className="space-y-0.5">
-                              {row.errors.map((error) => (
-                                <li key={error} className="text-rose-600 dark:text-rose-400">
+                              {row.errors.map((error, index) => (
+                                <li
+                                  key={`e-${row.row}-${index}`}
+                                  className="text-rose-600 dark:text-rose-400"
+                                >
                                   {error}
                                 </li>
                               ))}
-                              {row.warnings.map((warning) => (
-                                <li key={warning} className="text-amber-600 dark:text-amber-400">
+                              {row.warnings.map((warning, index) => (
+                                <li
+                                  key={`w-${row.row}-${index}`}
+                                  className="text-amber-600 dark:text-amber-400"
+                                >
                                   {warning}
                                 </li>
                               ))}
