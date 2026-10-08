@@ -2679,11 +2679,11 @@ export function DataTab() {
         )}
       </DataCard>
 
-      {/* ------------------------ Import Lamaran CSV ------------------------ */}
+      {/* -------------- Impor Lamaran Massal (CSV / Excel) — XL-FE -------------- */}
       <DataCard
         icon={FileSpreadsheet}
-        title="Impor Lamaran Massal (CSV)"
-        description="Tempel data CSV atau unggah file. Kolom: nama,email,telepon,posisi,experience,motivation (baris pertama = header; pemisah koma/semicolon dikenali otomatis)."
+        title="Impor Lamaran Massal (CSV / Excel)"
+        description="Tempel data CSV atau unggah file (.csv/.xlsx/.xls). File diperiksa dulu lewat pratinjau — baris bermasalah dan duplikat ditandai sebelum diimpor."
       >
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2746,30 +2746,35 @@ export function DataTab() {
             </Button>
           </div>
 
-          {/* Impor langsung dari file CSV/Excel (NR-19-b) — mode tempel tetap ada */}
+          {/* Impor langsung dari file CSV/Excel (NR-19-b) — pratinjau dua langkah (XL-FE) */}
           <div className="flex flex-col gap-2 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="text-sm font-medium">Impor dari File (CSV/Excel)</p>
               <p className="text-xs text-muted-foreground">
                 Unggah .csv, .xlsx, atau .xls (maks 5 MB). Kolom dikenali otomatis dari
                 header: nama, email, telepon/WA, posisi/lowongan, pengalaman,
-                motivasi/alasan.
+                motivasi/alasan. Pratinjau ditampilkan sebelum impor.
               </p>
+              {xlsxPreviewFile ? (
+                <p className="mt-1 truncate text-xs font-medium text-rose-600 dark:text-rose-400">
+                  File dipilih: {xlsxPreviewFile.name} ({Math.max(1, Math.round(xlsxPreviewFile.size / 1024))} KB)
+                </p>
+              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <Button
                 type="button"
                 variant="outline"
                 className="h-11 active:scale-[0.99] sm:h-9"
-                disabled={importFileBusy || importing || !isOwner}
+                disabled={xlsxPreviewing || xlsxCommitting || importing || !isOwner}
                 onClick={() => importFileInputRef.current?.click()}
               >
-                {importFileBusy ? (
+                {xlsxPreviewing ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 ) : (
                   <FileSpreadsheet className="size-4" aria-hidden="true" />
                 )}
-                Impor dari File
+                {xlsxPreview ? "Ganti File" : "Pilih File"}
               </Button>
               <input
                 ref={importFileInputRef}
@@ -2781,11 +2786,100 @@ export function DataTab() {
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   e.target.value = "";
-                  if (file) void handleImportFile(file);
+                  if (file) void handleImportFilePreview(file);
                 }}
               />
             </div>
           </div>
+
+          {/* Pratinjau impor file — ringkasan + tabel per baris */}
+          {xlsxPreview ? (
+            <div className="flex flex-col gap-2 rounded-lg border p-3">
+              <p className="text-sm font-medium" aria-live="polite">
+                {xlsxPreview.validCount} siap diimpor, {xlsxPreview.issueCount} bermasalah, total{" "}
+                {xlsxPreview.totalRows} baris.
+              </p>
+              <div className="max-h-72 overflow-x-auto overflow-y-auto nice-scrollbar">
+                <Table className="text-xs">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="whitespace-nowrap">No. Baris</TableHead>
+                      <TableHead className="whitespace-nowrap">Nama</TableHead>
+                      <TableHead className="whitespace-nowrap">Email</TableHead>
+                      <TableHead className="whitespace-nowrap">Posisi</TableHead>
+                      <TableHead className="whitespace-nowrap">Status</TableHead>
+                      <TableHead>Masalah / Catatan</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {xlsxPreview.rows.map((row) => (
+                      <TableRow key={row.row}>
+                        <TableCell className="font-mono">{row.row}</TableCell>
+                        <TableCell className="font-medium">{row.name || "-"}</TableCell>
+                        <TableCell className="whitespace-nowrap">{row.email || "-"}</TableCell>
+                        <TableCell>{row.positionTitle || "-"}</TableCell>
+                        <TableCell>
+                          <PreviewStatusBadge
+                            ok={row.errors.length === 0}
+                            duplicate={row.duplicate}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {row.errors.length === 0 &&
+                          row.warnings.length === 0 &&
+                          row.positionFound ? (
+                            <span className="text-muted-foreground">-</span>
+                          ) : (
+                            <ul className="space-y-0.5">
+                              {row.errors.map((error) => (
+                                <li key={error} className="text-rose-600 dark:text-rose-400">
+                                  {error}
+                                </li>
+                              ))}
+                              {row.warnings.map((warning) => (
+                                <li key={warning} className="text-amber-600 dark:text-amber-400">
+                                  {warning}
+                                </li>
+                              ))}
+                              {!row.positionFound ? (
+                                <li className="text-amber-600 dark:text-amber-400">
+                                  Posisi tidak ditemukan di daftar lowongan.
+                                </li>
+                              ) : null}
+                            </ul>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  className="h-11 active:scale-[0.99] sm:h-9"
+                  disabled={xlsxPreviewing || xlsxCommitting}
+                  onClick={clearImportFilePreview}
+                >
+                  Batal
+                </Button>
+                <Button
+                  className="h-11 active:scale-[0.99] sm:h-9"
+                  disabled={
+                    xlsxPreviewing || xlsxCommitting || xlsxPreview.validCount === 0 || !isOwner
+                  }
+                  onClick={() => void handleImportFileCommit()}
+                >
+                  {xlsxCommitting ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <CheckCircle2 className="size-4" aria-hidden="true" />
+                  )}
+                  Konfirmasi Impor ({xlsxPreview.validCount} siap)
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {!isOwner ? (
             <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
@@ -2817,6 +2911,9 @@ export function DataTab() {
           </div>
         ) : null}
       </DataCard>
+
+      {/* ------------------ Update Status Massal (Excel) — XL-FE ------------------ */}
+      <BulkStatusCard />
 
       {/* ------------------------ Mode Tutup Rekrutmen ------------------------ */}
       <DataCard
