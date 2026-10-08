@@ -33,6 +33,7 @@ import { pushNotification, queueEmail, sendSystemEvent, getSiteUrl } from "@/lib
 import type { TelegramButton } from "@/lib/notify";
 import { ensureMonthlyReport, previousMonthKey } from "@/lib/monthly-report";
 import { readReportEmailSchedule, runScheduledReportEmail } from "@/lib/report-email";
+import { runWeeklyExcelReport } from "@/lib/weekly-report";
 import {
   runTelegramActivityWatch,
   runTelegramCandidateInterviewReminders,
@@ -593,6 +594,17 @@ export async function POST(req: NextRequest) {
       // diam
     }
 
+    // 24b) XL-BE — Laporan Excel mingguan via Telegram: Senin 08:00-08:59 waktu
+    //      server bila Setting "weekly_report".enabled (dedupe per hari). Kirim
+    //      workbook XLSX ringkasan 7 hari ke chat admin aktif / chat khusus.
+    let weeklyExcelReport = 0;
+    try {
+      const excelReport = await runWeeklyExcelReport();
+      weeklyExcelReport = excelReport.sent;
+    } catch {
+      // diam — laporan Excel tidak boleh menggagalkan cron
+    }
+
     // 25) NR-24 — "followupBell": pengingat tindak lanjut jatuh tempo di lonceng
     //     admin. Lamaran deletedAt null dengan snoozeUntil <= now (waktu server,
     //     konsisten dengan job lain di cron ini) mendapat NotificationItem in-app
@@ -747,6 +759,7 @@ export async function POST(req: NextRequest) {
       telegramCandOffer,
       emailReportWeekly,
       emailReportMonthly,
+      weeklyExcelReport,
       followupBell,
       probationDue,
     });
