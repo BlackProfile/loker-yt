@@ -2558,6 +2558,98 @@ async function performStageChange(
 
 /* --------------------------------- Digest pagi --------------------------------- */
 
+/* --- Task 4-a: satu kalimat insight AI untuk isi digest pagi --- */
+
+type DigestInsightStats = {
+  newCount24h: number;
+  topPosition: string | null;
+  interviewCountToday: number;
+  pendingOfferCount: number;
+};
+
+/**
+ * Statistik cepat untuk insight digest: lamaran baru 24 jam terakhir (plus posisi
+ * terbanyak dilamar), wawancara hari ini, dan penawaran yang masih menunggu jawaban.
+ */
+async function collectDigestInsightStats(
+  dayStart: Date,
+  dayEnd: Date,
+): Promise<DigestInsightStats> {
+  const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [newCount24h, topGroups, interviewCountToday, pendingOfferCount] = await Promise.all([
+    db.application.count({ where: { deletedAt: null, createdAt: { gte: last24h } } }),
+    db.application.groupBy({
+      by: ["positionId"],
+      where: { deletedAt: null, createdAt: { gte: last24h }, positionId: { not: null } },
+      _count: { _all: true },
+      orderBy: { _count: { positionId: "desc" } },
+      take: 1,
+    }),
+    db.interview.count({
+      where: {
+        scheduledAt: { gte: dayStart, lt: dayEnd },
+        status: { in: ["SCHEDULED", "CONFIRMED"] },
+      },
+    }),
+    db.application.count({ where: { deletedAt: null, offerStatus: "PENDING" } }),
+  ]);
+  let topPosition: string | null = null;
+  const topPositionId = topGroups[0]?.positionId ?? null;
+  if (topPositionId) {
+    const position = await db.position.findUnique({
+      where: { id: topPositionId },
+      select: { title: true },
+    });
+    topPosition = position?.title ?? null;
+  }
+  return { newCount24h, topPosition, interviewCountToday, pendingOfferCount };
+}
+
+/**
+ * Hasilkan SATU kalimat insight AI (bahasa Indonesia formal, maks 160 char) dari
+ * statistik rekrutmen cepat via LLM. Dibatasi Promise.race 15 detik + try/catch —
+ * kegagalan apa pun mengembalikan null sehingga baris "Insight:" dilewati dan
+ * alur digest TIDAK berubah sama sekali.
+ */
+async function buildDigestInsightLine(dayStart: Date, dayEnd: Date): Promise<string | null> {
+  try {
+    const stats = await collectDigestInsightStats(dayStart, dayEnd);
+    const parts: string[] = [`${stats.newCount24h} lamaran baru dalam 24 jam terakhir`];
+    if (stats.topPosition) parts.push(`posisi paling banyak dilamar: ${stats.topPosition}`);
+    parts.push(`${stats.interviewCountToday} wawancara terjadwal hari ini`);
+    parts.push(`${stats.pendingOfferCount} penawaran menunggu jawaban kandidat`);
+    const userPrompt =
+      `Data rekrutmen Lumina Studio: ${parts.join(", ")}. ` +
+      "Tulis TEPAT SATU kalimat insight ringkas dan objektif untuk manajer HR. " +
+      "Bahasa Indonesia formal, maksimal 160 karakter, tanpa awalan dan tanpa tanda kutip.";
+    const completion = await Promise.race([
+      withZaiRetry((client) =>
+        client.chat.completions.create({
+          messages: [
+            {
+              role: "assistant",
+              content:
+                "Kamu adalah asisten HR studio konten kreator. Jawab HANYA satu kalimat bahasa Indonesia formal, maksimal 160 karakter, tanpa tanda kutip dan tanpa teks lain.",
+            },
+            { role: "user", content: userPrompt },
+          ],
+          thinking: { type: "disabled" },
+        }),
+      ),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
+    ]);
+    const raw = (completion?.choices?.[0]?.message?.content ?? "").trim();
+    if (!raw) return null;
+    const clean = raw
+      .replace(/^["\u201c\u201d']+|["\u201c\u201d']+$/g, "")
+      .replace(/\s+/g, " ")
+      .slice(0, 160);
+    return clean ? `Insight: ${clean}` : null;
+  } catch {
+    return null; // gagal = baris dilewati, digest tetap normal
+  }
+}
+
 /**
  * Digest pagi 07.00 WIB — dipanggil cron reminders tiap menit; internal idempoten
  * (sekali per hari, dicatat di Setting "site".telegramLastDigest). force=true untuk
@@ -2627,6 +2719,9 @@ export async function runTelegramDigest(force = false): Promise<{ sent: number; 
     .filter((r) => r.remaining <= 1)
     .slice(0, 5);
 
+  // Task 4-a — satu kalimat insight AI (gagal = baris dilewati tanpa mengubah alur digest).
+  const insightLine = await buildDigestInsightLine(dayStart, dayEnd);
+
   const lines: string[] = [
     `Digest Pagi Lumina Studio`,
     dayStart.toLocaleDateString("id-ID", { timeZone: "Asia/Bangkok", weekday: "long", day: "numeric", month: "long", year: "numeric" }),
@@ -2642,6 +2737,8 @@ export async function runTelegramDigest(force = false): Promise<{ sent: number; 
   for (const item of tight) {
     lines.push(`   ${item.title} — sisa ${Math.max(item.remaining, 0)}`);
   }
+  // Task 4-a — baris insight AI ditambahkan sebagai bagian isi digest.
+  if (insightLine) lines.push("", insightLine);
   // Notifikasi yang ditahan mode tenang semalam (dirangkum sekali, lalu direset).
   const quietHeld = typeof site.telegramQuietCount === "number" ? site.telegramQuietCount : 0;
   if (quietHeld > 0) {
