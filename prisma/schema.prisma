@@ -32,109 +32,109 @@ model AdminUser {
   assignedPositions String  @default("[]") // JSON string[] positionId — scope kandidat untuk HR (kosong = semua)
 
   // Alur undangan admin (set sandi via tautan email)
-  inviteToken       String?  @unique // token undangan aktif — null = tidak ada undangan
-  inviteExpiresAt   DateTime? // kedaluwarsa undangan (48 jam sejak dibuat)
+  inviteToken     String?   @unique // token undangan aktif — null = tidak ada undangan
+  inviteExpiresAt DateTime? // kedaluwarsa undangan (48 jam sejak dibuat)
 }
 
 // Posisi lowongan yang dibuka — v3: fitur lengkap per lowongan
 model Position {
-  id           String        @id @default(cuid())
-  title        String
-  slug         String?       @unique // untuk URL deep link /?posisi=slug
-  department   String        @default("Umum")
-  type         String        @default("Remote")
-  location     String        @default("Remote")
-  description  String
+  id          String  @id @default(cuid())
+  title       String
+  slug        String? @unique // untuk URL deep link /?posisi=slug
+  department  String  @default("Umum")
+  type        String  @default("Remote")
+  location    String  @default("Remote")
+  description String
 
   // Mode kerja & lokasi terstruktur (fitur non-remote)
-  workMode       String  @default("REMOTE") // REMOTE | ONSITE | HYBRID
+  workMode       String        @default("REMOTE") // REMOTE | ONSITE | HYBRID
   city           String? // kota kerja (untuk ONSITE/HYBRID)
   address        String? // alamat kantor lengkap (ONSITE/HYBRID)
   mapsUrl        String? // tautan Google Maps lokasi kantor
   workHours      String? // mis. "Senin-Jumat, 09.00-18.00 WIB"
-  shiftSystem    String  @default("NONE") // NONE | FIXED | ROTATING
-  facilities     String  @default("[]") // JSON string[] fasilitas (parkir, makan, transport)
+  shiftSystem    String        @default("NONE") // NONE | FIXED | ROTATING
+  facilities     String        @default("[]") // JSON string[] fasilitas (parkir, makan, transport)
   dailySlotQuota Int? // kuota slot wawancara on-site per hari (null = tanpa batas)
-  requirements String        @default("[]") // JSON string[]
-  isActive     Boolean       @default(true)
-  closesAt     DateTime? // auto-tutup setelah tanggal ini (opsional)
-  order        Int           @default(0)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  applications Application[]
+  requirements   String        @default("[]") // JSON string[]
+  isActive       Boolean       @default(true)
+  closesAt       DateTime? // auto-tutup setelah tanggal ini (opsional)
+  order          Int           @default(0)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  applications   Application[]
 
   // Tampilan & konten per lowongan
-  coverFileId  String?
-  coverFile    FileAsset?    @relation("coverFile", fields: [coverFileId], references: [id], onDelete: SetNull)
-  salaryText   String? // teks bebas, mis. "Rp 3-5 juta/bulan"
-  salaryVisible Boolean      @default(false)
-  benefits     String        @default("[]") // JSON string[] URL contoh karya (YouTube/TikTok/IG)
-  examples     String        @default("[]") // JSON string[]
-  urgent       Boolean       @default(false) // badge "Urgent"
-  featured     Boolean       @default(false) // pin di urutan atas
+  coverFileId   String?
+  coverFile     FileAsset? @relation("coverFile", fields: [coverFileId], references: [id], onDelete: SetNull)
+  salaryText    String? // teks bebas, mis. "Rp 3-5 juta/bulan"
+  salaryVisible Boolean    @default(false)
+  benefits      String     @default("[]") // JSON string[] URL contoh karya (YouTube/TikTok/IG)
+  examples      String     @default("[]") // JSON string[]
+  urgent        Boolean    @default(false) // badge "Urgent"
+  featured      Boolean    @default(false) // pin di urutan atas
 
   // Formulir & screening per lowongan
   screeningQuestions String  @default("[]") // JSON {id,label,required}[]
-  requireCv    Boolean       @default(false)
-  requireIntro Boolean       @default(false)
-  requirePortfolio Boolean   @default(false)
+  requireCv          Boolean @default(false)
+  requireIntro       Boolean @default(false)
+  requirePortfolio   Boolean @default(false)
   // NR-22 — sembunyikan slot opsional di wizard klasik (mis. supir/pembantu
   // tidak perlu CV/intro/portofolio/sosmed). Bidang wajib selalu menang.
   showCvField        Boolean @default(true) // tampilkan unggah CV (opsional)
   showIntroField     Boolean @default(true) // tampilkan unggah audio/video perkenalan (opsional)
   showPortfolioField Boolean @default(true) // tampilkan input link portofolio
   showSocialField    Boolean @default(true) // tampilkan input link sosial media
-  customDocs   String        @default("[]") // JSON string[] label dokumen wajib tambahan dari pelamar
-  maxApplicants Int? // kuota pelamar; null = tanpa kuota
-  applyOpen    Boolean       @default(true) // formulir lamaran posisi ini buka/tutup (dikendalikan per posisi)
+  customDocs         String  @default("[]") // JSON string[] label dokumen wajib tambahan dari pelamar
+  maxApplicants      Int? // kuota pelamar; null = tanpa kuota
+  applyOpen          Boolean @default(true) // formulir lamaran posisi ini buka/tutup (dikendalikan per posisi)
   // NR-24 — kolom opsional ekspektasi gaji di wizard (bisa disembunyikan per posisi)
   showExpectedSalary Boolean @default(true)
   // NR-32 — batas umur minimum pelamar (tahun, opsional) — peringatan halus di wizard
-  minAge      Int?
-  formSchema   String? // JSON FormSchema (Form Builder) — null = mode klasik (screeningQuestions/customDocs)
+  minAge             Int?
+  formSchema         String? // JSON FormSchema (Form Builder) — null = mode klasik (screeningQuestions/customDocs)
 
   // Publikasi & jadwal
-  publishAt    DateTime? // tayang otomatis setelah tanggal ini (terjadwal)
+  publishAt DateTime? // tayang otomatis setelah tanggal ini (terjadwal)
 
   // Pipeline & otomasi per lowongan
-  stages               String  @default("[]") // JSON string[]; [] = pipeline default (5 status bawaan)
-  stageCategories      String  @default("{}") // JSON {"tahap kustom": "REVIEW"|"INTERVIEW"|"ACCEPTED"|"REJECTED"}
-  stageNotes           String? // JSON {"tahap": "penjelasan untuk pelamar di halaman status"} — override teks bawaan
-  stageWipLimits       String? // JSON {"tahap": maxKandidat} — batas kapasitas per tahap pipeline (null = tanpa batas)
-  aiCriteria           String? // kriteria AI khusus posisi (pelengkap prompt screening)
-  autoShortlistScore   Int? // skor AI minimal untuk auto-shortlist
-  autoShortlistStage   String? // tahap tujuan auto-shortlist (harus ada di stages posisi)
-  applyTemplate        String? // template pesan konfirmasi lamaran ({nama},{posisi},{kode})
-  acceptTemplate       String? // template pesan diterima
-  rejectTemplate       String? // template pesan ditolak
-  assignmentTitle      String? // tes/brief untuk pelamar posisi ini
-  assignmentUrl        String?
-  assignmentNote       String?
+  stages             String  @default("[]") // JSON string[]; [] = pipeline default (5 status bawaan)
+  stageCategories    String  @default("{}") // JSON {"tahap kustom": "REVIEW"|"INTERVIEW"|"ACCEPTED"|"REJECTED"}
+  stageNotes         String? // JSON {"tahap": "penjelasan untuk pelamar di halaman status"} — override teks bawaan
+  stageWipLimits     String? // JSON {"tahap": maxKandidat} — batas kapasitas per tahap pipeline (null = tanpa batas)
+  aiCriteria         String? // kriteria AI khusus posisi (pelengkap prompt screening)
+  autoShortlistScore Int? // skor AI minimal untuk auto-shortlist
+  autoShortlistStage String? // tahap tujuan auto-shortlist (harus ada di stages posisi)
+  applyTemplate      String? // template pesan konfirmasi lamaran ({nama},{posisi},{kode})
+  acceptTemplate     String? // template pesan diterima
+  rejectTemplate     String? // template pesan ditolak
+  assignmentTitle    String? // tes/brief untuk pelamar posisi ini
+  assignmentUrl      String?
+  assignmentNote     String?
 
   // Evaluasi & kolaborasi tim
-  rubricCriteria     String  @default("[]") // JSON string[] kriteria penilaian per lowongan
-  checklistTemplate  String  @default("[]") // JSON string[] checklist evaluasi
-  noteTemplates      String  @default("[]") // JSON string[] template catatan admin
-  views              Int     @default(0) // jumlah view dialog detail (publik)
+  rubricCriteria    String @default("[]") // JSON string[] kriteria penilaian per lowongan
+  checklistTemplate String @default("[]") // JSON string[] checklist evaluasi
+  noteTemplates     String @default("[]") // JSON string[] template catatan admin
+  views             Int    @default(0) // jumlah view dialog detail (publik)
 
   // Wawancara per lowongan (Zoom/Google Meet/onsite)
-  interviewMode      String  @default("ONLINE") // mode default: ONLINE | ONSITE
-  interviewPlatform  String  @default("GOOGLE_MEET") // platform default: GOOGLE_MEET | ZOOM | MICROSOFT_TEAMS | WHATSAPP | TELEPON | LAINNYA
-  interviewDuration  Int     @default(45) // durasi default (menit)
-  interviewCriteria  String  @default("[]") // JSON string[] kriteria scorecard wawancara
+  interviewMode            String  @default("ONLINE") // mode default: ONLINE | ONSITE
+  interviewPlatform        String  @default("GOOGLE_MEET") // platform default: GOOGLE_MEET | ZOOM | MICROSOFT_TEAMS | WHATSAPP | TELEPON | LAINNYA
+  interviewDuration        Int     @default(45) // durasi default (menit)
+  interviewCriteria        String  @default("[]") // JSON string[] kriteria scorecard wawancara
   interviewCriteriaWeights String? // JSON {[kriteria]: bobot 0-100} — scorecard berbobot; null = bobot merata
-  interviewInviteTemplate String? // template pesan undangan ({nama},{posisi},{tanggal},{jam},{link},{mode})
-  offerTemplate      String? // template pesan penawaran ({nama},{posisi},{gaji},{tanggal},{deadline})
-  welcomeTemplate    String? // template pesan selamat datang ({nama},{posisi},{tanggal})
+  interviewInviteTemplate  String? // template pesan undangan ({nama},{posisi},{tanggal},{jam},{link},{mode})
+  offerTemplate            String? // template pesan penawaran ({nama},{posisi},{gaji},{tanggal},{deadline})
+  welcomeTemplate          String? // template pesan selamat datang ({nama},{posisi},{tanggal})
 
   // Offer & onboarding per lowongan
-  probationMonths    Int     @default(3) // lama masa percobaan (bulan)
-  onboardingDocs     String  @default("[]") // JSON string[] dokumen wajib onboarding
-  reapplyCooldownDays Int    @default(0) // jeda minimal lamar ulang setelah ditolak (hari); 0 = bebas
-  autoCloseOnHired   Boolean @default(true) // tandai kuota terpenuhi otomatis saat kandidat diterima
+  probationMonths     Int     @default(3) // lama masa percobaan (bulan)
+  onboardingDocs      String  @default("[]") // JSON string[] dokumen wajib onboarding
+  reapplyCooldownDays Int     @default(0) // jeda minimal lamar ulang setelah ditolak (hari); 0 = bebas
+  autoCloseOnHired    Boolean @default(true) // tandai kuota terpenuhi otomatis saat kandidat diterima
 
   // NR-40 — pipeline lengkap: ambang aging & template onboarding per posisi
-  agingWarnDays     Int? // hari di tahap sebelum kartu kanban dianggap "mengendap" (null = 7)
+  agingWarnDays      Int? // hari di tahap sebelum kartu kanban dianggap "mengendap" (null = 7)
   onboardingTemplate String? // JSON {label,owner?,offsetDays?}[] rencana onboarding bawaan — terpasang otomatis saat offer diterima
 
   // Rentang gaji wajar (validasi offer) — angka bulanan
@@ -206,7 +206,7 @@ model Application {
   utmCampaign      String?
   screeningAnswers String? // JSON {questionId: jawaban}
   rubricScores     String? // JSON {kriteria: 1-5}
-  checklistState   String  @default("[]") // JSON string[] item checklist yang dicentang
+  checklistState   String     @default("[]") // JSON string[] item checklist yang dicentang
   cvFileId         String?
   cvFile           FileAsset? @relation("cvFile", fields: [cvFileId], references: [id], onDelete: SetNull)
   introFileId      String?
@@ -214,9 +214,9 @@ model Application {
   extraDocs        String     @default("[]") // JSON {label,filename,fileId}[] dokumen wajib tambahan yang diunggah pelamar
 
   // Penolakan terstruktur (alasan + feedback ke pelamar)
-  rejectionReason  String? // KUALIFIKASI | PENGALAMAN | PORTOFOLIO | KUOTA | TIDAK_HADIR | MENARIK_DIRI | TIDAK_RESPON | LAINNYA
-  rejectionNote    String? // catatan/feedback penolakan (tampil ke pelamar bila mode feedback)
-  rejectedAt       DateTime?
+  rejectionReason String? // KUALIFIKASI | PENGALAMAN | PORTOFOLIO | KUOTA | TIDAK_HADIR | MENARIK_DIRI | TIDAK_RESPON | LAINNYA
+  rejectionNote   String? // catatan/feedback penolakan (tampil ke pelamar bila mode feedback)
+  rejectedAt      DateTime?
 
   // Penawaran (offer)
   offerStatus        String? // PENDING | ACCEPTED | DECLINED | EXPIRED; null = belum ada offer
@@ -230,17 +230,17 @@ model Application {
   offerDeclineReason String?
 
   // Persetujuan offer dua lapis (HR mengajukan -> OWNER menyetujui -> terkirim)
-  offerApprovalState String?    // null = alur approval mati/dioperasikan OWNER | PENDING | APPROVED | REJECTED
-  offerRequestedBy   String?    // nama admin pengaju (HR)
+  offerApprovalState String? // null = alur approval mati/dioperasikan OWNER | PENDING | APPROVED | REJECTED
+  offerRequestedBy   String? // nama admin pengaju (HR)
   offerRequestedAt   DateTime?
-  offerReviewedBy    String?    // nama OWNER yang menyetujui/menolak
+  offerReviewedBy    String? // nama OWNER yang menyetujui/menolak
   offerReviewedAt    DateTime?
-  offerReviewNote    String?    // catatan OWNER saat menyetujui/menolak
+  offerReviewNote    String? // catatan OWNER saat menyetujui/menolak
 
   // Onboarding setelah diterima
-  hiredAt          DateTime? // saat pelamar menerima penawaran
-  probationEnd     DateTime? // akhir masa percobaan
-  onboardingDocs   String    @default("[]") // JSON {id,label,required,done,fileId}[]
+  hiredAt        DateTime? // saat pelamar menerima penawaran
+  probationEnd   DateTime? // akhir masa percobaan
+  onboardingDocs String    @default("[]") // JSON {id,label,required,done,fileId}[]
 
   // Rencana onboarding (agenda hari pertama, mentor, target): JSON {id,label,owner?,dueAt?,done}[]
   onboardingPlan String @default("[]")
@@ -249,8 +249,8 @@ model Application {
   autoShortlistedAt DateTime? // saat dipindah otomatis oleh auto-shortlist AI (untuk tag "Auto" + undo)
   permanentAt       DateTime? // saat diputuskan TETAP setelah masa percobaan
   exitAt            DateTime? // tanggal berhenti kerja — terisi = karyawan menjadi alumni
-  exitReason        String?   // RESIGN | KONTRAK_HABIS | KINERJA | LAINNYA
-  exitNote          String?   // catatan offboarding
+  exitReason        String? // RESIGN | KONTRAK_HABIS | KINERJA | LAINNYA
+  exitNote          String? // catatan offboarding
   offboardingPlan   String    @default("[]") // JSON {id,label,owner?,dueAt?,done}[] checklist serah terima
 
   // Kualitas data & pelacakan sumber
@@ -263,7 +263,7 @@ model Application {
   stageUpdatedAt DateTime? // terakhir kali tahap pipeline berubah (untuk SLA per tahap)
   archivedAt     DateTime? // arsip otomatis/manual (lamaran stagnan) — null = tidak diarsip
   deletedAt      DateTime? // tong sampah (soft delete) — null = tidak terhapus
-  videoNotes     String?   // JSON {t:detik,note:string}[] catatan bertimestamp saat review video intro
+  videoNotes     String? // JSON {t:detik,note:string}[] catatan bertimestamp saat review video intro
   consentAt      DateTime? // saat pelamar menyetujui pernyataan privasi di formulir
 
   // Info kehadiran untuk posisi non-remote (on-site/hybrid)
@@ -273,8 +273,8 @@ model Application {
   startDatePref String? // perkiraan kapan bisa mulai kerja
 
   // NR-32 — data diri lengkap (terstruktur, opsional; diisi bila admin mengaktifkannya)
-  nik        String?   // NIK 16 digit — payroll/kontrak
-  birthDate  DateTime? // tanggal lahir — umur dihitung otomatis di admin
+  nik       String? // NIK 16 digit — payroll/kontrak
+  birthDate DateTime? // tanggal lahir — umur dihitung otomatis di admin
 
   // Bot Telegram — snooze & lampiran
   snoozeUntil DateTime? // bila diisi, bot mengingatkan admin pada waktu ini lalu membersihkannya
@@ -288,8 +288,8 @@ model Application {
 
   // NR-38 — mempermudah admin cek pelamar
   adminSeenAt       DateTime? // saat admin (siapa pun) pertama kali membuka dialog detail — dasar filter "Belum dilihat"
-  screeningVerdicts String?   // JSON {questionId: "PASS"|"WARN"|"FAIL"} — penilaian admin per jawaban screening
-  cvSummary         String?   // JSON {bullets: string[], generatedAt} — ringkasan CV otomatis (LLM atas cvText OCR)
+  screeningVerdicts String? // JSON {questionId: "PASS"|"WARN"|"FAIL"} — penilaian admin per jawaban screening
+  cvSummary         String? // JSON {bullets: string[], generatedAt} — ringkasan CV otomatis (LLM atas cvText OCR)
   cvSummaryAt       DateTime? // waktu ringkasan CV terakhir dibuat — invalidasi bila CV diganti
   holdReason        String? // kode alasan hold: SLOT_PENUH | TUNGGU_KEPUTUSAN | MENUNGGU_DOKUMEN | LAINNYA
   holdNote          String? // catatan tambahan hold
@@ -304,12 +304,12 @@ model Application {
   internalDocs InternalDoc[]
 
   // NR-41 — profil kandidat terpusat (1 orang = 1 Candidate lintas posisi)
-  candidateId String?    // satu Candidate punya banyak Application
+  candidateId String? // satu Candidate punya banyak Application
   candidate   Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
 
   // NR-41 — sumber lamaran terstruktur (model ReferralSource; field lama "source" tetap sebagai fallback teks)
-  sourceId   String?         // satu ReferralSource dipakai banyak Application
-  sourceRef  ReferralSource? @relation("appSource", fields: [sourceId], references: [id], onDelete: SetNull)
+  sourceId  String? // satu ReferralSource dipakai banyak Application
+  sourceRef ReferralSource? @relation("appSource", fields: [sourceId], references: [id], onDelete: SetNull)
 
   // NR-41 — tautan tag terstruktur (model Tag); field lama "tags" (JSON) tetap untuk kompatibilitas
   tagLinks ApplicationTag[]
@@ -323,44 +323,44 @@ model Application {
   // NR-15 — transparansi & keterlibatan pelamar di halaman Cek Status
   stageHistory       String    @default("[]") // JSON {status,at}[] — riwayat tahap yang dilewati (urut waktu)
   candidateSeenAt    DateTime? // read receipt: terakhir pelamar membuka status lamaran ini
-  candidateSeenCount Int       @default(0)  // berapa kali halaman status lamaran ini dibuka
+  candidateSeenCount Int       @default(0) // berapa kali halaman status lamaran ini dibuka
   startConfirmedAt   DateTime? // pelamar mengonfirmasi tanggal mulai (setelah offer diterima)
   startProposedAt    DateTime? // usulan tanggal mulai baru dari pelamar
-  startProposedNote  String?   // catatan singkat dari pelamar pada usulan tanggal
+  startProposedNote  String? // catatan singkat dari pelamar pada usulan tanggal
 
   // Task 30 — jawaban Form Builder per posisi (kunci fieldId stabil); null = lamaran mode klasik
-  formAnswers    String?
+  formAnswers String?
 
   comments    Comment[]
   checkIns    CheckIn[]
   emailOut    EmailOutbox[]
-  slotBooking InterviewSlot[] @relation("slotBooking")
-  surveys     CandidateSurvey[] @relation("surveys")
+  slotBooking InterviewSlot[]       @relation("slotBooking")
+  surveys     CandidateSurvey[]     @relation("surveys")
   questions   ApplicationQuestion[]
+
+  interviews   Interview[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  activityLogs ActivityLog[]
 
   @@index([email])
   @@index([candidateId])
-
-  interviews       Interview[]
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  activityLogs     ActivityLog[]
 }
 
 // Sesi wawancara per lamaran — mendukung multi-ronde (HR, user, final).
 model Interview {
-  id             String      @id @default(cuid())
-  applicationId  String
-  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  round          Int         @default(1) // ronde ke-n
-  mode           String      @default("ONLINE") // ONLINE | ONSITE
-  platform       String      @default("GOOGLE_MEET") // GOOGLE_MEET | ZOOM | MICROSOFT_TEAMS | WHATSAPP | TELEPON | LAINNYA
-  meetingLink    String? // link Zoom/Meet/Teams (untuk mode ONLINE)
-  address        String? // lokasi (untuk mode ONSITE)
-  scheduledAt    DateTime
-  durationMin    Int         @default(45)
-  interviewers   String      @default("[]") // JSON string[] nama pewawancara
-  status         String      @default("SCHEDULED") // SCHEDULED | CONFIRMED | RESCHEDULE_REQUESTED | COMPLETED | NO_SHOW | CANCELLED
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  round         Int         @default(1) // ronde ke-n
+  mode          String      @default("ONLINE") // ONLINE | ONSITE
+  platform      String      @default("GOOGLE_MEET") // GOOGLE_MEET | ZOOM | MICROSOFT_TEAMS | WHATSAPP | TELEPON | LAINNYA
+  meetingLink   String? // link Zoom/Meet/Teams (untuk mode ONLINE)
+  address       String? // lokasi (untuk mode ONSITE)
+  scheduledAt   DateTime
+  durationMin   Int         @default(45)
+  interviewers  String      @default("[]") // JSON string[] nama pewawancara
+  status        String      @default("SCHEDULED") // SCHEDULED | CONFIRMED | RESCHEDULE_REQUESTED | COMPLETED | NO_SHOW | CANCELLED
 
   // Hasil wawancara (scorecard)
   scores         String? // JSON {kriteria: 1-5}
@@ -383,8 +383,8 @@ model Interview {
   transcriptSummary String? // ringkasan AI dari transkrip
   slotId            String? // slot self-service yang dipilih pelamar (bila ada)
 
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([applicationId])
   @@index([scheduledAt])
@@ -413,7 +413,7 @@ model Subscriber {
   confirmedAt    DateTime? // saat langganan dikonfirmasi via tautan email
   unsubToken     String?   @unique // token tautan berhenti berlangganan (ditanam di footer email)
   unsubscribedAt DateTime? // saat berhenti berlangganan — non-null = jangan kirim newsletter
-  source         String?   // konteks pendaftaran (mis. "landing", "posisi:<slug>")
+  source         String? // konteks pendaftaran (mis. "landing", "posisi:<slug>")
 }
 
 // Diskusi internal antar admin pada satu kandidat
@@ -518,9 +518,9 @@ model EmailOutbox {
   sentAt        DateTime?
 
   // NR-41 — log pengiriman & retry
-  attempts      Int      @default(0) // berapa kali sudah dicoba kirim
-  lastError     String?  // pesan error percobaan terakhir
-  nextRetryAt   DateTime? // jadwal retry otomatis (backoff); null = tidak dijadwalkan
+  attempts    Int       @default(0) // berapa kali sudah dicoba kirim
+  lastError   String? // pesan error percobaan terakhir
+  nextRetryAt DateTime? // jadwal retry otomatis (backoff); null = tidak dijadwalkan
 
   @@index([status])
 }
@@ -559,15 +559,15 @@ model Announcement {
 
 // Endpoint webhook keluar generik — kirim event ke URL eksternal dengan tanda tangan HMAC (Task 27)
 model WebhookEndpoint {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   url         String
   secret      String
-  events      String   @default("[\"*\"]") // JSON string[] nama event; ["*"] = semua event
-  active      Boolean  @default(true)
+  events      String    @default("[\"*\"]") // JSON string[] nama event; ["*"] = semua event
+  active      Boolean   @default(true)
   lastStatus  Int?
   lastFiredAt DateTime?
-  failCount   Int      @default(0)
-  createdAt   DateTime @default(now())
+  failCount   Int       @default(0)
+  createdAt   DateTime  @default(now())
 }
 
 // Sesi login admin aktif — mendukung daftar perangkat + logout paksa (Task 27)
@@ -586,16 +586,16 @@ model SessionToken {
 
 // Cek-in masa percobaan 30/60/90 hari untuk karyawan baru
 model CheckIn {
-  id            String      @id @default(cuid())
-  applicationId String
-  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  day           Int // 30 | 60 | 90
-  dueAt         DateTime?
-  rating        Int? // 1-5
-  notes         String?
+  id             String      @id @default(cuid())
+  applicationId  String
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  day            Int // 30 | 60 | 90
+  dueAt          DateTime?
+  rating         Int? // 1-5
+  notes          String?
   recommendation String? // NR-40 — LANJUT | PERPANJANG | AKHIRI (rekomendasi evaluasi masa percobaan)
-  completedAt   DateTime?
-  createdAt     DateTime    @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime    @default(now())
 
   @@index([applicationId])
 }
@@ -612,7 +612,7 @@ model EmployeeCard {
   status         String      @default("PENDING") // PENDING | PROBATION | ACTIVE | LEAVE | SUSPENDED | REVOKED
   identityChecks String      @default("{}") // JSON {docs:boolean,nikMatch:boolean,contract:boolean} — gerbang aktivasi
   issuedAt       DateTime    @default(now())
-  probationUntil DateTime?   // dari Application.probationEnd — PROBATION otomatis jadi ACTIVE saat lewat
+  probationUntil DateTime? // dari Application.probationEnd — PROBATION otomatis jadi ACTIVE saat lewat
   revokedAt      DateTime?
   revokedReason  String?
   verifyCount    Int         @default(0) // jumlah pemindaian/verifikasi (audit sederhana)
@@ -645,17 +645,17 @@ model ApplicationDraft {
 // NR-41 — profil kandidat terpusat: satu orang (email unik) bisa melamar banyak posisi,
 // seluruh Application tertaut ke satu Candidate agar riwayat & dedupe lintas posisi utuh.
 model Candidate {
-  id              String   @id @default(cuid())
-  email           String   @unique
+  id              String    @id @default(cuid())
+  email           String    @unique
   name            String
   phone           String?
-  doNotHire       Boolean  @default(false) // bendera global lintas posisi (diagregasi dari Application.doNotHire)
+  doNotHire       Boolean   @default(false) // bendera global lintas posisi (diagregasi dari Application.doNotHire)
   doNotHireReason String?
-  notes           String?  // catatan internal gabungan
-  firstSeenAt     DateTime @default(now()) // lamaran pertama
+  notes           String? // catatan internal gabungan
+  firstSeenAt     DateTime  @default(now()) // lamaran pertama
   lastAppliedAt   DateTime? // lamaran terakhir
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   applications Application[]
 }
