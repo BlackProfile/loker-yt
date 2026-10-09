@@ -9,6 +9,7 @@
 #   3. auto-push            — commit + push tiap perubahan ke GitHub
 #   4. realtime-keepalive   — restart socket.io service (:3003)
 #   5. telegram-keepalive   — restart telegram poller (:3004)
+#   6. db-autobackup        — snapshot DB tiap 15 menit + rotasi harian
 #
 # Dipanggil otomatis oleh `bun run dev` (lihat package.json) sehingga
 # setiap sesi/boot sandbox selalu membawa stack pelindung penuh.
@@ -45,6 +46,7 @@ start_one() {
 # langsung tanpa sleep — memulihkan wipe saat boot sesegera mungkin).
 start_one /tmp/lumina-dev.pid        "dev-keepalive.sh"        /home/z/my-project/scripts/dev-keepalive.sh        "dev-keepalive"
 start_one /tmp/lumina-dbguard.pid    "db-guard.sh"             /home/z/my-project/scripts/db-guard.sh             "db-guard"
+start_one /tmp/lumina-autobackup.pid "db-autobackup.sh"        /home/z/my-project/scripts/db-autobackup.sh        "db-autobackup"
 start_one /tmp/lumina-autopush.pid   "auto-push.sh"            /home/z/my-project/scripts/auto-push.sh            "auto-push"
 start_one /tmp/lumina-realtime.pid   "realtime-keepalive.sh"   /home/z/my-project/scripts/realtime-keepalive.sh   "realtime-keepalive"
 start_one /tmp/lumina-telegram.pid   "telegram-keepalive.sh"   /home/z/my-project/scripts/telegram-keepalive.sh   "telegram-keepalive"

@@ -56,6 +56,9 @@ server.log
 # runtime data & sandbox artifacts (tidak untuk GitHub)
 db/*.db
 db/*.db-journal
+backups/auto/lumina-latest.db
+backups/auto/lumina-latest.db.tmp
+backups/pre-push/
 /uploads/
 /tool-results/
 /download/
