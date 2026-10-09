@@ -6,6 +6,8 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getErrorRing } from "@/lib/error-ring";
+// NR45 — beban server real-time (memori, slow log, antrean AI, mode hemat).
+import { getServerLoadLite } from "@/lib/load-metrics";
 import type { SystemHealth } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -180,6 +182,9 @@ export async function GET() {
     disk: { dbBytes, uploadsBytes, backupsBytes },
     errors: { recent, lastError },
     checkedAt,
+    // NR45 — aditif: beban server (TANPA query/efek samping tambahan agar
+    // endpoint publik ini tetap ringan; transisi Mode Hemat hanya via snapshot admin/cron).
+    load: getServerLoadLite(latencyMs, dbOk),
   };
 
   // SELALU 200 — status tiap komponen ada di dalam body.

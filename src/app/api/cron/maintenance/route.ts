@@ -24,6 +24,8 @@ import { archiveBeforePurge } from "@/lib/purge-archive";
 import { processEmailRetries } from "@/lib/email-retry";
 // Task 4-a — mesin aturan otomatis (JIKA-MALA) dengan throttle internal 20 menit sendiri.
 import { evaluateAutomationRules, type AutomationEvalSummary } from "@/lib/automation-rules";
+// NR45 — jendela tenang (tunda tugas berat) + snapshot kesehatan server.
+import { getServerLoadSnapshot, readQuietHoursConfig } from "@/lib/load-metrics";
 
 export const dynamic = "force-dynamic";
 
@@ -203,11 +205,17 @@ async function runMaintenance() {
     ? retentionDaysRaw
     : DEFAULT_RETENTION_DAYS;
 
+  // NR45 — JENDELA TENANG: bila aktif dan sekarang di LUAR jangkauan jam,
+  // tugas berat (auto-arsip & retensi) ditunda agar tidak membebani jam sibuk.
+  const quiet = await readQuietHoursConfig();
+  const quietSkip = quiet.enabled && !quiet.inWindow;
+
   let archived = 0;
   let deleted = 0;
 
   // 1) AUTO-ARSIP: lamaran stagnan di tahap non-final -> archivedAt diisi.
-  if (autoArchiveEnabled) {
+  //    (NR45 — dilewati saat di luar jendela tenang.)
+  if (autoArchiveEnabled && !quietSkip) {
     const cutoff = new Date(now.getTime() - autoArchiveDays * 24 * 60 * 60 * 1000);
     const stale = await db.application.findMany({
       where: {
@@ -241,7 +249,8 @@ async function runMaintenance() {
   }
 
   // 2) RETENSI: lamaran ditolak / terarsip yang melewati batas umur -> hapus permanen.
-  if (retentionEnabled) {
+  //    (NR45 — dilewati saat di luar jendela tenang; job paling berat.)
+  if (retentionEnabled && !quietSkip) {
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
     // NR41-DATA-B (G12) — export-before-purge: arsipkan ringkasan data subjek yang
     // akan dihapus permanen SEBELUM deleteMany (never throws).
@@ -275,6 +284,19 @@ async function runMaintenance() {
     }
   }
 
+  // NR45 — penanda penundaan akibat jendela tenang (sekali per eksekusi).
+  if (quietSkip && (autoArchiveEnabled || retentionEnabled)) {
+    const hh = (n: number) => String(n).padStart(2, "0");
+    await db.activityLog.create({
+      data: {
+        applicationId: null,
+        actor: "Sistem",
+        action: "QUIET_SKIP",
+        detail: `Tugas berat (arsip & retensi) ditunda ke jendela tenang (${hh(quiet.startHour)}:00–${hh(quiet.endHour)}:00).`,
+      },
+    });
+  }
+
   // Penanda eksekusi (dipakai guard 1x/jam).
   await db.activityLog.create({
     data: {
@@ -291,7 +313,22 @@ async function runMaintenance() {
 
   return {
     skipped: false as const,
-    body: { ok: true, archived, deleted, dailyBackup, automationRules, ranAt: now.toISOString() },
+    body: {
+      ok: true,
+      archived,
+      deleted,
+      dailyBackup,
+      automationRules,
+      // NR45 — jendela tenang.
+      quietHoursSkipped: quietSkip,
+      quietHours: {
+        enabled: quiet.enabled,
+        startHour: quiet.startHour,
+        endHour: quiet.endHour,
+        inWindow: quiet.inWindow,
+      },
+      ranAt: now.toISOString(),
+    },
   };
 }
 
@@ -311,7 +348,16 @@ async function handle(req: NextRequest) {
     // NR41-SEC-B (L32): verifikasi kesehatan backup + notifikasi (dibungkus try/catch
     // di dalamnya — tidak pernah menggagalkan endpoint perawatan).
     await verifyAndNotifyBackups();
-    return NextResponse.json(result.body);
+    // NR45 — snapshot kesehatan server: streak CRIT/OK -> Mode Hemat otomatis
+    // + alert Telegram (cooldown internal). Gagal snapshot tidak menggagalkan cron.
+    let serverLoad: { level: string; saveModeActive: boolean } | null = null;
+    try {
+      const snapshot = await getServerLoadSnapshot();
+      serverLoad = { level: snapshot.level, saveModeActive: snapshot.saveMode.active };
+    } catch (healthError) {
+      console.error("[maintenance] snapshot kesehatan gagal:", healthError);
+    }
+    return NextResponse.json({ ...result.body, serverLoad });
   } catch (error) {
     console.error("[POST /api/cron/maintenance]", error);
     return NextResponse.json({ error: "Gagal menjalankan perawatan data." }, { status: 500 });

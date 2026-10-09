@@ -17,13 +17,15 @@ function firstSlug(value: string | string[] | undefined): string | null {
   return slug.length > 0 ? slug.slice(0, 80) : null;
 }
 
-// NR45 — baca Setting "maintenance" (JSON toleran) untuk snapshot mode perawatan
+// NR45 — baca Setting "maintenance_mode" (JSON toleran) untuk snapshot mode perawatan
 // yang dikirim ke klien sebelum konten publik siap: situs yang ditutup FULL
 // tampil sebagai layar perawatan tanpa berkedip terbuka. Gagal baca = undefined
 // (mode perawatan dianggap tidak aktif — halaman publik tidak boleh gagal keras).
+// CATATAN: kunci Setting "maintenance" SUDAH dipakai cron auto-arsip —
+// mode perawatan situs memakai kunci TERPISAH "maintenance_mode".
 async function readInitialMaintenance(): Promise<MaintenancePublicInfo | undefined> {
   try {
-    const row = await db.setting.findUnique({ where: { key: "maintenance" } });
+    const row = await db.setting.findUnique({ where: { key: "maintenance_mode" } });
     if (!row) return undefined;
     const parsed: unknown = JSON.parse(row.value);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
