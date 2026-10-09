@@ -27,6 +27,8 @@ import {
 } from "@/lib/form-schema";
 import { CV_MAX_BYTES, INTRO_MAX_BYTES, KOMUTER_PLANS, SHIFT_PREFS, type ApplySuccessResponse } from "@/lib/types";
 import { startBackgroundProcessing } from "@/lib/processing";
+// NR45 — mode perawatan + rate limit submit + slow log.
+import { rateLimit, readMaintenanceConfig, recordSlowRequest } from "@/lib/load-metrics";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { ensureCandidate } from "@/lib/candidates";
 // NR41-SEC-B (F7): verifikasi magic bytes unggahan.
@@ -224,7 +226,68 @@ function fillTemplate(template: string, name: string, positionTitle: string, cod
     .replace(/\{kode\}/g, code);
 }
 
+/** IP klien dari header proxy standar (NR45 — rate limit submit). */
+function routeClientIp(req: NextRequest): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) return (forwarded.split(",")[0] ?? "").trim();
+  return req.headers.get("x-real-ip")?.trim() || "unknown";
+}
+
+/**
+ * NR45 — gerbang POST /api/applications:
+ * (1) Mode perawatan aktif -> 503 ramah (tanpa memproses apa pun).
+ * (2) Rate limit 5 lamaran/jam/IP (anti-spam bot + pelindung antrean AI).
+ * (3) Pencatatan permintaan lambat (SLOW_REQUEST).
+ * Logika inti lama TIDAK disentuh — pindah utuh ke handlePost().
+ */
 export async function POST(req: NextRequest) {
+  const t0 = Date.now();
+  try {
+    // (1) Mode perawatan (kunci Setting "maintenance_mode") — cek paling awal.
+    const maintenance = await readMaintenanceConfig();
+    if (maintenance.enabled) {
+      return NextResponse.json(
+        {
+          error:
+            "Pendaftaran sedang ditutup sementara. Coba lagi setelah perawatan selesai.",
+          level: maintenance.level,
+        },
+        { status: 503 },
+      );
+    }
+
+    // (2) Rate limit per IP: maks 5 lamaran per jam.
+    const ip = routeClientIp(req);
+    const limited = rateLimit(`apply:${ip}`, 5, 60 * 60_000);
+    if (!limited.allowed) {
+      const minutes = Math.max(1, Math.ceil(limited.retryAfterSec / 60));
+      return NextResponse.json(
+        {
+          error: `Terlalu banyak percobaan mengirim lamaran. Coba lagi dalam sekitar ${minutes} menit.`,
+          retryAfterSec: limited.retryAfterSec,
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limited.retryAfterSec) },
+        },
+      );
+    }
+
+    const res = await handlePost(req);
+    recordSlowRequest("POST /api/applications", Date.now() - t0);
+    return res;
+  } catch (error) {
+    recordSlowRequest("POST /api/applications", Date.now() - t0);
+    console.error("[POST /api/applications]", error);
+    return NextResponse.json(
+      { error: "Gagal mengirim lamaran. Coba lagi nanti." },
+      { status: 500 },
+    );
+  }
+}
+
+/** Handler inti lama (NR45 — dipindah utuh, tidak diubah logikanya). */
+async function handlePost(req: NextRequest) {
   try {
     const contentType = req.headers.get("content-type") ?? "";
     const fields: Record<string, string> = {};
