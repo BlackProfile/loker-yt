@@ -1156,9 +1156,11 @@ function LandingShell({
   }
 
   // NR45 — pendaftaran diblokir bila rekrutmen ditutup ATAU mode perawatan
-  // level APPLY_ONLY aktif (browsing tetap jalan).
+  // level APPLY_ONLY AKTIF (wajib cek enabled — default config level-nya
+  // APPLY_ONLY walau mode mati; browsing tetap jalan).
   const applyBlocked =
-    recruitment.recruitmentClosed || maintenance?.level === "APPLY_ONLY";
+    recruitment.recruitmentClosed ||
+    (maintenance?.enabled === true && maintenance.level === "APPLY_ONLY");
 
   return (
     <MotionConfig reducedMotion="user">
