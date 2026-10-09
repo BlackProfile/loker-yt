@@ -1234,6 +1234,7 @@ function LandingShell({
               siteName={content.siteName}
               positionStats={positionStats}
               onOpenPosition={onOpenPosition}
+              applyBlocked={applyBlocked}
             />
           ) : null}
           {sections.about ? <AboutSection content={content} stats={stats} /> : null}

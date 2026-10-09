@@ -195,11 +195,14 @@ function PositionCard({
   position,
   stats,
   onOpenPosition,
+  applyBlocked = false,
 }: {
   position: Position;
   stats?: PositionPublicStats;
   /** Buka halaman detail per lowongan (?posisi=slug) — tombol selalu tampil. */
   onOpenPosition: (slug: string) => void;
+  /** NR45 — pendaftaran ditutup sementara (mode perawatan APPLY_ONLY). */
+  applyBlocked?: boolean;
 }) {
   const { t, lang } = useLang();
   // Animasi meter kuota dihentikan bila pengguna memilih reduce-motion.
@@ -230,8 +233,11 @@ function PositionCard({
       : 0;
   const closed = position.closesAt ? isPastIso(position.closesAt) : false;
   const formClosed = position.applyOpen === false;
-  const applyDisabled = quotaFull || closed || formClosed;
-  const applyLabel = quotaFull
+  // NR45 — mode perawatan APPLY_ONLY ikut mematikan tombol Lamar.
+  const applyDisabled = quotaFull || closed || formClosed || applyBlocked;
+  const applyLabel = applyBlocked
+    ? t.positions.pendaftaranDitutup
+    : quotaFull
     ? t.positions.kuotaPenuh
     : closed
       ? t.positions.lamarDitutup
@@ -536,6 +542,7 @@ export function PositionsSection({
   positions,
   onOpenPosition,
   positionStats = {},
+  applyBlocked = false,
 }: {
   positions: Position[];
   /**
@@ -547,6 +554,8 @@ export function PositionsSection({
   onOpenPosition: (slug: string) => void;
   /** Kuota & jumlah lamaran per id posisi (dari PublicContentResponse.positionStats). */
   positionStats?: Record<string, PositionPublicStats>;
+  /** NR45 — pendaftaran ditutup sementara (mode perawatan APPLY_ONLY). */
+  applyBlocked?: boolean;
 }) {
   const { t } = useLang();
   const [department, setDepartment] = useState<string | null>(null);
@@ -789,6 +798,7 @@ export function PositionsSection({
                           position={position}
                           stats={positionStats[position.id]}
                           onOpenPosition={onOpenPosition}
+                          applyBlocked={applyBlocked}
                         />
                       </HoverLift>
                     </motion.div>

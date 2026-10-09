@@ -111,6 +111,8 @@ const id = {
     waDaftar: "Daftar:",
     lamarDitutup: "Ditutup",
     formClosed: "Form Ditutup",
+    // NR45 — tombol Lamar saat pendaftaran ditutup sementara (mode perawatan APPLY_ONLY).
+    pendaftaranDitutup: "Pendaftaran Ditutup",
     tutup: "Tutup",
     coverAlt: "Sampul lowongan {title}",
   },
@@ -823,6 +825,7 @@ type idDictShape = {
     waDaftar: string;
     lamarDitutup: string;
     formClosed: string;
+    pendaftaranDitutup: string;
     tutup: string;
     coverAlt: string;
   };
@@ -1450,6 +1453,7 @@ const en: Dict = {
     waDaftar: "Apply:",
     lamarDitutup: "Closed",
     formClosed: "Form Closed",
+    pendaftaranDitutup: "Applications Paused",
     tutup: "Close",
     coverAlt: "Cover for {title}",
   },
