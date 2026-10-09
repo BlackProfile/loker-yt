@@ -122,6 +122,7 @@ model Position {
   interviewPlatform  String  @default("GOOGLE_MEET") // platform default: GOOGLE_MEET | ZOOM | MICROSOFT_TEAMS | WHATSAPP | TELEPON | LAINNYA
   interviewDuration  Int     @default(45) // durasi default (menit)
   interviewCriteria  String  @default("[]") // JSON string[] kriteria scorecard wawancara
+  interviewCriteriaWeights String? // JSON {[kriteria]: bobot 0-100} — scorecard berbobot; null = bobot merata
   interviewInviteTemplate String? // template pesan undangan ({nama},{posisi},{tanggal},{jam},{link},{mode})
   offerTemplate      String? // template pesan penawaran ({nama},{posisi},{gaji},{tanggal},{deadline})
   welcomeTemplate    String? // template pesan selamat datang ({nama},{posisi},{tanggal})
@@ -227,6 +228,14 @@ model Application {
   offerSentAt        DateTime?
   offerRespondedAt   DateTime?
   offerDeclineReason String?
+
+  // Persetujuan offer dua lapis (HR mengajukan -> OWNER menyetujui -> terkirim)
+  offerApprovalState String?    // null = alur approval mati/dioperasikan OWNER | PENDING | APPROVED | REJECTED
+  offerRequestedBy   String?    // nama admin pengaju (HR)
+  offerRequestedAt   DateTime?
+  offerReviewedBy    String?    // nama OWNER yang menyetujui/menolak
+  offerReviewedAt    DateTime?
+  offerReviewNote    String?    // catatan OWNER saat menyetujui/menolak
 
   // Onboarding setelah diterima
   hiredAt          DateTime? // saat pelamar menerima penawaran
