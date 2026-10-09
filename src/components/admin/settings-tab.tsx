@@ -60,6 +60,7 @@ import {
   Heart,
   Inbox,
   Info,
+  ClipboardCheck,
   LayoutTemplate,
   Loader2,
   LogOut,
