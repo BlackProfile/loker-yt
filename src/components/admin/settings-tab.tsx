@@ -3755,6 +3755,9 @@ export function SettingsTab() {
       {/* Aturan Otomatis (JIKA-MALA) — Task 4-a: STAGE_AGING / AUTO_REJECT / SCORE_TAG */}
       <AutomationRulesCard />
 
+      {/* Persetujuan Offer dua lapis — NR44 (HR mengajukan, OWNER menyetujui) */}
+      <OfferApprovalCard />
+
       {/* Daftar Tag (NR-24 — pustaka sugesti tag pelamar, simpan langsung per aksi) */}
       <TagsCard />
 
