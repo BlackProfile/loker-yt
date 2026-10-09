@@ -16,11 +16,16 @@ import { sendSystemEvent } from "@/lib/notify";
 import type { MaintenancePublicInfo, ServerLoadLevel } from "@/lib/types";
 
 // --- Ambang bawaan (angka bisa dinilai ulang lewat pengamatan produksi) ---
+// CATATAN KALIBRASI (NR45): RSS proses dev (Turbopack + max-old-space-size)
+// besar sejak awal (bisa >2 GB) sehingga TIDAK dipakai sebagai pemicu; sinyal
+// memori yang dipakai = heapUsed (memori JS hidup). RSS tetap ditampilkan.
 export const LOAD_THRESHOLDS = {
   dbLatencyWarnMs: 300,
   dbLatencyCritMs: 800,
-  rssWarnMb: 640,
-  rssCritMb: 900,
+  heapUsedWarnMb: 700,
+  heapUsedCritMb: 1000,
+  /** Pengaman runaway RSS saja (jauh di atas baseline dev ~2 GB). */
+  rssRunawayCritMb: 4096,
   slowPerHourWarn: 10,
   emailFailedCrit: 20,
   emailFailedWarn: 5,
@@ -619,14 +624,16 @@ export async function getServerLoadSnapshot() {
   else if (latencyMs >= LOAD_THRESHOLDS.dbLatencyWarnMs)
     bump("WARN", `Latensi DB tinggi: ${latencyMs} ms (ambang ${LOAD_THRESHOLDS.dbLatencyWarnMs} ms).`);
 
-  // Memori proses.
+  // Memori proses — sinyal utama heapUsed; RSS hanya pengaman runaway.
   const mu = process.memoryUsage();
   const rssMb = round1(mu.rss / 1048576);
   const heapUsedMb = round1(mu.heapUsed / 1048576);
-  if (rssMb >= LOAD_THRESHOLDS.rssCritMb)
-    bump("CRIT", `Memori proses kritis: ${rssMb} MB (ambang ${LOAD_THRESHOLDS.rssCritMb} MB).`);
-  else if (rssMb >= LOAD_THRESHOLDS.rssWarnMb)
-    bump("WARN", `Memori proses tinggi: ${rssMb} MB (ambang ${LOAD_THRESHOLDS.rssWarnMb} MB).`);
+  if (rssMb >= LOAD_THRESHOLDS.rssRunawayCritMb)
+    bump("CRIT", `Memori proses meledak (RSS ${rssMb} MB) — indikasi kebocoran.`);
+  if (heapUsedMb >= LOAD_THRESHOLDS.heapUsedCritMb)
+    bump("CRIT", `Memori JS kritis: ${heapUsedMb} MB (ambang ${LOAD_THRESHOLDS.heapUsedCritMb} MB).`);
+  else if (heapUsedMb >= LOAD_THRESHOLDS.heapUsedWarnMb)
+    bump("WARN", `Memori JS tinggi: ${heapUsedMb} MB (ambang ${LOAD_THRESHOLDS.heapUsedWarnMb} MB).`);
 
   // Antrean email.
   let queued = 0;
@@ -682,8 +689,8 @@ export async function getServerLoadSnapshot() {
     thresholds: {
       dbLatencyWarnMs: LOAD_THRESHOLDS.dbLatencyWarnMs,
       dbLatencyCritMs: LOAD_THRESHOLDS.dbLatencyCritMs,
-      rssWarnMb: LOAD_THRESHOLDS.rssWarnMb,
-      rssCritMb: LOAD_THRESHOLDS.rssCritMb,
+      heapUsedWarnMb: LOAD_THRESHOLDS.heapUsedWarnMb,
+      heapUsedCritMb: LOAD_THRESHOLDS.heapUsedCritMb,
       slowPerHourWarn: LOAD_THRESHOLDS.slowPerHourWarn,
     },
     checkedAt: now.toISOString(),
@@ -713,8 +720,10 @@ export function getServerLoadLite(dbLatencyMs: number, dbOk: boolean) {
 
   const mu = process.memoryUsage();
   const rssMb = round1(mu.rss / 1048576);
-  if (rssMb >= LOAD_THRESHOLDS.rssCritMb) bump("CRIT", `Memori proses kritis: ${rssMb} MB.`);
-  else if (rssMb >= LOAD_THRESHOLDS.rssWarnMb) bump("WARN", `Memori proses tinggi: ${rssMb} MB.`);
+  if (rssMb >= LOAD_THRESHOLDS.rssRunawayCritMb) bump("CRIT", `Memori proses meledak (RSS ${rssMb} MB).`);
+  const heapUsedMb = round1(mu.heapUsed / 1048576);
+  if (heapUsedMb >= LOAD_THRESHOLDS.heapUsedCritMb) bump("CRIT", `Memori JS kritis: ${heapUsedMb} MB.`);
+  else if (heapUsedMb >= LOAD_THRESHOLDS.heapUsedWarnMb) bump("WARN", `Memori JS tinggi: ${heapUsedMb} MB.`);
 
   const slow = slowStats24h();
   if (slow.perHour > LOAD_THRESHOLDS.slowPerHourWarn)

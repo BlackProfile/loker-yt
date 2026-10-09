@@ -644,8 +644,9 @@ export type ServerLoadSnapshot = {
   thresholds: {
     dbLatencyWarnMs: number;
     dbLatencyCritMs: number;
-    rssWarnMb: number;
-    rssCritMb: number;
+    /** NR45 — ambang memori kini diukur dari heapUsed (RSS dev besar sejak awal). */
+    heapUsedWarnMb: number;
+    heapUsedCritMb: number;
     slowPerHourWarn: number;
   };
   checkedAt: string;
