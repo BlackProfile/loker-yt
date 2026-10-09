@@ -20,18 +20,21 @@ function ifNoneMatchMatches(headerValue: string | null, etag: string): boolean {
  * Bungkus data JSON dengan ETag + Cache-Control.
  * - Cocok If-None-Match → Response 304 (headers ETag + Cache-Control, tanpa body).
  * - Tidak cocok → Response 200 JSON + header ETag + Cache-Control.
- * Kontrak respons (bentuk body) TIDAK berubah — hanya header cache yang ditambah.
+ * NR45 — extraHeaders opsional (mis. "X-Cache: HIT|MISS") ikut di setiap respons.
+ * Kontrak respons (bentuk body) TIDAK berubah — hanya header yang ditambah.
  */
 export function etagJson(
   req: Request,
   data: unknown,
   cacheControl: string = DEFAULT_CACHE_CONTROL,
+  extraHeaders?: Record<string, string>,
 ): Response {
   const body = JSON.stringify(data);
   const etag = `W/"${createHash("sha1").update(body).digest("hex")}"`;
   const headers: Record<string, string> = {
     ETag: etag,
     "Cache-Control": cacheControl,
+    ...(extraHeaders ?? {}),
   };
 
   if (ifNoneMatchMatches(req.headers.get("if-none-match"), etag)) {
