@@ -2248,6 +2248,94 @@ function AutomationRulesCard() {
 }
 
 // ---------------------------------------------------------------------------
+// Persetujuan Offer dua lapis (NR44) — toggle Setting "offer_approval" via
+// /api/admin/offer-approval. Bila aktif: offer dari HR menunggu persetujuan
+// OWNER sebelum terkirim ke kandidat. OWNER mengirim langsung seperti sedianya.
+// ---------------------------------------------------------------------------
+
+function OfferApprovalCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+  const [enabled, setEnabled] = useState<boolean>(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await apiGet<{ enabled: boolean }>("/api/admin/offer-approval");
+      setEnabled(Boolean(data.enabled));
+    } catch {
+      // gagal muat -> biarkan default mati; beri tahu via toast
+      toast.error("Gagal memuat pengaturan persetujuan offer.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleToggle = async (checked: boolean) => {
+    setSaving(true);
+    try {
+      const res = await apiPut<{ enabled: boolean }>("/api/admin/offer-approval", {
+        enabled: checked,
+      });
+      setEnabled(Boolean(res.enabled));
+      toast.success(
+        res.enabled
+          ? "Persetujuan offer diaktifkan — offer dari HR menunggu persetujuan OWNER."
+          : "Persetujuan offer dimatikan — offer terkirim langsung.",
+      );
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <CollapsibleCard
+      id="persetujuan-offer"
+      icon={ClipboardCheck}
+      title="Persetujuan Offer Dua Lapis"
+      description="Saat aktif, offer yang diajukan HR harus disetujui OWNER terlebih dahulu sebelum terkirim ke kandidat."
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Memuat pengaturan persetujuan offer...
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Wajib persetujuan OWNER untuk offer dari HR</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                HR mengajukan offer (angka, tanggal, catatan) lalu OWNER menyetujui atau menolak
+                dengan catatan. Offer yang disetujui baru terkirim ke kandidat seperti biasa.
+              </p>
+            </div>
+            <Switch
+              checked={enabled}
+              disabled={saving || !isOwner}
+              onCheckedChange={(checked) => void handleToggle(checked)}
+              aria-label="Aktifkan persetujuan offer dua lapis"
+            />
+          </div>
+          {!isOwner ? (
+            <p className="text-xs text-muted-foreground">
+              Hanya pemilik studio (OWNER) yang dapat mengubah pengaturan ini.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </CollapsibleCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Laporan Email Terjadwal (NR-19) — toggle laporan mingguan/bulanan (OWNER saja).
 // Kartu mandiri: GET/PUT /api/admin/reports/schedule, simpan langsung saat toggle.
 // ---------------------------------------------------------------------------
