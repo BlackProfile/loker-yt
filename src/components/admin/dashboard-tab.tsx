@@ -91,6 +91,7 @@ import {
   TrendHint,
   weeklyTrend,
 } from "./dashboard-widgets";
+import { ServerHealthCard } from "./server-health-card";
 import { cn } from "@/lib/utils";
 
 type StatCardConfig = {
@@ -520,6 +521,10 @@ export function DashboardTab() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* NR45 — Kesehatan Server: snapshot beban real-time + panel Mode Demo.
+          Posisi menonjol di paling atas dashboard (sebelum kartu statusHealth). */}
+      <ServerHealthCard />
+
       {/* Kartu Perlu Tindakan — hilang otomatis bila semua kelompok kosong */}
       {actionGroups.length > 0 ? (
         <Card className="gap-0 rounded-2xl border-amber-200 bg-amber-50/60 py-6 dark:border-amber-900 dark:bg-amber-950/20">
