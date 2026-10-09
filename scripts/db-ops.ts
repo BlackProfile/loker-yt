@@ -1,3 +1,4 @@
+/// <reference types="bun-types" />
 /**
  * db-ops — helper SQLite untuk db-guard & db-autobackup (dijalankan via bun).
  *
