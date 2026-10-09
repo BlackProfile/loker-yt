@@ -14,7 +14,7 @@ import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { sendSystemEvent } from "@/lib/notify";
 import { emitWebhook } from "@/lib/webhooks";
 import { POSITION_TYPES } from "@/lib/types";
-import { readOfferApprovalEnabled } from "@/app/api/admin/offer-approval/route";
+import { readOfferApprovalEnabled } from "@/lib/offer-approval";
 
 export const dynamic = "force-dynamic";
 

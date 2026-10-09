@@ -3,27 +3,15 @@
 // Kontrak NR44: bila enabled dan pengaju role HR -> draft offer menunggu persetujuan OWNER;
 // bila mati atau pengaju OWNER -> jalur kirim lama langsung (kompatibel).
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import {
+  readOfferApprovalEnabled,
+  writeOfferApprovalEnabled,
+} from "@/lib/offer-approval";
 
 export const dynamic = "force-dynamic";
 
 const FORBIDDEN = { error: "Anda tidak memiliki akses untuk aksi ini." };
-
-export const OFFER_APPROVAL_SETTING_KEY = "offer_approval";
-
-/** Baca Setting "offer_approval" — toleran terhadap JSON rusak (default mati). */
-export async function readOfferApprovalEnabled(): Promise<boolean> {
-  try {
-    const row = await db.setting.findUnique({ where: { key: OFFER_APPROVAL_SETTING_KEY } });
-    if (!row) return false;
-    const parsed: unknown = JSON.parse(row.value);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
-    return (parsed as Record<string, unknown>).enabled === true;
-  } catch {
-    return false;
-  }
-}
 
 export async function GET() {
   try {
@@ -59,11 +47,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Nilai enabled harus boolean." }, { status: 400 });
     }
 
-    await db.setting.upsert({
-      where: { key: OFFER_APPROVAL_SETTING_KEY },
-      update: { value: JSON.stringify({ enabled }) },
-      create: { key: OFFER_APPROVAL_SETTING_KEY, value: JSON.stringify({ enabled }) },
-    });
+    await writeOfferApprovalEnabled(enabled);
 
     return NextResponse.json({ ok: true, enabled });
   } catch (error) {
