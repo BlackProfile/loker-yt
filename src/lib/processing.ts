@@ -3,6 +3,8 @@
 // SERVER-ONLY — fire-and-forget; DIJAMIN TIDAK THROW.
 import { analyzeApplication } from "@/lib/ai";
 import { db } from "@/lib/db";
+// Task 4-a — alert kandidat menarik + aturan SCORE_TAG (keduanya tidak pernah throw).
+import { evaluateScoreTagForApplication, notifyHighScore } from "@/lib/automation-rules";
 import { sendNewApplicationNotifications } from "@/lib/notify";
 import { transcribeIntroAudio } from "@/lib/transcribe";
 
@@ -29,6 +31,20 @@ export async function startBackgroundProcessing(applicationId: string): Promise<
       await analyzeApplication(applicationId);
     } catch (error) {
       console.error("[processing] analyzeApplication gagal:", errorMessage(error));
+    }
+
+    // (1b) Task 4-a — SETELAH AI screening: alert "kandidat menarik" bila skor tinggi
+    //      + evaluasi aturan SCORE_TAG untuk lamaran ini saja. Dibungkus try/catch —
+    //      kegagalan tidak boleh menggagalkan pipeline.
+    try {
+      await notifyHighScore(applicationId);
+    } catch (error) {
+      console.error("[processing] notifyHighScore gagal:", errorMessage(error));
+    }
+    try {
+      await evaluateScoreTagForApplication(applicationId);
+    } catch (error) {
+      console.error("[processing] evaluateScoreTagForApplication gagal:", errorMessage(error));
     }
 
     // (2) Transkripsi audio intro (jika ada)

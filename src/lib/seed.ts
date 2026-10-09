@@ -8,6 +8,7 @@ import type {
 } from "@prisma/client";
 import { db } from "@/lib/db";
 import { parseHiddenUi } from "@/lib/hidden-ui"; // NR-22 — blok UI tersembunyi per posisi
+import { parseCriteriaWeights } from "@/lib/scorecard"; // NR44 — bobot scorecard
 import { parsePositionStageNotes } from "@/lib/stage-notes";
 import { parseStageWipLimits } from "@/lib/wip-limits";
 import {
@@ -363,6 +364,12 @@ export function sanitizeInterviewRecommendation(value: unknown): InterviewRecomm
 export function sanitizeOfferStatus(value: unknown): OfferStatus | null {
   return (OFFER_STATUSES as string[]).includes(String(value)) ? (value as OfferStatus) : null;
 }
+
+/** NR44 — normalisasi status persetujuan offer (PENDING | APPROVED | REJECTED | null). */
+export function sanitizeApprovalState(value: unknown): "PENDING" | "APPROVED" | "REJECTED" | null {
+  const allowed = ["PENDING", "APPROVED", "REJECTED"];
+  return allowed.includes(String(value)) ? (value as "PENDING" | "APPROVED" | "REJECTED") : null;
+}
 export function sanitizeRejectionReason(value: unknown): RejectionReason | null {
   return (REJECTION_REASONS as string[]).includes(String(value))
     ? (value as RejectionReason)
@@ -458,6 +465,8 @@ export function serializePosition(record: PositionRecordModel): Position {
     interviewPlatform: sanitizeInterviewPlatform(record.interviewPlatform),
     interviewDuration: record.interviewDuration,
     interviewCriteria: parseRequirements(record.interviewCriteria),
+    // NR44 — bobot scorecard per kriteria (toleran; JSON rusak = {} = bobot merata)
+    interviewCriteriaWeights: parseCriteriaWeights(record.interviewCriteriaWeights),
     interviewInviteTemplate: record.interviewInviteTemplate,
 
     offerTemplate: record.offerTemplate,
@@ -661,6 +670,14 @@ export function serializeApplication(record: ApplicationRecord): Application {
     offerSentAt: record.offerSentAt ? record.offerSentAt.toISOString() : null,
     offerRespondedAt: record.offerRespondedAt ? record.offerRespondedAt.toISOString() : null,
     offerDeclineReason: record.offerDeclineReason,
+
+    // NR44 — persetujuan offer dua lapis (aditif; null = jalur lama)
+    offerApprovalState: sanitizeApprovalState(record.offerApprovalState),
+    offerRequestedBy: record.offerRequestedBy ?? null,
+    offerRequestedAt: record.offerRequestedAt ? record.offerRequestedAt.toISOString() : null,
+    offerReviewedBy: record.offerReviewedBy ?? null,
+    offerReviewedAt: record.offerReviewedAt ? record.offerReviewedAt.toISOString() : null,
+    offerReviewNote: record.offerReviewNote ?? null,
 
     hiredAt: record.hiredAt ? record.hiredAt.toISOString() : null,
     probationEnd: record.probationEnd ? record.probationEnd.toISOString() : null,

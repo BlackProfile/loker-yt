@@ -316,6 +316,8 @@ export type Position = {
   interviewPlatform: InterviewPlatform;
   interviewDuration: number;
   interviewCriteria: string[]; // [] = pakai DEFAULT_INTERVIEW_CRITERIA
+  // NR44 — bobot scorecard per kriteria {[kriteria]: 0-100}; null = bobot merata.
+  interviewCriteriaWeights?: Record<string, number> | null;
   interviewInviteTemplate: string | null;
 
   // Offer & onboarding per lowongan
@@ -468,6 +470,14 @@ export type Application = {
   offerSentAt: string | null;
   offerRespondedAt: string | null;
   offerDeclineReason: string | null;
+
+  // NR44 — persetujuan offer dua lapis (opsional; null = jalur lama tanpa approval)
+  offerApprovalState?: "PENDING" | "APPROVED" | "REJECTED" | null;
+  offerRequestedBy?: string | null; // nama admin (HR) pengaju
+  offerRequestedAt?: string | null;
+  offerReviewedBy?: string | null; // nama OWNER yang menyetujui/menolak
+  offerReviewedAt?: string | null;
+  offerReviewNote?: string | null;
 
   // Onboarding
   hiredAt: string | null;

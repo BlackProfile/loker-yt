@@ -22,6 +22,8 @@ import { verifyAndNotifyBackups } from "@/lib/backup-notify";
 import { archiveBeforePurge } from "@/lib/purge-archive";
 // NR41-DATA-B: retry email outbox (lib email-retry.ts buatan DATA-B).
 import { processEmailRetries } from "@/lib/email-retry";
+// Task 4-a — mesin aturan otomatis (JIKA-MALA) dengan throttle internal 20 menit sendiri.
+import { evaluateAutomationRules, type AutomationEvalSummary } from "@/lib/automation-rules";
 
 export const dynamic = "force-dynamic";
 
@@ -150,6 +152,17 @@ async function runMaintenance() {
   //    walaupun perawatan arsip/retensi dilewati guard.
   const dailyBackup = await runDailyBackup(now);
 
+  // 0b) Task 4-a — MESIN ATURAN OTOMATIS: SETELAH backup harian, SEBELUM guard 1x/jam
+  //     (punya throttle internal 20 menit sendiri). Gagal evaluasi tidak boleh
+  //     menggagalkan perawatan lain — dibungkus try/catch.
+  let automationRules: AutomationEvalSummary;
+  try {
+    automationRules = await evaluateAutomationRules();
+  } catch (automationError) {
+    console.error("[maintenance] evaluateAutomationRules gagal:", automationError);
+    automationRules = { fired: {}, skippedReason: "error", ranAt: now.toISOString() };
+  }
+
   // GUARD: maksimal 1x per jam — lihat ActivityLog MAINTENANCE terakhir.
   const lastRun = await db.activityLog.findFirst({
     where: { action: "MAINTENANCE", applicationId: null },
@@ -167,6 +180,7 @@ async function runMaintenance() {
         archived: 0,
         deleted: 0,
         dailyBackup,
+        automationRules,
         ranAt: now.toISOString(),
       },
     };
@@ -277,7 +291,7 @@ async function runMaintenance() {
 
   return {
     skipped: false as const,
-    body: { ok: true, archived, deleted, dailyBackup, ranAt: now.toISOString() },
+    body: { ok: true, archived, deleted, dailyBackup, automationRules, ranAt: now.toISOString() },
   };
 }
 
