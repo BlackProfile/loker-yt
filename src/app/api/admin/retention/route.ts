@@ -71,7 +71,7 @@ export async function GET() {
   }
 }
 
-export async function PUT(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
     if (!session) {
@@ -87,6 +87,56 @@ export async function PUT(req: NextRequest) {
     }
     const data = body as Record<string, unknown>;
 
+    // Mode pratinjau (dry-run): kriteria identik dengan job retensi cron —
+    // TIDAK mengubah pengaturan dan TIDAK menghapus apa pun.
+    if (data.mode === "preview") {
+      const daysRaw = Number(data.days);
+      if (!Number.isInteger(daysRaw) || daysRaw < 1 || daysRaw > 3650) {
+        return NextResponse.json(
+          { error: "Jumlah hari pratinjau harus angka bulat 1 sampai 3650." },
+          { status: 400 },
+        );
+      }
+      const preview = await retentionPreview(daysRaw);
+      return NextResponse.json({
+        count: preview.count,
+        samples: preview.samples,
+        cutoffDate: preview.cutoffDate,
+      });
+    }
+
+    // Tanpa mode pratinjau -> perlakuan sama dengan PUT (simpan pengaturan).
+    return handleSettingsWrite(data);
+  } catch (error) {
+    console.error("[POST /api/admin/retention]", error);
+    return NextResponse.json({ error: "Gagal memproses permintaan retensi." }, { status: 500 });
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json(UNAUTHORIZED, { status: 401 });
+    }
+    if (session.role !== "OWNER") {
+      return NextResponse.json(FORBIDDEN, { status: 403 });
+    }
+
+    const body: unknown = await req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Data tidak valid." }, { status: 400 });
+    }
+    return handleSettingsWrite(body as Record<string, unknown>);
+  } catch (error) {
+    console.error("[PUT /api/admin/retention]", error);
+    return NextResponse.json({ error: "Gagal menyimpan pengaturan retensi." }, { status: 500 });
+  }
+}
+
+/** Logika simpan pengaturan (dipakai PUT dan POST non-preview). */
+async function handleSettingsWrite(data: Record<string, unknown>) {
+  try {
     if ("enabled" in data || "days" in data) {
       const enabled = data.enabled === true;
       const days = Number(data.days);
@@ -123,7 +173,7 @@ export async function PUT(req: NextRequest) {
       { status: 400 },
     );
   } catch (error) {
-    console.error("[PUT /api/admin/retention]", error);
+    console.error("[retention] handleSettingsWrite", error);
     return NextResponse.json({ error: "Gagal menyimpan pengaturan retensi." }, { status: 500 });
   }
 }

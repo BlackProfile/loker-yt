@@ -89,6 +89,7 @@ import {
   TrendingUp,
   Users,
   Wallet,
+  Workflow,
   X,
   XCircle,
   Zap,
@@ -100,6 +101,7 @@ import {
   REFERRAL_SOURCE_KINDS,
   REFERRAL_SOURCE_KIND_LABELS,
   ROLE_LABELS,
+  STATUS_LABELS,
   TAG_COLORS,
   TAG_COLOR_CLASSES,
   TELEGRAM_ALERT_KEYS,
@@ -123,6 +125,7 @@ import { SectionVisibilityCard, normalizeSections } from "./section-visibility-c
 import { CollapsibleCard } from "./collapsible-card";
 import { useTagDefs } from "./use-tag-defs";
 import { Reveal } from "./motion-primitives";
+import { DEFAULT_STAGES } from "@/lib/stages";
 import { cn } from "@/lib/utils";
 
 // Peta ikon lucide untuk benefit (fallback Sparkles).
