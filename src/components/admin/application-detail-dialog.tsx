@@ -996,6 +996,35 @@ function ApplicationHistoryCard({
   );
 }
 
+/**
+ * NR44 — badge kecil status persetujuan offer dua lapis.
+ * PENDING = amber, REJECTED = rose, APPROVED = zinc netral.
+ */
+function OfferApprovalBadge({ state }: { state: "PENDING" | "APPROVED" | "REJECTED" }) {
+  const config = {
+    PENDING: {
+      label: "Menunggu Persetujuan",
+      className:
+        "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400",
+    },
+    APPROVED: {
+      label: "Offer Disetujui",
+      className:
+        "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+    },
+    REJECTED: {
+      label: "Permintaan Ditolak",
+      className:
+        "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400",
+    },
+  }[state];
+  return (
+    <Badge variant="outline" className={config.className}>
+      {config.label}
+    </Badge>
+  );
+}
+
 export function ApplicationDetailDialog({
   application,
   onOpenChange,
@@ -1862,12 +1891,17 @@ export function ApplicationDetailDialog({
     if (offerWorking) return;
     setOfferWorking(true);
     try {
-      const res = await apiPost<{ application: Application; message: string }>(
+      const res = await apiPost<{ application: Application; message?: string; approvalRequired?: boolean }>(
         `/api/admin/applications/${app.id}/offer`,
         offerBodyFromForm()
       );
-      toast.success("Penawaran terkirim");
-      setOfferMessage(res.message);
+      // NR44 — bila alur persetujuan aktif & pelaku HR, respons berisi approvalRequired.
+      if (res.approvalRequired) {
+        toast.info("Permintaan persetujuan offer dikirim ke OWNER");
+      } else {
+        toast.success("Penawaran terkirim");
+      }
+      setOfferMessage(res.message ?? null);
       onSaved(res.application);
     } catch (err) {
       reportError(err);
@@ -3734,6 +3768,26 @@ export function ApplicationDetailDialog({
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <Video className="size-4 text-orange-500" aria-hidden="true" />
                 <p className="text-sm font-semibold">Wawancara</p>
+                {/* NR44 — skor tertimbang scorecard (fallback rata merata, label jelas). */}
+                {interviewWeighted.value != null ? (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "tabular-nums",
+                      hasCriteriaWeights && interviewWeighted.covered
+                        ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+                        : "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                    )}
+                    title={
+                      hasCriteriaWeights && interviewWeighted.covered
+                        ? "Rata tertimbang scorecard seluruh sesi (bobot kriteria posisi)"
+                        : "Rata-rata scorecard seluruh sesi (bobot merata)"
+                    }
+                  >
+                    {hasCriteriaWeights && interviewWeighted.covered ? "Skor Tertimbang" : "Skor Wawancara"}{" "}
+                    {formatScore1(interviewWeighted.value)}
+                  </Badge>
+                ) : null}
                 {canMutate ? (
                   <Button
                     variant="outline"
@@ -4482,10 +4536,49 @@ export function ApplicationDetailDialog({
             {/* Penawaran (offer) */}
             {canMutate && app.status !== "REJECTED" ? (
               <div className="flex flex-col gap-3 rounded-lg border p-3">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Handshake className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                   <p className="text-sm font-semibold">Penawaran</p>
+                  {/* NR44 — badge status persetujuan offer dua lapis. */}
+                  {app.offerApprovalState ? (
+                    <OfferApprovalBadge state={app.offerApprovalState} />
+                  ) : null}
                 </div>
+
+                {/* NR44 — panel permintaan persetujuan (muncul saat ada draft PENDING/REJECTED). */}
+                {(app.offerApprovalState === "PENDING" || app.offerApprovalState === "REJECTED") &&
+                (!app.offerStatus || app.offerStatus === "DECLINED" || app.offerStatus === "EXPIRED") ? (
+                  <div
+                    className={cn(
+                      "flex flex-col gap-1 rounded-lg border p-3 text-sm",
+                      app.offerApprovalState === "PENDING"
+                        ? "border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20"
+                        : "border-rose-200 bg-rose-50/60 dark:border-rose-900 dark:bg-rose-950/20"
+                    )}
+                  >
+                    <p className="font-medium">
+                      {app.offerApprovalState === "PENDING"
+                        ? "Menunggu persetujuan OWNER"
+                        : "Permintaan offer ditolak OWNER"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Diajukan oleh <span className="text-foreground">{app.offerRequestedBy ?? "-"}</span>
+                      {app.offerRequestedAt ? ` — ${formatDateTime(app.offerRequestedAt)}` : ""}
+                      {" \u00b7 "}Gaji: <span className="text-foreground">{app.offerSalary ?? "-"}</span>
+                    </p>
+                    {app.offerReviewNote ? (
+                      <p className="text-xs text-muted-foreground">
+                        Catatan review: <span className="text-foreground">{app.offerReviewNote}</span>
+                        {app.offerReviewedBy ? ` (${app.offerReviewedBy})` : ""}
+                      </p>
+                    ) : null}
+                    {app.offerApprovalState === "PENDING" && session.role !== "OWNER" ? (
+                      <p className="text-xs text-muted-foreground">
+                        Menunggu keputusan OWNER sebelum penawaran dikirim ke pelamar.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {!app.offerStatus || app.offerStatus === "DECLINED" || app.offerStatus === "EXPIRED" ? (
                   <>
