@@ -592,6 +592,63 @@ export type PublicContentResponse = {
   positions: Position[]; // hanya tayang (aktif, publishAt tercapai, belum lewat closesAt), featured dulu
   stats: { openRoles: number; totalApplications: number };
   positionStats: Record<string, PositionPublicStats>; // kuota & jumlah lamaran per posisi (untuk badge publik)
+  // NR45 — info mode perawatan (aditif; ada bila endpoint sudah dimutakhirkan)
+  maintenance?: MaintenancePublicInfo;
+};
+
+// NR45 — mode perawatan (Setting "maintenance") yang terlihat publik
+export type MaintenancePublicInfo = {
+  enabled: boolean;
+  level: "FULL" | "APPLY_ONLY"; // FULL = tutup situs, APPLY_ONLY = tutup pendaftaran saja
+  message: string;
+};
+
+// NR45 — snapshot beban server (GET /api/admin/server-health; aditif ke /api/health)
+export type ServerLoadLevel = "OK" | "WARN" | "CRIT";
+export type ServerLoadSnapshot = {
+  level: ServerLoadLevel;
+  reasons: string[]; // alasan level, bahasa Indonesia (kosong bila OK)
+  db: { ok: boolean; latencyMs: number };
+  memory: { rssMb: number; heapUsedMb: number };
+  uptimeSec: number;
+  disk: { dbBytes: number };
+  email: { queued: number; failed: number };
+  slowRequests: {
+    count24h: number;
+    thresholdMs: number;
+    last: { route: string; ms: number; at: string } | null;
+  };
+  cache: {
+    size: number;
+    hits: number;
+    misses: number;
+    hitRate: number | null; // 0..1, null bila belum ada permintaan
+    lastClearedAt: string | null;
+  };
+  aiQueue: {
+    waiting: number;
+    running: number;
+    maxConcurrent: number;
+    processed: number;
+    paused: boolean; // true saat Mode Hemat aktif (tugas AI ditunda)
+  };
+  realtime: { ok: boolean };
+  saveMode: {
+    active: boolean;
+    source: "AUTO" | "MANUAL";
+    reason: string;
+    since: string | null;
+  };
+  maintenance: MaintenancePublicInfo;
+  quietHours: { enabled: boolean; startHour: number; endHour: number; inWindow: boolean };
+  thresholds: {
+    dbLatencyWarnMs: number;
+    dbLatencyCritMs: number;
+    rssWarnMb: number;
+    rssCritMb: number;
+    slowPerHourWarn: number;
+  };
+  checkedAt: string;
 };
 
 // GET /api/admin/position-stats
@@ -1545,6 +1602,16 @@ export type SystemHealth = {
   disk: { dbBytes: number; uploadsBytes: number; backupsBytes: number };
   errors: { recent: number; lastError: string | null };
   checkedAt: string;
+  // NR45 — aditif: beban server real-time (ada bila endpoint sudah dimutakhirkan)
+  load?: {
+    level: ServerLoadLevel;
+    reasons: string[];
+    memory: { rssMb: number; heapUsedMb: number };
+    slowRequests24h: number;
+    aiQueue: { waiting: number; running: number; paused: boolean };
+    cache: { hits: number; misses: number };
+    saveMode: { active: boolean; source: "AUTO" | "MANUAL"; reason: string; since: string | null };
+  };
 };
 
 // K30 — e-signature offer
