@@ -8,9 +8,9 @@ import {
   type ReactNode,
 } from "react";
 import { AlertCircle, Loader2, RefreshCcw } from "lucide-react";
-import type { PublicContentResponse } from "@/lib/types";
+import type { MaintenancePublicInfo, PublicContentResponse } from "@/lib/types";
 import { useLiveResource, useRealtimeConnected } from "@/lib/live-client";
-import { LandingPage } from "@/components/landing/landing-page";
+import { LandingPage, MaintenanceScreen } from "@/components/landing/landing-page";
 import { EmbedJobs } from "@/components/landing/embed-jobs";
 import { PositionDetailView } from "@/components/landing/position-detail";
 import { SurveyView } from "@/components/landing/survey-view";
@@ -150,10 +150,13 @@ function LandingView({
   data,
   refreshing,
   onOpenPosition,
+  maintenance,
 }: {
   data: PublicContentResponse;
   refreshing: boolean;
   onOpenPosition: (slug: string) => void;
+  /** NR45 — mode perawatan: dari konten publik, fallback ke data server awal. */
+  maintenance?: MaintenancePublicInfo;
 }) {
   return (
     <LandingPage
@@ -163,6 +166,7 @@ function LandingView({
       positionStats={data.positionStats ?? {}}
       refreshing={refreshing}
       onOpenPosition={onOpenPosition}
+      maintenance={maintenance}
     />
   );
 }
@@ -179,8 +183,17 @@ function EmbedView({ data }: { data: PublicContentResponse }) {
  * Kontainer view utama (client): landing publik, detail per lowongan
  * (?posisi=slug), panel admin (#admin), dan widget embed (?embed=1).
  * Metadata SEO per posisi ditangani server di src/app/page.tsx.
+ * NR45 — initialMaintenance: snapshot mode perawatan yang dibaca server
+ * (Setting "maintenance") sebelum konten publik siap, agar situs yang ditutup
+ * FULL tidak berkedip terbuka saat pemuatan pertama.
  */
-export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | null }) {
+export function HomeView({
+  initialPosisiSlug,
+  initialMaintenance,
+}: {
+  initialPosisiSlug: string | null;
+  initialMaintenance?: MaintenancePublicInfo;
+}) {
   const [view, setView] = useState<View>("landing");
   const [slug, setSlug] = useState<string | null>(initialPosisiSlug);
   // Kode pelacakan dari "#status?code=XXX" — prefill form login Cek Status.
@@ -262,8 +275,24 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
 
   const resetKey = `${view}:${slug ?? ""}`;
 
+  // NR45 — situs ditutup penuh (mode perawatan FULL): layar perawatan tampil
+  // sejak pemuatan pertama / gagal muat, tanpa berkedip menampilkan situs.
+  // Panel admin tetap bisa masuk lewat #admin (view "admin" di bawah).
+  const fullMaintenance =
+    initialMaintenance?.enabled && initialMaintenance.level === "FULL"
+      ? initialMaintenance
+      : null;
+
   // Layar pemeriksaan pertama (hanya saat benar-benar belum ada data).
   if (loading && !data) {
+    if (fullMaintenance) {
+      return (
+        <MaintenanceScreen
+          siteName="Lumina Studio"
+          message={fullMaintenance.message}
+        />
+      );
+    }
     return (
       <div className="min-h-screen bg-background">
         <div className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur">
@@ -295,6 +324,14 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
 
   // Gagal total (tidak ada data & realtime/fokus pun belum berhasil) → tombol coba lagi.
   if (error || !data) {
+    if (fullMaintenance) {
+      return (
+        <MaintenanceScreen
+          siteName="Lumina Studio"
+          message={fullMaintenance.message}
+        />
+      );
+    }
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4 text-center">
         <span className="flex size-14 items-center justify-center rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
@@ -339,6 +376,9 @@ export function HomeView({ initialPosisiSlug }: { initialPosisiSlug: string | nu
           data={data}
           refreshing={refreshing}
           onOpenPosition={openPosition}
+          // NR45 — konten publik boleh membawa maintenance terbaru (live);
+          // fallback ke snapshot server agar tetap tertutup bila field belum ada.
+          maintenance={data.maintenance ?? initialMaintenance}
         />
       )}
       {/* Indikator kecil status realtime saat offline (anti-bingung tanpa mengganggu). */}

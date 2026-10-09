@@ -3,6 +3,7 @@
 // sedangkan seluruh interaksi (landing/admin/embed) berjalan di client (HomeView).
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
+import type { MaintenancePublicInfo } from "@/lib/types";
 import { HomeView } from "@/components/home-view";
 import { PreviewBanner } from "@/components/landing/preview-banner";
 
@@ -14,6 +15,28 @@ function firstSlug(value: string | string[] | undefined): string | null {
   if (typeof value !== "string") return null;
   const slug = value.trim();
   return slug.length > 0 ? slug.slice(0, 80) : null;
+}
+
+// NR45 — baca Setting "maintenance" (JSON toleran) untuk snapshot mode perawatan
+// yang dikirim ke klien sebelum konten publik siap: situs yang ditutup FULL
+// tampil sebagai layar perawatan tanpa berkedip terbuka. Gagal baca = undefined
+// (mode perawatan dianggap tidak aktif — halaman publik tidak boleh gagal keras).
+async function readInitialMaintenance(): Promise<MaintenancePublicInfo | undefined> {
+  try {
+    const row = await db.setting.findUnique({ where: { key: "maintenance" } });
+    if (!row) return undefined;
+    const parsed: unknown = JSON.parse(row.value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    const obj = parsed as Record<string, unknown>;
+    const enabled = obj.enabled === true;
+    const level = obj.level === "APPLY_ONLY" ? "APPLY_ONLY" : "FULL";
+    const message = typeof obj.message === "string" ? obj.message.slice(0, 300) : "";
+    return { enabled, level, message };
+  } catch {
+    return undefined;
+  }
 }
 
 export async function generateMetadata({
@@ -83,10 +106,14 @@ export async function generateMetadata({
 export default async function Page({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const initialPosisiSlug = firstSlug(params.posisi);
+  const initialMaintenance = await readInitialMaintenance();
   return (
     <>
       <PreviewBanner enabled={params.preview === "1"} />
-      <HomeView initialPosisiSlug={initialPosisiSlug} />
+      <HomeView
+        initialPosisiSlug={initialPosisiSlug}
+        initialMaintenance={initialMaintenance}
+      />
     </>
   );
 }

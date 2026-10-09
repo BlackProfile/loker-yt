@@ -1167,7 +1167,7 @@ function LandingShell({
           siteName={content.siteName}
           tagline={content.tagline}
           sections={sections}
-          recruitmentClosed={recruitment.recruitmentClosed}
+          recruitmentClosed={applyBlocked}
         />
         {recruitment.recruitmentClosed ? (
           <div
@@ -1182,6 +1182,25 @@ function LandingShell({
               <p className="text-sm font-medium leading-relaxed">
                 {recruitment.message.trim() ||
                   "Rekrutmen sedang ditutup. Pendaftaran sementara tidak dapat dikirim."}
+              </p>
+            </Container>
+          </div>
+        ) : null}
+        {/* NR45 — banner mode perawatan level APPLY_ONLY (pola banner rekrutmen):
+            pendaftaran ditutup sementara, situs masih bisa dijelajahi. */}
+        {maintenance?.enabled && maintenance.level === "APPLY_ONLY" ? (
+          <div
+            role="alert"
+            className="border-b border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            <Container className="flex items-start gap-3 py-3 sm:items-center">
+              <Wrench
+                className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400 sm:mt-0"
+                aria-hidden="true"
+              />
+              <p className="text-sm font-medium leading-relaxed">
+                {maintenance.message.trim() ||
+                  "Pendaftaran sementara ditutup — situs masih bisa dijelajahi."}
               </p>
             </Container>
           </div>
@@ -1206,7 +1225,7 @@ function LandingShell({
               positions={positions}
               stats={stats}
               sections={sections}
-              recruitmentClosed={recruitment.recruitmentClosed}
+              recruitmentClosed={applyBlocked}
             />
           ) : null}
           {sections.positions ? (
@@ -1227,7 +1246,7 @@ function LandingShell({
             <FinalCtaSection
               content={content}
               sections={sections}
-              recruitmentClosed={recruitment.recruitmentClosed}
+              recruitmentClosed={applyBlocked}
             />
           ) : null}
           {sections.subscribe ? <SubscribeSection /> : null}
