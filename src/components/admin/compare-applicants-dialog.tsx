@@ -88,6 +88,7 @@ export function CompareApplicantsDialog({
         <div className="-mr-2 grid max-h-[72vh] grid-cols-1 gap-3 overflow-y-auto pr-2 nice-scrollbar sm:grid-cols-2 lg:grid-cols-3">
           {apps.map((app) => {
             const isStarred = app.starredBy?.includes(currentUserId) ?? false;
+            const scoreEntry = scorecard[app.id] ?? null;
             const verdict = salaryVerdict(
               app.salaryExpectation,
               app.positionSalaryMin ?? null,
@@ -123,22 +124,22 @@ export function CompareApplicantsDialog({
                   <StatusBadge status={app.status} dot stageAgeIso={app.stageUpdatedAt || app.createdAt} />
                   <AiScoreBadge score={app.aiScore} />
                   {/* NR44 — skor tertimbang scorecard (fallback rata biasa, label jelas). */}
-                  {scorecard[app.id]?.value != null ? (
+                  {scoreEntry?.value != null ? (
                     <span
                       className={cn(
                         "inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold tabular-nums",
-                        scorecard[app.id].covered
+                        scoreEntry.covered
                           ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
                           : "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
                       )}
                       title={
-                        scorecard[app.id].covered
+                        scoreEntry.covered
                           ? "Rata tertimbang scorecard wawancara (bobot kriteria posisi)"
                           : "Rata-rata scorecard wawancara (bobot merata)"
                       }
                     >
-                      {scorecard[app.id].covered ? "Skor Tertimbang" : "Skor Wawancara"}{" "}
-                      {formatScore1(scorecard[app.id].value as number)}
+                      {scoreEntry.covered ? "Skor Tertimbang" : "Skor Wawancara"}{" "}
+                      {formatScore1(scoreEntry.value)}
                     </span>
                   ) : null}
                 </div>

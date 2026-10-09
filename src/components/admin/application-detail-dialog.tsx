@@ -175,6 +175,10 @@ import {
 } from "./interview-session-dialog";
 import { cn } from "@/lib/utils";
 import {
+  averageScoresAcrossSessions,
+  weightedAverage,
+} from "@/lib/scorecard"; // NR44 — skor tertimbang scorecard
+import {
   buildOfferHtml,
   buildProfileHtml,
   formatTimestamp,
@@ -1421,6 +1425,18 @@ export function ApplicationDetailDialog({
 
   const app = application;
   const pos = position;
+
+  // NR44 — skor tertimbang scorecard: rata per kriteria dari seluruh sesi
+  // wawancara pelamar, lalu ditimbang dengan bobot kriteria posisi (fallback
+  // rata merata bila posisi tidak menetapkan bobot).
+  const criteriaWeights = pos?.interviewCriteriaWeights ?? null;
+  const hasCriteriaWeights =
+    criteriaWeights != null && Object.values(criteriaWeights).some((w) => w > 0);
+  const interviewWeighted = weightedAverage(
+    averageScoresAcrossSessions(sessions.map((s) => s.scores ?? null)),
+    hasCriteriaWeights ? criteriaWeights : null,
+  );
+  const formatScore1 = (value: number) => value.toFixed(1).replace(".", ",");
 
   // NR-22 — blok UI yang disembunyikan untuk posisi terkait (Position.hiddenUi).
   const hiddenUi = pos?.hiddenUi ?? [];
