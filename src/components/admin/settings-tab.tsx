@@ -1910,6 +1910,344 @@ function RetentionCard() {
 }
 
 // ---------------------------------------------------------------------------
+// Aturan Otomatis (JIKA-MALA) — Task 4-a. Mesin aturan generik atas lamaran:
+// STAGE_AGING (alert lamaran menginap), SCORE_TAG (tag skor tinggi),
+// AUTO_REJECT (penolakan otomatis, default mati + peringatan risiko).
+// Kartu mandiri: GET/PUT /api/admin/automation (GET OWNER/HR, PUT OWNER saja).
+// ---------------------------------------------------------------------------
+
+type AutomationRuleTypeUi = "STAGE_AGING" | "AUTO_REJECT" | "SCORE_TAG";
+
+type AutomationRuleDto = {
+  id: string;
+  type: AutomationRuleTypeUi;
+  enabled: boolean;
+  params: { stage?: string; days?: number; threshold?: number; sendEmail?: boolean };
+};
+
+type AutomationConfigDto = {
+  triageAlertThreshold: number;
+  rules: AutomationRuleDto[];
+};
+
+type AutomationRuleUi = {
+  id: string;
+  type: AutomationRuleTypeUi;
+  enabled: boolean;
+  stage: string;
+  days: string;
+  threshold: string;
+  sendEmail: boolean;
+};
+
+type AutomationSettingsUi = {
+  triageAlertThreshold: string;
+  rules: AutomationRuleUi[];
+};
+
+const AUTOMATION_RULE_META: Record<AutomationRuleTypeUi, { label: string; description: string }> = {
+  STAGE_AGING: {
+    label: "Pengingat Lamaran Menginap",
+    description:
+      "JIKA lamaran berada di satu tahap lebih lama dari N hari, MAKA kirim alert Telegram berisi daftar kandidat dan lama menunggu (maks. sekali per tahap).",
+  },
+  SCORE_TAG: {
+    label: "Tag Skor Tinggi",
+    description:
+      "JIKA skor AI lamaran mencapai ambang, MAKA pasang tag \"High-Potential\" (tidak digandakan).",
+  },
+  AUTO_REJECT: {
+    label: "Penolakan Otomatis",
+    description:
+      "JIKA lamaran macet lebih dari N hari di tahap yang dipantau, MAKA ubah status menjadi Ditolak (alasan: Lainnya). Tidak berlaku untuk lamaran dengan wawancara terjadwal atau penawaran aktif.",
+  },
+};
+
+function defaultAutomationUi(): AutomationSettingsUi {
+  return {
+    triageAlertThreshold: "80",
+    rules: [
+      { id: "stage-aging", type: "STAGE_AGING", enabled: false, stage: "NEW", days: "7", threshold: "80", sendEmail: false },
+      { id: "auto-reject", type: "AUTO_REJECT", enabled: false, stage: "NEW", days: "30", threshold: "80", sendEmail: false },
+      { id: "score-tag", type: "SCORE_TAG", enabled: true, stage: "NEW", days: "30", threshold: "80", sendEmail: false },
+    ],
+  };
+}
+
+function mapAutomationConfigToUi(config: AutomationConfigDto): AutomationSettingsUi {
+  const base = defaultAutomationUi();
+  return {
+    triageAlertThreshold: String(config.triageAlertThreshold ?? 80),
+    rules: base.rules.map((fallback) => {
+      const found = config.rules.find((rule) => rule.type === fallback.type);
+      if (!found) return fallback;
+      return {
+        id: found.id,
+        type: found.type,
+        enabled: found.enabled === true,
+        stage: found.params.stage ?? fallback.stage,
+        days: String(found.params.days ?? fallback.days),
+        threshold: String(found.params.threshold ?? fallback.threshold),
+        sendEmail: found.params.sendEmail === true,
+      };
+    }),
+  };
+}
+
+function automationUiToPayload(state: AutomationSettingsUi) {
+  return {
+    triageAlertThreshold: Number(state.triageAlertThreshold),
+    rules: state.rules.map((rule) => ({
+      id: rule.id,
+      type: rule.type,
+      enabled: rule.enabled,
+      params: {
+        ...(rule.type === "SCORE_TAG"
+          ? { threshold: Number(rule.threshold) }
+          : { stage: rule.stage, days: Number(rule.days) }),
+        ...(rule.type === "AUTO_REJECT" ? { sendEmail: rule.sendEmail } : {}),
+      },
+    })),
+  };
+}
+
+function AutomationRulesCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+  // GET dibuka untuk OWNER/HR; VIEWER tetap melihat kartu dengan kontrol mati.
+  const canLoad = role === "OWNER" || role === "HR";
+  const [state, setState] = useState<AutomationSettingsUi>(defaultAutomationUi);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!canLoad) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await apiGet<{ automation: AutomationConfigDto }>("/api/admin/automation");
+      setState(mapAutomationConfigToUi(data.automation));
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [canLoad, reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  function updateRule(id: string, patch: Partial<AutomationRuleUi>) {
+    setState((prev) => ({
+      ...prev,
+      rules: prev.rules.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule)),
+    }));
+  }
+
+  async function handleSave() {
+    if (saving || !isOwner) return;
+    setSaving(true);
+    try {
+      const res = await apiPut<{ ok: true; automation: AutomationConfigDto }>(
+        "/api/admin/automation",
+        automationUiToPayload(state),
+      );
+      setState(mapAutomationConfigToUi(res.automation));
+      toast.success("Aturan otomatis disimpan.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <CollapsibleCard
+      id="aturan-otomatis"
+      icon={Workflow}
+      title="Aturan Otomatis (JIKA-MALA)"
+      description="Aturan JIKA-MALA atas lamaran: alert Telegram, pemasangan tag, atau penolakan otomatis. Dievaluasi saat perawatan data berjalan."
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Memuat aturan otomatis...
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {/* Ambang skor alert kandidat menarik */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="automation-triage-threshold">
+              Ambang skor alert kandidat menarik
+            </Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="automation-triage-threshold"
+                type="number"
+                min={0}
+                max={100}
+                value={state.triageAlertThreshold}
+                onChange={(e) =>
+                  setState((prev) => ({ ...prev, triageAlertThreshold: e.target.value }))
+                }
+                className="h-10 w-24"
+                disabled={saving || !isOwner}
+              />
+              <p className="text-xs text-muted-foreground">
+                Skor AI 0-100. Saat screening AI selesai dan skor mencapai angka ini, panel
+                menerima alert &quot;kandidat menarik baru&quot; via Telegram.
+              </p>
+            </div>
+          </div>
+
+          {/* Daftar aturan */}
+          {state.rules.map((rule) => {
+            const meta = AUTOMATION_RULE_META[rule.type];
+            return (
+              <div key={rule.id} className="flex flex-col gap-3 rounded-lg border p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{meta.label}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{meta.description}</p>
+                  </div>
+                  <Switch
+                    checked={rule.enabled}
+                    disabled={saving || !isOwner}
+                    onCheckedChange={(checked) => updateRule(rule.id, { enabled: checked })}
+                    aria-label={`Aktifkan aturan ${meta.label}`}
+                  />
+                </div>
+
+                {rule.type === "STAGE_AGING" ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor={`rule-stage-${rule.id}`}>Tahap yang dipantau</Label>
+                      <Select
+                        value={rule.stage}
+                        onValueChange={(value) => updateRule(rule.id, { stage: value })}
+                        disabled={saving || !isOwner}
+                      >
+                        <SelectTrigger id={`rule-stage-${rule.id}`} className="h-10">
+                          <SelectValue placeholder="Pilih tahap" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DEFAULT_STAGES.map((stage) => (
+                            <SelectItem key={stage} value={stage}>
+                              {STATUS_LABELS[stage]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor={`rule-days-${rule.id}`}>Menginap lebih dari (hari)</Label>
+                      <Input
+                        id={`rule-days-${rule.id}`}
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={rule.days}
+                        onChange={(e) => updateRule(rule.id, { days: e.target.value })}
+                        className="h-10"
+                        disabled={saving || !isOwner}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                {rule.type === "SCORE_TAG" ? (
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor={`rule-threshold-${rule.id}`}>Ambang skor AI (0-100)</Label>
+                    <Input
+                      id={`rule-threshold-${rule.id}`}
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={rule.threshold}
+                      onChange={(e) => updateRule(rule.id, { threshold: e.target.value })}
+                      className="h-10 w-24"
+                      disabled={saving || !isOwner}
+                    />
+                  </div>
+                ) : null}
+
+                {rule.type === "AUTO_REJECT" ? (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor={`rule-days-${rule.id}`}>Macet lebih dari (hari)</Label>
+                        <Input
+                          id={`rule-days-${rule.id}`}
+                          type="number"
+                          min={1}
+                          max={365}
+                          value={rule.days}
+                          onChange={(e) => updateRule(rule.id, { days: e.target.value })}
+                          className="h-10"
+                          disabled={saving || !isOwner}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">Kirim email ke kandidat</p>
+                          <p className="text-xs text-muted-foreground">
+                            Email penolakan otomatis masuk Kotak Keluar.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={rule.sendEmail}
+                          disabled={saving || !isOwner}
+                          onCheckedChange={(checked) => updateRule(rule.id, { sendEmail: checked })}
+                          aria-label="Kirim email penolakan otomatis"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Tahap yang dipantau: {STATUS_LABELS[rule.stage as keyof typeof STATUS_LABELS] ?? rule.stage}.
+                    </p>
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400">
+                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                      <span>
+                        Berisiko: menolak otomatis tanpa review manusia. Pastikan ambang hari cukup
+                        longgar sebelum mengaktifkan aturan ini.
+                      </span>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            );
+          })}
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              className="h-11 w-fit shrink-0 active:scale-[0.99] sm:h-10"
+              disabled={saving || !isOwner}
+              onClick={() => void handleSave()}
+            >
+              {saving ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Save className="size-4" aria-hidden="true" />
+              )}
+              Simpan
+            </Button>
+            {!isOwner ? (
+              <p className="text-xs text-muted-foreground">
+                Hanya pemilik studio (OWNER) yang dapat mengubah aturan otomatis.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </CollapsibleCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Laporan Email Terjadwal (NR-19) — toggle laporan mingguan/bulanan (OWNER saja).
 // Kartu mandiri: GET/PUT /api/admin/reports/schedule, simpan langsung saat toggle.
 // ---------------------------------------------------------------------------
@@ -3413,6 +3751,9 @@ export function SettingsTab() {
 
       {/* Retensi Data (privasi — hapus otomatis lamaran lama) */}
       <RetentionCard />
+
+      {/* Aturan Otomatis (JIKA-MALA) — Task 4-a: STAGE_AGING / AUTO_REJECT / SCORE_TAG */}
+      <AutomationRulesCard />
 
       {/* Daftar Tag (NR-24 — pustaka sugesti tag pelamar, simpan langsung per aksi) */}
       <TagsCard />

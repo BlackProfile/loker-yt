@@ -86,6 +86,7 @@ import { cn } from "@/lib/utils";
 import { apiDelete, apiGet, apiPost, apiPut, buildQuery } from "./api";
 import { formatDateTime, formatRelative } from "./format";
 import { useAdminSession } from "./admin-context";
+import { PrivacyCard } from "./privacy-card";
 
 /* ------------------------------- Util CSV ------------------------------- */
 
@@ -3007,6 +3008,9 @@ export function DataTab() {
 
       {/* ---------------------------- Arsip Otomatis ---------------------------- */}
       <AutoArchiveCard />
+
+      {/* ---------------------------- Pusat Privasi (4-c) ---------------------------- */}
+      <PrivacyCard />
 
       {/* ------------- Konfirmasi restore (peringatan kuat) ------------- */}
       <AlertDialog
