@@ -1,6 +1,8 @@
-/// <reference types="bun-types" />
 /**
  * db-ops — helper SQLite untuk db-guard & db-autobackup (dijalankan via bun).
+ * Catatan: error tsc "Cannot find module 'bun:sqlite'" pada file ini normal —
+ * bun-types sengaja TIDAK direferensikan di sini karena referensi global-nya
+ * merusak pengetikan File/Buffer di src/ (sudah pernah dicoba & dibatalkan).
  *
  * Sub-perintah:
  *   count <file>
