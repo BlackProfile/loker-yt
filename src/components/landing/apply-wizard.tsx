@@ -3279,6 +3279,27 @@ export function ApplyWizard({
           typeof (data as { error: unknown }).error === "string"
             ? (data as { error: string }).error
             : null;
+        // NR45 — server sedang berat: 503 (mode perawatan) & 429 (pembatasan laju)
+        // mendapat pesan ramah alih-alih teks teknis dari server.
+        if (res.status === 503) {
+          toast.error(serverError || t.apply.errors.maintenance);
+          return;
+        }
+        if (res.status === 429) {
+          // Baca body.retryAfterSec bila server menyertakannya; bila tidak,
+          // pakai estimasi 60 detik (pembulatan ke atas, minimal 1 menit).
+          const retrySec =
+            typeof data === "object" &&
+            data !== null &&
+            "retryAfterSec" in data &&
+            typeof (data as { retryAfterSec: unknown }).retryAfterSec === "number" &&
+            Number.isFinite((data as { retryAfterSec: number }).retryAfterSec)
+              ? (data as { retryAfterSec: number }).retryAfterSec
+              : 60;
+          const minutes = Math.max(1, Math.ceil(retrySec / 60));
+          toast.error(fillTemplate(t.apply.errors.rateLimited, { minutes }));
+          return;
+        }
         toast.error(serverError || t.apply.errors.submitFailed);
         return;
       }

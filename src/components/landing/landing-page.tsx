@@ -13,8 +13,10 @@ import {
   Quote,
   ShieldX,
   Sparkles,
+  Wrench,
 } from "lucide-react";
 import type {
+  MaintenancePublicInfo,
   Position,
   PositionPublicStats,
   SectionVisibility,
@@ -77,6 +79,8 @@ type LandingPageProps = {
   refreshing?: boolean;
   /** Buka halaman detail lowongan (?posisi=slug) — persyaratan + formulir per lowongan. */
   onOpenPosition: (slug: string) => void;
+  /** NR45 — info mode perawatan (dari server / konten publik). Tanpa prop = tidak aktif. */
+  maintenance?: MaintenancePublicInfo;
 };
 
 // Link nav/footer mengikuti visibilitas section terkait —
@@ -1072,16 +1076,65 @@ function SubBanner() {
   );
 }
 
+/**
+ * NR45 — layar penuh mode perawatan (level FULL): menggantikan seluruh halaman
+ * publik (tanpa Navbar/Footer) agar kunjungan tidak menabrak fitur yang sedang
+ * dirawat. Panel admin tetap bisa diakses lewat #admin (ditangani HomeView).
+ * Layar digayakan seperti hero gelap: zinc-950 + aksen rose, tanpa emoji.
+ */
+export function MaintenanceScreen({
+  siteName,
+  message,
+}: {
+  siteName: string;
+  message?: string;
+}) {
+  return (
+    <div
+      role="alert"
+      className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-zinc-950 px-4 text-center text-zinc-50"
+    >
+      <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-28 left-1/2 h-80 w-[40rem] max-w-full -translate-x-1/2 rounded-full bg-rose-600/15 blur-3xl"
+      />
+      <div className="relative flex max-w-md flex-col items-center">
+        <span
+          aria-hidden="true"
+          className="flex size-16 items-center justify-center rounded-full bg-rose-600/15 ring-1 ring-rose-500/40"
+        >
+          <Wrench className="size-8 text-rose-400" />
+        </span>
+        <h1 className="mt-6 text-2xl font-bold tracking-tight md:text-3xl">
+          Sedang dalam perawatan
+        </h1>
+        <p className="mt-3 leading-relaxed text-zinc-400">
+          {message?.trim() ||
+            "Kami segera kembali. Terima kasih atas kesabaranmu."}
+        </p>
+        <p className="mt-6 text-sm font-medium text-zinc-300">
+          &mdash; Tim {siteName}
+        </p>
+      </div>
+      <p className="absolute inset-x-0 bottom-6 text-center text-xs text-zinc-600">
+        Lumina Studio
+      </p>
+    </div>
+  );
+}
+
 function LandingShell({
   content,
   positions,
   stats,
   positionStats,
   onOpenPosition,
+  maintenance,
 }: LandingPageProps) {
   // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin).
   const sections = content.sections;
-  // Mode tutup rekrutmen (Setting "site") — banner amber + CTA Lamar nonaktif.
+  // Mode tutup rekrutmen (Setting "site" via /api/public/site) — banner amber + CTA Lamar nonaktif.
   const recruitment = useRecruitmentStatus();
   // NR-41 J24 — <html lang> mengikuti bahasa aktif (bawaan dokumen: "id").
   const { lang } = useLang();
@@ -1090,6 +1143,22 @@ function LandingShell({
   }, [lang]);
 
   useJobPostingJsonLd(positions, content.siteName);
+
+  // NR45 — Mode Perawatan FULL: seluruh halaman publik digantikan layar
+  // perawatan. Panel admin tetap bisa masuk lewat #admin (HomeView menangani).
+  if (maintenance?.enabled && maintenance.level === "FULL") {
+    return (
+      <MaintenanceScreen
+        siteName={content.siteName}
+        message={maintenance.message}
+      />
+    );
+  }
+
+  // NR45 — pendaftaran diblokir bila rekrutmen ditutup ATAU mode perawatan
+  // level APPLY_ONLY aktif (browsing tetap jalan).
+  const applyBlocked =
+    recruitment.recruitmentClosed || maintenance?.level === "APPLY_ONLY";
 
   return (
     <MotionConfig reducedMotion="user">

@@ -243,6 +243,10 @@ const id = {
       introType: "File harus berupa audio (mp3, wav, atau m4a).",
       introSize: "Ukuran audio maksimal 10 MB.",
       submitFailed: "Gagal mengirim lamaran. Coba lagi ya.",
+      // NR45 — server sedang berat: mode perawatan & pembatasan laju submit.
+      maintenance:
+        "Pendaftaran sedang ditutup sementara. Coba lagi setelah perawatan selesai.",
+      rateLimited: "Terlalu banyak percobaan. Tunggu {minutes} menit.",
     },
     draft: {
       title: "Draft ditemukan",
@@ -906,6 +910,9 @@ type idDictShape = {
       introType: string;
       introSize: string;
       submitFailed: string;
+      // NR45 — mode perawatan & pembatasan laju submit
+      maintenance: string;
+      rateLimited: string;
     };
     draft: {
       title: string;
@@ -1575,6 +1582,10 @@ const en: Dict = {
       introType: "File must be audio (mp3, wav, or m4a).",
       introSize: "Audio size must be at most 10 MB.",
       submitFailed: "Failed to submit application. Please try again.",
+      // NR45 — server under load: maintenance mode & submit rate limit.
+      maintenance:
+        "Applications are temporarily closed. Please try again once maintenance is complete.",
+      rateLimited: "Too many attempts. Please wait {minutes} minutes.",
     },
     draft: {
       title: "Draft found",
