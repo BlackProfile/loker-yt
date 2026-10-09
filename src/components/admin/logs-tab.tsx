@@ -280,6 +280,11 @@ const ACTION_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "DAILY_BACKUP", label: "DAILY_BACKUP — Backup harian" },
   { value: "MAINTENANCE", label: "MAINTENANCE — Pemeliharaan" },
   { value: "LOGIN_", label: "LOGIN_ — Semua aksi login" },
+  // NR45 — aksi baru "Server Sedang Berat" (cocok via prefix startsWith di server)
+  { value: "SLOW_REQUEST", label: "SLOW_REQUEST — Permintaan lambat" },
+  { value: "SAVE_MODE_", label: "SAVE_MODE_ — Mode Hemat" },
+  { value: "MAINTENANCE_", label: "MAINTENANCE_ — Mode Perawatan" },
+  { value: "QUIET_SKIP", label: "QUIET_SKIP — Ditunda jendela tenang" },
 ];
 
 export function LogsTab() {

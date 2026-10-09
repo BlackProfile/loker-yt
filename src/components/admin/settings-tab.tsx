@@ -71,6 +71,7 @@ import {
   Mic,
   Monitor,
   MonitorSmartphone,
+  MoonStar,
   PanelBottom,
   PenTool,
   Plus,
@@ -91,6 +92,7 @@ import {
   Users,
   Wallet,
   Workflow,
+  Wrench,
   X,
   XCircle,
   Zap,
@@ -119,7 +121,7 @@ import {
   type TagColor,
   type TeamMember,
 } from "@/lib/types";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api";
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api";
 import { copyText, formatDateTime, formatRelative, formatShortDateTime } from "./format";
 import { useAdminSession } from "./admin-context";
 import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
@@ -3058,6 +3060,330 @@ function TagsCard() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// NR45 — Mode Perawatan: Setting "maintenance" via GET/PUT /api/admin/maintenance.
+// FULL = seluruh halaman publik diganti layar perawatan (admin tetap masuk via
+// #admin); APPLY_ONLY = pendaftaran ditutup, browsing tetap jalan. Perubahan
+// langsung terlihat di halaman publik (emitRealtime site:changed di server).
+// ---------------------------------------------------------------------------
+
+type MaintenanceLevel = "FULL" | "APPLY_ONLY";
+
+const MAINTENANCE_LEVEL_OPTIONS: { value: MaintenanceLevel; label: string }[] = [
+  { value: "FULL", label: "Tutup seluruh situs publik (admin tetap bisa masuk)" },
+  { value: "APPLY_ONLY", label: "Tutup pendaftaran saja (browsing tetap jalan)" },
+];
+
+const MAINTENANCE_MESSAGE_MAX = 300;
+
+function MaintenanceCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+  const [enabled, setEnabled] = useState<boolean>(false);
+  const [level, setLevel] = useState<MaintenanceLevel>("FULL");
+  const [message, setMessage] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await apiGet<{
+        enabled?: boolean;
+        level?: string;
+        message?: string;
+      }>("/api/admin/maintenance");
+      setEnabled(data.enabled === true);
+      setLevel(data.level === "APPLY_ONLY" ? "APPLY_ONLY" : "FULL");
+      setMessage(typeof data.message === "string" ? data.message.slice(0, MAINTENANCE_MESSAGE_MAX) : "");
+    } catch {
+      // gagal muat -> biarkan default mati
+      toast.error("Gagal memuat pengaturan mode perawatan.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await apiPut("/api/admin/maintenance", {
+        enabled,
+        level,
+        message: message.trim().slice(0, MAINTENANCE_MESSAGE_MAX),
+      });
+      toast.success(
+        enabled
+          ? "Mode perawatan disimpan — perubahan langsung terlihat di halaman publik."
+          : "Mode perawatan dimatikan — halaman publik kembali normal.",
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        toast.error("Hanya OWNER dapat mengubah ini");
+      } else {
+        reportError(err);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <CollapsibleCard
+      id="mode-perawatan"
+      icon={Wrench}
+      title="Mode Perawatan"
+      description="Tutup halaman publik sementara (penuh atau hanya pendaftaran) saat server dirawat."
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Memuat pengaturan mode perawatan...
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Aktifkan mode perawatan</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Pengunjung publik melihat layar perawatan; panel admin tetap bisa masuk.
+              </p>
+            </div>
+            <Switch
+              checked={enabled}
+              disabled={saving || !isOwner}
+              onCheckedChange={(checked) => setEnabled(checked)}
+              aria-label="Aktifkan mode perawatan"
+            />
+          </div>
+
+          <Field id="maintenance-level" label="Level Penutupan">
+            <Select
+              value={level}
+              onValueChange={(value) => setLevel(value === "APPLY_ONLY" ? "APPLY_ONLY" : "FULL")}
+              disabled={saving || !isOwner}
+            >
+              <SelectTrigger id="maintenance-level" className="h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MAINTENANCE_LEVEL_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value} className="min-h-11">
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field
+            id="maintenance-message"
+            label={`Pesan Perawatan (${message.length}/${MAINTENANCE_MESSAGE_MAX})`}
+            hint="Ditampilkan di layar perawatan / banner halaman publik."
+          >
+            <Textarea
+              id="maintenance-message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value.slice(0, MAINTENANCE_MESSAGE_MAX))}
+              placeholder="Situs sedang dalam perawatan singkat. Segera kembali!"
+              maxLength={MAINTENANCE_MESSAGE_MAX}
+              rows={3}
+              disabled={saving || !isOwner}
+            />
+          </Field>
+
+          <Button
+            className="h-11 w-fit"
+            onClick={() => void handleSave()}
+            disabled={saving || !isOwner}
+          >
+            {saving ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Save className="size-4" aria-hidden="true" />
+            )}
+            Simpan
+          </Button>
+          {!isOwner ? (
+            <p className="text-xs text-muted-foreground">
+              Hanya pemilik studio (OWNER) yang dapat mengubah pengaturan ini.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </CollapsibleCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NR45 — Jendela Tenang: Setting "quiet_hours" via GET/PUT /api/admin/quiet-hours.
+// Tugas berat (arsip & retensi data) hanya dijalankan di dalam jendela jam ini;
+// jendela yang melewati tengah malam (mis. 23-05) didukung.
+// ---------------------------------------------------------------------------
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => hour);
+
+function hourLabel(hour: number): string {
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+function QuietHoursCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+  const [enabled, setEnabled] = useState<boolean>(false);
+  const [startHour, setStartHour] = useState<number>(2);
+  const [endHour, setEndHour] = useState<number>(5);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await apiGet<{
+        enabled?: boolean;
+        startHour?: number;
+        endHour?: number;
+      }>("/api/admin/quiet-hours");
+      setEnabled(data.enabled === true);
+      const start = typeof data.startHour === "number" ? Math.min(23, Math.max(0, Math.round(data.startHour))) : 2;
+      const end = typeof data.endHour === "number" ? Math.min(23, Math.max(0, Math.round(data.endHour))) : 5;
+      setStartHour(start);
+      setEndHour(end);
+    } catch {
+      // gagal muat -> biarkan default disarankan (02:00-05:00)
+      toast.error("Gagal memuat pengaturan jendela tenang.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await apiPut("/api/admin/quiet-hours", {
+        enabled,
+        startHour,
+        endHour,
+      });
+      toast.success(
+        enabled
+          ? `Jendela tenang disimpan (${hourLabel(startHour)}-${hourLabel(endHour)}).`
+          : "Jendela tenang dimatikan — tugas berat berjalan seperti biasa.",
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        toast.error("Hanya OWNER dapat mengubah ini");
+      } else {
+        reportError(err);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <CollapsibleCard
+      id="jendela-tenang"
+      icon={MoonStar}
+      title="Jendela Tenang"
+      description="Jadwalkan tugas berat hanya di jam yang kamu tentukan."
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Memuat pengaturan jendela tenang...
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-3 rounded-lg border p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Aktifkan jendela tenang</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Di luar jendela ini, tugas berat otomatis ditunda (QUIET_SKIP).
+              </p>
+            </div>
+            <Switch
+              checked={enabled}
+              disabled={saving || !isOwner}
+              onCheckedChange={(checked) => setEnabled(checked)}
+              aria-label="Aktifkan jendela tenang"
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field id="quiet-start" label="Mulai">
+              <Select
+                value={String(startHour)}
+                onValueChange={(value) => setStartHour(Number(value))}
+                disabled={saving || !isOwner}
+              >
+                <SelectTrigger id="quiet-start" className="h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HOUR_OPTIONS.map((hour) => (
+                    <SelectItem key={hour} value={String(hour)} className="min-h-11">
+                      {hourLabel(hour)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field id="quiet-end" label="Selesai">
+              <Select
+                value={String(endHour)}
+                onValueChange={(value) => setEndHour(Number(value))}
+                disabled={saving || !isOwner}
+              >
+                <SelectTrigger id="quiet-end" className="h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HOUR_OPTIONS.map((hour) => (
+                    <SelectItem key={hour} value={String(hour)} className="min-h-11">
+                      {hourLabel(hour)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Tugas berat (arsip &amp; retensi data) hanya dijalankan di dalam jendela ini
+            &mdash; default disarankan 02:00&ndash;05:00. Jendela melewati tengah malam
+            (mis. 23&ndash;05) juga didukung.
+          </p>
+
+          <Button
+            className="h-11 w-fit"
+            onClick={() => void handleSave()}
+            disabled={saving || !isOwner}
+          >
+            {saving ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Save className="size-4" aria-hidden="true" />
+            )}
+            Simpan
+          </Button>
+          {!isOwner ? (
+            <p className="text-xs text-muted-foreground">
+              Hanya pemilik studio (OWNER) yang dapat mengubah pengaturan ini.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </CollapsibleCard>
+  );
+}
+
 export function SettingsTab() {
   const [site, setSite] = useState<SiteContent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -3846,6 +4172,12 @@ export function SettingsTab() {
 
       {/* Persetujuan Offer dua lapis — NR44 (HR mengajukan, OWNER menyetujui) */}
       <OfferApprovalCard />
+
+      {/* NR45 — Mode Perawatan (tutup publik penuh / hanya pendaftaran) */}
+      <MaintenanceCard />
+
+      {/* NR45 — Jendela Tenang (tugas berat hanya di jam tertentu) */}
+      <QuietHoursCard />
 
       {/* Daftar Tag (NR-24 — pustaka sugesti tag pelamar, simpan langsung per aksi) */}
       <TagsCard />
