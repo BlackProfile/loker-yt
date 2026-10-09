@@ -54,7 +54,7 @@ export async function retentionPreview(
     deletedAt: null,
     createdAt: { lt: cutoff },
     OR: [{ status: "REJECTED" }, { archivedAt: { not: null } }],
-  } as const;
+  };
 
   const [count, rows] = await Promise.all([
     db.application.count({ where }),

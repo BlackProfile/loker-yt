@@ -1,11 +1,15 @@
-// GET /api/admin/retention — baca pengaturan retensi data (privasi) & arsip otomatis (OWNER).
-// PUT /api/admin/retention — simpan salah satu dari:
+// GET  /api/admin/retention — baca pengaturan retensi data (privasi) & arsip otomatis (OWNER).
+// PUT  /api/admin/retention — simpan salah satu dari:
 //   { enabled: boolean, days: number }                  -> Setting "retention" (hapus otomatis)
 //   { autoArchiveEnabled: boolean, autoArchiveDays: number } -> Setting "maintenance" (arsip otomatis)
-// Dipakai oleh tab Pengaturan (Retensi Data) dan tab Data (Arsip Otomatis).
+// POST /api/admin/retention — { mode: "preview", days: number } -> PRATINJAU (dry-run)
+//   dampak job retensi {count, samples, cutoffDate} TANPA menghapus/mengubah apa pun.
+//   POST tanpa mode:"preview" diteruskan ke logika simpan yang sama dengan PUT.
+// Dipakai oleh tab Pengaturan (Retensi Data) dan tab Data (Arsip Otomatis + Pusat Privasi).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { retentionPreview } from "@/lib/privacy-center";
 
 export const dynamic = "force-dynamic";
 

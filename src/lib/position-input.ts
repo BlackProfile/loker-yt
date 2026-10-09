@@ -111,6 +111,8 @@ export type PositionFields = {
   interviewPlatform?: string; // GOOGLE_MEET | ...
   interviewDuration?: number;
   interviewCriteria?: string[];
+  // NR44 — bobot scorecard per kriteria {[kriteria]: 0-100}; null = bobot merata.
+  interviewCriteriaWeights?: Record<string, number> | null;
   interviewInviteTemplate?: string | null;
   // Offer & onboarding per lowongan
   offerTemplate?: string | null;
@@ -190,6 +192,32 @@ function sanitizeBoolean(value: unknown, name: string): Sanitized<boolean | unde
   if (value === undefined) return ok(undefined);
   if (typeof value !== "boolean") return err(`${name} harus berupa boolean.`);
   return ok(value);
+}
+
+/**
+ * NR44 — bobot scorecard per kriteria: {[nama kriteria]: 0-100}.
+ * undefined = tidak dikirim; null / "" / {} = bobot merata (disimpan null).
+ * Kunci = nama kriteria persis (trim, maks 80 karakter); nilai dibulatkan dan
+ * di-clamp ke bilangan bulat 0-100. Entri tak valid diabaikan (toleran) agar
+ * kegagalan bobot tidak pernah menggagalkan simpan posisi.
+ */
+function sanitizeCriteriaWeights(
+  value: unknown,
+): Sanitized<Record<string, number> | null | undefined> {
+  if (value === undefined) return ok(undefined);
+  if (value === null || value === "") return ok(null);
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return err("Bobot kriteria scorecard harus berupa objek.");
+  }
+  const out: Record<string, number> = {};
+  for (const [rawKey, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    const key = typeof rawKey === "string" ? rawKey.trim().slice(0, 80) : "";
+    if (!key) continue;
+    const num = typeof rawValue === "number" ? rawValue : Number(rawValue);
+    if (!Number.isFinite(num)) continue;
+    out[key] = Math.min(100, Math.max(0, Math.round(num)));
+  }
+  return ok(Object.keys(out).length > 0 ? out : null);
 }
 
 function sanitizeOrder(value: unknown): Sanitized<number | undefined> {
@@ -784,6 +812,13 @@ export async function sanitizePositionInput(
   if (!interviewCriteria.ok) return interviewCriteria;
   if (interviewCriteria.value !== undefined) f.interviewCriteria = interviewCriteria.value;
 
+  // NR44 — bobot kriteria scorecard (null = bobot merata)
+  const interviewCriteriaWeights = sanitizeCriteriaWeights(data.interviewCriteriaWeights);
+  if (!interviewCriteriaWeights.ok) return interviewCriteriaWeights;
+  if (interviewCriteriaWeights.value !== undefined) {
+    f.interviewCriteriaWeights = interviewCriteriaWeights.value;
+  }
+
   const interviewInviteTemplate = sanitizeNullableText(
     data.interviewInviteTemplate, "Template undangan wawancara", 800,
   );
@@ -1023,6 +1058,13 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.interviewPlatform !== undefined) out.interviewPlatform = f.interviewPlatform;
   if (f.interviewDuration !== undefined) out.interviewDuration = f.interviewDuration;
   if (f.interviewCriteria !== undefined) out.interviewCriteria = JSON.stringify(f.interviewCriteria);
+  // NR44 — bobot scorecard: null = bobot merata (kolom tetap null), selain itu JSON objek.
+  if (f.interviewCriteriaWeights !== undefined) {
+    out.interviewCriteriaWeights =
+      f.interviewCriteriaWeights === null
+        ? null
+        : JSON.stringify(f.interviewCriteriaWeights);
+  }
   if (f.interviewInviteTemplate !== undefined) out.interviewInviteTemplate = f.interviewInviteTemplate;
   // Offer & onboarding per lowongan
   if (f.offerTemplate !== undefined) out.offerTemplate = f.offerTemplate;
