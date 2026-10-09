@@ -1383,6 +1383,8 @@ type InterviewState = {
   interviewPlatform: InterviewPlatform;
   interviewDuration: string;
   interviewCriteria: string[];
+  // NR44 — bobot per kriteria (string dari input angka; "" = tanpa bobot)
+  interviewCriteriaWeights: Record<string, string>;
   // Rencana ronde wawancara (template untuk "Jadwalkan Ronde Berikutnya")
   roundPlan: { name: string; durationMin: string; interviewers: string }[];
   interviewInviteTemplate: string;
@@ -1394,6 +1396,9 @@ function buildInterviewState(p: Position): InterviewState {
     interviewPlatform: p.interviewPlatform,
     interviewDuration: String(p.interviewDuration ?? 45),
     interviewCriteria: [...p.interviewCriteria],
+    interviewCriteriaWeights: Object.fromEntries(
+      Object.entries(p.interviewCriteriaWeights ?? {}).map(([k, v]) => [k, String(v)]),
+    ),
     roundPlan: (p.roundPlan ?? []).map((r) => ({
       name: r.name,
       durationMin: r.durationMin != null ? String(r.durationMin) : "",
@@ -1436,6 +1441,14 @@ export function PositionInterviewPage({
           )
             errors.push("Durasi wawancara harus angka bulat 10-480 menit.");
         }
+        // NR44 — bobot kriteria opsional: bila diisi harus angka 0-100.
+        for (const value of Object.values(form.interviewCriteriaWeights)) {
+          if (value.trim() === "") continue;
+          if (!isInt(value) || Number(value) < 0 || Number(value) > 100) {
+            errors.push("Bobot kriteria scorecard harus angka bulat 0-100.");
+            break;
+          }
+        }
         return errors;
       }}
       buildPayload={() => ({
@@ -1444,6 +1457,20 @@ export function PositionInterviewPage({
         interviewDuration:
           form.interviewDuration.trim() === "" ? null : Number(form.interviewDuration),
         interviewCriteria: form.interviewCriteria.map((c) => c.trim()).filter(Boolean),
+        // NR44 — bobot per kriteria (kunci = nama kriteria persis);
+        // kosong semua = null (bobot merata). Nilai non-angka diabaikan.
+        interviewCriteriaWeights: (() => {
+          const weights: Record<string, number> = {};
+          for (const name of form.interviewCriteria) {
+            const key = name.trim();
+            const raw = form.interviewCriteriaWeights[name]?.trim() ?? "";
+            if (!key || raw === "") continue;
+            const num = Number(raw);
+            if (!Number.isFinite(num)) continue;
+            weights[key] = Math.min(100, Math.max(0, Math.round(num)));
+          }
+          return Object.keys(weights).length > 0 ? weights : null;
+        })(),
         // Rencana ronde wawancara — hanya baris bernama yang disimpan
         roundPlan: form.roundPlan
           .filter((r) => r.name.trim())
@@ -1548,6 +1575,56 @@ export function PositionInterviewPage({
             hint="Kosongkan untuk memakai kriteria bawaan (Komunikasi, Portofolio, dll.)"
           />
         </div>
+
+        {/* NR44 — bobot per kriteria (opsional; kosong semua = bobot merata). */}
+        {form.interviewCriteria.length > 0 ? (
+          <div className="flex flex-col gap-2 rounded-lg border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label className="text-xs">Bobot Kriteria (0-100)</Label>
+              {(() => {
+                const total = form.interviewCriteria.reduce((sum, name) => {
+                  const raw = form.interviewCriteriaWeights[name]?.trim() ?? "";
+                  const num = Number(raw);
+                  return raw !== "" && Number.isFinite(num) ? sum + num : sum;
+                }, 0);
+                return (
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    Total bobot terisi: <span className="font-semibold text-foreground">{total}</span>
+                  </span>
+                );
+              })()}
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {form.interviewCriteria.map((name) => (
+                <div key={name} className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={name}>
+                    {name.trim() || `Kriteria ${form.interviewCriteria.indexOf(name) + 1}`}
+                  </span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={form.interviewCriteriaWeights[name] ?? ""}
+                    onChange={(e) =>
+                      set(
+                        "interviewCriteriaWeights",
+                        { ...form.interviewCriteriaWeights, [name]: e.target.value },
+                      )
+                    }
+                    placeholder="—"
+                    aria-label={`Bobot kriteria ${name}`}
+                    className="h-11 w-24 text-xs tabular-nums sm:h-9"
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Kosong semua = bobot merata. Total tidak harus 100 — skor akhir memakai proporsi
+              bobot kriteria yang terisi (sum nilai x bobot / sum bobot).
+            </p>
+          </div>
+        ) : null}
       </FormSection>
 
       <FormSection
