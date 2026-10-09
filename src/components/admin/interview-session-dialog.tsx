@@ -88,6 +88,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import { copyText, formatDateTime, formatTime, isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
 import { cn } from "@/lib/utils";
+import { weightedAverage } from "@/lib/scorecard"; // NR44 — rata tertimbang scorecard
 
 /* ------------------------------- Chip status ------------------------------- */
 
@@ -288,6 +289,13 @@ function InterviewSessionDialogInner({
     pos && pos.interviewCriteria.length > 0
       ? pos.interviewCriteria
       : DEFAULT_INTERVIEW_CRITERIA;
+
+  // NR44 — bobot kriteria dari posisi (null/kosong = bobot merata).
+  const criteriaWeights = pos?.interviewCriteriaWeights ?? null;
+  const hasCriteriaWeights =
+    criteriaWeights != null && Object.values(criteriaWeights).some((w) => w > 0);
+  // Rata tertimbang live dari skor yang sedang diisi (fallback rata biasa).
+  const liveWeighted = weightedAverage(scoreValues, hasCriteriaWeights ? criteriaWeights : null);
 
   const applicantName = interview?.applicationName ?? create?.applicationName ?? "-";
   const positionTitle =
@@ -1135,12 +1143,34 @@ function InterviewSessionDialogInner({
                     ) : null}
                   </div>
                   <div className="flex flex-col gap-3">
+                    {/* NR44 — rata tertimbang live (dekat ringkasan scorecard). */}
+                    {liveWeighted.value != null ? (
+                      <p className="text-xs text-muted-foreground" aria-live="polite">
+                        {hasCriteriaWeights && liveWeighted.covered
+                          ? "Rata tertimbang"
+                          : "Rata-rata"}
+                        :{" "}
+                        <span className="font-semibold tabular-nums text-foreground">
+                          {liveWeighted.value.toFixed(1).replace(".", ",")}
+                        </span>
+                        {!hasCriteriaWeights || !liveWeighted.covered ? (
+                          <span className="ml-1">(bobot merata)</span>
+                        ) : null}
+                      </p>
+                    ) : null}
                     {criteria.map((criterion) => {
                       const value = scoreValues[criterion];
+                      const weight = hasCriteriaWeights ? criteriaWeights?.[criterion] : undefined;
                       return (
                         <div key={criterion} className="flex flex-col gap-1.5">
                           <p className="text-xs font-medium text-muted-foreground">
                             {criterion}
+                            {/* NR44 — bobot kriteria (kecil, redup). */}
+                            {weight != null ? (
+                              <span className="ml-1.5 font-normal text-muted-foreground/80">
+                                · bobot {weight}
+                              </span>
+                            ) : null}
                           </p>
                           <div
                             className="flex flex-wrap items-center gap-1.5"

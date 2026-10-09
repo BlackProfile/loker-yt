@@ -5,6 +5,7 @@
 // dialog ini banding side-by-side 2-3 kandidat dari seleksi massal, murni dari
 // data baris yang sudah ada di state (tanpa fetch ulang, tanpa panggilan AI).
 
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +20,15 @@ import { RatingStars } from "./rating-stars";
 import { ApplicantAvatar } from "./applicant-avatar";
 import { salaryVerdict } from "./stage-meta";
 import { ageOf, type ApplicationRow } from "./applicant-row-types";
+import { apiGet } from "./api";
 import { cn } from "@/lib/utils";
+
+// NR44 — hasil skor tertimbang dari /api/admin/scorecard (per lamaran).
+type ScorecardEntry = { value: number | null; covered: boolean; hasWeights: boolean };
+
+function formatScore1(value: number): string {
+  return value.toFixed(1).replace(".", ",");
+}
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -45,6 +54,27 @@ export function CompareApplicantsDialog({
   /** Id admin aktif untuk cek bintang personal (starredBy). */
   currentUserId: string;
 }) {
+  // NR44 — muat skor tertimbang scorecard untuk pelamar yang dibandingkan.
+  const [scorecard, setScorecard] = useState<Record<string, ScorecardEntry>>({});
+  const scorecardIds = apps.map((a) => a.id).join(",");
+  useEffect(() => {
+    if (!open || !scorecardIds) return;
+    let cancelled = false;
+    apiGet<{ scores: Record<string, ScorecardEntry> }>(
+      `/api/admin/scorecard?applicationIds=${encodeURIComponent(scorecardIds)}`,
+    )
+      .then((res) => {
+        if (!cancelled) setScorecard(res.scores ?? {});
+      })
+      .catch(() => {
+        // Pelengkap — dialog tetap tampil tanpa skor tertimbang.
+        if (!cancelled) setScorecard({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, scorecardIds]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-5xl">
@@ -92,6 +122,25 @@ export function CompareApplicantsDialog({
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={app.status} dot stageAgeIso={app.stageUpdatedAt || app.createdAt} />
                   <AiScoreBadge score={app.aiScore} />
+                  {/* NR44 — skor tertimbang scorecard (fallback rata biasa, label jelas). */}
+                  {scorecard[app.id]?.value != null ? (
+                    <span
+                      className={cn(
+                        "inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold tabular-nums",
+                        scorecard[app.id].covered
+                          ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+                          : "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                      )}
+                      title={
+                        scorecard[app.id].covered
+                          ? "Rata tertimbang scorecard wawancara (bobot kriteria posisi)"
+                          : "Rata-rata scorecard wawancara (bobot merata)"
+                      }
+                    >
+                      {scorecard[app.id].covered ? "Skor Tertimbang" : "Skor Wawancara"}{" "}
+                      {formatScore1(scorecard[app.id].value as number)}
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="flex items-center gap-2">
