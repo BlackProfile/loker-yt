@@ -11,6 +11,12 @@ export type AdminSessionContextValue = {
   role: Role;
   canMutate: boolean;
   reportError: (err: unknown) => void;
+  // NR46 — pratinjau peran (Paket A): field OPSIONAL agar konsumen lama tetap
+  // aman. `role` di atas SUDAH mengikuti role pratinjau bila aktif; `session`
+  // selalu sesi asli.
+  previewRole?: Role | null;
+  startPreview?: (r: Role) => void;
+  stopPreview?: () => void;
 };
 
 const AdminSessionContext = createContext<AdminSessionContextValue | null>(null);

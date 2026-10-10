@@ -126,6 +126,8 @@ import { copyText, formatDateTime, formatRelative, formatShortDateTime } from ".
 import { useAdminSession } from "./admin-context";
 import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
 import { CollapsibleCard } from "./collapsible-card";
+import { PermissionMatrixCard } from "./permission-matrix-card";
+import { PasswordPolicyCard } from "./password-policy-card";
 import { useTagDefs } from "./use-tag-defs";
 import { Reveal } from "./motion-primitives";
 import { DEFAULT_STAGES } from "@/lib/stages";
@@ -4178,6 +4180,12 @@ export function SettingsTab() {
 
       {/* NR45 — Jendela Tenang (tugas berat hanya di jam tertentu) */}
       <QuietHoursCard />
+
+      {/* NR46 — Matriks Izin (peta aksi per role, transparansi + penyesuaian OWNER) */}
+      <PermissionMatrixCard />
+
+      {/* NR46 — Kebijakan Sandi (syarat kekuatan sandi + rotasi + wajib ganti pertama) */}
+      <PasswordPolicyCard />
 
       {/* Daftar Tag (NR-24 — pustaka sugesti tag pelamar, simpan langsung per aksi) */}
       <TagsCard />
