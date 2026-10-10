@@ -19,6 +19,7 @@ import * as XLSX from "xlsx";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { can } from "@/lib/permissions";
 import { APPLICATION_INCLUDE, parseApplicationFilters } from "@/lib/seed";
 import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
 import { formatAnswerValue, type FormSchema } from "@/lib/form-schema";
@@ -244,6 +245,13 @@ export async function GET(req: NextRequest) {
     }
     if (session.role === "VIEWER") {
       return NextResponse.json(FORBIDDEN, { status: 403 });
+    }
+    // NR46 — matriks izin: ekspor data.
+    if (!(await can(session.role, "ekspor_data"))) {
+      return NextResponse.json(
+        { error: "Aksi ini tidak diizinkan untuk role Anda — lihat Matriks Izin di Pengaturan." },
+        { status: 403 },
+      );
     }
 
     const { searchParams } = new URL(req.url);

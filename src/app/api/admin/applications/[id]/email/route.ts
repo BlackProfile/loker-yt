@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { can } from "@/lib/permissions";
 import { queueEmail } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     if (session.role === "VIEWER") {
       return NextResponse.json(FORBIDDEN, { status: 403 });
+    }
+    // NR46 — matriks izin: kirim email kandidat.
+    if (!(await can(session.role, "kirim_email"))) {
+      return NextResponse.json(
+        { error: "Aksi ini tidak diizinkan untuk role Anda — lihat Matriks Izin di Pengaturan." },
+        { status: 403 },
+      );
     }
     const { id } = await params;
 

@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { can } from "@/lib/permissions";
 import { closeExpiredPositions, serializePosition } from "@/lib/seed";
 import { sanitizePositionInput } from "@/lib/position-input";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
@@ -40,6 +41,13 @@ export async function POST(req: NextRequest) {
     }
     if (session.role === "VIEWER") {
       return NextResponse.json(FORBIDDEN, { status: 403 });
+    }
+    // NR46 — matriks izin: OWNER dapat menyempitkan aksi ini untuk role lain.
+    if (!(await can(session.role, "kelola_posisi"))) {
+      return NextResponse.json(
+        { error: "Aksi ini tidak diizinkan untuk role Anda — lihat Matriks Izin di Pengaturan." },
+        { status: 403 },
+      );
     }
 
     const body: unknown = await req.json().catch(() => null);

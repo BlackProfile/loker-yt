@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { can } from "@/lib/permissions";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { stageLabel, stagesForPosition } from "@/lib/stages";
 
@@ -180,6 +181,13 @@ export async function POST(req: NextRequest) {
     }
     if (session.role === "VIEWER") {
       return NextResponse.json(FORBIDDEN, { status: 403 });
+    }
+    // NR46 — matriks izin: kelola lamaran (ubah status massal).
+    if (!(await can(session.role, "kelola_lamaran"))) {
+      return NextResponse.json(
+        { error: "Aksi ini tidak diizinkan untuk role Anda — lihat Matriks Izin di Pengaturan." },
+        { status: 403 },
+      );
     }
 
     const contentType = req.headers.get("content-type") ?? "";
