@@ -198,6 +198,51 @@ export function NotificationBell({ onOpenTasks }: { onOpenTasks?: () => void }) 
     }
   }
 
+  // NR46 — buka panel preferensi: muat preferensi sesi untuk prefill.
+  async function openPrefs() {
+    setPrefsOpen(true);
+    setPrefsLoading(true);
+    try {
+      const data = await apiGet<{ prefs: NotifyPrefs }>("/api/admin/notification-prefs");
+      setPrefs({
+        categories: {
+          APPLICATION: data.prefs?.categories?.APPLICATION !== false,
+          INTERVIEW: data.prefs?.categories?.INTERVIEW !== false,
+          OFFER: data.prefs?.categories?.OFFER !== false,
+          SYSTEM: data.prefs?.categories?.SYSTEM !== false,
+          LOGIN: data.prefs?.categories?.LOGIN !== false,
+        },
+        silentFrom: data.prefs?.silentFrom ?? null,
+        silentTo: data.prefs?.silentTo ?? null,
+      });
+    } catch {
+      // Prefill gagal: pakai nilai terakhir/bawaan; simpan tetap dicoba.
+    } finally {
+      setPrefsLoading(false);
+    }
+  }
+
+  // NR46 — simpan preferensi (kategori + jam senyap; null = nonaktif).
+  async function savePrefs() {
+    if (prefsSaving) return;
+    setPrefsSaving(true);
+    try {
+      await apiPut<{ ok: boolean; prefs: NotifyPrefs }>("/api/admin/notification-prefs", {
+        categories: prefs.categories,
+        silentFrom: prefs.silentFrom,
+        silentTo: prefs.silentTo,
+      });
+      toast.success("Preferensi notifikasi disimpan");
+      setPrefsOpen(false);
+      // Muat ulang daftar agar hasil penyaringan langsung terlihat.
+      await load();
+    } catch {
+      toast.error("Gagal menyimpan preferensi notifikasi.");
+    } finally {
+      setPrefsSaving(false);
+    }
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -229,40 +274,182 @@ export function NotificationBell({ onOpenTasks }: { onOpenTasks?: () => void }) 
       >
         <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
           <p className="text-sm font-semibold">Notifikasi</p>
-          {unreadCount > 0 ? (
+          <div className="flex shrink-0 items-center gap-1">
+            {unreadCount > 0 && !prefsOpen ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 px-2 text-xs"
+                onClick={() => void handleMarkAllRead()}
+                disabled={markingAll}
+              >
+                <CheckCheck className="size-3.5" aria-hidden="true" />
+                Tandai semua dibaca
+              </Button>
+            ) : null}
+            {/* NR46 — Preferensi Notifikasi Saya. */}
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 gap-1.5 px-2 text-xs"
-              onClick={() => void handleMarkAllRead()}
-              disabled={markingAll}
+              className={cn(
+                "h-8 gap-1.5 px-2 text-xs",
+                prefsOpen && "bg-accent text-foreground",
+              )}
+              onClick={() => {
+                if (prefsOpen) {
+                  setPrefsOpen(false);
+                } else {
+                  void openPrefs();
+                }
+              }}
+              aria-pressed={prefsOpen}
+              aria-label="Preferensi notifikasi saya"
             >
-              <CheckCheck className="size-3.5" aria-hidden="true" />
-              Tandai semua dibaca
+              <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+              Preferensi
             </Button>
-          ) : null}
+          </div>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-            <span
-              className="size-1.5 animate-pulse rounded-full bg-rose-600"
-              aria-hidden="true"
-            />
-            Memuat notifikasi...
-          </div>
-        ) : items.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-10 text-center">
-            <BellOff className="size-5 text-muted-foreground" aria-hidden="true" />
-            <p className="text-sm text-muted-foreground">
-              Belum ada notifikasi. Aktivitas lamaran &amp; offer akan muncul di sini.
-            </p>
+        {prefsOpen ? (
+          /* NR46 — panel preferensi inline di dalam popover. */
+          <div className="flex flex-col gap-3 px-4 py-3">
+            {prefsLoading ? (
+              <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                Memuat preferensi...
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Kategori
+                  </p>
+                  {PREF_CATEGORIES.map((cat) => (
+                    <label
+                      key={cat.key}
+                      className="flex min-h-9 items-center justify-between gap-3 rounded-md px-1 py-1 transition-colors hover:bg-muted/60"
+                    >
+                      <span className="text-sm">{cat.label}</span>
+                      <Switch
+                        checked={prefs.categories[cat.key]}
+                        onCheckedChange={(checked) =>
+                          setPrefs((p) => ({
+                            ...p,
+                            categories: { ...p.categories, [cat.key]: checked },
+                          }))
+                        }
+                        aria-label={`Tampilkan notifikasi kategori ${cat.label}`}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Jam senyap
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="notif-silent-from" className="text-xs text-muted-foreground">
+                        Mulai
+                      </Label>
+                      <Select
+                        value={prefs.silentFrom == null ? "off" : String(prefs.silentFrom)}
+                        onValueChange={(v) =>
+                          setPrefs((p) => ({
+                            ...p,
+                            silentFrom: v === "off" ? null : Number(v),
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="notif-silent-from" className="h-9 w-full" aria-label="Jam mulai senyap">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="off">Nonaktif</SelectItem>
+                          {HOUR_OPTIONS.map((h) => (
+                            <SelectItem key={h} value={String(h)}>
+                              {hourLabel(h)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="notif-silent-to" className="text-xs text-muted-foreground">
+                        Selesai
+                      </Label>
+                      <Select
+                        value={prefs.silentTo == null ? "off" : String(prefs.silentTo)}
+                        onValueChange={(v) =>
+                          setPrefs((p) => ({
+                            ...p,
+                            silentTo: v === "off" ? null : Number(v),
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="notif-silent-to" className="h-9 w-full" aria-label="Jam selesai senyap">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="off">Nonaktif</SelectItem>
+                          {HOUR_OPTIONS.map((h) => (
+                            <SelectItem key={h} value={String(h)}>
+                              {hourLabel(h)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Selama jam senyap, hanya notifikasi Sistem yang tetap tampil.
+                  </p>
+                </div>
+                <Button
+                  className="h-9"
+                  disabled={prefsSaving}
+                  onClick={() => void savePrefs()}
+                >
+                  {prefsSaving ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                      Menyimpan...
+                    </>
+                  ) : (
+                    "Simpan Preferensi"
+                  )}
+                </Button>
+              </>
+            )}
           </div>
         ) : (
-          <ul
-            className="max-h-96 divide-y overflow-y-auto nice-scrollbar"
-            aria-label="Daftar notifikasi"
-          >
+          <>
+            {filteredOut > 0 ? (
+              <p className="border-b px-4 py-2 text-xs text-muted-foreground">
+                {filteredOut} notifikasi disembunyikan oleh preferensi/jam senyap Anda.
+              </p>
+            ) : null}
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                <span
+                  className="size-1.5 animate-pulse rounded-full bg-rose-600"
+                  aria-hidden="true"
+                />
+                Memuat notifikasi...
+              </div>
+            ) : items.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-center">
+                <BellOff className="size-5 text-muted-foreground" aria-hidden="true" />
+                <p className="text-sm text-muted-foreground">
+                  Belum ada notifikasi. Aktivitas lamaran &amp; offer akan muncul di sini.
+                </p>
+              </div>
+            ) : (
+              <ul
+                className="max-h-96 divide-y overflow-y-auto nice-scrollbar"
+                aria-label="Daftar notifikasi"
+              >
             {items.map((item) => {
               const Icon = categoryIcon(item.category);
               return (
@@ -324,7 +511,9 @@ export function NotificationBell({ onOpenTasks }: { onOpenTasks?: () => void }) 
                 </li>
               );
             })}
-          </ul>
+              </ul>
+            )}
+          </>
         )}
 
         <div className="border-t px-4 py-2.5">
