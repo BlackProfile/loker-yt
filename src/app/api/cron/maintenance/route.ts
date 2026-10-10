@@ -26,6 +26,9 @@ import { processEmailRetries } from "@/lib/email-retry";
 import { evaluateAutomationRules, type AutomationEvalSummary } from "@/lib/automation-rules";
 // NR45 — jendela tenang (tunda tugas berat) + snapshot kesehatan server.
 import { getServerLoadSnapshot, readQuietHoursConfig } from "@/lib/load-metrics";
+// NR46 — kedaluwarsa akun admin + cabut sesi otomatis.
+import { revokeUserSessions } from "@/lib/server-auth";
+import { sendSystemEvent } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -297,6 +300,76 @@ async function runMaintenance() {
     });
   }
 
+  // NR46 — kedaluwarsa akun admin: nonaktifkan akun yang melewati tanggal + cabut sesinya.
+  let accountsExpired = 0;
+  let accountsExpiringWarned = 0;
+  try {
+    const expiredAccounts = await db.adminUser.findMany({
+      where: { isActive: true, expiresAt: { lt: new Date() } },
+      select: { id: true, email: true, name: true, expiresAt: true },
+    });
+    for (const acc of expiredAccounts) {
+      await db.adminUser.update({ where: { id: acc.id }, data: { isActive: false } });
+      await revokeUserSessions(acc.id);
+      accountsExpired += 1;
+      await db.activityLog.create({
+        data: {
+          applicationId: null,
+          actor: "Sistem",
+          action: "ACCOUNT_EXPIRED",
+          detail: `Akun ${acc.email} dinonaktifkan otomatis (kedaluwarsa ${acc.expiresAt?.toISOString().slice(0, 10) ?? "-"}) — semua sesi dicabut`,
+        },
+      });
+    }
+    if (expiredAccounts.length > 0) {
+      await sendSystemEvent({
+        title: "Akun Admin Kedaluwarsa",
+        detail: `${expiredAccounts.length} akun dinonaktifkan otomatis: ${expiredAccounts.map((a) => a.email).join(", ")}.`,
+        action: "ACCOUNT_EXPIRED",
+        category: "SYSTEM",
+      }).catch(() => undefined);
+    }
+
+    // Peringatan H-7 (sekali per hari per akun — dedupe via ActivityLog hari ini).
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60_000);
+    const expiringSoon = await db.adminUser.findMany({
+      where: { isActive: true, expiresAt: { gt: now, lte: in7Days } },
+      select: { id: true, email: true, expiresAt: true },
+    });
+    if (expiringSoon.length > 0) {
+      const todayWarns = await db.activityLog.findMany({
+        where: { action: "ACCOUNT_EXPIRY_WARN", applicationId: null, createdAt: { gte: dayStart } },
+        select: { detail: true },
+      });
+      const alreadyWarned = new Set(todayWarns.map((w) => w.detail));
+      for (const acc of expiringSoon) {
+        const marker = `Akun ${acc.email} akan kedaluwarsa`;
+        if ([...alreadyWarned].some((d) => d.includes(acc.email))) continue;
+        accountsExpiringWarned += 1;
+        await db.activityLog.create({
+          data: {
+            applicationId: null,
+            actor: "Sistem",
+            action: "ACCOUNT_EXPIRY_WARN",
+            detail: `${marker} pada ${acc.expiresAt?.toISOString().slice(0, 10) ?? "-"} — perpanjang di tab Pengguna bila masih dibutuhkan.`,
+          },
+        });
+      }
+      if (accountsExpiringWarned > 0) {
+        await sendSystemEvent({
+          title: "Pengingat Kedaluwarsa Akun",
+          detail: `${accountsExpiringWarned} akun akan kedaluwarsa dalam 7 hari. Perpanjang di tab Pengguna bila masih dibutuhkan.`,
+          action: "ACCOUNT_EXPIRY_WARN",
+          category: "SYSTEM",
+        }).catch(() => undefined);
+      }
+    }
+  } catch {
+    // kegagalan job kedaluwarsa tidak menggagalkan perawatan lain
+  }
+
   // Penanda eksekusi (dipakai guard 1x/jam).
   await db.activityLog.create({
     data: {
@@ -327,6 +400,9 @@ async function runMaintenance() {
         endHour: quiet.endHour,
         inWindow: quiet.inWindow,
       },
+      // NR46 — kedaluwarsa akun.
+      accountsExpired,
+      accountsExpiringWarned,
       ranAt: now.toISOString(),
     },
   };

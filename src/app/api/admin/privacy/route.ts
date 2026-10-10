@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { createApprovalRequest, shouldRouteToApproval } from "@/lib/dual-control";
 import { describeEraseTarget, eraseCandidateData } from "@/lib/privacy-center";
 
 export const dynamic = "force-dynamic";
@@ -80,10 +81,28 @@ export async function POST(req: NextRequest) {
       typeof data.confirmTrackingCode === "string" ? data.confirmTrackingCode.trim() : "";
     const anchor = await db.application.findUnique({
       where: { id: targetId },
-      select: { trackingCode: true },
+      select: { trackingCode: true, name: true },
     });
     if (!anchor?.trackingCode || confirmTrackingCode !== anchor.trackingCode) {
       return NextResponse.json({ error: "Kode konfirmasi tidak cocok" }, { status: 400 });
+    }
+
+    // NR46 — empat mata: hapus data kandidat lewat persetujuan OWNER lain.
+    if (await shouldRouteToApproval()) {
+      const requestId = await createApprovalRequest({
+        kind: "PRIVACY_ERASE",
+        payload: { applicationId: targetId },
+        summary: `Hapus seluruh data kandidat ${anchor.name ?? ""} (${anchor.trackingCode})`,
+        session,
+      });
+      return NextResponse.json(
+        {
+          approvalRequired: true,
+          requestId,
+          message: `Permintaan penghapusan data ${anchor.name ?? anchor.trackingCode} dikirim — menunggu persetujuan OWNER lain.`,
+        },
+        { status: 202 },
+      );
     }
 
     const result = await eraseCandidateData(targetId, session.name);
