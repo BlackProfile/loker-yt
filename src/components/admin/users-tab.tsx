@@ -1005,6 +1005,39 @@ export function UsersTab() {
                 {errors.password}
               </p>
             ) : null}
+            {/* NR46 — kedaluwarsa akun (opsional): "" = permanen. */}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="u-expires">Kedaluwarsa akun (opsional)</Label>
+              <Input
+                id="u-expires"
+                type="date"
+                value={form.expiresAt}
+                onChange={(e) => setForm((f) => ({ ...f, expiresAt: e.target.value }))}
+                className="h-10"
+              />
+              <p className="text-xs text-muted-foreground">
+                Kosongkan = permanen. Akun otomatis nonaktif setelah tanggal ini.
+              </p>
+            </div>
+            {/* NR46 — konfirmasi ketik email saat role diubah (empat mata). */}
+            {editing && form.role !== editing.role ? (
+              <div className="flex flex-col gap-1.5 rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/20">
+                <Label htmlFor="u-confirm-email">Ketik email pengguna untuk konfirmasi</Label>
+                <Input
+                  id="u-confirm-email"
+                  type="text"
+                  value={confirmEmail}
+                  onChange={(e) => setConfirmEmail(e.target.value)}
+                  placeholder={editing.email}
+                  autoComplete="off"
+                  className="h-10"
+                />
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Perubahan role memengaruhi akses pengguna — ketik email {editing.email} untuk
+                  mengonfirmasi.
+                </p>
+              </div>
+            ) : null}
             {editing ? (
               <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
                 <div>
@@ -1033,7 +1066,16 @@ export function UsersTab() {
             >
               Batal
             </Button>
-            <Button onClick={() => void handleSave()} disabled={saving} className="h-10">
+            <Button
+              onClick={() => void handleSave()}
+              disabled={saving || roleConfirmMismatch}
+              className="h-10"
+              title={
+                roleConfirmMismatch
+                  ? "Ketik email pengguna untuk konfirmasi perubahan role"
+                  : undefined
+              }
+            >
               {saving ? (
                 <>
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
