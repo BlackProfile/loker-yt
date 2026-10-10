@@ -194,7 +194,25 @@ export async function POST(req: NextRequest) {
       userAgent,
     });
 
-    const response = NextResponse.json({ ok: true, session: toSession(user) });
+    // NR46 — catat login sukses terakhir (kesehatan akses). Gagal tidak menggagalkan login.
+    await db.adminUser
+      .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+      .catch(() => undefined);
+
+    // NR46 — bila akun wajib mengganti sandi, sesi tetap dibuat (agar bisa membuka
+    // dialog ganti sandi) tetapi UI dipaksa menampilkan dialog tersebut.
+    let mustChangePassword = false;
+    try {
+      const fresh = await db.adminUser.findUnique({
+        where: { id: user.id },
+        select: { mustChangePassword: true },
+      });
+      mustChangePassword = fresh?.mustChangePassword === true;
+    } catch {
+      // diam
+    }
+
+    const response = NextResponse.json({ ok: true, session: toSession(user), mustChangePassword });
     // Task 27: catat sesi per perangkat (SessionToken) — gagal pencatatan tidak menggagalkan login.
     // F6: rememberMe → cookie 30 hari, selain itu 7 hari.
     await setSessionCookie(response, user.id, { ip, userAgent }, { rememberMe });
