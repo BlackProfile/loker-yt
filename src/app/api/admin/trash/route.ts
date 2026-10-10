@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { createApprovalRequest, shouldRouteToApproval } from "@/lib/dual-control";
 
 export const dynamic = "force-dynamic";
 
@@ -120,6 +121,23 @@ export async function POST(req: NextRequest) {
           { status: 409 },
         );
       }
+      // NR46 — empat mata: hapus permanen posisi lewat persetujuan OWNER lain.
+      if (await shouldRouteToApproval()) {
+        const requestId = await createApprovalRequest({
+          kind: "TRASH_PURGE_POSITION",
+          payload: { positionId: id },
+          summary: `Hapus permanen posisi "${position.title}" dari tong sampah`,
+          session,
+        });
+        return NextResponse.json(
+          {
+            approvalRequired: true,
+            requestId,
+            message: `Permintaan hapus permanen posisi "${position.title}" dikirim — menunggu persetujuan OWNER lain.`,
+          },
+          { status: 202 },
+        );
+      }
       await db.position.delete({ where: { id } });
       await db.activityLog.create({
         data: {
@@ -163,6 +181,23 @@ export async function POST(req: NextRequest) {
     // purge: hapus permanen (relasi ikut terhapus via onDelete Cascade).
     // Log ditulis dengan applicationId null karena baris lamaran akan hilang.
     const label = `${application.name} (${application.trackingCode}) — posisi ${application.position?.title ?? "-"}`;
+    // NR46 — empat mata: hapus permanen lamaran lewat persetujuan OWNER lain.
+    if (await shouldRouteToApproval()) {
+      const requestId = await createApprovalRequest({
+        kind: "TRASH_PURGE_APPLICATION",
+        payload: { applicationId: application.id },
+        summary: `Hapus permanen lamaran ${label} dari tong sampah`,
+        session,
+      });
+      return NextResponse.json(
+        {
+          approvalRequired: true,
+          requestId,
+          message: `Permintaan hapus permanen lamaran ${application.name} dikirim — menunggu persetujuan OWNER lain.`,
+        },
+        { status: 202 },
+      );
+    }
     await db.application.delete({ where: { id } });
     await db.activityLog.create({
       data: {

@@ -65,15 +65,6 @@ export async function POST(req: NextRequest) {
     if (password.length < 8) {
       return NextResponse.json({ error: "Password minimal 8 karakter." }, { status: 400 });
     }
-    // NR46 — sandi undangan juga tunduk pada kebijakan aktif.
-    const policy = await readPasswordPolicy();
-    const check = validatePassword(password, policy, user?.email ?? null);
-    if (!check.ok) {
-      return NextResponse.json(
-        { error: `Sandi tidak memenuhi kebijakan: ${check.reasons.join(" ")}` },
-        { status: 400 },
-      );
-    }
     if (rawName && rawName.length < 2) {
       return NextResponse.json({ error: "Nama minimal 2 karakter." }, { status: 400 });
     }
@@ -89,6 +80,17 @@ export async function POST(req: NextRequest) {
         .update({ where: { id: user.id }, data: { inviteToken: null, inviteExpiresAt: null } })
         .catch(() => undefined);
       return NextResponse.json(GENERIC_NOT_FOUND, { status: 404 });
+    }
+
+    // NR46 — sandi undangan tunduk pada kebijakan aktif (setelah user diketahui,
+    // agar sandi yang memuat bagian awal email dapat ditolak).
+    const policy = await readPasswordPolicy();
+    const check = validatePassword(password, policy, user.email);
+    if (!check.ok) {
+      return NextResponse.json(
+        { error: `Sandi tidak memenuhi kebijakan: ${check.reasons.join(" ")}` },
+        { status: 400 },
+      );
     }
 
     await db.adminUser.update({

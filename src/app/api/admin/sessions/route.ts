@@ -3,6 +3,7 @@
 //                             Sesi yang berasal dari cookie ini ditandai current: true.
 // DELETE /api/admin/sessions?id=...  — cabut satu sesi (OWNER: siapa pun; lainnya: milik sendiri).
 // DELETE /api/admin/sessions?scope=others — cabut semua sesi KECUALI perangkat ini (OWNER).
+// DELETE /api/admin/sessions?scope=user&userId=... — cabut SEMUA sesi satu pengguna (OWNER, NR46).
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
@@ -75,6 +76,22 @@ export async function DELETE(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const id = (searchParams.get("id") ?? "").trim();
     const scope = (searchParams.get("scope") ?? "").trim();
+
+    // NR46 — cabut semua sesi satu pengguna (dari kartu Kesehatan Akses / detail pengguna).
+    if (scope === "user") {
+      if (session.role !== "OWNER") {
+        return NextResponse.json(FORBIDDEN, { status: 403 });
+      }
+      const userId = (searchParams.get("userId") ?? "").trim();
+      if (!userId) {
+        return NextResponse.json({ error: "Parameter userId wajib diisi." }, { status: 400 });
+      }
+      const result = await db.sessionToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      return NextResponse.json({ ok: true, revoked: result.count });
+    }
 
     // Keluarkan semua perangkat lain (OWNER saja) — sesi perangkat ini tetap aktif.
     if (scope === "others") {

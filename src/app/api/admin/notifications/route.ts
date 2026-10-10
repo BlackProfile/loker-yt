@@ -1,8 +1,11 @@
 // GET   /api/admin/notifications — 50 notifikasi in-app terbaru + unreadCount (semua role).
+//       NR46 — disaring menurut preferensi sesi: kategori yang dimatikan disembunyikan;
+//       jam senyap pribadi menyembunyikan semua kecuali SYSTEM.
 // PATCH /api/admin/notifications — tandai notifikasi dibaca: body { id } ATAU { all: true }.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { allowedCategoriesFor } from "@/lib/notification-prefs";
 
 export const dynamic = "force-dynamic";
 
@@ -15,17 +18,18 @@ export async function GET() {
       return NextResponse.json(UNAUTHORIZED, { status: 401 });
     }
 
-    const [rows, unreadCount] = await Promise.all([
-      db.notificationItem.findMany({
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: 50,
-      }),
-      db.notificationItem.count({ where: { isRead: false } }),
-    ]);
+    const rows = await db.notificationItem.findMany({
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 50,
+    });
+
+    const allowed = await allowedCategoriesFor(session.id);
+    const visible = rows.filter((row) => allowed.has(row.category));
+    const unreadVisible = visible.filter((row) => !row.isRead).length;
 
     // NotificationItem hanya menyimpan applicationId (tanpa relasi) — nama pelamar
     // dicari terpisah agar daftar bisa menampilkan konteks kandidat.
-    const appIds = [...new Set(rows.map((row) => row.applicationId).filter((v): v is string => Boolean(v)))];
+    const appIds = [...new Set(visible.map((row) => row.applicationId).filter((v): v is string => Boolean(v)))];
     const apps =
       appIds.length > 0
         ? await db.application.findMany({
@@ -36,7 +40,7 @@ export async function GET() {
     const nameById = new Map(apps.map((app) => [app.id, app.name]));
 
     return NextResponse.json({
-      notifications: rows.map((row) => ({
+      notifications: visible.map((row) => ({
         id: row.id,
         title: row.title,
         body: row.body,
@@ -46,7 +50,10 @@ export async function GET() {
         isRead: row.isRead,
         createdAt: row.createdAt.toISOString(),
       })),
-      unreadCount,
+      unreadCount: unreadVisible,
+      // NR46 — info penyaringan untuk UI (bila semua disembunyikan jam senyap, bell bisa
+      // menampilkan keterangan).
+      filteredOut: rows.length - visible.length,
     });
   } catch (error) {
     console.error("[GET /api/admin/notifications]", error);
