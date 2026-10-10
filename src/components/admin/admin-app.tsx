@@ -12,6 +12,13 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -84,6 +91,7 @@ import { AdminAskWidget } from "./admin-ask-widget";
 import { CommandPalette } from "./command-palette";
 import { ShortcutOverlay } from "./shortcut-overlay";
 import { CandidateDetailDialog } from "./candidate-detail-dialog";
+import { MustChangePasswordDialog } from "./must-change-password-dialog";
 
 type Phase = "checking" | "login" | "ready";
 
@@ -560,6 +568,12 @@ function SidebarShell({
 export function AdminApp({ onExit }: { onExit: () => void }) {
   const [phase, setPhase] = useState<Phase>("checking");
   const [session, setSession] = useState<AdminSession | null>(null);
+  // NR46 Paket A — pratinjau peran: OWNER dapat melihat panel seolah menjadi
+  // HR/Pengamat. null = tidak sedang pratinjau. Server tetap menegakkan role
+  // asli (UI hanya meminimalkan tampilan).
+  const [previewRole, setPreviewRole] = useState<Role | null>(null);
+  // NR46 Paket B — wajib ganti sandi (dari respons login mustChangePassword).
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const [siteName, setSiteName] = useState("");
   const [activeTab, setActiveTab] = useState(() => {
     // Deep-link #admin/posisi/<id> → buka tab Posisi langsung.
@@ -654,7 +668,20 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     };
   }, [phase]);
 
-  const role: Role = session?.role ?? "VIEWER";
+  // NR46 Paket A — pratinjau peran hanya dapat dimulai oleh OWNER asli.
+  const startPreview = useCallback(
+    (r: Role) => {
+      if (session?.role !== "OWNER") return;
+      setPreviewRole(r);
+    },
+    [session],
+  );
+  const stopPreview = useCallback(() => setPreviewRole(null), []);
+
+  // NR46 — role efektif: pratinjau menimpa role sesi untuk SELURUH panel
+  // (navigasi, canMutate, kartu role-aware, dsb.).
+  const effectiveRole: Role = previewRole ?? session?.role ?? "VIEWER";
+  const role: Role = effectiveRole;
   const canMutate = role !== "VIEWER";
   const isOwner = role === "OWNER";
   const isOwnerOrHr = role === "OWNER" || role === "HR";
@@ -686,8 +713,16 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   );
 
   const sessionContextValue = useMemo(
-    () => ({ session: session as AdminSession, role, canMutate, reportError }),
-    [session, role, canMutate, reportError]
+    () => ({
+      session: session as AdminSession,
+      role,
+      canMutate,
+      reportError,
+      previewRole,
+      startPreview,
+      stopPreview,
+    }),
+    [session, role, canMutate, reportError, previewRole, startPreview, stopPreview]
   );
 
   // Saat pengaturan situs disimpan di tempat lain (event site:changed),
@@ -810,6 +845,8 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
       // Tetap kembali ke layar login meski logout gagal di server.
     }
     setSession(null);
+    setPreviewRole(null);
+    setMustChangePassword(false);
     setPhase("login");
   }
 
@@ -863,9 +900,12 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   if (phase === "login" || !session) {
     return (
       <LoginCard
-        onSuccess={(s) => {
+        onSuccess={(s, opts) => {
           setSession(s);
           setPhase("ready");
+          setPreviewRole(null);
+          // NR46 Paket B — tampilkan dialog wajib ganti sandi bila server menandai.
+          setMustChangePassword(opts?.mustChangePassword === true);
         }}
       />
     );
