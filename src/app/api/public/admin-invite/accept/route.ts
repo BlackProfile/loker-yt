@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/server-auth";
+import { readPasswordPolicy, validatePassword } from "@/lib/password-policy";
 import { clientIp } from "@/lib/status-gate";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +65,15 @@ export async function POST(req: NextRequest) {
     if (password.length < 8) {
       return NextResponse.json({ error: "Password minimal 8 karakter." }, { status: 400 });
     }
+    // NR46 — sandi undangan juga tunduk pada kebijakan aktif.
+    const policy = await readPasswordPolicy();
+    const check = validatePassword(password, policy, user?.email ?? null);
+    if (!check.ok) {
+      return NextResponse.json(
+        { error: `Sandi tidak memenuhi kebijakan: ${check.reasons.join(" ")}` },
+        { status: 400 },
+      );
+    }
     if (rawName && rawName.length < 2) {
       return NextResponse.json({ error: "Nama minimal 2 karakter." }, { status: 400 });
     }
@@ -88,6 +98,9 @@ export async function POST(req: NextRequest) {
         inviteToken: null,
         inviteExpiresAt: null,
         isActive: true,
+        // NR46 — jejak sandi awal; penerima mengatur sendiri jadi tidak wajib ganti lagi.
+        lastPasswordChangedAt: new Date(),
+        mustChangePassword: false,
         ...(rawName ? { name: rawName.slice(0, 60) } : {}),
       },
     });

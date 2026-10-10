@@ -1,7 +1,9 @@
 // POST /api/admin/users/password — ganti password akun sendiri (semua role yang login).
+// NR46 — validasi kebijakan sandi + jejak lastPasswordChangedAt + bebas wajib-ganti.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession, hashPassword, verifyPassword } from "@/lib/server-auth";
+import { readPasswordPolicy, validatePassword } from "@/lib/password-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -37,9 +39,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Password saat ini salah" }, { status: 400 });
     }
 
+    // NR46 — sandi baru wajib memenuhi kebijakan aktif.
+    const policy = await readPasswordPolicy();
+    const check = validatePassword(newPassword, policy, user.email);
+    if (!check.ok) {
+      return NextResponse.json(
+        { error: `Sandi baru tidak memenuhi kebijakan: ${check.reasons.join(" ")}` },
+        { status: 400 },
+      );
+    }
+
     await db.adminUser.update({
       where: { id: user.id },
-      data: { passwordHash: hashPassword(newPassword) },
+      data: {
+        passwordHash: hashPassword(newPassword),
+        lastPasswordChangedAt: new Date(), // NR46
+        mustChangePassword: false, // NR46 — wajib ganti terpenuhi
+      },
     });
 
     return NextResponse.json({ ok: true });

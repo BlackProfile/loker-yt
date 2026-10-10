@@ -6,8 +6,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import type { AdminUser as AdminUserRecordModel } from "@prisma/client";
 import { db } from "@/lib/db";
-import { getSession, hashPassword } from "@/lib/server-auth";
-import { queueEmail } from "@/lib/notify";
+import { getSession, hashPassword, revokeUserSessions } from "@/lib/server-auth";
+import { queueEmail, sendSystemEvent } from "@/lib/notify";
+import { shouldRouteToApproval, createApprovalRequest } from "@/lib/dual-control";
+import { readPasswordPolicy, validatePassword } from "@/lib/password-policy";
 import { parseAssignedPositions, serializeAdminUser } from "@/lib/seed";
 import { ROLES } from "@/lib/types";
 
@@ -162,7 +164,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       assignedPositions?: string;
       totpSecret?: string | null;
       totpEnabled?: boolean;
+      // NR46
+      expiresAt?: Date | null;
+      lastPasswordChangedAt?: Date;
+      mustChangePassword?: boolean;
     } = {};
+    // NR46 — jejak aksi untuk audit ringkas.
+    const changes: string[] = [];
 
     if (data.name !== undefined) {
       const name = typeof data.name === "string" ? data.name.trim() : "";
@@ -175,6 +183,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (typeof data.role !== "string" || !(ROLES as string[]).includes(data.role)) {
         return NextResponse.json({ error: "Role tidak valid." }, { status: 400 });
       }
+      // NR46 — perubahan role wajib konfirmasi mengetik email target.
+      if (data.role !== existing.role) {
+        const confirmEmail = typeof data.confirmEmail === "string" ? data.confirmEmail.trim() : "";
+        if (confirmEmail.toLowerCase() !== existing.email.toLowerCase()) {
+          return NextResponse.json(
+            { error: "Konfirmasi wajib: ketik email pengguna dengan tepat untuk mengubah role." },
+            { status: 400 },
+          );
+        }
+      }
       updateData.role = data.role;
     }
     if (data.isActive !== undefined) {
@@ -183,11 +201,36 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       updateData.isActive = data.isActive;
     }
+    // NR46 — tanggal kedaluwarsa akun (ISO string ATAU null untuk menghapus).
+    if (data.expiresAt !== undefined) {
+      if (data.expiresAt === null || (typeof data.expiresAt === "string" && !data.expiresAt.trim())) {
+        updateData.expiresAt = null;
+      } else if (typeof data.expiresAt === "string") {
+        const parsed = new Date(data.expiresAt);
+        if (Number.isNaN(parsed.getTime())) {
+          return NextResponse.json({ error: "Tanggal kedaluwarsa tidak valid." }, { status: 400 });
+        }
+        updateData.expiresAt = parsed;
+      } else {
+        return NextResponse.json({ error: "expiresAt harus ISO string atau null." }, { status: 400 });
+      }
+    }
     if (data.password !== undefined) {
       if (typeof data.password !== "string" || data.password.length < 6) {
         return NextResponse.json({ error: "Password minimal 6 karakter." }, { status: 400 });
       }
+      // NR46 — reset sandi oleh OWNER tunduk pada kebijakan + wajib diganti pengguna.
+      const policy = await readPasswordPolicy();
+      const check = validatePassword(data.password, policy, existing.email);
+      if (!check.ok) {
+        return NextResponse.json(
+          { error: `Sandi tidak memenuhi kebijakan: ${check.reasons.join(" ")}` },
+          { status: 400 },
+        );
+      }
       updateData.passwordHash = hashPassword(data.password);
+      updateData.lastPasswordChangedAt = new Date();
+      updateData.mustChangePassword = true;
     }
     // Scope posisi granular untuk HR: array positionId (kosong = semua posisi).
     if (data.assignedPositions !== undefined) {
@@ -237,7 +280,73 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       );
     }
 
+    // NR46 — ringkas perubahan untuk audit + tentukan perlu cabut sesi atau tidak.
+    if (updateData.role !== undefined && updateData.role !== existing.role) {
+      changes.push(`role ${existing.role} → ${updateData.role}`);
+    }
+    if (updateData.isActive !== undefined && updateData.isActive !== existing.isActive) {
+      changes.push(updateData.isActive ? "diaktifkan" : "dinonaktifkan");
+    }
+    if (updateData.passwordHash !== undefined) changes.push("sandi direset");
+    if (updateData.expiresAt !== undefined) {
+      changes.push(
+        updateData.expiresAt
+          ? `kedaluwarsa ${updateData.expiresAt.toISOString().slice(0, 10)}`
+          : "kedaluwarsa dihapus",
+      );
+    }
+    const shouldRevoke =
+      (updateData.role !== undefined && updateData.role !== existing.role) ||
+      updateData.passwordHash !== undefined ||
+      updateData.isActive === false;
+
     const updated = await db.adminUser.update({ where: { id }, data: updateData });
+
+    // NR46 — cabut semua sesi target agar perubahan role/sandi/nonaktif langsung efektif.
+    if (shouldRevoke) {
+      await revokeUserSessions(id);
+    }
+
+    // NR46 — audit + notifikasi perubahan sensitif.
+    if (changes.length > 0) {
+      await db.activityLog
+        .create({
+          data: {
+            applicationId: null,
+            actor: session.name,
+            action: "USER_UPDATED",
+            detail: `${updated.email}: ${changes.join(", ")} oleh ${session.name}`,
+          },
+        })
+        .catch(() => undefined);
+      if (changes.some((c) => c.startsWith("role") || c === "sandi direset" || c === "dinonaktifkan")) {
+        await queueEmail({
+          toEmail: updated.email,
+          subject: "Perubahan Akun Admin Lumina Studio",
+          body: [
+            `Halo ${updated.name},`,
+            "",
+            `Akun admin Anda baru saja diperbarui oleh ${session.name}:`,
+            `- ${changes.join("\n- ")}`,
+            "",
+            changes.includes("sandi direset")
+              ? "WAJIB: masuk lalu segera ganti sandi Anda. Semua sesi lama telah dicabut."
+              : "Bila Anda tidak mengharapkan perubahan ini, segera hubungi pemilik situs.",
+            "",
+            "Salam,",
+            "Tim Lumina Studio",
+          ].join("\n"),
+          kind: "SYSTEM",
+        }).catch(() => undefined);
+        await sendSystemEvent({
+          title: "Perubahan Akun Admin",
+          detail: `${session.name} memperbarui ${updated.email}: ${changes.join(", ")}. Sesi lama dicabut.`,
+          action: "USER_UPDATED",
+          category: "SYSTEM",
+        }).catch(() => undefined);
+      }
+    }
+
     return NextResponse.json(serializeUserDetail(updated));
   } catch (error) {
     console.error("[PATCH /api/admin/users/[id]]", error);
@@ -266,7 +375,36 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       );
     }
 
+    // NR46 — empat mata: penghapusan akun admin lewat persetujuan OWNER lain.
+    if (await shouldRouteToApproval()) {
+      const requestId = await createApprovalRequest({
+        kind: "USER_DELETE",
+        payload: { userId: id },
+        summary: `Hapus akun admin ${existing.email} (${existing.role})`,
+        session,
+      });
+      return NextResponse.json(
+        {
+          approvalRequired: true,
+          requestId,
+          message: `Permintaan hapus akun ${existing.email} dikirim — menunggu persetujuan OWNER lain.`,
+        },
+        { status: 202 },
+      );
+    }
+
+    await revokeUserSessions(id);
     await db.adminUser.delete({ where: { id } });
+    await db.activityLog
+      .create({
+        data: {
+          applicationId: null,
+          actor: session.name,
+          action: "USER_DELETED",
+          detail: `Akun ${existing.email} dihapus oleh ${session.name}`,
+        },
+      })
+      .catch(() => undefined);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[DELETE /api/admin/users/[id]]", error);
