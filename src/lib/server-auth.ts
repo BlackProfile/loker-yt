@@ -113,6 +113,8 @@ export async function getSession(): Promise<AdminSession | null> {
   if (token && (await checkSessionToken(token))) return null;
   const user = await db.adminUser.findUnique({ where: { id: userId } });
   if (!user || !user.isActive) return null;
+  // NR46 — akun yang melewati tanggal kedaluwarsa dianggap nonaktif (cron juga mematikan).
+  if (user.expiresAt && user.expiresAt.getTime() <= Date.now()) return null;
   const role = roleOf(user.role);
   if (!role) return null;
   return { id: user.id, name: user.name, email: user.email, role };
@@ -215,6 +217,22 @@ export async function upgradePasswordHashIfNeeded(
 /** SHA-256 hex dari nilai cookie sesi — dipakai sebagai tokenHash pada SessionToken. */
 export function hashToken(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+/**
+ * NR46 — cabut SEMUA sesi aktif milik satu pengguna (perubahan role, reset sandi,
+ * nonaktif/kerluwarsa akun, aksi cepat kartu Kesehatan Akses). Tidak melempar.
+ */
+export async function revokeUserSessions(userId: string): Promise<number> {
+  try {
+    const result = await db.sessionToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return result.count;
+  } catch {
+    return 0;
+  }
 }
 
 /* ----------------------- SessionToken (per perangkat) ----------------------- */
