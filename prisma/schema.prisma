@@ -34,6 +34,12 @@ model AdminUser {
   // Alur undangan admin (set sandi via tautan email)
   inviteToken     String?   @unique // token undangan aktif — null = tidak ada undangan
   inviteExpiresAt DateTime? // kedaluwarsa undangan (48 jam sejak dibuat)
+
+  // NR46 — kesehatan akses & siklus hidup akun
+  expiresAt             DateTime? // kedaluwarsa akun (admin musiman/magang) — cron menonaktifkan otomatis
+  lastLoginAt           DateTime? // login sukses terakhir
+  lastPasswordChangedAt DateTime? // sandi terakhir diganti (dasar peringatan rotasi)
+  mustChangePassword    Boolean   @default(false) // wajib ganti sandi (akun buatan OWNER / reset sandi)
 }
 
 // Posisi lowongan yang dibuka — v3: fitur lengkap per lowongan
@@ -783,4 +789,46 @@ model InternalDoc {
   createdAt     DateTime    @default(now())
 
   @@index([applicationId])
+}
+
+// NR46 — Permintaan persetujuan ganda (prinsip empat mata) untuk aksi destruktif.
+// Satu OWNER mengajukan, OWNER AKTIF LAIN yang menyetujui; eksekusi terjadi saat
+// persetujuan (payload disimpan agar eksekusi identik dengan maksud pengaju).
+model ApprovalRequest {
+  id              String    @id @default(cuid())
+  kind            String // PRIVACY_ERASE | TRASH_PURGE_POSITION | TRASH_PURGE_APPLICATION | USER_DELETE
+  payload         String    @default("{}") // JSON parameter eksekusi
+  summary         String // deskripsi manusiawi untuk kartu persetujuan
+  status          String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED | EXECUTED | FAILED
+  requestedById   String
+  requestedByName String
+  resolvedById    String?
+  resolvedByName  String?
+  resolvedNote    String?
+  createdAt       DateTime  @default(now())
+  resolvedAt      DateTime?
+  executedAt      DateTime?
+  error           String?
+
+  @@index([status, createdAt])
+}
+
+// NR46 — Catatan serah terima (handover) harian tim rekrutmen. Satu catatan per
+// penulis per tanggal; tampil di dashboard pagi + digest Telegram sampai ditandai
+// sudah ditindak oleh OWNER/HR lain.
+model HandoverNote {
+  id                 String    @id @default(cuid())
+  authorId           String
+  authorName         String
+  forDate            String // "YYYY-MM-DD" — tanggal gantian yang dicatat
+  needsAction        String    @default("") // hal yang perlu ditindak hari berikutnya
+  risks              String    @default("") // risiko/perhatian khusus
+  notes              String    @default("") // catatan umum
+  status             String    @default("OPEN") // OPEN | ACKNOWLEDGED
+  acknowledgedById   String?
+  acknowledgedByName String?
+  acknowledgedAt     DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([forDate])
 }
