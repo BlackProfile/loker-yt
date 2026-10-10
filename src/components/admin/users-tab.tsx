@@ -128,6 +128,9 @@ type UserForm = {
   role: Role;
   password: string;
   isActive: boolean;
+  // NR46 — kedaluwarsa akun (opsional). "" = permanen; nilai "YYYY-MM-DD"
+  // dikirim sebagai ISO string; akun otomatis nonaktif setelah tanggal ini.
+  expiresAt: string;
 };
 
 const EMPTY_FORM: UserForm = {
@@ -136,7 +139,17 @@ const EMPTY_FORM: UserForm = {
   role: "HR",
   password: "",
   isActive: true,
+  expiresAt: "",
 };
+
+// NR46 — ISO string -> "YYYY-MM-DD" lokal untuk <input type="date">.
+function isoToDateInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 // Form undangan admin (NR-19): tanpa password — penerima mengatur sandinya sendiri.
 type InviteForm = {
@@ -182,6 +195,8 @@ export function UsersTab() {
   const [form, setForm] = useState<UserForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "password", string>>>({});
   const [saving, setSaving] = useState(false);
+  // NR46 — konfirmasi ketik email saat mengubah role (empat mata).
+  const [confirmEmail, setConfirmEmail] = useState("");
 
   // Hapus
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
@@ -254,6 +269,7 @@ export function UsersTab() {
     setForm(EMPTY_FORM);
     setErrors({});
     setScopeDraft([]);
+    setConfirmEmail("");
     setDialogOpen(true);
   }
 
@@ -271,9 +287,11 @@ export function UsersTab() {
       role: user.role,
       password: "",
       isActive: user.isActive,
+      expiresAt: isoToDateInput(user.expiresAt),
     });
     setErrors({});
     setScopeDraft([]);
+    setConfirmEmail("");
     setDialogOpen(true);
     // Muat detail (scope posisi + status 2FA) untuk dialog edit.
     setDetailLoading(true);
@@ -307,6 +325,15 @@ export function UsersTab() {
 
   async function handleSave() {
     if (saving || !validate()) return;
+    // NR46 — perubahan role wajib konfirmasi ketik email target.
+    const roleChanged = !!editing && form.role !== editing.role;
+    if (
+      roleChanged &&
+      confirmEmail.trim().toLowerCase() !== (editing?.email ?? "").trim().toLowerCase()
+    ) {
+      toast.error("Ketik email pengguna dengan tepat untuk mengonfirmasi perubahan role.");
+      return;
+    }
     setSaving(true);
     try {
       if (editing) {
@@ -316,6 +343,12 @@ export function UsersTab() {
           isActive: form.isActive,
         };
         if (form.password) payload.password = form.password;
+        // NR46 — kirim kedaluwarsa hanya bila berubah (null = hapus kedaluwarsa).
+        const originalExpires = isoToDateInput(editing.expiresAt);
+        if (form.expiresAt !== originalExpires) {
+          payload.expiresAt = form.expiresAt ? form.expiresAt : null;
+        }
+        if (roleChanged) payload.confirmEmail = confirmEmail.trim();
         // Scope posisi hanya dikirim untuk role HR (kosong = semua posisi).
         if (form.role === "HR") payload.assignedPositions = scopeDraft;
         await apiPatch<AdminUser>(`/api/admin/users/${editing.id}`, payload);
@@ -326,6 +359,7 @@ export function UsersTab() {
           email: form.email.trim(),
           role: form.role,
           password: form.password,
+          ...(form.expiresAt ? { expiresAt: form.expiresAt } : {}),
         });
         toast.success("Pengguna ditambahkan");
       }
@@ -358,9 +392,22 @@ export function UsersTab() {
     if (!deleteTarget || deleting) return;
     setDeleting(true);
     try {
-      await apiDelete<{ ok: boolean }>(`/api/admin/users/${deleteTarget.id}`);
-      toast.success("Pengguna dihapus");
-      setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+      const res = await apiDelete<{
+        ok?: boolean;
+        approvalRequired?: boolean;
+        message?: string;
+      }>(`/api/admin/users/${deleteTarget.id}`);
+      if (res.approvalRequired) {
+        // NR46 — 202: bukan gagal; permintaan menunggu persetujuan OWNER lain.
+        toast.info(
+          res.message ?? "Permintaan hapus akun dikirim — menunggu persetujuan OWNER lain.",
+        );
+        setDialogOpen(false);
+        await load();
+      } else {
+        toast.success("Pengguna dihapus");
+        setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+      }
     } catch (err) {
       reportError(err);
     } finally {

@@ -926,6 +926,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   return (
     <AdminSessionProvider value={sessionContextValue}>
       <NewApplicationToaster />
+      {/* NR46 Paket B — dialog wajib ganti sandi (tidak dapat ditutup). */}
+      <MustChangePasswordDialog
+        open={mustChangePassword}
+        onDone={() => setMustChangePassword(false)}
+      />
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
@@ -1000,7 +1005,35 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
 
         {/* Kolom konten */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
+          {/* NR46 Paket A — banner Mode Pratinjau: sticky di atas header agar
+              tidak menutupi konten penting; header bergeser ke bawahnya. */}
+          {previewRole ? (
+            <div className="sticky top-0 z-40 border-b border-amber-200 bg-amber-50 text-zinc-900 dark:border-amber-900 dark:bg-amber-950/90 dark:text-amber-100">
+              <div className="flex h-10 items-center justify-between gap-3 px-4 sm:px-6">
+                <p className="flex min-w-0 items-center gap-2 text-xs font-medium">
+                  <Eye className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="truncate">
+                    Mode Pratinjau: {ROLE_LABELS[previewRole]} — UI tampil seperti role ini; server
+                    tetap menegakkan role asli Anda.
+                  </span>
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 border-amber-300 bg-transparent text-amber-900 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-700 dark:text-amber-100 dark:hover:bg-amber-900"
+                  onClick={stopPreview}
+                >
+                  Kembali sebagai Pemilik
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          <header
+            className={cn(
+              "sticky z-30 border-b bg-background/80 backdrop-blur",
+              previewRole ? "top-10" : "top-0",
+            )}
+          >
             <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
               <div className="flex min-w-0 items-center gap-1.5">
                 <Button
@@ -1044,6 +1077,34 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 <RealtimeIndicator />
                 <ThemeToggle />
                 <NotificationBell onOpenTasks={() => setActiveTab("tasks")} />
+                {/* NR46 Paket A — pratinjau peran (OWNER asli saja): lihat panel
+                    sebagai HR/Pengamat. Keluar lewat tombol pada banner. */}
+                {session.role === "OWNER" && !previewRole ? (
+                  <Select
+                    onValueChange={(v) => {
+                      if (v === "HR" || v === "VIEWER") startPreview(v);
+                    }}
+                  >
+                    <SelectTrigger
+                      className="h-11 w-11 justify-center px-0 sm:h-10 sm:w-44 sm:justify-between sm:px-3"
+                      aria-label="Lihat panel sebagai role lain"
+                      title="Lihat panel sebagai role lain"
+                    >
+                      <SelectValue
+                        placeholder={
+                          <span className="flex items-center gap-1.5">
+                            <Eye className="size-4 shrink-0" aria-hidden="true" />
+                            <span className="hidden lg:inline">Lihat sebagai</span>
+                          </span>
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                      <SelectItem value="HR">Sebagai HR</SelectItem>
+                      <SelectItem value="VIEWER">Sebagai Pengamat</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : null}
                 <Button
                   variant="outline"
                   className="h-11 active:scale-[0.99] sm:h-10"
