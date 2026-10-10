@@ -402,7 +402,6 @@ export function UsersTab() {
         toast.info(
           res.message ?? "Permintaan hapus akun dikirim — menunggu persetujuan OWNER lain.",
         );
-        setDialogOpen(false);
         await load();
       } else {
         toast.success("Pengguna dihapus");
