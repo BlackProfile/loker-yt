@@ -570,6 +570,11 @@ export type AdminUser = {
   createdAt: string;
   invitePending?: boolean; // NR-19 undangan set-sandi masih menunggu
   inviteExpiresAt?: string | null;
+  // NR46 — siklus hidup akun & kesehatan akses
+  expiresAt?: string | null; // kedaluwarsa akun (null = permanen)
+  lastLoginAt?: string | null;
+  lastPasswordChangedAt?: string | null;
+  mustChangePassword?: boolean;
 };
 
 export type AdminSession = { id: string; name: string; email: string; role: Role };
@@ -601,6 +606,89 @@ export type MaintenancePublicInfo = {
   enabled: boolean;
   level: "FULL" | "APPLY_ONLY"; // FULL = tutup situs, APPLY_ONLY = tutup pendaftaran saja
   message: string;
+};
+
+// NR46 — matriks izin per role (sumber kebenaran dokumentasi + pembatasan opsional)
+export type PermissionActionKey =
+  | "kelola_posisi"
+  | "kelola_lamaran"
+  | "kirim_email"
+  | "ekspor_data"
+  | "lihat_laporan"
+  | "kelola_pengguna"
+  | "pengaturan_sistem"
+  | "kesehatan_server";
+
+export type PermissionActionDef = {
+  key: PermissionActionKey;
+  label: string;
+  description: string;
+  roles: Role[]; // role yang DIBOLEHKAN (bisa diubah OWNER via matriks)
+  defaultRoles: Role[];
+};
+
+export type PermissionMatrixView = {
+  actions: PermissionActionDef[];
+  hasOverrides: boolean;
+  updatedAt: string | null;
+};
+
+// NR46 — laporan kesehatan akses (kartu dashboard, OWNER)
+export type AccessFindingSeverity = "CRIT" | "WARN" | "INFO";
+export type AccessFinding = {
+  key: string;
+  severity: AccessFindingSeverity;
+  title: string;
+  detail: string;
+  targets: { id: string; label: string; sublabel?: string }[]; // maks 5 sampel
+  targetCount: number;
+  action?: "revokeSessions"; // aksi cepat yang tersedia di kartu
+  actionUserId?: string; // target aksi (bila per-user)
+};
+export type AccessHealthReport = {
+  level: ServerLoadLevel;
+  findings: AccessFinding[];
+  stats: {
+    totalUsers: number;
+    activeUsers: number;
+    ownerCount: number;
+    activeSessions: number;
+    failedLogins24h: number;
+    dualControlEnabled: boolean;
+  };
+  checkedAt: string;
+};
+
+// NR46 — permintaan persetujuan ganda (empat mata)
+export type ApprovalRequestView = {
+  id: string;
+  kind: "PRIVACY_ERASE" | "TRASH_PURGE_POSITION" | "TRASH_PURGE_APPLICATION" | "USER_DELETE";
+  summary: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTED" | "FAILED";
+  requestedByName: string;
+  requestedById: string;
+  resolvedByName?: string | null;
+  resolvedNote?: string | null;
+  error?: string | null;
+  createdAt: string;
+  resolvedAt?: string | null;
+  executedAt?: string | null;
+  isMine: boolean;
+};
+
+// NR46 — catatan serah terima harian (handover)
+export type HandoverNoteView = {
+  id: string;
+  authorId: string;
+  authorName: string;
+  forDate: string;
+  needsAction: string;
+  risks: string;
+  notes: string;
+  status: "OPEN" | "ACKNOWLEDGED";
+  acknowledgedByName?: string | null;
+  acknowledgedAt?: string | null;
+  createdAt: string;
 };
 
 // NR45 — snapshot beban server (GET /api/admin/server-health; aditif ke /api/health)

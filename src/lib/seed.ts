@@ -770,6 +770,13 @@ export function serializeAdminUser(record: AdminUserRecordModel): AdminUser {
     role: (record.role as AdminUser["role"]) ?? "VIEWER",
     isActive: record.isActive,
     createdAt: record.createdAt.toISOString(),
+    // NR46 — siklus hidup akun & kesehatan akses
+    expiresAt: record.expiresAt ? record.expiresAt.toISOString() : null,
+    lastLoginAt: record.lastLoginAt ? record.lastLoginAt.toISOString() : null,
+    lastPasswordChangedAt: record.lastPasswordChangedAt
+      ? record.lastPasswordChangedAt.toISOString()
+      : null,
+    mustChangePassword: record.mustChangePassword,
   };
 }
 
