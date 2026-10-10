@@ -591,6 +591,12 @@ export function UsersTab() {
     }
   }
 
+  // NR46 — true bila role diubah dan konfirmasi email belum cocok (kunci simpan).
+  const roleConfirmMismatch =
+    !!editing &&
+    form.role !== editing.role &&
+    confirmEmail.trim().toLowerCase() !== editing.email.trim().toLowerCase();
+
   return (
     <div className="flex flex-col gap-6">
       {/* Ganti Password Saya */}
