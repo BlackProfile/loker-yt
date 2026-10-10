@@ -27,8 +27,9 @@ import { copyText } from "./format";
 import { Reveal } from "./motion-primitives";
 
 // NR-41 F8 — respons login 200: sukses ATAU wajib setup 2FA (OWNER tanpa TOTP).
+// NR46 — sukses menyertakan mustChangePassword (wajib ganti sandi pertama).
 type LoginResponse =
-  | { ok: true; session: AdminSession }
+  | { ok: true; session: AdminSession; mustChangePassword?: boolean }
   | {
       ok: false;
       mustSetup2FA: true;
@@ -67,7 +68,9 @@ function readInviteTokenFromHash(): string | null {
 export function LoginCard({
   onSuccess,
 }: {
-  onSuccess: (session: AdminSession) => void;
+  // NR46 — opts.mustChangePassword diteruskan dari respons login agar panel
+  // dapat menampilkan dialog wajib ganti sandi.
+  onSuccess: (session: AdminSession, opts?: { mustChangePassword?: boolean }) => void;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -281,7 +284,7 @@ export function LoginCard({
       }
       if (data.ok && data.session) {
         toast.success("Berhasil masuk");
-        onSuccess(data.session);
+        onSuccess(data.session, { mustChangePassword: data.mustChangePassword === true });
       }
     } catch (err) {
       handleLoginError(err);
@@ -313,7 +316,7 @@ export function LoginCard({
       }
       if (data.ok && data.session) {
         toast.success(`Berhasil masuk sebagai ${account.role}`);
-        onSuccess(data.session);
+        onSuccess(data.session, { mustChangePassword: data.mustChangePassword === true });
       }
     } catch (err) {
       handleLoginError(err);
