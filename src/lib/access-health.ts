@@ -175,7 +175,6 @@ export async function getAccessHealth(): Promise<AccessHealthReport> {
     (u) => u.expiresAt && u.expiresAt.getTime() > Date.now() && u.expiresAt.getTime() <= Date.now() + 7 * 24 * 60 * 60_000,
   );
   if (soon.length > 0) {
-    bump("INFO");
     findings.push({
       key: "expiring_soon",
       severity: "INFO",
@@ -193,7 +192,6 @@ export async function getAccessHealth(): Promise<AccessHealthReport> {
   // 7) Akun yang wajib mengganti sandi.
   const mustChange = active.filter((u) => u.mustChangePassword);
   if (mustChange.length > 0) {
-    bump("INFO");
     findings.push({
       key: "must_change_password",
       severity: "INFO",
@@ -204,7 +202,7 @@ export async function getAccessHealth(): Promise<AccessHealthReport> {
     });
   }
 
-  const order: Record<ServerLoadLevel, number> = { CRIT: 0, WARN: 1, INFO: 2, OK: 3 };
+  const order: Record<string, number> = { CRIT: 0, WARN: 1, INFO: 2, OK: 3 };
   findings.sort((a, b) => {
     const sa = order[(a.severity === "INFO" ? "OK" : a.severity) as ServerLoadLevel] ?? 3;
     const sb = order[(b.severity === "INFO" ? "OK" : b.severity) as ServerLoadLevel] ?? 3;

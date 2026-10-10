@@ -343,17 +343,15 @@ async function runMaintenance() {
         where: { action: "ACCOUNT_EXPIRY_WARN", applicationId: null, createdAt: { gte: dayStart } },
         select: { detail: true },
       });
-      const alreadyWarned = new Set(todayWarns.map((w) => w.detail));
       for (const acc of expiringSoon) {
-        const marker = `Akun ${acc.email} akan kedaluwarsa`;
-        if ([...alreadyWarned].some((d) => d.includes(acc.email))) continue;
+        if (todayWarns.some((w) => (w.detail ?? "").includes(acc.email))) continue;
         accountsExpiringWarned += 1;
         await db.activityLog.create({
           data: {
             applicationId: null,
             actor: "Sistem",
             action: "ACCOUNT_EXPIRY_WARN",
-            detail: `${marker} pada ${acc.expiresAt?.toISOString().slice(0, 10) ?? "-"} — perpanjang di tab Pengguna bila masih dibutuhkan.`,
+            detail: `Akun ${acc.email} akan kedaluwarsa pada ${acc.expiresAt?.toISOString().slice(0, 10) ?? "-"} — perpanjang di tab Pengguna bila masih dibutuhkan.`,
           },
         });
       }

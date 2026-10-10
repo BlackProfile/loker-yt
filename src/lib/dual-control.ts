@@ -105,7 +105,7 @@ async function executePayload(kind: ApprovalKind, payload: Record<string, unknow
       const applicationId = typeof payload.applicationId === "string" ? payload.applicationId : "";
       if (!applicationId) throw new Error("Target lamaran tidak ditemukan pada permintaan.");
       const result = await eraseCandidateData(applicationId, actorName);
-      return `Data kandidat dihapus (${result.applicationCount} lamaran, ${result.fileCount} berkas).`;
+      return `Data kandidat dihapus (${result.deletedApplications} lamaran, ${result.deletedFiles} berkas).`;
     }
     case "TRASH_PURGE_POSITION": {
       const positionId = typeof payload.positionId === "string" ? payload.positionId : "";
