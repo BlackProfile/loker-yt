@@ -1064,11 +1064,13 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 >
                   <Search className="size-4" aria-hidden="true" />
                 </Button>
-                {/* NR-28 (item 14): tombol bantuan pintasan keyboard. */}
+                {/* NR-28 (item 14): tombol bantuan pintasan keyboard.
+                    NR46: disembunyikan di layar sentuh kecil (tanpa keyboard fisik)
+                    sekaligus mencegah overflow-x header setelah masuk Select pratinjau. */}
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-11 sm:size-9"
+                  className="hidden sm:inline-flex size-9"
                   onClick={() => setShortcutsOpen(true)}
                   aria-label="Pintasan keyboard (tekan ?)"
                 >
