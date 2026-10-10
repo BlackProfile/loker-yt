@@ -10,7 +10,7 @@
 // (form disembunyikan, tombol tandai tidak tampil — server tetap menegakkan).
 // Tanpa polling: muat saat mount + segarkan setelah aksi.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ClipboardList, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { HandoverNoteView } from "@/lib/types";
@@ -109,18 +109,20 @@ export function HandoverCard() {
     void refresh();
   }, [refresh]);
 
-  // Prefill form dari catatan hari ini milik sendiri — hanya saat ID catatan
-  // berubah agar ketikan pengguna tidak tertimpa saat refresh berkala.
+  // Prefill form dari catatan hari ini milik sendiri — hanya SEKALI per ID
+  // catatan (ref guard) agar refresh berkala tidak menimpa ketikan pengguna.
   const mineTodayId = data?.mineToday?.id ?? null;
+  const prefilledIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!data?.mineToday) return;
+    const mine = data?.mineToday;
+    if (!mine || prefilledIdRef.current === mine.id) return;
+    prefilledIdRef.current = mine.id;
     setForm({
-      needsAction: data.mineToday.needsAction ?? "",
-      risks: data.mineToday.risks ?? "",
-      notes: data.mineToday.notes ?? "",
+      needsAction: mine.needsAction ?? "",
+      risks: mine.risks ?? "",
+      notes: mine.notes ?? "",
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mineTodayId]);
+  }, [data, mineTodayId]);
 
   async function handleSave() {
     if (saving) return;
