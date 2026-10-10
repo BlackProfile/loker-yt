@@ -50,7 +50,7 @@ function MatrixRow({
   onToggle,
 }: {
   action: PermissionActionDef;
-  draft: Record<PermissionActionKey, Role[]>;
+  draft: Partial<Record<PermissionActionKey, Role[]>>;
   canEdit: boolean;
   onToggle: (key: PermissionActionKey, role: Role, checked: boolean) => void;
 }) {
@@ -94,7 +94,7 @@ export function PermissionMatrixCard() {
   const isOwner = role === "OWNER";
 
   const [view, setView] = useState<PermissionMatrixView | null>(null);
-  const [draft, setDraft] = useState<Record<PermissionActionKey, Role[]>>({});
+  const [draft, setDraft] = useState<Partial<Record<PermissionActionKey, Role[]>>>({});
   const [loading, setLoading] = useState(true);
   const [fetchFailed, setFetchFailed] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -105,7 +105,7 @@ export function PermissionMatrixCard() {
     try {
       const data = await apiGet<PermissionMatrixView>("/api/admin/permission-matrix");
       setView(data);
-      const next: Record<PermissionActionKey, Role[]> = {};
+      const next: Partial<Record<PermissionActionKey, Role[]>> = {};
       for (const a of data.actions) next[a.key] = [...a.roles];
       setDraft(next);
       setFetchFailed(false);
