@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { getSession, hashPassword } from "@/lib/server-auth";
 import { queueEmail } from "@/lib/notify";
+import { readPasswordPolicy, validatePassword } from "@/lib/password-policy";
 import { serializeAdminUser } from "@/lib/seed";
 import { ROLES, type AdminUser } from "@/lib/types";
 
@@ -80,8 +81,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Format email tidak valid." }, { status: 400 });
     }
     // Mode undangan tidak butuh password dari admin — penerima mengaturnya sendiri.
-    if (!invite && password.length < 6) {
-      return NextResponse.json({ error: "Password minimal 6 karakter." }, { status: 400 });
+    const policy = await readPasswordPolicy();
+    if (!invite) {
+      if (password.length < 6) {
+        return NextResponse.json({ error: "Password minimal 6 karakter." }, { status: 400 });
+      }
+      // NR46 — kebijakan sandi untuk akun yang dibuat langsung (bukan undangan).
+      const check = validatePassword(password, policy, email);
+      if (!check.ok) {
+        return NextResponse.json(
+          { error: `Sandi tidak memenuhi kebijakan: ${check.reasons.join(" ")}` },
+          { status: 400 },
+        );
+      }
+    }
+    // NR46 — kedaluwarsa akun opsional (admin musiman/magang).
+    let expiresAt: Date | null = null;
+    if (typeof data.expiresAt === "string" && data.expiresAt.trim()) {
+      const parsed = new Date(data.expiresAt);
+      if (Number.isNaN(parsed.getTime())) {
+        return NextResponse.json({ error: "Tanggal kedaluwarsa tidak valid." }, { status: 400 });
+      }
+      expiresAt = parsed;
     }
     if (!(ROLES as string[]).includes(role)) {
       return NextResponse.json({ error: "Role tidak valid." }, { status: 400 });
@@ -95,7 +116,17 @@ export async function POST(req: NextRequest) {
 
     if (!invite) {
       const created = await db.adminUser.create({
-        data: { name, email, passwordHash: hashPassword(password), role, isActive: true },
+        data: {
+          name,
+          email,
+          passwordHash: hashPassword(password),
+          role,
+          isActive: true,
+          // NR46 — jejak sandi + kebijakan ganti sandi pertama.
+          lastPasswordChangedAt: new Date(),
+          mustChangePassword: policy.requireChangeFirstLogin,
+          expiresAt,
+        },
       });
       return NextResponse.json(withInviteFields(created), { status: 201 });
     }
@@ -116,6 +147,7 @@ export async function POST(req: NextRequest) {
         passwordHash: hashPassword(placeholderSecret),
         inviteToken,
         inviteExpiresAt,
+        expiresAt, // NR46
       },
     });
 
