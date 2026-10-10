@@ -2739,6 +2739,23 @@ export async function runTelegramDigest(force = false): Promise<{ sent: number; 
   }
   // Task 4-a — baris insight AI ditambahkan sebagai bagian isi digest.
   if (insightLine) lines.push("", insightLine);
+  // NR46 — catatan serah terima yang masih terbuka (tampil sampai ditandai ditindak).
+  try {
+    const openHandovers = await db.handoverNote.findMany({
+      where: { status: "OPEN", forDate: { lte: today } },
+      orderBy: [{ forDate: "desc" }, { createdAt: "desc" }],
+      take: 3,
+    });
+    if (openHandovers.length > 0) {
+      lines.push("", `Serah terima belum ditindak: ${openHandovers.length}`);
+      for (const h of openHandovers) {
+        const snippet = (h.needsAction || h.risks || h.notes || "-").replace(/\s+/g, " ").slice(0, 110);
+        lines.push(`   ${h.forDate} — ${h.authorName}: ${snippet}`);
+      }
+    }
+  } catch {
+    // gagal memuat handover tidak boleh menggagalkan digest
+  }
   // Notifikasi yang ditahan mode tenang semalam (dirangkum sekali, lalu direset).
   const quietHeld = typeof site.telegramQuietCount === "number" ? site.telegramQuietCount : 0;
   if (quietHeld > 0) {
