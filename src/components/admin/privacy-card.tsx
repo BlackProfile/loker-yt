@@ -294,12 +294,33 @@ function EraseCandidateSection() {
     if (target.trackingCode == null || confirmText.trim() !== target.trackingCode) return;
     setErasing(true);
     try {
-      const data = await apiPost<{ ok: true; result: EraseResult }>("/api/admin/privacy", {
+      const data = await apiPost<{
+        ok?: true;
+        result?: EraseResult;
+        approvalRequired?: boolean;
+        message?: string;
+      }>("/api/admin/privacy", {
         action: "erase",
         applicationId: target.applicationId,
         confirmTrackingCode: target.trackingCode,
       });
+      if (data.approvalRequired) {
+        // NR46 — 202 empat mata: bukan gagal; permintaan menunggu persetujuan OWNER lain.
+        toast.info(
+          data.message ??
+            "Permintaan penghapusan dikirim — menunggu persetujuan OWNER lain.",
+        );
+        setConfirmOpen(false);
+        setTarget(null);
+        setConfirmText("");
+        setTrackingInput("");
+        return;
+      }
       const result = data.result;
+      if (!result) {
+        toast.error("Respons penghapusan tidak valid. Coba lagi.");
+        return;
+      }
       const rekap = `${result.deletedApplications} lamaran, ${result.deletedInterviews} wawancara, ${result.deletedFiles} file dihapus permanen`;
       toast.success(
         result.deletedCandidate

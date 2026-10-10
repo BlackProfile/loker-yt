@@ -486,10 +486,22 @@ function TrashCard() {
     if (busyId) return;
     setBusyId(id);
     try {
-      await apiPost("/api/admin/trash", { type, id, action });
-      toast.success(
-        action === "restore" ? "Item berhasil dipulihkan." : "Item dihapus permanen.",
-      );
+      const res = await apiPost<{
+        ok?: boolean;
+        action?: string;
+        approvalRequired?: boolean;
+        message?: string;
+      }>("/api/admin/trash", { type, id, action });
+      if (res.approvalRequired) {
+        // NR46 — 202 empat mata: bukan gagal; menunggu persetujuan OWNER lain.
+        toast.info(
+          res.message ?? "Permintaan hapus permanen dikirim — menunggu persetujuan OWNER lain.",
+        );
+      } else {
+        toast.success(
+          action === "restore" ? "Item berhasil dipulihkan." : "Item dihapus permanen.",
+        );
+      }
       setPurgeTarget(null);
       await load();
     } catch (err) {

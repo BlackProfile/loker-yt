@@ -8,25 +8,37 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Bell,
   BellOff,
   CheckCheck,
   Info,
   ListTodo,
+  Loader2,
   Shield,
+  SlidersHorizontal,
   Sparkles,
   UserPlus,
   Video,
   type LucideIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { apiGet, apiPatch } from "./api";
+import { apiGet, apiPatch, apiPut } from "./api";
 import { formatRelative } from "./format";
 import { useLiveRefresh } from "./use-live-refresh";
 
@@ -44,7 +56,32 @@ type NotificationRow = {
 type NotificationsResponse = {
   notifications: NotificationRow[];
   unreadCount: number;
+  // NR46 — jumlah notifikasi disembunyikan oleh preferensi/jam senyap sesi.
+  filteredOut?: number;
 };
+
+// NR46 — preferensi notifikasi (kontrak /api/admin/notification-prefs).
+type NotifyCategory = "APPLICATION" | "INTERVIEW" | "OFFER" | "SYSTEM" | "LOGIN";
+
+type NotifyPrefs = {
+  categories: Record<NotifyCategory, boolean>;
+  silentFrom: number | null; // jam 0-23, null = nonaktif
+  silentTo: number | null;
+};
+
+const PREF_CATEGORIES: { key: NotifyCategory; label: string }[] = [
+  { key: "APPLICATION", label: "Lamaran" },
+  { key: "INTERVIEW", label: "Wawancara" },
+  { key: "OFFER", label: "Offer" },
+  { key: "SYSTEM", label: "Sistem" },
+  { key: "LOGIN", label: "Login" },
+];
+
+const HOUR_OPTIONS: number[] = Array.from({ length: 24 }, (_, h) => h);
+
+function hourLabel(h: number): string {
+  return `${String(h).padStart(2, "0")}:00`;
+}
 
 // Ikon per kategori notifikasi; lainnya = Info.
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
@@ -77,9 +114,20 @@ export function NotificationBell({ onOpenTasks }: { onOpenTasks?: () => void }) 
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationRow[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [filteredOut, setFilteredOut] = useState(0);
   const [loading, setLoading] = useState(true);
   const [markingAll, setMarkingAll] = useState(false);
   const inFlightRef = useRef(false);
+
+  // NR46 — panel "Preferensi Notifikasi Saya".
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const [prefsLoading, setPrefsLoading] = useState(false);
+  const [prefsSaving, setPrefsSaving] = useState(false);
+  const [prefs, setPrefs] = useState<NotifyPrefs>({
+    categories: { APPLICATION: true, INTERVIEW: true, OFFER: true, SYSTEM: true, LOGIN: true },
+    silentFrom: null,
+    silentTo: null,
+  });
 
   const load = useCallback(async () => {
     if (inFlightRef.current) return; // hindari request bertumpuk (polling + realtime)
@@ -88,6 +136,7 @@ export function NotificationBell({ onOpenTasks }: { onOpenTasks?: () => void }) 
       const data = await apiGet<NotificationsResponse>("/api/admin/notifications");
       setItems(data.notifications ?? []);
       setUnreadCount(data.unreadCount ?? 0);
+      setFilteredOut(Number(data.filteredOut ?? 0));
     } catch {
       // Senyap: lonceng tidak boleh bising saat jaringan bermasalah.
     } finally {
