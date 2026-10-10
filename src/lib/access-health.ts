@@ -124,18 +124,20 @@ export async function getAccessHealth(): Promise<AccessHealthReport> {
   const inactiveSessions = activeSessions.filter((s) => !activeUserIdSet.has(s.userId));
   if (inactiveSessions.length > 0) {
     bump("CRIT");
+    const userById = new Map(users.map((u) => [u.id, u]));
     findings.push({
       key: "inactive_with_sessions",
       severity: "CRIT",
       title: `${inactiveSessions.length} sesi milik akun yang sudah dinonaktifkan`,
       detail: "Sesi seharusnya dicabut otomatis saat akun dinonaktifkan. Cabut sekarang.",
       targets: inactiveSessions.slice(0, 5).map((s) => ({
-        id: s.id,
-        label: s.userId,
-        sublabel: "sesi aktif",
+        id: userById.get(s.userId)?.id ?? s.userId,
+        label: nameOf(userById.get(s.userId) ?? { name: "Akun tidak dikenal", email: s.userId }),
+        sublabel: "masih memiliki sesi aktif",
       })),
       targetCount: inactiveSessions.length,
       action: "revokeSessions",
+      actionUserId: inactiveSessions[0]?.userId,
     });
   }
 
