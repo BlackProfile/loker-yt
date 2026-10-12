@@ -107,6 +107,9 @@ export function PasswordPolicyCard() {
       icon={KeyRound}
       title="Kebijakan Sandi"
       description="Syarat kekuatan sandi, rotasi berkala, dan kewajiban ganti sandi pertama."
+      status={
+        policy ? { label: `Min. ${policy.minLength} karakter`, tone: "neutral" } : undefined
+      }
     >
       {fetchFailed ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">

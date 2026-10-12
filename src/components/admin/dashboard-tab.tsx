@@ -95,6 +95,7 @@ import { ServerHealthCard } from "./server-health-card";
 import { AccessHealthCard } from "./access-health-card";
 import { ApprovalsCard } from "./approvals-card";
 import { HandoverCard } from "./handover-card";
+import { SectionGroup } from "./section-group";
 import { cn } from "@/lib/utils";
 
 type StatCardConfig = {
@@ -524,16 +525,20 @@ export function DashboardTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* NR45 — Kesehatan Server: snapshot beban real-time + panel Mode Demo.
+      {/* NR45 — Kesehatan Server + NR46 — Kesehatan Akses: pemantauan real-time.
           Posisi menonjol di paling atas dashboard (sebelum kartu statusHealth). */}
-      <ServerHealthCard />
+      <SectionGroup label="Pemantauan">
+        <ServerHealthCard />
+        {/* NR46 — Kesehatan Akses (OWNER): return null untuk role lain. */}
+        <AccessHealthCard />
+      </SectionGroup>
 
-      {/* NR46 — Kesehatan Akses (OWNER), Persetujuan Ganda (OWNER), Serah Terima
-          Harian (semua role). Guard role diterapkan DI DALAM masing-masing
-          komponen (return null bila bukan OWNER). */}
-      <AccessHealthCard />
-      <ApprovalsCard />
-      <HandoverCard />
+      {/* NR46 — Persetujuan Ganda (OWNER) + Serah Terima Harian (semua role).
+          Guard role diterapkan DI DALAM masing-masing komponen. */}
+      <SectionGroup label="Koordinasi Tim">
+        <ApprovalsCard />
+        <HandoverCard />
+      </SectionGroup>
 
       {/* Kartu Perlu Tindakan — hilang otomatis bila semua kelompok kosong */}
       {actionGroups.length > 0 ? (

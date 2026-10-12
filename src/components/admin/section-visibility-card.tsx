@@ -70,12 +70,14 @@ export function SectionVisibilityCard({
   sections: SectionVisibility;
   onChange: (key: SectionKey, value: boolean) => void;
 }) {
+  const visibleCount = SECTION_KEYS.filter((key) => sections[key]).length;
   return (
     <CollapsibleCard
       id="tampilan-publik"
       icon={Eye}
       title="Tampilan Halaman Publik"
       description="Atur bagian mana yang tampil di halaman publik. Perubahan berlaku setelah disimpan."
+      status={{ label: `${visibleCount}/${SECTION_KEYS.length} bagian`, tone: "neutral" }}
     >
       <div className="flex flex-col">
         {SECTION_KEYS.map((key, index) => {
