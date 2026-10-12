@@ -731,6 +731,7 @@ export type DemoSimulatorStatus = {
   targetTotal: number | null; // perkiraan total lonjakan (null utk mode interval)
   inFlight: number;
   recentPerSec: number; // kecepatan aktual ±N/detik (mode lonjakan)
+  runGenerated: number; // lamaran sukses pada jalan berjalan (progres lonjakan ini)
   positionId: string | null;
   generated: number;
   failed: number;
@@ -758,6 +759,7 @@ function statusSnapshot(): DemoSimulatorStatus {
     targetTotal,
     inFlight: s.inFlight,
     recentPerSec: recentPerSec(s),
+    runGenerated: s.runGenerated,
     positionId: s.positionId,
     generated: s.generated,
     failed: s.failed,
