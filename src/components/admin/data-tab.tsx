@@ -302,6 +302,18 @@ function DataHealthCard() {
       title="Kesehatan Data"
       description="Pemeriksaan otomatis: email tidak valid, berkas yatim, dokumen kedaluwarsa, draft basi, dan anomali lain."
       status={healthStatus}
+      actions={
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 shrink-0"
+          onClick={() => void load()}
+          disabled={loading}
+        >
+          <RotateCcw className="size-4" aria-hidden="true" />
+          Periksa Ulang
+        </Button>
+      }
     >
       {loading ? (
         <div className="space-y-2" aria-busy="true">
@@ -424,6 +436,7 @@ function DataCard({
   description,
   children,
   status,
+  actions,
 }: {
   icon: typeof DatabaseBackup;
   title: string;
@@ -431,13 +444,22 @@ function DataCard({
   children: React.ReactNode;
   /** Chip status di header kartu (terlihat walau kartu tertutup). */
   status?: CardStatus;
+  /** Aksi cepat di kanan header (tetap terlihat saat kartu tertutup). */
+  actions?: React.ReactNode;
 }) {
   const id = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   return (
-    <CollapsibleCard id={id} icon={Icon} title={title} description={description} status={status}>
+    <CollapsibleCard
+      id={id}
+      icon={Icon}
+      title={title}
+      description={description}
+      status={status}
+      actions={actions}
+    >
       {children}
     </CollapsibleCard>
   );
@@ -2601,11 +2623,33 @@ export function DataTab() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* ------------------- Kelompok: Backup & Pemulihan ------------------- */}
+      <SectionGroup
+        label="Backup & Pemulihan"
+        description="Salinan database dan cara memulihkannya bila terjadi masalah."
+      >
       {/* ------------------------- Backup Database ------------------------- */}
       <DataCard
         icon={DatabaseBackup}
         title="Backup Database"
         description="Unduh salinan file database SQLite untuk disimpan di tempat aman."
+        actions={
+          isOwner ? (
+            <Button
+              variant="outline"
+              className="h-9 shrink-0"
+              onClick={() => void handleBackup()}
+              disabled={backingUp || restoring}
+            >
+              {backingUp ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Download className="size-4" aria-hidden="true" />
+              )}
+              Unduh
+            </Button>
+          ) : null
+        }
       >
         {isOwner ? (
           <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-4 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between">
@@ -2645,12 +2689,6 @@ export function DataTab() {
         )}
       </DataCard>
 
-      {/* ---------------------- Excel & Pendataan (XL-FE) ---------------------- */}
-      <ExcelDataCard />
-
-      {/* --------------------- Kesehatan Data (NR-41 G11) --------------------- */}
-      <DataHealthCard />
-
       {/* ------------------------- Backup Otomatis ------------------------- */}
       <AutoBackupCard />
 
@@ -2659,6 +2697,7 @@ export function DataTab() {
         icon={Upload}
         title="Restore Database"
         description="Pulihkan isi database dari file backup .db sebelumnya."
+        status={{ label: "Berisiko", tone: "danger" }}
       >
         {isOwner ? (
           <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-4 dark:bg-zinc-900/40 sm:flex-row sm:items-center sm:justify-between">
@@ -2736,7 +2775,10 @@ export function DataTab() {
           </div>
         )}
       </DataCard>
+      </SectionGroup>
 
+      {/* --------------------- Kelompok: Impor & Ekspor --------------------- */}
+      <SectionGroup label="Impor & Ekspor">
       {/* -------------- Impor Lamaran Massal (CSV / Excel) — XL-FE -------------- */}
       <DataCard
         icon={FileSpreadsheet}
@@ -2979,11 +3021,39 @@ export function DataTab() {
       {/* ------------------ Update Status Massal (Excel) — XL-FE ------------------ */}
       <BulkStatusCard />
 
+      {/* ---------------------- Excel & Pendataan (XL-FE) ---------------------- */}
+      <ExcelDataCard />
+      </SectionGroup>
+
+      {/* ------------------- Kelompok: Pemeliharaan Data ------------------- */}
+      <SectionGroup label="Pemeliharaan Data">
+      {/* --------------------- Kesehatan Data (NR-41 G11) --------------------- */}
+      <DataHealthCard />
+
+      {/* ---------------------------- Arsip Otomatis ---------------------------- */}
+      <AutoArchiveCard />
+
+      {/* ----------------------------- Tong Sampah ----------------------------- */}
+      <TrashCard />
+
+      {/* ------------------------ Pusat Privasi (4-c) ------------------------ */}
+      <PrivacyCard />
+      </SectionGroup>
+
+      {/* -------------------- Kelompok: Situs & Integrasi -------------------- */}
+      <SectionGroup label="Situs & Integrasi">
       {/* ------------------------ Mode Tutup Rekrutmen ------------------------ */}
       <DataCard
         icon={PauseCircle}
         title="Mode Tutup Rekrutmen"
         description="Saat aktif, halaman publik menampilkan banner pengumuman amber dan tombol kirim lamaran dinonaktifkan."
+        status={
+          site && !siteLoading
+            ? site.recruitmentClosed
+              ? { label: "Ditutup", tone: "warn" }
+              : { label: "Terbuka", tone: "ok" }
+            : undefined
+        }
       >
         {siteLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -3063,17 +3133,9 @@ export function DataTab() {
         )}
       </DataCard>
 
-      {/* ----------------------------- Tong Sampah ----------------------------- */}
-      <TrashCard />
-
       {/* ---------------------------- Webhook Keluar ---------------------------- */}
       <WebhooksCard />
-
-      {/* ---------------------------- Arsip Otomatis ---------------------------- */}
-      <AutoArchiveCard />
-
-      {/* ---------------------------- Pusat Privasi (4-c) ---------------------------- */}
-      <PrivacyCard />
+      </SectionGroup>
 
       {/* ------------- Konfirmasi restore (peringatan kuat) ------------- */}
       <AlertDialog
