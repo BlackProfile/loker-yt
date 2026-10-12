@@ -37,6 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { PosterDialog } from "./poster-dialog";
 import {
   Briefcase,
   ClipboardList,
@@ -47,6 +48,7 @@ import {
   FileText,
   Flame,
   GripVertical,
+  ImageDown,
   Link2,
   Loader2,
   MapPin,
@@ -155,6 +157,9 @@ export function PositionsTab() {
 
   const [deleteTarget, setDeleteTarget] = useState<Position | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // NR49 Paket D — dialog poster lowongan (AI) dari menu aksi per posisi.
+  const [posterTarget, setPosterTarget] = useState<Position | null>(null);
 
   // Halaman khusus per posisi — mendukung deep-link #admin/posisi/<id> plus
   // suffix /konten, /formulir, /penerimaan, /seleksi, /wawancara, /pesan,
@@ -638,6 +643,10 @@ export function PositionsTab() {
                           <ExternalLink className="size-4" aria-hidden="true" />
                           Lihat Halaman Publik
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setPosterTarget(position)}>
+                          <ImageDown className="size-4" aria-hidden="true" />
+                          Poster Lowongan
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => void handleDuplicate(position)}
                           disabled={!canMutate}
@@ -703,6 +712,15 @@ export function PositionsTab() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* NR49 Paket D — dialog poster lowongan (AI) untuk posisi terpilih */}
+      <PosterDialog
+        open={!!posterTarget}
+        onOpenChange={(open) => {
+          if (!open) setPosterTarget(null);
+        }}
+        position={posterTarget}
+      />
     </div>
   );
 }

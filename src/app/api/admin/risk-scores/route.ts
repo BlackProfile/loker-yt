@@ -89,18 +89,22 @@ export async function GET() {
     const items: RiskItem[] = [];
 
     for (const iv of interviews) {
-      const score = 25;
+      let score = 25; // dasar
       const reasons: string[] = [];
       if (iv.status === "RESCHEDULE_REQUESTED") {
+        score += 35;
         reasons.push("Pernah minta ubah jadwal");
       }
       if (iv.status === "SCHEDULED" && iv.scheduledAt <= in48Hours) {
+        score += 20;
         reasons.push("Belum mengonfirmasi kehadiran dan wawancara kurang dari 48 jam lagi");
       }
       if (iv.application.candidateSeenCount <= 0) {
+        score += 10;
         reasons.push("Belum pernah membuka halaman status lamaran");
       }
       if (iv.application.createdAt <= thirtyDaysAgo) {
+        score += 10;
         reasons.push("Lamaran sudah masuk lebih dari 30 hari");
       }
       items.push({
@@ -115,15 +119,18 @@ export async function GET() {
     }
 
     for (const app of offers) {
-      const score = 25;
+      let score = 25; // dasar
       const reasons: string[] = [];
       if (app.offerSentAt && app.offerSentAt <= sevenDaysAgo) {
+        score += 25;
         reasons.push("Offer belum dijawab lebih dari 7 hari sejak dikirim");
       }
       if (!app.offerRespondedAt && app.offerDeadline && app.offerDeadline <= in3Days) {
+        score += 20;
         reasons.push("Batas jawaban kurang dari 3 hari lagi");
       }
       if (app.candidateSeenCount <= 0) {
+        score += 10;
         reasons.push("Belum pernah membuka halaman status lamaran");
       }
       items.push({
