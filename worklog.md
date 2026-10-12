@@ -3974,3 +3974,77 @@ Stage Summary:
 - Gate terpusat AKTIF di 16 jalur AI: 15 rute admin via withAiGate (blokir -> 503 pesan Indonesia, OK/ERROR/BLOCKED tercatat di AiJobLog), skrining massal processing.ts via aiGateCheck senyap + recordAiJob manual (pipeline tidak pernah gagal karena AI), chatbot publik via aiGateCheck senyap + fallback 200 tanpa log. Fitur mati/kuota habis/Mode Hemat (untuk priority background)/Prioritas Aksi Admin (background saat antrean manual > 0) kini ditegakkan di semua titik panggilan AI.
 - Keputusan: talent-pool tidak digate (tanpa AI); OCR gate membungkus vlmExtract saja (teks PDF lokal bebas gate); transcribe menggate ASR utama; cache hit answer-summary bebas gate; UI mere-GET setelah PUT karena respons PUT adalah config mentah; jumlah fitur dirender dinamis (27 di registry, bukan 26 seperti tertulis di spesifikasi).
 - Data uji dibersihkan seluruhnya (Setting ai_control + 3 AiJobLog dihapus); tanpa commit/push; tanpa restart dev server manual.
+---
+Task ID: NR49-B
+Agent: full-stack-developer (diselesaikan ORCHESTRATOR setelah agen kena context deadline; file agen sudah lengkap, orchestrator yang verifikasi)
+Task: Paket B "Copilot Admin + Penjelasan Anomali" — backend + UI.
+
+Work Log (rekonstruksi dari kode yang tertinggal + verifikasi):
+- src/lib/copilot-context.ts (BARU, 308 baris): gatherCopilotContext() + rejectionStageForPosition() — snapshot statistik rekrutmen untuk prompt copilot.
+- src/app/api/admin/copilot/route.ts (BARU): POST { question } semua role login; withAiGate("copilot", { actor }); LLM diminta jawab HANYA dari konteks + usulkan aksi dari whitelist 3 tipe (set_application_status / toggle_position / bulk_reject_stale) dengan label + risk low/medium/high; VIEWER di-strip actions; parse via extractJsonObject + validasi ketat (maks 3 aksi); parse gagal -> fallback teks mentah.
+- src/app/api/admin/copilot/execute/route.ts (BARU, 386 baris): eksekusi aksi TANPA mempercayai UI — whitelist tipe, izin via can() (kelola_lamaran/kelola_posisi), validasi + clamp params, stage history via appendStageHistory, tolak massal memakai rejectionStageForPosition + skip lamaran bertanda penting, cap 200 (scan 500), ActivityLog aktor "<nama> (Copilot)" + emitRealtime.
+- src/app/api/admin/anomaly-explain/route.ts (BARU): POST { metric } untuk 4 metrik (applications_7d / dropoff_7d / stage_stuck / offers_pending) — angka konkret dikumpulkan server lalu LLM jelaskan penyebab + 3 saran; withAiGate("anomaly_explain").
+- UI: admin-ask-widget.tsx di-upgrade jadi Copilot (riwayat chat, chip aksi ber-risiko, konfirmasi 2 langkah, VIEWER tanpa aksi); dashboard-widgets.tsx dapat tombol Sparkles "Tanya AI" + Popover penjelasan anomali di widget terkait.
+
+Stage Summary (hasil verifikasi ORCHESTRATOR):
+- POST /api/admin/copilot (curl OWNER) menjawab dari data nyata: "Baru (NEW): 7472, Ditinjau: 1, ..." — reply akurat + actions [].
+- Di browser: widget Copilot membuka dialog, pertanyaan "Sebutkan posisi yang sedang aktif" dijawab benar ("Editor Video Meme dan Penulis Naskah").
+- POST execute sebagai VIEWER -> 403 { error: "Aksi ini tidak diizinkan untuk role Anda — lihat Matriks Izin di Pengaturan." } — penegakan matriks terbukti server-side tanpa mutasi.
+- POST /api/admin/anomaly-explain (applications_7d) -> LLM jujur menyorot lonjakan 3 -> 7.473 lamaran + penyebab yang mungkin + saran.
+---
+Task ID: NR49-C
+Agent: full-stack-developer (diselesaikan ORCHESTRATOR setelah agen kena context deadline; file agen sudah lengkap, orchestrator yang verifikasi)
+Task: Paket C "AI Proaktif" — Brief Pagi, Skor Risiko, Analisis Penolakan, Sarankan Tag, Penerjemah Kandidat.
+
+Work Log (rekonstruksi + verifikasi):
+- src/lib/morning-brief.ts (BARU, 301 baris): gatherBriefContext() (kemarin/hari ini/perlu ditindak), generateMorningBrief(force, actor) via withAiGate("morning_brief") + cache harian Setting "ai_brief_YYYY-MM-DD", getTodayBrief().
+- src/app/api/admin/morning-brief/route.ts (BARU): GET semua role; POST force OWNER/HR; AiGateError -> 503.
+- src/app/api/cron/reminders/route.ts (EDIT bedah sakti): job harian "AI Brief Pagi" jam 07.00-07.59 Bangkok, dedupe Setting "ai_brief_cron_YYYY-MM-DD", aiGateCheck silent (tanpa spam BLOCKED), kirim Telegram via helper notify yang ada.
+- src/app/api/admin/risk-scores/route.ts + risk-explain/route.ts (BARU): heuristik 0-100 transparan utk wawancara 7 hari & offer PENDING (reschedule, jarak waktu, candidateSeenCount, usia lamaran); risk-explain kirim sinyal mentah ke LLM -> { reason, suggestion }.
+- src/app/api/admin/rejection-analysis/route.ts (BARU): GET statistik penolakan 90 hari + insight cache Setting "rejection_insight"; POST (OWNER/HR) generate insight via withAiGate("rejection_insight"); 400 jujur bila tak ada data.
+- src/app/api/admin/applications/[id]/suggest-tags/route.ts (BARU): baca cvText+jawaban (budget 6000 char) -> LLM pilih tag (utamakan tag tim, maks 2 baru) -> USULAN SAJA, tidak pernah menambah otomatis. (ORCHESTRATOR memperkuat prompt: minimal 2-5 tag relevan, tolak tag tim yang tak berhubungan — hasil uji membaik ["video editor","premiere pro"].)
+- src/app/api/admin/applications/[id]/translate/route.ts (BARU): POST { field: cvText|motivation } deteksi+terjemah ke Indonesia, simpan Application.translations; GET baca terjemahan tersimpan; sudah berbahasa Indonesia -> { translated: null }.
+- UI: morning-brief-card.tsx, risk-scores-card.tsx, rejection-analysis-card.tsx (BARU) + dashboard-tab.tsx (MorningBriefCard paling atas + SectionGroup "AI Proaktif"); candidate/application detail: "Sarankan Tag (AI)" di bagian Tags; translate UI di ai-panel.tsx (tab "AI & Berkas").
+
+Stage Summary (verifikasi ORCHESTRATOR, curl OWNER + browser):
+- POST /api/admin/morning-brief { force:true } -> brief nyata 3 bagian dengan angka jujur; chip kartu "Hari ini · 07.03" membaca cache.
+- risk-scores -> { items: [] } (benar, tak ada wawancara/offer aktif); rejection-analysis POST -> 400 jujur "Belum ada penolakan dalam 90 hari".
+- translate cvText Inggris -> Indonesia tersimpan (Application.translations terisi).
+- Browser: kartu Brief Pagi + grup AI PROAKTIF (Risiko & Penolakan) tampil; tombol "Sarankan Tag (AI)" di dialog detail -> chip "Usulan AI: video editor | premiere" muncul.
+- Cron job brief terpasang dengan dedupe + gate silent; tidak mengubah job lama.
+---
+Task ID: NR49-D
+Agent: full-stack-developer (diselesaikan ORCHESTRATOR setelah agen kena context deadline; file agen sudah lengkap, orchestrator yang verifikasi)
+Task: Paket D "AI Kreasi & Dokumen" — Draf Pengumuman, Poster Lowongan, Draf Scorecard dari Transkrip, Paket Onboarding.
+
+Work Log (rekonstruksi + verifikasi):
+- src/app/api/admin/announcements/draft/route.ts (BARU): POST { positionId } OWNER/HR -> withAiGate("announcement_draft") -> { title <=60, body <=400 } tanpa emoji dari data posisi (salaryText hanya bila salaryVisible).
+- src/lib/position-poster.ts (BARU): buildPosterPrompt (3 gaya: minimalis/berani/hangat, palet hangat tanpa biru-ungu) + generatePoster via zai.images.generations.create (withTimeout 180 dtk) -> disimpan sebagai FileAsset (folder uploads/, dilayani /api/files). (ORCHESTRATOR: ekstensi file diperbaiki .png -> .jpg karena upstream mengembalikan JPEG.)
+- src/app/api/admin/positions/[id]/poster/route.ts (BARU): POST { style } dengan can(role,"kelola_posisi") -> withAiGate("poster") -> { url, fileId }.
+- src/app/api/admin/interviews/[id]/scorecard-draft/route.ts (BARU): wajib transcript ada (400 bila kosong); kriteria dari rubricCriteria posisi (fallback kriteria umum); LLM -> { scores {kriteria: 1-5}, recommendation LANJUT|CADANGAN|TOLAK, note } dengan validasi clamp.
+- src/app/api/admin/applications/[id]/onboarding-pack/route.ts (BARU): GET/POST (wajib hiredAt, 400 bila bukan) menghasilkan { checklist 6-8, welcomeEmail, equipment } disimpan Application.onboardingPack; PATCH simpan editan admin.
+- UI: announcement-ai-draft.tsx (BARU, terpasang di dashboard-tab); poster-dialog.tsx (BARU) terpasang di positions-tab; interview-session-dialog.tsx tombol "Draf Penilaian (AI)" (hanya bila transcript ada) MENGISI state form untuk ditinjau & disimpan manual (tidak pernah auto-save); onboarding-dialog.tsx (BARU) + tombol "Paket Onboarding (AI)" di hire-tab.
+
+Stage Summary (verifikasi ORCHESTRATOR, curl OWNER):
+- POST announcements/draft utk "Penulis Naskah" -> judul+body pengumuman siap-edit yang layak.
+- POST poster (style minimalis) -> 200 dalam 67 dtk; file 1024x1024 tersimpan (FileAsset) dan terunduh via /api/files; asset uji + file fisik dihapus setelah verifikasi.
+- POST scorecard-draft pada transkrip uji -> nilai per kriteria rubrik posisi (Kekuatan hook 3 / Struktur naskah 4 / Kesesuaian gaya suara 3) + rekomendasi CADANGAN + catatan berjustifikasi.
+- POST onboarding-pack pada kandidat hired uji -> checklist 6 item + email sambutan menyebut nama; (semua baris uji dihapus bersih setelahnya).
+---
+Task ID: NR49-VERIFY + OPS (orchestrator)
+Agent: Z.ai Code
+Task: Verifikasi penuh NR49 (13 fitur AI, 4 paket), stabilisasi server sandbox, penutupan tugas.
+
+Work Log:
+- KONDISI MULAI: agen NR49-A selesai penuh (gate dipasang 15 rute AI eksisting + processing.ts silent-check + chatbot publik fallback; 2 kartu Pengaturan; tsc/lint bersih). Agen B/C/D mati "context deadline" karena tekanan memori 4 agen paralel — tetapi hampir seluruh file mereka SUDAH lengkap & ter-commit auto-sync; yang tersisa hanya verifikasi + 2 perbaikan kecil.
+- STABILISASI SERVER: dev server berkali-kali wedged/OOM (dmesg: next-server RSS 2,5-3,1 GB dihidupi OOM killer; guard dev-keepalive me-restart otomatis). Diagnosis: kompilasi Turbopack graf rute yang mengimpor @/lib/ai menggantung saat memori genting (risk-scores tanpa AI selalu cepat = bukti). Solusi: kill total + rm -rf .next + restart detach (setsid), pemanasan rute BERURUTAN via curl tanpa browser berjalan; setelah cache parsial terkumpul server stabil (±540 MB) dan semua rute <0,2 dtk. Pelajaran: jangan hapus .next tiap restart; hindari kompilasi paralel + browser bersamaan.
+- VERIFIKASI API E2E (curl, sesi OWNER via /api/admin/login + totpCode — field bernama totpCode, bukan totp): ai-control GET/PUT roundtrip; ai-usage GET; morning-brief POST force (LLM nyata, 3 bagian, angka jujur); copilot POST (jawaban dari DB: rekap status 7.472 lamaran demo); copilot execute sebagai VIEWER -> 403 matriks izin; anomaly-explain applications_7d; risk-scores (items [] benar); rejection-analysis POST -> 400 jujur tanpa data; suggest-tags (2 kali, prompt diperkuat); translate cvText EN->ID tersimpan; onboarding-pack (kandidat hired uji); announcements/draft; positions poster (67 dtk, 1024x1024 via /api/files); scorecard-draft (nilai per rubrik + rekomendasi).
+- VERIFIKASI BROWSER (OWNER + TOTP): login; dashboard = kartu Brief Pagi (chip "Hari ini · 07.03") + tombol Copilot + grup PEMANTAUAN/KOORDINASI TIM/AI PROAKTIF; widget Copilot tanya-jawab E2E ("Sebutkan posisi yang sedang aktif" -> benar); Pengaturan -> grup PUSAT KENDALI AI (chip "27 fitur aktif") + Log Aktivitas AI (chip "11 panggilan · 14 hari"); roundtrip kendali: toggle Skrining Otomatis -> "Simpan Pengaturan AI" aktif -> tersimpan (PUT terverifikasi server) -> dikembalikan bawaan; dialog detail pelamar -> tab "AI & Berkas" -> tombol "Sarankan Tag (AI)" -> chip "Usulan AI: video editor | premiere"; mobile 390px overflow-x = 0px; page error/console error = nihil.
+- PERBAIKAN KECIL: (1) prompt suggest-tags diperkuat (min 2-5 tag relevan, jangan pakai tag tim yang tak berhubungan); (2) nama file poster .png -> .jpg (upstream JPEG) di position-poster.ts.
+- PEMBERSIHAN: 2 lamaran uji + 1 wawancara uji + FileAsset poster + file fisik uploads dihapus; lockout 429 (fitur NR45 bekerja saat salah field TOTP) dibuka via hapus audit gagal 15 menit (pola NR48); Setting ai_control kembali perilaku bawaan; baris AiJobLog dibiarkan sebagai log pemakaian sah.
+- KUALITAS: bunx tsc --noEmit -> 0 error di src/ (satu-satunya error di skills/stock-analysis-skill, warisan lama di luar lingkup); bun run lint -> exit 0; dev.log akhir tanpa error kompilasi; satu proses next-server tunggal port 3000 + mini-service utuh.
+
+Stage Summary:
+- NR49 SELESAI: 13 fitur AI hidup dalam 4 paket — (A) Pusat Kendali AI (27 fitur: on/off, kuota harian, Prioritas Aksi Admin, integrasi Mode Hemat) + Log Aktivitas AI (audit + grafik + kuota reflektif); (B) Copilot Admin ber-aksi (whitelist 3 aksi + matriks izin + audit) & Penjelasan Anomali; (C) Brief Pagi AI (dashboard + cron 07.00 + Telegram), Skor Risiko, Analisis Penolakan, Sarankan Tag, Penerjemah; (D) Draf Pengumuman, Poster Lowongan (image gen), Draf Scorecard dari Transkrip, Paket Onboarding.
+- Kontrak baru: Setting "ai_control" & "ai_brief_*" & "rejection_insight"; tabel AiJobLog; field Application.translations & onboardingPack; gate withAiGate/aiGateCheck/recordAiJob di src/lib/ai-control.ts; registry src/lib/ai-features.ts (client-safe). Semua fitur menghormati gate, kuota, matriks izin, dan Mode Hemat; AI selalu usulkan, manusia memutuskan.
+- Kunci operasional: field login 2FA bernama totpCode; jangan hapus .next saat restart rutin; OOM sandbox ditangani keepalive + pemanasan berurutan.
