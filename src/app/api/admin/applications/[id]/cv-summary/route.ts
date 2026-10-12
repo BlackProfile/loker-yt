@@ -9,6 +9,7 @@ import { getSession, requireRole } from "@/lib/server-auth";
 import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { extractJsonObject } from "@/lib/ai-json";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 
 export const dynamic = "force-dynamic";
 
@@ -66,17 +67,20 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       '{"bullets": ["butir 1", "butir 2", "butir 3", "butir 4"]}',
     ].join("\n");
 
-    const completion = await withTimeout(
-      withZaiRetry((zai) =>
-        zai.chat.completions.create({
-          messages: [
-            { role: "assistant", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          thinking: { type: "disabled" },
-        }),
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const completion = await withAiGate("cv_summary", { actor: session.name }, () =>
+      withTimeout(
+        withZaiRetry((zai) =>
+          zai.chat.completions.create({
+            messages: [
+              { role: "assistant", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            thinking: { type: "disabled" },
+          }),
+        ),
+        "Ringkasan CV",
       ),
-      "Ringkasan CV",
     );
     const raw = completion?.choices?.[0]?.message?.content ?? "";
 
@@ -117,6 +121,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     void emitRealtime(REALTIME_EVENTS.applications);
     return NextResponse.json({ ok: true, summary: { bullets, generatedAt } });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/applications/[id]/cv-summary]", errorMessage(error));
     return NextResponse.json(
       { error: "Ringkasan CV gagal dibuat. Coba lagi beberapa saat." },

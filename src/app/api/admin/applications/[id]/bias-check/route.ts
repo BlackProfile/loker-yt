@@ -7,6 +7,7 @@ import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { asLooseBoolean, asTrimmedString, clampPercent, errorMessage, extractJsonObject } from "@/lib/ai-json";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 
 export const dynamic = "force-dynamic";
 
@@ -126,18 +127,21 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       'Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain): {"selaras": true | false, "skor_admin": <0-100>, "skor_bukti_estimasi": <0-100>, "catatan": "<teks>"}',
     ].join("\n");
 
-    const completion = await withTimeout(
-      withZaiRetry((zai) =>
-        zai.chat.completions.create({
-          messages: [
-            { role: "assistant", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          thinking: { type: "disabled" },
-        }),
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const completion = await withAiGate("bias_check", { actor: session.name }, () =>
+      withTimeout(
+        withZaiRetry((zai) =>
+          zai.chat.completions.create({
+            messages: [
+              { role: "assistant", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            thinking: { type: "disabled" },
+          }),
+        ),
+        "Pemeriksaan bias",
+        AI_TIMEOUT_MS,
       ),
-      "Pemeriksaan bias",
-      AI_TIMEOUT_MS,
     );
     const raw = completion?.choices?.[0]?.message?.content ?? "";
     const parsed = extractJsonObject(raw);
@@ -162,6 +166,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       catatan,
     });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/applications/[id]/bias-check]", errorMessage(error));
     return NextResponse.json(
       { error: "Gagal memeriksa bias penilaian. Coba lagi sebentar." },

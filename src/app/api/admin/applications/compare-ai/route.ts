@@ -6,6 +6,7 @@ import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { errorMessage, extractJsonObject, asTrimmedString } from "@/lib/ai-json";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 
 export const dynamic = "force-dynamic";
 
@@ -164,18 +165,21 @@ export async function POST(req: NextRequest) {
       "Aturan: winner WAJIB salah satu id di atas; kekuatan_per_kandidat & risiko_per_kandidat WAJIB memuat semua id; confidence mencerminkan seberapa meyakinkan selisihnya.",
     ].join("\n");
 
-    const completion = await withTimeout(
-      withZaiRetry((zai) =>
-        zai.chat.completions.create({
-          messages: [
-            { role: "assistant", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          thinking: { type: "disabled" },
-        }),
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const completion = await withAiGate("compare_ai", { actor: session.name }, () =>
+      withTimeout(
+        withZaiRetry((zai) =>
+          zai.chat.completions.create({
+            messages: [
+              { role: "assistant", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            thinking: { type: "disabled" },
+          }),
+        ),
+        "Perbandingan kandidat",
+        AI_TIMEOUT_MS,
       ),
-      "Perbandingan kandidat",
-      AI_TIMEOUT_MS,
     );
     const raw = completion?.choices?.[0]?.message?.content ?? "";
     const parsed = extractJsonObject(raw);
@@ -221,6 +225,9 @@ export async function POST(req: NextRequest) {
       risiko_per_kandidat: asRecord(parsed.risiko_per_kandidat),
     });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/applications/compare-ai]", errorMessage(error));
     return NextResponse.json(
       { error: "Gagal meminta rekomendasi AI. Coba lagi sebentar." },

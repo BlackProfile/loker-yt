@@ -7,6 +7,7 @@ import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { errorMessage, extractJsonObject, asTrimmedString } from "@/lib/ai-json";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 import { parseRequirements } from "@/lib/seed";
 
 export const dynamic = "force-dynamic";
@@ -63,18 +64,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       'Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain): {"title": "<judul tes>", "note": "<isi brief>"}',
     ].join("\n");
 
-    const completion = await withTimeout(
-      withZaiRetry((zai) =>
-        zai.chat.completions.create({
-          messages: [
-            { role: "assistant", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          thinking: { type: "disabled" },
-        }),
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const completion = await withAiGate("position_brief", { actor: session.name }, () =>
+      withTimeout(
+        withZaiRetry((zai) =>
+          zai.chat.completions.create({
+            messages: [
+              { role: "assistant", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            thinking: { type: "disabled" },
+          }),
+        ),
+        "Pembuatan brief tes praktik",
+        AI_TIMEOUT_MS,
       ),
-      "Pembuatan brief tes praktik",
-      AI_TIMEOUT_MS,
     );
     const raw = completion?.choices?.[0]?.message?.content ?? "";
     const parsed = extractJsonObject(raw);
@@ -94,6 +98,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const title = asTrimmedString(parsed.title, 120) || fallbackTitle;
     return NextResponse.json({ title, note });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/positions/[id]/generate-brief]", errorMessage(error));
     return NextResponse.json(
       { error: "Gagal membuat brief tes. Coba lagi sebentar." },

@@ -7,6 +7,7 @@ import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { errorMessage } from "@/lib/ai-json";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 import {
   OFFER_STATUS_LABELS,
   REJECTION_REASON_LABELS,
@@ -168,18 +169,21 @@ export async function POST(req: NextRequest) {
       stats,
     ].join("\n");
 
-    const completion = await withTimeout(
-      withZaiRetry((zai) =>
-        zai.chat.completions.create({
-          messages: [
-            { role: "assistant", content: systemPrompt },
-            { role: "user", content: question },
-          ],
-          thinking: { type: "disabled" },
-        }),
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const completion = await withAiGate("ask_data", { actor: session.name }, () =>
+      withTimeout(
+        withZaiRetry((zai) =>
+          zai.chat.completions.create({
+            messages: [
+              { role: "assistant", content: systemPrompt },
+              { role: "user", content: question },
+            ],
+            thinking: { type: "disabled" },
+          }),
+        ),
+        "Tanya Data",
+        AI_TIMEOUT_MS,
       ),
-      "Tanya Data",
-      AI_TIMEOUT_MS,
     );
     const reply = (completion?.choices?.[0]?.message?.content ?? "").trim();
     if (!reply) {
@@ -191,6 +195,9 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ reply });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/ask-data]", errorMessage(error));
     return NextResponse.json(
       { error: "Gagal menjawab pertanyaan. Coba lagi sebentar." },
