@@ -1,6 +1,8 @@
 // API Simulator Pelamar Demo (Mode Demo) — SERVER-ONLY, admin-only.
-//   GET    -> status simulator (running, penghitung, lamaran terakhir, error)
-//   POST   -> { action: "start", intervalSec?, positionId? } | { action: "stop" }
+//   GET    -> status simulator (running, mode, penghitung, kecepatan aktual, error)
+//   POST   -> { action: "start", mode?: "interval"|"burst", intervalSec?,
+//               ratePerSec?, durationSec? (null = terus), positionId? }
+//            | { action: "stop" }
 //   DELETE -> bersihkan SEMUA lamaran demo (source "Demo Simulator") + berkasnya
 // Simulator berjalan di proses server (globalThis); mati saat restart server —
 // status selalu mencerminkan keadaan sebenarnya.
@@ -46,16 +48,30 @@ export async function POST(req: NextRequest) {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json({ error: "Body tidak valid." }, { status: 400 });
     }
-    const { action, intervalSec, positionId } = body as {
+    const { action, mode, intervalSec, ratePerSec, durationSec, positionId } = body as {
       action?: unknown;
+      mode?: unknown;
       intervalSec?: unknown;
+      ratePerSec?: unknown;
+      durationSec?: unknown;
       positionId?: unknown;
     };
 
     if (action === "start") {
-      // Validasi input ringan: interval dibatasi di lib (5-3600 detik);
-      // posisi harus id yang benar-benar ada agar start gagal cepat bila salah.
+      // Validasi input ringan: interval dibatasi di lib (5-3600 detik), rate
+      // lonjakan 5-500/detik, durasi 5-300 detik (null = terus); posisi harus id
+      // yang benar-benar ada agar start gagal cepat bila salah.
+      if (mode !== undefined && mode !== "interval" && mode !== "burst") {
+        return NextResponse.json({ error: "Mode tidak dikenal. Gunakan 'interval' atau 'burst'." }, { status: 400 });
+      }
       const interval = typeof intervalSec === "number" ? intervalSec : undefined;
+      const rate = typeof ratePerSec === "number" ? ratePerSec : undefined;
+      const duration =
+        durationSec === null
+          ? null
+          : typeof durationSec === "number"
+            ? durationSec
+            : undefined;
       const position =
         typeof positionId === "string" && positionId.trim() && positionId !== "ALL"
           ? positionId.trim()
@@ -69,7 +85,13 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "Posisi tidak ditemukan." }, { status: 400 });
         }
       }
-      const status = startDemoSimulator({ intervalSec: interval, positionId: position });
+      const status = startDemoSimulator({
+        mode: mode === "burst" ? "burst" : mode === "interval" ? "interval" : undefined,
+        intervalSec: interval,
+        ratePerSec: rate,
+        durationSec: duration,
+        positionId: position,
+      });
       return NextResponse.json({ ok: true, status });
     }
 

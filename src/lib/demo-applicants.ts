@@ -989,10 +989,22 @@ export function getDemoSimulatorStatus(): DemoSimulatorStatus {
 
 /**
  * Hapus SEMUA lamaran bertanda source "Demo Simulator" beserta log aktivitas
- * dan berkas miliknya (CV/intro/berkas field form). Menghentikan simulator.
+ * dan berkas miliknya (CV/intro/berkas field form). Menghentikan simulator,
+ * menunggu tugas pembuatan berjalan selesai (drain), lalu membatalkan tugas AI
+ * yang masih mengantre milik lamaran demo.
  */
 export async function cleanupDemoApplications(): Promise<{ deleted: number }> {
   stopDemoSimulator();
+
+  // Tunggu tugas pembuatan yang masih berjalan selesai (maks ±2 dtk) supaya
+  // tidak ada lamaran demo yang menyusup SETELAH penghapusan.
+  {
+    const s = simulatorState();
+    const waitUntil = Date.now() + 2000;
+    while (s.inFlight > 0 && Date.now() < waitUntil) {
+      await sleep(50);
+    }
+  }
 
   const demoApps = await db.application.findMany({
     where: { source: DEMO_SOURCE },
@@ -1006,6 +1018,10 @@ export async function cleanupDemoApplications(): Promise<{ deleted: number }> {
     s.lastAt = null;
     s.lastApplicant = null;
     s.lastError = null;
+    s.dispatched = 0;
+    s.runGenerated = 0;
+    s.inFlight = 0;
+    s.recent = [];
     return { deleted: 0 };
   }
 
@@ -1034,6 +1050,9 @@ export async function cleanupDemoApplications(): Promise<{ deleted: number }> {
   const ids = demoApps.map((a) => a.id);
   await db.activityLog.deleteMany({ where: { applicationId: { in: ids } } });
   await db.application.deleteMany({ where: { id: { in: ids } } });
+  // Buang tugas AI yang masih mengantre milik lamaran demo yang baru dihapus
+  // (penting setelah lonjakan besar — ribuan tugas tidak perlu diproses).
+  cancelWaitingAiJobs(new Set(ids));
 
   const assets = assetIds.size > 0
     ? await db.fileAsset.findMany({ where: { id: { in: [...assetIds] } }, select: { id: true, path: true } })
@@ -1054,6 +1073,10 @@ export async function cleanupDemoApplications(): Promise<{ deleted: number }> {
   s.lastApplicant = null;
   s.lastError = null;
   s.note = null;
+  s.dispatched = 0;
+  s.runGenerated = 0;
+  s.inFlight = 0;
+  s.recent = [];
   // Sinyal realtime agar seluruh panel admin yang terbuka segera memuat ulang
   // daftar lamaran (baris demo menghilang tanpa perlu refresh manual).
   void emitRealtime(REALTIME_EVENTS.applications);
