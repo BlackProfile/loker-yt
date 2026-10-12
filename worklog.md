@@ -4048,3 +4048,17 @@ Stage Summary:
 - NR49 SELESAI: 13 fitur AI hidup dalam 4 paket — (A) Pusat Kendali AI (27 fitur: on/off, kuota harian, Prioritas Aksi Admin, integrasi Mode Hemat) + Log Aktivitas AI (audit + grafik + kuota reflektif); (B) Copilot Admin ber-aksi (whitelist 3 aksi + matriks izin + audit) & Penjelasan Anomali; (C) Brief Pagi AI (dashboard + cron 07.00 + Telegram), Skor Risiko, Analisis Penolakan, Sarankan Tag, Penerjemah; (D) Draf Pengumuman, Poster Lowongan (image gen), Draf Scorecard dari Transkrip, Paket Onboarding.
 - Kontrak baru: Setting "ai_control" & "ai_brief_*" & "rejection_insight"; tabel AiJobLog; field Application.translations & onboardingPack; gate withAiGate/aiGateCheck/recordAiJob di src/lib/ai-control.ts; registry src/lib/ai-features.ts (client-safe). Semua fitur menghormati gate, kuota, matriks izin, dan Mode Hemat; AI selalu usulkan, manusia memutuskan.
 - Kunci operasional: field login 2FA bernama totpCode; jangan hapus .next saat restart rutin; OOM sandbox ditangani keepalive + pemanasan berurutan.
+---
+Task ID: NR50-IDE (ide + audit, belum implementasi)
+Agent: Z.ai Code (orchestrator)
+Task: Menjawab pertanyaan user "pada data per pelamar bagusnya apa yang diubah?" — audit dialog detail pelamar & usulkan perbaikan berbasis gap nyata.
+
+Work Log:
+- Audit worklog: NR49 (13 fitur AI, 4 paket A-D) SUDAH SELESAI & terverifikasi (NR49-A/B/C/D + NR49-VERIFY); git bersih ter-push (auto-sync 07:21); backup DB ada.
+- Audit application-detail-dialog.tsx (5.100 baris, 6 tab NR-34: Ringkasan/AI & Berkas/Jawaban/Evaluasi/Proses/Riwayat) + detail-nr24-sections.tsx + schema.prisma + cron/reminders.
+- Yang SUDAH ADA (jangan diduplikasi): strip Data Diri Esensial + gaji vs rentang; WA klik-pesan + catat panggilan; video notes per detik; dokumen internal & masa berlaku (NR-24); Catatan Admin; Tindak Lanjut (followUpAt + quick 3/7 hari + tab Tugas + cron reminder NotificationItem + badge tabel); badge Duplikat/Talent Pool/Ditahan/Jangan diterima; rating bintang; tags + Sarankan Tag AI; scorecard tertimbang; offer full-lifecycle + approval 2 lapis + e-sign; onboarding pack (NR49-D); terjemahan CV (NR49-C); ActivityTimeline; prev/next nav; Cetak Profil.
+- GAP TERVERIFIKASI: (1) skor AI/rekomendasi/rating/skor wawancara tersebar antar-tab, tidak ada panel keputusan satu pandang di header; (2) risiko no-show/offer NR49-C hanya di dashboard card, TIDAK muncul per-pelamar di dialog (grep "risk" = nihil) padahal API risk-explain siap; (3) Application.stageHistory tersimpan tapi TIDAK pernah divisualisasikan (grep stageHistory di dialog = nihil) — durasi per tahap tak terlihat; (4) CompareApplicantsDialog hanya bisa dibuka dari daftar (applications-tab.tsx:1841), tidak dari dalam dialog detail; (5) tidak ada unduhan .ics jadwal wawancara per sesi; (6) pengalaman tampil sebagai teks CV mentah, belum ada penguraian terstruktur AI; (7) tidak ada indikator kelengkapan profil; (8) tidak ada ekspor arsip ZIP per pelamar (CV+dokumen+scorecard).
+
+Stage Summary:
+- 8 usulan perbaikan per-pelamar disampaikan ke user untuk dipilih (belum disetujui): A Panel Keputusan satu pandang (+badge risiko per pelamar), B Timeline Tahap + durasi per tahap, C Bandingkan dari dalam detail, D unduh .ics wawancara, E Uraian Pengalaman Terstruktur AI, F indikator kelengkapan profil, G ekspor arsip ZIP, H (opsional lanjutan).
+- Task implementasi berikutnya: NR50 (menunggu pilihan user).
