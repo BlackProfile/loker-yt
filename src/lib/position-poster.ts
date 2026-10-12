@@ -109,12 +109,12 @@ export async function savePosterFile(buffer: Buffer, positionTitle: string): Pro
 
   const uploadsDir = path.join(process.cwd(), "uploads");
   await mkdir(uploadsDir, { recursive: true });
-  const storedName = `${cuidLike()}-ai-poster-${sanitizeFilename(`${positionTitle}.png`)}`;
+  const storedName = `${cuidLike()}-ai-poster-${sanitizeFilename(`${positionTitle}.jpg`)}`;
   await writeFile(path.join(uploadsDir, storedName), buffer);
 
   const asset = await db.fileAsset.create({
     data: {
-      filename: `poster-${positionTitle}.png`,
+      filename: `poster-${positionTitle}.jpg`,
       mimeType,
       size: buffer.byteLength,
       path: `uploads/${storedName}`,
@@ -126,7 +126,7 @@ export async function savePosterFile(buffer: Buffer, positionTitle: string): Pro
   return {
     id: asset.id,
     url: `/api/files/${asset.id}`,
-    filename: `poster-${positionTitle}.png`,
+    filename: `poster-${positionTitle}.jpg`,
     mimeType,
   };
 }
