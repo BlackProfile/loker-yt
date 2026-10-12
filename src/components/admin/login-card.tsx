@@ -12,39 +12,25 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Copy,
   Eye,
   EyeOff,
   Loader2,
   Lock,
   MailPlus,
-  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { AdminSession } from "@/lib/types";
 import { ApiError, apiGet, apiPost } from "./api";
-import { copyText } from "./format";
 import { Reveal } from "./motion-primitives";
 
-// NR-41 F8 — respons login 200: sukses ATAU wajib setup 2FA (OWNER tanpa TOTP).
-// NR46 — sukses menyertakan mustChangePassword (wajib ganti sandi pertama).
-type LoginResponse =
-  | { ok: true; session: AdminSession; mustChangePassword?: boolean }
-  | {
-      ok: false;
-      mustSetup2FA: true;
-      setupToken: string;
-      redirect: string;
-    };
-
-// Respons bootstrap pemasangan TOTP (tahap 1 & 2).
-type TotpSetupResponse = {
+// NR50-HOTFIX — respons login 200 selalu sukses penuh (tidak ada lagi gate setup 2FA).
+// NR46 — sukses menyertakan mustChangePassword (wajib ganti sandi pertama);
+// totpNotice=true berarti akun OWNER login tanpa 2FA (panel akan menampilkan pengingat).
+type LoginResponse = {
   ok: true;
-  stage?: string;
-  email?: string;
-  uri?: string;
-  secret?: string;
-  qrDataUrl?: string;
+  session: AdminSession;
+  mustChangePassword?: boolean;
+  totpNotice?: boolean;
 };
 
 const DEMO_ACCOUNTS = [
@@ -68,9 +54,12 @@ function readInviteTokenFromHash(): string | null {
 export function LoginCard({
   onSuccess,
 }: {
-  // NR46 — opts.mustChangePassword diteruskan dari respons login agar panel
-  // dapat menampilkan dialog wajib ganti sandi.
-  onSuccess: (session: AdminSession, opts?: { mustChangePassword?: boolean }) => void;
+  // NR46/NR50 — opts diteruskan dari respons login: mustChangePassword (wajib ganti
+  // sandi pertama) dan totpNotice (akun OWNER masuk tanpa 2FA → panel menampilkan pengingat).
+  onSuccess: (
+    session: AdminSession,
+    opts?: { mustChangePassword?: boolean; totpNotice?: boolean },
+  ) => void;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -81,19 +70,6 @@ export function LoginCard({
   // 2FA: muncul setelah server membalas 401 { error: "KODE_2FA" }.
   const [needsTotp, setNeedsTotp] = useState(false);
   const [totpCode, setTotpCode] = useState("");
-
-  // NR-41 F8 — gate pemasangan 2FA wajib utk OWNER tanpa TOTP. Tidak bisa
-  // dilewati: form login diganti langkah "Aktifkan 2FA" sampai selesai.
-  const [setup2fa, setSetup2fa] = useState<{
-    setupToken: string;
-    email: string | null;
-    qrDataUrl: string | null;
-    secret: string | null;
-  } | null>(null);
-  const [setupCode, setSetupCode] = useState("");
-  const [setupError, setSetupError] = useState<string | null>(null);
-  const [setupLoading, setSetupLoading] = useState(false);
-  const [setupVerifying, setSetupVerifying] = useState(false);
 
   // NR-19 — mode penerimaan undangan admin (hash "#admin/invite?token=...").
   const [inviteToken, setInviteToken] = useState<string | null>(null);
@@ -178,90 +154,6 @@ export function LoginCard({
     }
   }
 
-  // NR-41 F8 — mulai alur setup 2FA: kirim setupToken, tampilkan QR + secret.
-  async function startTwoFactorSetup(setupToken: string) {
-    setSetupError(null);
-    setSetupLoading(true);
-    try {
-      const res = await apiPost<TotpSetupResponse>(
-        "/api/admin/security/totp/pending",
-        { setupToken }
-      );
-      setSetup2fa({
-        setupToken,
-        email: res.email ?? null,
-        qrDataUrl: res.qrDataUrl ?? null,
-        secret: res.secret ?? null,
-      });
-      setSetupCode("");
-    } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : "Gagal menyiapkan 2FA. Coba lagi."
-      );
-    } finally {
-      setSetupLoading(false);
-    }
-  }
-
-  // Tahap 2 — verifikasi kode 6 digit; sukses = sesi penuh (cookie dipasang
-  // server) → lanjutkan alur post-login yang sama (ambil sesi → onSuccess).
-  async function handleVerifyTwoFactor(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!setup2fa || setupVerifying) return;
-    if (!/^\d{6}$/.test(setupCode)) {
-      setSetupError("Masukkan 6 digit kode dari aplikasi autentikator.");
-      return;
-    }
-    setSetupError(null);
-    setSetupVerifying(true);
-    try {
-      await apiPost<{ ok: boolean }>("/api/admin/security/totp/pending", {
-        setupToken: setup2fa.setupToken,
-        code: setupCode,
-      });
-      const data = await apiGet<{
-        authenticated: boolean;
-        session: AdminSession | null;
-      }>("/api/admin/session");
-      if (data.authenticated && data.session) {
-        toast.success("2FA aktif — Berhasil masuk");
-        setSetup2fa(null);
-        onSuccess(data.session);
-      } else {
-        setSetupError(
-          "2FA aktif, tetapi sesi gagal dimuat. Muat ulang halaman lalu login lagi."
-        );
-      }
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 401 || err.status === 400) {
-          // Token setup kedaluwarsa / tidak valid → wajib login ulang.
-          setSetupError(
-            `${err.message} Tekan "Login ulang" untuk mulai dari awal.`
-          );
-        } else {
-          setSetupError(err.message);
-        }
-      } else {
-        setSetupError("Verifikasi gagal. Coba lagi.");
-      }
-    } finally {
-      setSetupVerifying(false);
-    }
-  }
-
-  /** Kembali ke form login (token setup hilang — server tetap menggate). */
-  function exitTwoFactorSetup() {
-    setSetup2fa(null);
-    setSetupCode("");
-    setSetupError(null);
-    setNeedsTotp(false);
-    setTotpCode("");
-    setError(null);
-  }
-
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (loading) return;
@@ -276,15 +168,15 @@ export function LoginCard({
           ...(needsTotp || totpCode ? { totpCode } : {}),
         }
       );
-      // NR-41 F8 — OWNER tanpa TOTP: jangan lanjut, tampilkan langkah setup 2FA.
-      if ("mustSetup2FA" in data && data.mustSetup2FA) {
-        setLoading(false);
-        await startTwoFactorSetup(data.setupToken);
-        return;
-      }
       if (data.ok && data.session) {
-        toast.success("Berhasil masuk");
-        onSuccess(data.session, { mustChangePassword: data.mustChangePassword === true });
+        // NR50-HOTFIX — OWNER tanpa 2FA tetap masuk; pengingat tampil di panel.
+        if (data.totpNotice) {
+          toast.warning("2FA Pemilik sedang nonaktif — aktifkan kembali lewat menu Pengguna.");
+        }
+        onSuccess(data.session, {
+          mustChangePassword: data.mustChangePassword === true,
+          totpNotice: data.totpNotice === true,
+        });
       }
     } catch (err) {
       handleLoginError(err);
@@ -295,7 +187,7 @@ export function LoginCard({
 
   // Masuk cepat satu klik: kirim kredensial demo langsung ke server.
   // Bila akun ternyata mengaktifkan 2FA, isi form + minta kode (fallback);
-  // OWNER tanpa TOTP diarahkan ke langkah wajib "Aktifkan 2FA" (NR-41 F8).
+  // OWNER tanpa TOTP tetap masuk penuh dengan pengingat (NR50-HOTFIX).
   async function handleDemoLogin(account: (typeof DEMO_ACCOUNTS)[number]) {
     if (loading || demoRole) return;
     setError(null);
@@ -307,16 +199,15 @@ export function LoginCard({
         "/api/admin/login",
         { email: account.email, password: account.password }
       );
-      if ("mustSetup2FA" in data && data.mustSetup2FA) {
-        setDemoRole(null);
-        setEmail(account.email);
-        setPassword(account.password);
-        await startTwoFactorSetup(data.setupToken);
-        return;
-      }
       if (data.ok && data.session) {
+        if (data.totpNotice) {
+          toast.warning("2FA Pemilik sedang nonaktif — aktifkan kembali lewat menu Pengguna.");
+        }
         toast.success(`Berhasil masuk sebagai ${account.role}`);
-        onSuccess(data.session, { mustChangePassword: data.mustChangePassword === true });
+        onSuccess(data.session, {
+          mustChangePassword: data.mustChangePassword === true,
+          totpNotice: data.totpNotice === true,
+        });
       }
     } catch (err) {
       handleLoginError(err);
