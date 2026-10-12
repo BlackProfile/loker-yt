@@ -53,6 +53,7 @@ import {
   Plus,
   Printer,
   RefreshCw,
+  Sparkles,
   Star,
   Trash2,
   Users,
@@ -84,6 +85,7 @@ import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { Reveal } from "./motion-primitives";
 import { RatingStars } from "./rating-stars";
+import { OnboardingDialog } from "./onboarding-dialog";
 
 /* ---------------------------------- Tipe data ---------------------------------- */
 
@@ -829,6 +831,9 @@ function EmployeeCard({
   const { canMutate } = useAdminSession();
   const isAlumni = employee.exitAt != null;
 
+  // NR49 Paket D — dialog paket onboarding (AI) untuk karyawan aktif.
+  const [packOpen, setPackOpen] = useState(false);
+
   return (
     <Card className="gap-0 rounded-2xl p-4">
       <CardContent className="flex flex-col gap-4 px-0">
@@ -873,6 +878,16 @@ function EmployeeCard({
               <Button
                 variant="outline"
                 size="sm"
+                className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:border-emerald-900 dark:text-emerald-400 dark:hover:bg-emerald-950"
+                onClick={() => setPackOpen(true)}
+                disabled={!canMutate}
+              >
+                <Sparkles className="size-3.5" aria-hidden="true" />
+                Paket Onboarding (AI)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 className="h-8 border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
                 onClick={() => onOpenExit(employee)}
                 disabled={!canMutate}
@@ -894,6 +909,17 @@ function EmployeeCard({
           <CheckInSection employee={employee} onCheckInSaved={onCheckInSaved} />
         </div>
       </CardContent>
+
+      {/* NR49 Paket D — dialog paket onboarding (AI) */}
+      {!isAlumni ? (
+        <OnboardingDialog
+          open={packOpen}
+          onOpenChange={setPackOpen}
+          applicationId={employee.id}
+          name={employee.name}
+          positionTitle={employee.positionTitle}
+        />
+      ) : null}
     </Card>
   );
 }
