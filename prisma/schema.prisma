@@ -323,6 +323,12 @@ model Application {
   // NR-41 — e-signature sederhana saat pelamar menerima offer (JSON {name,method,at,ip,ua})
   offerSignature String?
 
+  // NR49 — terjemahan AI teks berbahasa asing (JSON {field: {text, language, at}})
+  translations String?
+
+  // NR49 — paket onboarding hasil AI (JSON {checklist:string[], welcomeEmail, equipment:string[], generatedAt, editedAt?})
+  onboardingPack String?
+
   // NR-39 — kartu karyawan digital untuk verifikasi (versi aktif: isCurrent)
   employeeCards EmployeeCard[]
 
@@ -831,4 +837,21 @@ model HandoverNote {
   createdAt          DateTime  @default(now())
 
   @@index([forDate])
+}
+
+// NR49 — Log penggunaan fitur AI (Pusat Kendali AI). Satu baris per pemanggilan
+// AI (sukses, gagal, atau diblokir gate) — dasar Log Aktivitas AI + hitungan
+// kuota harian per fitur. actor disimpan sebagai nama (denormalisasi) agar log
+// tetap ada bila akun admin dihapus.
+model AiJobLog {
+  id         String   @id @default(cuid())
+  feature    String // kunci fitur dari registry ai-features.ts
+  actor      String? // nama admin pemicu (null = sistem/cron/pelamar publik)
+  status     String   @default("OK") // OK | ERROR | BLOCKED
+  durationMs Int      @default(0)
+  detail     String? // pesan singkat: alasan blokir, ringkasan error, dsb.
+  createdAt  DateTime @default(now())
+
+  @@index([feature, createdAt])
+  @@index([createdAt])
 }
