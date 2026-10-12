@@ -13,7 +13,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { CollapsibleCard } from "./collapsible-card";
+import { CollapsibleCard, type CardStatus } from "./collapsible-card";
+import { SectionGroup } from "./section-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -282,11 +283,25 @@ function DataHealthCard() {
   const critCount = issues.filter((issue) => issue.severity === "CRIT").length;
   const warnCount = issues.filter((issue) => issue.severity === "WARN").length;
 
+  // Chip status header: ringkasan temuan terbaru tanpa membuka kartu.
+  const healthStatus: CardStatus | undefined = loading
+    ? undefined
+    : loadError
+      ? { label: "Gagal memuat", tone: "danger" }
+      : critCount > 0
+        ? { label: `${critCount} kritis`, tone: "danger" }
+        : warnCount > 0
+          ? { label: `${warnCount} perlu dicek`, tone: "warn" }
+          : issues.length > 0
+            ? { label: `${issues.length} info`, tone: "neutral" }
+            : { label: "Sehat", tone: "ok" };
+
   return (
     <DataCard
       icon={Stethoscope}
       title="Kesehatan Data"
       description="Pemeriksaan otomatis: email tidak valid, berkas yatim, dokumen kedaluwarsa, draft basi, dan anomali lain."
+      status={healthStatus}
     >
       {loading ? (
         <div className="space-y-2" aria-busy="true">
@@ -408,18 +423,21 @@ function DataCard({
   title,
   description,
   children,
+  status,
 }: {
   icon: typeof DatabaseBackup;
   title: string;
   description: string;
   children: React.ReactNode;
+  /** Chip status di header kartu (terlihat walau kartu tertutup). */
+  status?: CardStatus;
 }) {
   const id = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   return (
-    <CollapsibleCard id={id} icon={Icon} title={title} description={description}>
+    <CollapsibleCard id={id} icon={Icon} title={title} description={description} status={status}>
       {children}
     </CollapsibleCard>
   );
