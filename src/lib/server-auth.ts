@@ -9,7 +9,7 @@
 // "session_idle_minutes", default 720; 0 = nonaktif) dicabut otomatis.
 // NR41-SEC-B (F4): password hashing bcrypt (cost 10). Hash lama SHA-256 hex tetap
 // dikenali (kompatibilitas) dan di-upgrade ke bcrypt saat login sukses.
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import type { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
@@ -331,44 +331,6 @@ async function registerSessionToken(
   }
 }
 
-/* --------------------- Setup 2FA tertunda (F4 / F8) --------------------- */
-
-export const PENDING_2FA_TTL_MS = 10 * 60 * 1000; // token setup 2FA berlaku 10 menit
-
-export type Pending2FASetup = { token: string; exp: number };
-
-function pending2faKey(userId: string): string {
-  return `pending_2fa_setup:${userId}`;
-}
-
-/** Simpan token setup 2FA sementara (10 menit) untuk OWNER yang belum mengaktifkan TOTP. */
-export async function storePending2FASetup(userId: string): Promise<string> {
-  const token = randomBytes(16).toString("hex"); // 32 karakter hex
-  const payload: Pending2FASetup = { token, exp: Date.now() + PENDING_2FA_TTL_MS };
-  await db.setting.upsert({
-    where: { key: pending2faKey(userId) },
-    update: { value: JSON.stringify(payload) },
-    create: { key: pending2faKey(userId), value: JSON.stringify(payload) },
-  });
-  return token;
-}
-
-/** Verifikasi & konsumsi token setup 2FA. Token kedaluwarsa/salah → null. */
-export async function consumePending2FASetup(
-  userId: string,
-  token: string,
-): Promise<boolean> {
-  try {
-    const row = await db.setting.findUnique({ where: { key: pending2faKey(userId) } });
-    if (!row) return false;
-    const parsed: unknown = JSON.parse(row.value);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
-    const data = parsed as Record<string, unknown>;
-    if (typeof data.token !== "string" || typeof data.exp !== "number") return false;
-    if (data.token !== token || data.exp <= Date.now()) return false;
-    await db.setting.delete({ where: { key: pending2faKey(userId) } }).catch(() => undefined);
-    return true;
-  } catch {
-    return false;
-  }
-}
+// Catatan NR50-HOTFIX: blok "Setup 2FA tertunda" (storePending2FASetup / consumePending2FASetup)
+// dihapus bersama gate login wajib-2FA-OWNER. OWNER bebas menonaktifkan 2FA; login tetap
+// sah dengan sandi dan panel menampilkan pengingat mengaktifkannya kembali.

@@ -2,14 +2,14 @@
 // Keamanan: audit LoginAudit untuk semua percobaan, lockout brute force (>= 5 gagal / 15 menit),
 // verifikasi kode 2FA TOTP bila aktif, dan delay kecil saat password salah.
 // NR41-SEC-B (F4): verifikasi bcrypt + upgrade transparan hash legacy SHA-256 saat login sukses;
-// OWNER tanpa TOTP aktif TIDAK langsung mendapat sesi penuh — respons mustSetup2FA + setupToken
-// (10 menit) untuk diarahkan ke alur pemasangan 2FA (#admin-2fa).
+// NR50-HOTFIX: OWNER tanpa TOTP aktif TETAP mendapat sesi penuh (tidak lagi dipaksa setup 2FA —
+// alur paksa lama membuat OWNER yang menonaktifkan 2FA terkunci di luar). Respons menyertakan
+// totpNotice=true agar panel menampilkan pengingat mengaktifkan 2FA kembali.
 // NR41-SEC-B (F6): body.rememberMe (boolean, opsional) → cookie sesi 30 hari, selain itu 7 hari.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
   setSessionCookie,
-  storePending2FASetup,
   upgradePasswordHashIfNeeded,
   verifyPasswordWithMeta,
 } from "@/lib/server-auth";
@@ -146,26 +146,9 @@ export async function POST(req: NextRequest) {
       void upgradePasswordHashIfNeeded(user.id, password, user.passwordHash);
     }
 
-    // F4/F8 — OWNER tanpa TOTP aktif: jangan buat sesi penuh. Beri setupToken 10 menit
-    // agar UI mengarahkan ke pemasangan 2FA lebih dulu (#admin-2fa).
-    if (user.role === "OWNER" && !user.totpEnabled) {
-      let setupToken = "";
-      try {
-        setupToken = await storePending2FASetup(user.id);
-      } catch (err) {
-        console.error("[POST /api/admin/login] gagal menyimpan token setup 2FA", err);
-        return NextResponse.json({ error: "Gagal menyiapkan pemasangan 2FA. Coba lagi nanti." }, { status: 500 });
-      }
-      await writeLoginAudit({
-        email: auditEmail,
-        userId: user.id,
-        success: true,
-        reason: "MUST_SETUP_2FA",
-        ip,
-        userAgent,
-      });
-      return NextResponse.json({ ok: false, mustSetup2FA: true, setupToken, redirect: "/#admin-2fa" });
-    }
+    // NR50-HOTFIX — OWNER tanpa TOTP aktif: sesi penuh tetap dibuat (tidak ada lagi
+    // paksaan setup 2FA di gerbang login). Panel menampilkan pengingat via totpNotice.
+    const totpNotice = user.role === "OWNER" && !user.totpEnabled;
 
     // 2FA TOTP: bila aktif, kode wajib valid sebelum sesi dibuat.
     if (user.totpEnabled) {
@@ -212,7 +195,12 @@ export async function POST(req: NextRequest) {
       // diam
     }
 
-    const response = NextResponse.json({ ok: true, session: toSession(user), mustChangePassword });
+    const response = NextResponse.json({
+      ok: true,
+      session: toSession(user),
+      mustChangePassword,
+      totpNotice,
+    });
     // Task 27: catat sesi per perangkat (SessionToken) — gagal pencatatan tidak menggagalkan login.
     // F6: rememberMe → cookie 30 hari, selain itu 7 hari.
     await setSessionCookie(response, user.id, { ip, userAgent }, { rememberMe });
