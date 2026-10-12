@@ -15,6 +15,7 @@ import {
   CalendarClock,
   Filter,
   Inbox,
+  Loader2,
   Minus,
   Sparkles,
   Star,
@@ -23,6 +24,7 @@ import {
   UserCheck,
   type LucideIcon,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -30,10 +32,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { LogEntry } from "@/lib/types";
-import { apiGet } from "./api";
+import { apiGet, apiPost } from "./api";
 import { useLiveRefresh } from "./use-live-refresh";
 import { actionLabel, actorBadgeClass, formatRelative } from "./format";
 
@@ -108,18 +111,122 @@ export function weeklyTrend(
   return { current, previous, pct };
 }
 
+/* ---------------- NR49 Paket B — Popover Penjelasan Anomali ---------------- */
+
+/** Metrik yang didukung POST /api/admin/anomaly-explain (kontrak route). */
+export type AnomalyMetric =
+  | "applications_7d"
+  | "dropoff_7d"
+  | "stage_stuck"
+  | "offers_pending";
+
+/**
+ * Tombol ikon Sparkles kecil + Popover "Tanya AI tentang angka ini" (NR49 Paket B).
+ * Saat dibuka pertama kali, memanggil POST /api/admin/anomaly-explain { metric }.
+ * Isi popover: spinner saat memuat, lalu teks penjelasan (whitespace-pre-line).
+ * Gagal -> pesan amber singkat + tombol coba lagi. Tanpa animasi berat — hanya
+ * spinner standar (menghormati prefers-reduced-motion karena bukan transisi UI).
+ */
+export function AnomalyExplainPopover({
+  metric,
+  className,
+}: {
+  metric: AnomalyMetric;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [reply, setReply] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function fetchExplain() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiPost<{ reply: string }>("/api/admin/anomaly-explain", { metric });
+      setReply(res.reply);
+    } catch (err) {
+      // Termasuk 503 dari gate AI — pesan gate ditampilkan apa adanya (amber).
+      setError(
+        err instanceof Error ? err.message : "Gagal meminta penjelasan AI. Coba lagi."
+      );
+      setReply(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    // Ambil data saat pertama dibuka (dan lagi bila permintaan sebelumnya gagal).
+    if (next && reply === null && !loading) void fetchExplain();
+  }
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex size-9 shrink-0 items-center justify-center rounded-full text-amber-600 transition-colors hover:bg-amber-100 hover:text-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/50 sm:size-8",
+            className
+          )}
+          disabled={loading}
+          aria-label="Tanya AI tentang angka ini"
+        >
+          {loading ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Sparkles className="size-4" aria-hidden="true" />
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 sm:w-80">
+        {loading ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            Menganalisis angka...
+          </p>
+        ) : error ? (
+          <div className="flex flex-col gap-2">
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400">
+              {error}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-11 self-start px-3 text-xs"
+              onClick={() => void fetchExplain()}
+            >
+              Coba lagi
+            </Button>
+          </div>
+        ) : (
+          <p className="whitespace-pre-line text-sm">{reply}</p>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /**
  * Indikator tren kecil: panah naik/turun + persentase vs 7 hari sebelumnya.
  * Warna: emerald untuk tren baik, rose untuk tren buruk (mis. Ditolak naik),
  * zinc bila netral. goodWhenUp=false membalik makna (metrik yang naik = buruk).
+ * NR49 Paket B: di ujungnya kini ada tombol Sparkles "Tanya AI tentang angka ini"
+ * (Popover anomaly-explain) — metrik bawaan "applications_7d" karena pemakaian
+ * eksisting indikator ini selalu tren lamaran 7 hari vs minggu sebelumnya.
  */
 export function TrendHint({
   pct,
   goodWhenUp = true,
+  explainMetric = "applications_7d",
   className,
 }: {
   pct: number | null;
   goodWhenUp?: boolean;
+  explainMetric?: AnomalyMetric;
   className?: string;
 }) {
   const neutral = pct == null || Math.abs(pct) < 0.5;
@@ -142,6 +249,7 @@ export function TrendHint({
       <Icon className="size-3.5 shrink-0" aria-hidden="true" />
       {pct != null && !neutral ? `${up ? "+" : ""}${Math.round(pct)}%` : null}
       <span className="font-normal text-muted-foreground">vs minggu lalu</span>
+      <AnomalyExplainPopover metric={explainMetric} className="-ml-0.5" />
     </span>
   );
 }
@@ -388,13 +496,21 @@ export function RecruitmentFunnel({ className }: { className?: string }) {
   return (
     <Card className={cn("gap-0 rounded-2xl py-6", className)}>
       <CardHeader className="px-6">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Filter className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-          Corong Rekrutmen
-        </CardTitle>
-        <CardDescription className="mt-1">
-          Jumlah lamaran yang pernah mencapai tiap tahap seleksi.
-        </CardDescription>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Filter className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+              Corong Rekrutmen
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Jumlah lamaran yang pernah mencapai tiap tahap seleksi.
+            </CardDescription>
+          </div>
+          {/* NR49 Paket B — penjelasan AI untuk penurunan antar tahap.
+              Metrik "dropoff_7d" (FormStepStat) adalah padanan analisis drop
+              terdekat pada kontrak anomaly-explain. */}
+          <AnomalyExplainPopover metric="dropoff_7d" />
+        </div>
       </CardHeader>
       <CardContent className="px-6">
         {loading && data === null ? (

@@ -130,11 +130,13 @@ export function AiControlCard() {
 
     setSaving(true);
     try {
-      const res = await apiPut<{ control: AiControlView }>("/api/admin/ai-control", {
+      // Respons PUT berisi config mentah (writeAiControl) — sesuai kontrak, UI
+      // menyegarkan tampilan lewat GET agar label/usedToday selalu akurat.
+      await apiPut("/api/admin/ai-control", {
         ...(Object.keys(features).length > 0 ? { features } : {}),
         ...(manualChanged ? { manualPriority: draft.manualPriority } : {}),
       });
-      applyControl(res.control);
+      await refresh(true);
       toast.success("Pengaturan AI disimpan");
     } catch (err) {
       toast.error(
@@ -153,8 +155,9 @@ export function AiControlCard() {
       for (const def of AI_FEATURES) {
         features[def.key] = { enabled: true, quotaPerDay: def.defaultQuota };
       }
-      const res = await apiPut<{ control: AiControlView }>("/api/admin/ai-control", { features });
-      applyControl(res.control);
+      // Respons PUT berisi config mentah — segarkan tampilan lewat GET.
+      await apiPut("/api/admin/ai-control", { features });
+      await refresh(true);
       setConfirmReset(false);
       toast.success("Pengaturan AI dikembalikan ke bawaan");
     } catch (err) {
