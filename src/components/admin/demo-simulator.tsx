@@ -1,8 +1,13 @@
 "use client";
 
 // Kontrol Simulator Pelamar Demo (Mode Demo) — dipasang di toolbar tab Pelamar.
-// Mulai/hentikan simulasi lamaran otomatis: pilih interval & target posisi,
-// pantau penghitung, dan bersihkan seluruh data demo dari satu popover.
+// Dua mode simulasi (NR48):
+//   - Santai (interval): satu lamaran tiap beberapa detik.
+//   - Lonjakan trafik (burst): N pelamar per detik selama durasi tertentu —
+//     meniru trafik asli (mis. 217 pelamar dalam 1 detik) lengkap dengan
+//     kecepatan aktual yang terukur jujur dan bilah kemajuan.
+// Mulai/hentikan simulasi, pantau penghitung, dan bersihkan seluruh data demo
+// dari satu popover.
 // API: /api/admin/demo-simulator (GET status, POST start/stop, DELETE bersihkan).
 
 import { useCallback, useEffect, useState } from "react";
@@ -10,6 +15,7 @@ import { useReducedMotion } from "framer-motion";
 import { FlaskConical, Loader2, Play, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -37,7 +43,13 @@ import { useAdminSession } from "./admin-context";
 /** Bentuk payload API (mirror DemoSimulatorStatus dari lib server). */
 type DemoStatus = {
   running: boolean;
+  mode: "interval" | "burst";
   intervalSec: number;
+  ratePerSec: number;
+  durationSec: number | null;
+  targetTotal: number | null;
+  inFlight: number;
+  recentPerSec: number;
   positionId: string | null;
   generated: number;
   failed: number;
@@ -48,12 +60,28 @@ type DemoStatus = {
   lastApplicant: { name: string; positionTitle: string; trackingCode: string } | null;
 };
 
+type DemoModeChoice = "interval" | "burst";
+
 const INTERVAL_OPTIONS = [
   { value: "10", label: "Setiap 10 detik" },
   { value: "15", label: "Setiap 15 detik" },
   { value: "30", label: "Setiap 30 detik" },
   { value: "60", label: "Setiap 1 menit" },
 ];
+
+const RATE_PRESETS = [50, 100, 217, 350, 500];
+const MIN_RATE = 5;
+const MAX_RATE = 500;
+const MAX_BURST_TOTAL = 3000; // harus sama dengan rem di lib server
+
+const DURATION_OPTIONS = [
+  { value: "10", label: "10 detik" },
+  { value: "30", label: "30 detik" },
+  { value: "60", label: "1 menit" },
+  { value: "0", label: "Terus sampai dihentikan" },
+];
+
+const fmtId = (n: number): string => n.toLocaleString("id-ID");
 
 function timeLabel(iso: string | null): string {
   if (!iso) return "-";
@@ -69,7 +97,10 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
   const [status, setStatus] = useState<DemoStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<"" | "start" | "stop" | "clean">("");
+  const [modeChoice, setModeChoice] = useState<DemoModeChoice>("interval");
   const [intervalChoice, setIntervalChoice] = useState("15");
+  const [rateInput, setRateInput] = useState("100");
+  const [durationChoice, setDurationChoice] = useState("30");
   const [positionChoice, setPositionChoice] = useState("ALL");
   const [confirmCleanup, setConfirmCleanup] = useState(false);
 
@@ -88,9 +119,10 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
 
   const running = status?.running ?? false;
   // Polling saat popover terbuka ATAU simulator sedang berjalan (indikator hidup).
+  // Lonjakan berjalan cepat -> polling dipercepat agar bilah kemajuan hidup.
   useEffect(() => {
     if (!open && !running) return;
-    const timer = setInterval(() => void loadStatus(), 4000);
+    const timer = setInterval(() => void loadStatus(), running ? 1500 : 4000);
     return () => clearInterval(timer);
   }, [open, running, loadStatus]);
 
@@ -99,19 +131,44 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
     ? (openPositions.find((p) => p.id === status.positionId)?.title ?? "Posisi")
     : "Semua posisi terbuka";
 
+  const rateNum = Math.round(Number(rateInput) || 0);
+  const durationNum = durationChoice === "0" ? null : Number(durationChoice);
+  const estimate = durationNum != null ? rateNum * durationNum : null;
+  const estimateLabel =
+    estimate == null
+      ? `hingga ${fmtId(MAX_BURST_TOTAL)} (batas aman)`
+      : estimate > MAX_BURST_TOTAL
+        ? `${fmtId(estimate)} — dibatasi ${fmtId(MAX_BURST_TOTAL)}`
+        : `${fmtId(estimate)} lamaran`;
+
   async function handleStart() {
+    if (modeChoice === "burst" && (rateNum < MIN_RATE || rateNum > MAX_RATE)) {
+      toast.warning(`Isi jumlah pelamar per detik antara ${MIN_RATE}-${MAX_RATE}.`);
+      return;
+    }
     setBusy("start");
     try {
+      const body: Record<string, unknown> = {
+        action: "start",
+        mode: modeChoice,
+        positionId: positionChoice === "ALL" ? null : positionChoice,
+      };
+      if (modeChoice === "interval") {
+        body.intervalSec = Number(intervalChoice);
+      } else {
+        body.ratePerSec = rateNum;
+        body.durationSec = durationChoice === "0" ? null : Number(durationChoice);
+      }
       const data = await apiPost<{ ok: boolean; status: DemoStatus }>(
         "/api/admin/demo-simulator",
-        {
-          action: "start",
-          intervalSec: Number(intervalChoice),
-          positionId: positionChoice === "ALL" ? null : positionChoice,
-        },
+        body,
       );
       setStatus(data.status);
-      toast.success("Simulasi dimulai — lamaran demo akan masuk otomatis.");
+      if (modeChoice === "burst") {
+        toast.success(`Lonjakan dimulai — target ${fmtId(rateNum)} pelamar per detik.`);
+      } else {
+        toast.success("Simulasi dimulai — lamaran demo akan masuk otomatis.");
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Gagal memulai simulasi.");
     } finally {
@@ -146,7 +203,7 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
       setStatus(data.status);
       toast.success(
         data.deleted > 0
-          ? `${data.deleted} lamaran demo dibersihkan.`
+          ? `${fmtId(data.deleted)} lamaran demo dibersihkan.`
           : "Tidak ada data demo untuk dibersihkan.",
       );
     } catch (error) {
@@ -158,6 +215,12 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
   }
 
   const working = busy !== "";
+  const isBurstRunning = running && status?.mode === "burst";
+  const progressPct =
+    isBurstRunning && status?.targetTotal
+      ? Math.min(100, Math.round((status.generated / status.targetTotal) * 100))
+      : 0;
+  const settingsDisabled = running || working || !canMutate;
 
   return (
     <>
@@ -183,7 +246,7 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
                 className="rounded-full bg-rose-100 px-1.5 text-xs font-medium text-rose-700 tabular-nums dark:bg-rose-950 dark:text-rose-300"
                 aria-label={`${status.generated} lamaran demo dibuat`}
               >
-                {status.generated}
+                {fmtId(status.generated)}
               </span>
             ) : null}
           </Button>
@@ -194,8 +257,9 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
             <div>
               <p className="text-sm font-semibold">Simulator Pelamar Demo</p>
               <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
-                Lamaran lengkap dibuat otomatis setiap beberapa saat — datanya masuk
-                realtime ke tabel ini, kanban, dan dashboard.
+                Lamaran lengkap dibuat otomatis — pilih mode santai (satu per beberapa
+                detik) atau lonjakan trafik (banyak pelamar per detik, seperti trafik
+                asli). Datanya masuk realtime ke tabel ini, kanban, dan dashboard.
               </p>
             </div>
 
@@ -210,25 +274,64 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
               role="status"
             >
               {running ? (
-                <p className="font-medium">
-                  Aktif — {status?.intervalSec ?? 15} detik · {targetLabel}
-                </p>
+                isBurstRunning ? (
+                  <p className="font-medium">
+                    Lonjakan aktif — target {fmtId(status?.ratePerSec ?? 0)}/s ·{" "}
+                    {status?.durationSec != null
+                      ? `${fmtId(status.durationSec)} detik`
+                      : "terus"}
+                  </p>
+                ) : (
+                  <p className="font-medium">
+                    Aktif — {status?.intervalSec ?? 15} detik · {targetLabel}
+                  </p>
+                )
               ) : (
                 <p className="font-medium">Tidak aktif</p>
               )}
               <p className="mt-1 tabular-nums">
-                Dibuat: <span className="font-medium">{status?.generated ?? 0}</span>
-                {(status?.failed ?? 0) > 0 ? (
+                Dibuat: <span className="font-medium">{fmtId(status?.generated ?? 0)}</span>
+                {isBurstRunning && status?.targetTotal ? (
                   <>
-                    {" "}· Gagal: <span className="font-medium">{status?.failed}</span>
+                    {" "}dari ±{fmtId(status.targetTotal)}
                   </>
                 ) : null}
-                {status?.lastAt ? (
+                {isBurstRunning ? (
+                  <>
+                    {" "}· Aktual ±<span className="font-medium">{fmtId(status?.recentPerSec ?? 0)}</span>/s
+                  </>
+                ) : null}
+                {(status?.failed ?? 0) > 0 ? (
+                  <>
+                    {" "}· Gagal: <span className="font-medium">{fmtId(status?.failed ?? 0)}</span>
+                  </>
+                ) : null}
+                {isBurstRunning && (status?.inFlight ?? 0) > 0 ? (
+                  <>
+                    {" "}· Dalam proses: <span className="font-medium">{fmtId(status?.inFlight ?? 0)}</span>
+                  </>
+                ) : null}
+                {!isBurstRunning && status?.lastAt ? (
                   <>
                     {" "}· Terakhir {timeLabel(status.lastAt)}
                   </>
                 ) : null}
               </p>
+              {isBurstRunning && status?.targetTotal ? (
+                <div
+                  className="bg-rose-200 mt-1.5 h-1.5 overflow-hidden rounded-full dark:bg-rose-900"
+                  role="progressbar"
+                  aria-valuenow={progressPct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Kemajuan lonjakan"
+                >
+                  <div
+                    className={cn("bg-rose-600 h-full rounded-full", !reducedMotion && "transition-all duration-500")}
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+              ) : null}
               {status?.lastApplicant ? (
                 <p className="mt-1 truncate">
                   Terakhir: {status.lastApplicant.name} — {status.lastApplicant.positionTitle} (
@@ -244,47 +347,151 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
             </div>
 
             {/* Pengaturan (berlaku saat Mulai berikutnya) */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex flex-col gap-1">
-                <span className="text-muted-foreground text-xs font-medium">Interval</span>
-                <Select
-                  value={intervalChoice}
-                  onValueChange={setIntervalChoice}
-                  disabled={running || working || !canMutate}
-                >
-                  <SelectTrigger size="sm" aria-label="Interval simulasi">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {INTERVAL_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-muted-foreground text-xs font-medium">Posisi</span>
-                <Select
-                  value={positionChoice}
-                  onValueChange={setPositionChoice}
-                  disabled={running || working || !canMutate}
-                >
-                  <SelectTrigger size="sm" aria-label="Posisi target simulasi">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">Semua posisi terbuka</SelectItem>
-                    {openPositions.map((position) => (
-                      <SelectItem key={position.id} value={position.id}>
-                        {position.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-muted-foreground text-xs font-medium">Mode</span>
+              <Select
+                value={modeChoice}
+                onValueChange={(value) => setModeChoice(value as DemoModeChoice)}
+                disabled={settingsDisabled}
+              >
+                <SelectTrigger size="sm" aria-label="Mode simulasi">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="interval">Santai — satu per beberapa detik</SelectItem>
+                  <SelectItem value="burst">Lonjakan trafik — banyak per detik</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {modeChoice === "interval" ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1">
+                  <span className="text-muted-foreground text-xs font-medium">Interval</span>
+                  <Select
+                    value={intervalChoice}
+                    onValueChange={setIntervalChoice}
+                    disabled={settingsDisabled}
+                  >
+                    <SelectTrigger size="sm" aria-label="Interval simulasi">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INTERVAL_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-muted-foreground text-xs font-medium">Posisi</span>
+                  <Select
+                    value={positionChoice}
+                    onValueChange={setPositionChoice}
+                    disabled={settingsDisabled}
+                  >
+                    <SelectTrigger size="sm" aria-label="Posisi target simulasi">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">Semua posisi terbuka</SelectItem>
+                      {openPositions.map((position) => (
+                        <SelectItem key={position.id} value={position.id}>
+                          {position.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
+                  <span className="text-muted-foreground text-xs font-medium">
+                    Pelamar per detik
+                  </span>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={MIN_RATE}
+                    max={MAX_RATE}
+                    step={1}
+                    value={rateInput}
+                    onChange={(event) => setRateInput(event.target.value)}
+                    disabled={settingsDisabled}
+                    className="h-9 tabular-nums"
+                    aria-label="Jumlah pelamar per detik"
+                  />
+                  <div className="mt-0.5 flex flex-wrap gap-1">
+                    {RATE_PRESETS.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setRateInput(String(preset))}
+                        disabled={settingsDisabled}
+                        aria-pressed={rateNum === preset}
+                        className={cn(
+                          "rounded-full border px-2 py-0.5 text-xs tabular-nums transition-colors disabled:opacity-50",
+                          rateNum === preset
+                            ? "border-rose-300 bg-rose-50 font-medium text-rose-700 dark:border-rose-800 dark:bg-rose-950/60 dark:text-rose-300"
+                            : "text-muted-foreground hover:border-rose-200 hover:text-rose-700 dark:hover:border-rose-900 dark:hover:text-rose-300",
+                        )}
+                      >
+                        {preset}/dtk
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-muted-foreground text-xs font-medium">Durasi lonjakan</span>
+                  <Select
+                    value={durationChoice}
+                    onValueChange={setDurationChoice}
+                    disabled={settingsDisabled}
+                  >
+                    <SelectTrigger size="sm" aria-label="Durasi lonjakan">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DURATION_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-muted-foreground text-xs font-medium">Posisi</span>
+                  <Select
+                    value={positionChoice}
+                    onValueChange={setPositionChoice}
+                    disabled={settingsDisabled}
+                  >
+                    <SelectTrigger size="sm" aria-label="Posisi target simulasi">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">Semua posisi terbuka</SelectItem>
+                      {openPositions.map((position) => (
+                        <SelectItem key={position.id} value={position.id}>
+                          {position.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-muted-foreground text-[11px] leading-relaxed">
+                  Perkiraan total: {estimateLabel}. Lonjakan membebani server sungguhan
+                  (AI, notifikasi, database) — memang itulah tujuan latihannya.
+                  {durationChoice === "0"
+                    ? ` Mode terus berjalan sampai tombol Hentikan ditekan atau batas ${fmtId(MAX_BURST_TOTAL)} lamaran tercapai.`
+                    : ""}
+                </p>
+              </div>
+            )}
 
             {/* Aksi */}
             <div className="flex items-center gap-2">
@@ -313,7 +520,7 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
                   ) : (
                     <Play className="size-4" aria-hidden="true" />
                   )}
-                  Mulai simulasi
+                  {modeChoice === "burst" ? "Mulai lonjakan" : "Mulai simulasi"}
                 </Button>
               )}
               <Button
@@ -336,8 +543,9 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
 
             <p className="text-muted-foreground text-xs leading-relaxed">
               Lamaran demo bertanda sumber <span className="font-medium">“Demo Simulator”</span>{" "}
-              — bisa dibersihkan massal kapan saja lewat tombol Bersihkan. Simulator berhenti
-              otomatis saat server dimulai ulang.
+              — bisa dibersihkan massal kapan saja lewat tombol Bersihkan (antrean AI
+              miliknya ikut dibatalkan). Lonjakan berhenti sendiri saat durasi habis;
+              simulator berhenti otomatis saat server dimulai ulang.
             </p>
           </div>
         </PopoverContent>
