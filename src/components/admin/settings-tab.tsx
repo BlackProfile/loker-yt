@@ -125,7 +125,8 @@ import { ApiError, apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api";
 import { copyText, formatDateTime, formatRelative, formatShortDateTime } from "./format";
 import { useAdminSession } from "./admin-context";
 import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
-import { CollapsibleCard } from "./collapsible-card";
+import { CollapsibleCard, type CardStatus } from "./collapsible-card";
+import { SectionGroup } from "./section-group";
 import { PermissionMatrixCard } from "./permission-matrix-card";
 import { PasswordPolicyCard } from "./password-policy-card";
 import { useTagDefs } from "./use-tag-defs";
@@ -3561,8 +3562,27 @@ export function SettingsTab() {
 
   const embedSnippet = `<iframe src="${origin || "https://domain-anda"}?embed=1" width="100%" height="600" style="border:0;border-radius:12px" title="Lowongan ${site.siteName}"></iframe>`;
 
+  // Status ringkas kartu Notifikasi Lamaran (tanpa membuka kartu).
+  const hasDiscordWebhook = Boolean(site.discordWebhookUrl.trim());
+  const hasTelegramNotif = Boolean(
+    site.telegramBotToken.trim() && site.telegramChatId.trim(),
+  );
+  const notifStatus: CardStatus =
+    hasDiscordWebhook && hasTelegramNotif
+      ? { label: "Discord + Telegram", tone: "neutral" }
+      : hasDiscordWebhook
+        ? { label: "Discord", tone: "neutral" }
+        : hasTelegramNotif
+          ? { label: "Telegram", tone: "neutral" }
+          : { label: "Belum diatur", tone: "warn" };
+
   return (
     <div className="flex flex-col gap-6">
+      {/* --------------- Kelompok: Konten Halaman Publik --------------- */}
+      <SectionGroup
+        label="Konten Halaman Publik"
+        description="Tampilan landing page yang dilihat pelamar."
+      >
       {/* Identitas Situs */}
       <CollapsibleCard
         id="identitas"
@@ -3846,9 +3866,6 @@ export function SettingsTab() {
         </div>
       </CollapsibleCard>
 
-      {/* Tag Tim (NR-24 — kelola daftar tag berwarna lamaran, OWNER/HR) */}
-      <TeamTagsCard />
-
       {/* Benefit */}
       <CollapsibleCard
         id="benefit-publik"
@@ -4074,6 +4091,11 @@ export function SettingsTab() {
         icon={Bot}
         title="Chatbot Publik"
         description="Aktifkan chatbot Lumina Bot di halaman publik."
+        status={
+          site.chatbotEnabled
+            ? { label: "Aktif", tone: "ok" }
+            : { label: "Nonaktif", tone: "neutral" }
+        }
       >
           <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
             <div>
@@ -4093,12 +4115,57 @@ export function SettingsTab() {
           </div>
       </CollapsibleCard>
 
+      {/* Tampilan Halaman Publik (visibilitas tiap bagian) */}
+      <SectionVisibilityCard sections={site.sections} onChange={updateSection} />
+
+      {/* Widget Embed */}
+      <CollapsibleCard
+        id="widget-embed"
+        icon={Code2}
+        title="Widget Embed"
+        description="Tampilkan lowongan di situs lain dengan iframe ini."
+        actions={
+          <Button variant="outline" className="h-10" onClick={() => void handleCopyEmbed()}>
+            <Copy className="size-4" aria-hidden="true" />
+            Salin
+          </Button>
+        }
+      >
+          <Textarea
+            readOnly
+            value={embedSnippet}
+            aria-label="Kode widget embed"
+            className="font-mono text-xs"
+            rows={4}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+      </CollapsibleCard>
+      </SectionGroup>
+
+      {/* --------------- Kelompok: Lamaran & Organisasi --------------- */}
+      <SectionGroup
+        label="Lamaran & Organisasi"
+        description="Pengelompokan dan penandaan lamaran."
+      >
+      {/* Tag Tim (NR-24 — kelola daftar tag berwarna lamaran, OWNER/HR) */}
+      <TeamTagsCard />
+
+      {/* Sumber Lamaran terstruktur (NR-41 G13 — wizard publik & laporan sumber) */}
+      <ReferralSourcesCard />
+
+      {/* Daftar Tag (NR-24 — pustaka sugesti tag pelamar, simpan langsung per aksi) */}
+      <TagsCard />
+      </SectionGroup>
+
+      {/* ------------ Kelompok: Komunikasi & Notifikasi ------------ */}
+      <SectionGroup label="Komunikasi & Notifikasi">
       {/* Notifikasi Lamaran */}
       <CollapsibleCard
         id="notifikasi"
         icon={BellRing}
         title="Notifikasi Lamaran"
         description="Kirim notifikasi lamaran baru ke channel Discord dan bot Telegram."
+        status={notifStatus}
       >
           <Field
             id="f-discord"
@@ -4153,9 +4220,6 @@ export function SettingsTab() {
 
       {/* Kotak Keluar Email (arsip + kirim ulang, ketergantungan SMTP) */}
       <EmailOutboxCard />
-
-      {/* Sumber Lamaran terstruktur (NR-41 G13 — wizard publik & laporan sumber) */}
-      <ReferralSourcesCard />
 
       {/* Laporan Email Terjadwal (NR-19 — toggle mingguan/bulanan, OWNER saja) */}
       <ReportEmailScheduleCard />
