@@ -758,6 +758,9 @@ function ReferralSourcesCard() {
       icon={Share2}
       title="Sumber Lamaran"
       description="Daftar saluran perolehan pelamar (job board, media sosial, referral). Dipakai wizard lamaran publik & laporan sumber."
+      status={
+        loading ? undefined : { label: `${items.length} sumber`, tone: "neutral" }
+      }
     >
       {loading ? (
         <div className="space-y-2" aria-busy="true">
@@ -1225,6 +1228,17 @@ function TelegramBotCard() {
       icon={Send}
       title="Bot Telegram"
       description="Bot dua arah untuk admin: perintah ringkasan, aksi kandidat, dan digest pagi langsung dari Telegram."
+      status={
+        loading
+          ? undefined
+          : !hasToken
+            ? { label: "Belum diatur", tone: "warn" }
+            : pollerStatus
+              ? pollerStatus.healthy
+                ? { label: "Berjalan", tone: "ok" }
+                : { label: "Tidak berjalan", tone: "warn" }
+              : { label: "Token terpasang", tone: "neutral" }
+      }
     >
         {loading ? (
           <div className="flex flex-col gap-2">
@@ -1630,6 +1644,9 @@ function ActiveSessionsCard() {
       icon={MonitorSmartphone}
       title="Sesi Aktif"
       description="Perangkat yang sedang login ke panel admin. Keluarkan perangkat yang tidak dikenal."
+      status={
+        loading ? undefined : { label: `${rows.length} sesi`, tone: "neutral" }
+      }
       actions={
         isOwner && rows.filter((r) => !r.current).length > 0 ? (
           <Button
@@ -1850,6 +1867,13 @@ function RetentionCard() {
       icon={ShieldCheck}
       title="Retensi Data (Privasi)"
       description="Hapus otomatis lamaran lama agar data pelamar tidak disimpan selamanya."
+      status={
+        loading
+          ? undefined
+          : enabled
+            ? { label: `> ${days || 365} hari`, tone: "ok" }
+            : { label: "Nonaktif", tone: "neutral" }
+      }
     >
         {loading ? (
           <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
@@ -2070,12 +2094,21 @@ function AutomationRulesCard() {
     }
   }
 
+  const activeRules = state.rules.filter((rule) => rule.enabled).length;
+
   return (
     <CollapsibleCard
       id="aturan-otomatis"
       icon={Workflow}
       title="Aturan Otomatis (JIKA-MALA)"
       description="Aturan JIKA-MALA atas lamaran: alert Telegram, pemasangan tag, atau penolakan otomatis. Dievaluasi saat perawatan data berjalan."
+      status={
+        loading
+          ? undefined
+          : activeRules > 0
+            ? { label: `${activeRules} aturan aktif`, tone: "ok" }
+            : { label: "Tidak aktif", tone: "neutral" }
+      }
     >
       {loading ? (
         <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
@@ -2307,6 +2340,13 @@ function OfferApprovalCard() {
       icon={ClipboardCheck}
       title="Persetujuan Offer Dua Lapis"
       description="Saat aktif, offer yang diajukan HR harus disetujui OWNER terlebih dahulu sebelum terkirim ke kandidat."
+      status={
+        loading
+          ? undefined
+          : enabled
+            ? { label: "Wajib", tone: "ok" }
+            : { label: "Opsional", tone: "neutral" }
+      }
     >
       {loading ? (
         <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
@@ -2412,6 +2452,13 @@ function ReportEmailScheduleCard() {
       icon={Mailbox}
       title="Laporan Email Terjadwal"
       description="Kirim ringkasan pipeline ke email Pemilik & HR setiap Senin 08.00 dan tanggal 1 07.00 (masuk antrean email)."
+      status={
+        loading
+          ? undefined
+          : schedule.weeklyEnabled || schedule.monthlyEnabled
+            ? { label: "Aktif", tone: "ok" }
+            : { label: "Nonaktif", tone: "neutral" }
+      }
     >
         {loading ? (
           <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
@@ -2527,6 +2574,7 @@ function TeamTagsCard() {
       icon={Tags}
       title="Tag Tim"
       description={`${tagDefs.length} tag berwarna untuk menandai lamaran dengan cepat.`}
+      status={{ label: `${tagDefs.length} tag`, tone: "neutral" }}
     >
       <div className="flex flex-col gap-4">
         {/* Daftar tag tersimpan sebagai chip berwarna + tombol hapus */}
@@ -2970,6 +3018,11 @@ function TagsCard() {
           ? `${tags.length} tag tersimpan sebagai sugesti penandaan pelamar.`
           : "Pustaka tag untuk penandaan pelamar."
       }
+      status={
+        loaded && !loadFailed
+          ? { label: `${tags.length} tag`, tone: "neutral" }
+          : undefined
+      }
     >
       {!loaded ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -3140,6 +3193,16 @@ function MaintenanceCard() {
       icon={Wrench}
       title="Mode Perawatan"
       description="Tutup halaman publik sementara (penuh atau hanya pendaftaran) saat server dirawat."
+      status={
+        loading
+          ? undefined
+          : enabled
+            ? {
+                label: level === "FULL" ? "Tutup penuh" : "Hanya pendaftaran",
+                tone: "warn",
+              }
+            : { label: "Nonaktif", tone: "neutral" }
+      }
     >
       {loading ? (
         <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
@@ -3296,6 +3359,13 @@ function QuietHoursCard() {
       icon={MoonStar}
       title="Jendela Tenang"
       description="Jadwalkan tugas berat hanya di jam yang kamu tentukan."
+      status={
+        loading
+          ? undefined
+          : enabled
+            ? { label: `${hourLabel(startHour)}\u2013${hourLabel(endHour)}`, tone: "ok" }
+            : { label: "Nonaktif", tone: "neutral" }
+      }
     >
       {loading ? (
         <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
@@ -4227,42 +4297,13 @@ export function SettingsTab() {
       {/* Email Kandidat — template otomatis per status lamaran */}
       <CandidateEmailsCard />
 
-      {/* Sesi Aktif (perangkat login + logout paksa) */}
-      <ActiveSessionsCard />
-
-      {/* Retensi Data (privasi — hapus otomatis lamaran lama) */}
-      <RetentionCard />
-
-      {/* Aturan Otomatis (JIKA-MALA) — Task 4-a: STAGE_AGING / AUTO_REJECT / SCORE_TAG */}
-      <AutomationRulesCard />
-
-      {/* Persetujuan Offer dua lapis — NR44 (HR mengajukan, OWNER menyetujui) */}
-      <OfferApprovalCard />
-
-      {/* NR45 — Mode Perawatan (tutup publik penuh / hanya pendaftaran) */}
-      <MaintenanceCard />
-
-      {/* NR45 — Jendela Tenang (tugas berat hanya di jam tertentu) */}
-      <QuietHoursCard />
-
-      {/* NR46 — Matriks Izin (peta aksi per role, transparansi + penyesuaian OWNER) */}
-      <PermissionMatrixCard />
-
-      {/* NR46 — Kebijakan Sandi (syarat kekuatan sandi + rotasi + wajib ganti pertama) */}
-      <PasswordPolicyCard />
-
-      {/* Daftar Tag (NR-24 — pustaka sugesti tag pelamar, simpan langsung per aksi) */}
-      <TagsCard />
-
-      {/* Tampilan Halaman Publik (visibilitas tiap bagian) */}
-      <SectionVisibilityCard sections={site.sections} onChange={updateSection} />
-
       {/* Pelanggan Notifikasi */}
       <CollapsibleCard
         id="pelanggan"
         icon={MailCheck}
         title="Pelanggan Notifikasi"
         description={`${subscribers.length} email menerima info lowongan baru.`}
+        status={{ label: `${subscribers.length} email`, tone: "neutral" }}
         actions={
           <Button
             variant="outline"
@@ -4291,29 +4332,40 @@ export function SettingsTab() {
             </div>
           )}
       </CollapsibleCard>
+      </SectionGroup>
 
-      {/* Widget Embed */}
-      <CollapsibleCard
-        id="widget-embed"
-        icon={Code2}
-        title="Widget Embed"
-        description="Tampilkan lowongan di situs lain dengan iframe ini."
-        actions={
-          <Button variant="outline" className="h-10" onClick={() => void handleCopyEmbed()}>
-            <Copy className="size-4" aria-hidden="true" />
-            Salin
-          </Button>
-        }
-      >
-          <Textarea
-            readOnly
-            value={embedSnippet}
-            aria-label="Kode widget embed"
-            className="font-mono text-xs"
-            rows={4}
-            onFocus={(e) => e.currentTarget.select()}
-          />
-      </CollapsibleCard>
+      {/* --------------- Kelompok: Otomasi & Alur Kerja --------------- */}
+      <SectionGroup label="Otomasi & Alur Kerja">
+      {/* Aturan Otomatis (JIKA-MALA) — Task 4-a: STAGE_AGING / AUTO_REJECT / SCORE_TAG */}
+      <AutomationRulesCard />
+
+      {/* Persetujuan Offer dua lapis — NR44 (HR mengajukan, OWNER menyetujui) */}
+      <OfferApprovalCard />
+      </SectionGroup>
+
+      {/* ---------------- Kelompok: Keamanan & Akses ---------------- */}
+      <SectionGroup label="Keamanan & Akses">
+      {/* Sesi Aktif (perangkat login + logout paksa) */}
+      <ActiveSessionsCard />
+
+      {/* Retensi Data (privasi — hapus otomatis lamaran lama) */}
+      <RetentionCard />
+
+      {/* NR46 — Matriks Izin (peta aksi per role, transparansi + penyesuaian OWNER) */}
+      <PermissionMatrixCard />
+
+      {/* NR46 — Kebijakan Sandi (syarat kekuatan sandi + rotasi + wajib ganti pertama) */}
+      <PasswordPolicyCard />
+      </SectionGroup>
+
+      {/* --------------- Kelompok: Sistem & Perawatan --------------- */}
+      <SectionGroup label="Sistem & Perawatan">
+      {/* NR45 — Mode Perawatan (tutup publik penuh / hanya pendaftaran) */}
+      <MaintenanceCard />
+
+      {/* NR45 — Jendela Tenang (tugas berat hanya di jam tertentu) */}
+      <QuietHoursCard />
+      </SectionGroup>
 
       {/* Bar simpan sticky (entrance halus, pola simpan tak berubah) */}
       <Reveal slideY={10} duration={0.25} className="sticky bottom-4 z-10">
