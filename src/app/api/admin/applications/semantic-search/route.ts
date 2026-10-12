@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { semanticSearchCandidates } from "@/lib/ai";
 import { getSession } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 
 export const dynamic = "force-dynamic";
 
@@ -34,12 +35,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Kueri maksimal 300 karakter." }, { status: 400 });
     }
 
-    const results = await semanticSearchCandidates(query);
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const results = await withAiGate("semantic_search", { actor: session.name }, () =>
+      semanticSearchCandidates(query),
+    );
     if (results === null) {
       return NextResponse.json({ error: "Pencarian AI gagal, coba lagi." }, { status: 502 });
     }
     return NextResponse.json({ query, results });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/applications/semantic-search]", errorMessage(error));
     return NextResponse.json({ error: "Pencarian AI gagal, coba lagi." }, { status: 502 });
   }

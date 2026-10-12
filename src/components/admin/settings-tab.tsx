@@ -129,6 +129,8 @@ import { CollapsibleCard, type CardStatus } from "./collapsible-card";
 import { SectionGroup } from "./section-group";
 import { PermissionMatrixCard } from "./permission-matrix-card";
 import { PasswordPolicyCard } from "./password-policy-card";
+import { AiControlCard } from "./ai-control-card";
+import { AiUsageCard } from "./ai-usage-card";
 import { useTagDefs } from "./use-tag-defs";
 import { Reveal } from "./motion-primitives";
 import { DEFAULT_STAGES } from "@/lib/stages";
@@ -4341,6 +4343,18 @@ export function SettingsTab() {
 
       {/* Persetujuan Offer dua lapis — NR44 (HR mengajukan, OWNER menyetujui) */}
       <OfferApprovalCard />
+      </SectionGroup>
+
+      {/* --------------- Kelompok: Pusat Kendali AI (NR49-A) --------------- */}
+      <SectionGroup
+        label="Pusat Kendali AI"
+        description="Nyalakan/matikan fitur AI, atur kuota harian, dan pantau log aktivitasnya."
+      >
+      {/* NR49-A — Pusat Kendali AI (sakelar fitur, kuota, prioritas aksi admin) */}
+      <AiControlCard />
+
+      {/* NR49-A — Log Aktivitas AI (riwayat panggilan AI + grafik harian) */}
+      <AiUsageCard />
       </SectionGroup>
 
       {/* ---------------- Kelompok: Keamanan & Akses ---------------- */}

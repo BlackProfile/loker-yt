@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rankPositionShortlist } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { getSession, requireRole } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
-    const results = await rankPositionShortlist(id);
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const results = await withAiGate("shortlist", { actor: session.name }, () =>
+      rankPositionShortlist(id),
+    );
     if (results === null) {
       return NextResponse.json(
         { error: "Shortlist AI gagal dibuat atau belum ada kandidat aktif. Coba lagi." },
@@ -38,6 +42,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
     return NextResponse.json({ positionTitle: position.title, results });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/positions/[id]/shortlist]", errorMessage(error));
     return NextResponse.json({ error: "Shortlist AI gagal dibuat, coba lagi." }, { status: 502 });
   }

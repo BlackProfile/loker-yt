@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateReplyDraft } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { getSession, requireRole } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 
 export const dynamic = "force-dynamic";
 
@@ -28,13 +29,19 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
-    const draft = await generateReplyDraft(id);
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const draft = await withAiGate("ai_reply", { actor: session.name }, () =>
+      generateReplyDraft(id),
+    );
     if (!draft) {
       return NextResponse.json({ error: "Gagal membuat draft balasan, coba lagi." }, { status: 502 });
     }
 
     return NextResponse.json({ draft });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/applications/[id]/ai-reply]", errorMessage(error));
     return NextResponse.json({ error: "Gagal membuat draft balasan, coba lagi." }, { status: 502 });
   }

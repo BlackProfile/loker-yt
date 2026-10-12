@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { analyzeApplication } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { getSession, requireRole } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
-    const result = await analyzeApplication(id);
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const result = await withAiGate("auto_screening", { actor: session.name }, () =>
+      analyzeApplication(id),
+    );
     if (!result) {
       return NextResponse.json({ error: "Analisis AI gagal, coba lagi." }, { status: 502 });
     }
@@ -43,6 +47,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       aiAnalyzedAt: new Date().toISOString(),
     });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/applications/[id]/ai]", errorMessage(error));
     return NextResponse.json({ error: "Analisis AI gagal, coba lagi." }, { status: 502 });
   }

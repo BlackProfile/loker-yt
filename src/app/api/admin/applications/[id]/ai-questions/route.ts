@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateInterviewQuestions } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { getSession, requireRole } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 
 export const dynamic = "force-dynamic";
 
@@ -28,13 +29,19 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json(NOT_FOUND, { status: 404 });
     }
 
-    const questions = await generateInterviewQuestions(id);
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const questions = await withAiGate("interview_questions", { actor: session.name }, () =>
+      generateInterviewQuestions(id),
+    );
     if (!questions) {
       return NextResponse.json({ error: "Gagal membuat pertanyaan wawancara, coba lagi." }, { status: 502 });
     }
 
     return NextResponse.json({ questions });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/applications/[id]/ai-questions]", errorMessage(error));
     return NextResponse.json({ error: "Gagal membuat pertanyaan wawancara, coba lagi." }, { status: 502 });
   }
