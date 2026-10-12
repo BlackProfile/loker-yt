@@ -323,6 +323,24 @@ export function enqueueAiJob(id: string, runner: () => Promise<void>): void {
   }
 }
 
+/**
+ * Buang tugas yang masih MENUNGGU (belum berjalan) milik id tertentu — dipakai
+ * pembersih data demo agar lonjakan besar tidak meninggalkan ribuan tugas AI
+ * yatim. Tugas yang sedang berjalan dibiarkan selesai (pipeline menjamin tidak
+ * throw bila lamarannya sudah terhapus). Mengembalikan jumlah tugas dibatalkan.
+ */
+export function cancelWaitingAiJobs(ids: Set<string>): number {
+  try {
+    const s = state();
+    if (ids.size === 0 || s.queueWaiting.length === 0) return 0;
+    const before = s.queueWaiting.length;
+    s.queueWaiting = s.queueWaiting.filter((job) => !ids.has(job.id));
+    return before - s.queueWaiting.length;
+  } catch {
+    return 0;
+  }
+}
+
 export function queueStats(): {
   waiting: number;
   running: number;
