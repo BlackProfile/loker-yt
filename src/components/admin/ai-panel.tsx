@@ -23,7 +23,7 @@ import {
   type Application,
   type AiRecommendation,
 } from "@/lib/types";
-import { apiPost } from "./api";
+import { apiGet, apiPost } from "./api";
 import { copyText, formatDate } from "./format";
 import { aiScoreStyle } from "./status-badge";
 import { useAdminSession } from "./admin-context";

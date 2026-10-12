@@ -1058,6 +1058,9 @@ export function ApplicationDetailDialog({
   // Editor tags & rating.
   const [tagInput, setTagInput] = useState("");
   const [tagsSaving, setTagsSaving] = useState(false);
+  // NR49 — usulan tag AI (ditambah manual oleh admin, tidak pernah otomatis).
+  const [suggestTagsLoading, setSuggestTagsLoading] = useState(false);
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [ratingSaving, setRatingSaving] = useState(false);
 
   // Evaluasi v3: posisi terkait (rubrik/checklist/template) + state lokal.
@@ -1183,6 +1186,8 @@ export function ApplicationDetailDialog({
     setEditStatus(application.status);
     setEditNotes(application.adminNotes ?? "");
     setTagInput("");
+    setSuggestTagsLoading(false);
+    setSuggestedTags([]);
     setSaving(false);
     setDeleting(false);
     setConfirmOpen(false);
@@ -2138,6 +2143,34 @@ export function ApplicationDetailDialog({
     setTagsSaving(true);
     await patch({ tags: [...app.tags, tag] }, "Tag ditambahkan");
     setTagsSaving(false);
+  }
+
+  // NR49 — minta usulan tag AI (maks 5; utamakan tag tim yang sudah ada).
+  async function handleSuggestTags() {
+    if (suggestTagsLoading) return;
+    setSuggestTagsLoading(true);
+    try {
+      const res = await apiPost<{ tags: string[] }>(
+        `/api/admin/applications/${app.id}/suggest-tags`
+      );
+      const existing = new Set(app.tags.map((t) => t.toLowerCase()));
+      const fresh = res.tags.filter((t) => !existing.has(t.toLowerCase()));
+      setSuggestedTags(fresh);
+      if (res.tags.length === 0) {
+        toast.info("AI tidak menemukan usulan tag untuk kandidat ini.");
+      }
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSuggestTagsLoading(false);
+    }
+  }
+
+  // NR49 — terima satu usulan: lewat mekanisme tag yang sama (addTagNow -> PATCH tags).
+  async function acceptSuggestedTag(tag: string) {
+    if (tagsSaving) return;
+    await addTagNow(tag);
+    setSuggestedTags((list) => list.filter((t) => t.toLowerCase() !== tag.toLowerCase()));
   }
 
   // Fitur 4 — simpan / bersihkan tanggal tindak lanjut.
@@ -3735,6 +3768,59 @@ export function ApplicationDetailDialog({
                         ))}
                       </div>
                     ) : null}
+                    {/* NR49 — usulan tag AI: + untuk menambah (mekanisme yang sama), x untuk mengabaikan */}
+                    <div className="flex flex-col gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-fit text-xs"
+                        onClick={() => void handleSuggestTags()}
+                        disabled={suggestTagsLoading || tagsSaving}
+                      >
+                        {suggestTagsLoading ? (
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Sparkles className="size-3.5" aria-hidden="true" />
+                        )}
+                        {suggestTagsLoading ? "Menyusun usulan..." : "Sarankan Tag (AI)"}
+                      </Button>
+                      {suggestedTags.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">Usulan AI:</span>
+                          {suggestedTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
+                                colorClassOf(tag)
+                              )}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => void acceptSuggestedTag(tag)}
+                                aria-label={`Tambah tag usulan ${tag}`}
+                                disabled={tagsSaving}
+                                className="outline-none transition-transform hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
+                              >
+                                + {tag}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSuggestedTags((list) =>
+                                    list.filter((t) => t.toLowerCase() !== tag.toLowerCase())
+                                  )
+                                }
+                                aria-label={`Abaikan usulan tag ${tag}`}
+                                className="outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                              >
+                                <X className="size-3" aria-hidden="true" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   </>
                 ) : null}
               </div>
