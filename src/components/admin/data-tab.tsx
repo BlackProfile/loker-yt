@@ -478,6 +478,7 @@ function TrashCard() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [purgeTarget, setPurgeTarget] = useState<TrashPurgeTarget | null>(null);
   const purging = busyId !== null;
+  const trashTotal = positions.length + applications.length;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -534,6 +535,13 @@ function TrashCard() {
       icon={Trash2}
       title="Tong Sampah"
       description="Posisi dan lamaran yang dihapus masih bisa dipulihkan. Hapus permanen tidak bisa dibatalkan."
+      status={
+        loading
+          ? undefined
+          : trashTotal > 0
+            ? { label: `${trashTotal} item`, tone: "neutral" }
+            : { label: "Kosong", tone: "ok" }
+      }
     >
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -763,6 +771,8 @@ function WebhooksCard() {
     [],
   );
 
+  const activeWebhooks = rows.filter((r) => r.active).length;
+
   function toggleEvent(event: string, checked: boolean) {
     setSelectedEvents((prev) => {
       if (checked) {
@@ -847,6 +857,15 @@ function WebhooksCard() {
       icon={Webhook}
       title="Webhook Keluar"
       description="Kirim event otomatis (lamaran baru, perubahan tahap, arsip, jawaban offer) ke sistem eksternal dengan tanda tangan HMAC pada header X-Lumina-*."
+      status={
+        loading
+          ? undefined
+          : rows.length === 0
+            ? { label: "Belum ada", tone: "neutral" }
+            : activeWebhooks > 0
+              ? { label: `${activeWebhooks} aktif`, tone: "ok" }
+              : { label: "Tidak aktif", tone: "warn" }
+      }
     >
       {!isOwner ? (
         <div
@@ -1156,6 +1175,13 @@ function AutoArchiveCard() {
       icon={Archive}
       title="Arsip Otomatis"
       description="Lamaran yang tidak berada di tahap final dan tidak aktif lebih dari batas hari akan diarsipkan otomatis oleh sistem."
+      status={
+        loading
+          ? undefined
+          : enabled
+            ? { label: `Aktif \u00b7 ${days} hari`, tone: "ok" }
+            : { label: "Nonaktif", tone: "neutral" }
+      }
     >
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1318,6 +1344,13 @@ function AutoBackupCard() {
       icon={History}
       title="Backup Otomatis"
       description="Setiap hari sistem menyimpan salinan database ke backups/auto (7 terakhir disimpan)."
+      status={
+        loading || !isOwner
+          ? undefined
+          : backups.length > 0
+            ? { label: `${backups.length} salinan`, tone: "neutral" }
+            : { label: "Belum ada", tone: "neutral" }
+      }
     >
       {!isOwner ? (
         <div
