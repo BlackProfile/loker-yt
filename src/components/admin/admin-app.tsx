@@ -44,6 +44,7 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  ShieldAlert,
   ScrollText,
   Search,
   Settings,
@@ -574,6 +575,10 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   const [previewRole, setPreviewRole] = useState<Role | null>(null);
   // NR46 Paket B — wajib ganti sandi (dari respons login mustChangePassword).
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  // NR50-HOTFIX — pengingat 2FA Pemilik nonaktif: diambil dari respons login
+  // (totpNotice) dan disegarkan dari /api/admin/security/totp saat buka tab Pengguna.
+  const [totpNotice, setTotpNotice] = useState(false);
+  const [totpBannerDismissed, setTotpBannerDismissed] = useState(false);
   const [siteName, setSiteName] = useState("");
   const [activeTab, setActiveTab] = useState(() => {
     // Deep-link #admin/posisi/<id> → buka tab Posisi langsung.
@@ -847,6 +852,8 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     setSession(null);
     setPreviewRole(null);
     setMustChangePassword(false);
+    setTotpNotice(false);
+    setTotpBannerDismissed(false);
     setPhase("login");
   }
 
@@ -888,6 +895,23 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [phase, role, handleNavigate]);
 
+  // NR50-HOTFIX — status 2FA untuk Pemilik: pengingat tampil bila nonaktif.
+  // Disegarkan saat mount dan setiap kali membuka tab Pengguna (tempat 2FA
+  // dapat diaktifkan) agar banner hilang segera setelah diaktifkan kembali.
+  const onUsersTab = activeTab === "users";
+  useEffect(() => {
+    if (phase !== "ready" || role !== "OWNER") return;
+    let alive = true;
+    apiGet<{ totpEnabled: boolean }>("/api/admin/security/totp")
+      .then((res) => {
+        if (alive) setTotpNotice(!res.totpEnabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [phase, role, onUsersTab]);
+
   if (phase === "checking") {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-zinc-50 dark:bg-background">
@@ -906,6 +930,9 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
           setPreviewRole(null);
           // NR46 Paket B — tampilkan dialog wajib ganti sandi bila server menandai.
           setMustChangePassword(opts?.mustChangePassword === true);
+          // NR50-HOTFIX — pengingat 2FA Pemilik nonaktif (dari respons login).
+          setTotpNotice(opts?.totpNotice === true);
+          setTotpBannerDismissed(false);
         }}
       />
     );
@@ -919,6 +946,10 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   )
     ? activeTab
     : "dashboard";
+  // NR50-HOTFIX — banner 2FA nonaktif hanya untuk Pemilik sungguhan (bukan saat
+  // Mode Pratinjau) dan selama belum ditutup manual pada sesi ini.
+  const totpBannerVisible =
+    phase === "ready" && role === "OWNER" && !previewRole && totpNotice && !totpBannerDismissed;
   const activeLabel =
     ALL_NAV_ITEMS.find((item) => item.value === effectiveTab)?.label ??
     "Panel Admin";
@@ -1028,10 +1059,44 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
               </div>
             </div>
           ) : null}
+          {/* NR50-HOTFIX — pengingat 2FA Pemilik nonaktif: sticky di atas header
+              (pola banner Mode Pratinjau); header bergeser ke bawahnya. */}
+          {totpBannerVisible ? (
+            <div className="sticky top-0 z-40 border-b border-amber-200 bg-amber-50 text-zinc-900 dark:border-amber-900 dark:bg-amber-950/90 dark:text-amber-100">
+              <div className="flex h-10 items-center justify-between gap-3 px-4 sm:px-6">
+                <p className="flex min-w-0 items-center gap-2 text-xs font-medium">
+                  <ShieldAlert className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="truncate">
+                    Verifikasi dua langkah (2FA) akun Pemilik sedang nonaktif — login hanya
+                    dilindungi sandi. Aktifkan kembali untuk keamanan penuh.
+                  </span>
+                </p>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 shrink-0 border-amber-300 bg-transparent text-amber-900 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-700 dark:text-amber-100 dark:hover:bg-amber-900"
+                    onClick={() => handleNavigate("users")}
+                  >
+                    Aktifkan 2FA
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0 text-amber-900 hover:bg-amber-100 hover:text-amber-900 dark:text-amber-100 dark:hover:bg-amber-900"
+                    aria-label="Tutup pengingat 2FA"
+                    onClick={() => setTotpBannerDismissed(true)}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <header
             className={cn(
               "sticky z-30 border-b bg-background/80 backdrop-blur",
-              previewRole ? "top-10" : "top-0",
+              previewRole || totpBannerVisible ? "top-10" : "top-0",
             )}
           >
             <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">

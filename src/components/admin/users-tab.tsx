@@ -1215,6 +1215,12 @@ export function UsersTab() {
               Masukkan kode 6 digit dari aplikasi autentikator untuk konfirmasi.
             </DialogDescription>
           </DialogHeader>
+          {session.role === "OWNER" ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+              Anda masuk sebagai Pemilik. Setelah 2FA nonaktif, login tidak lagi meminta kode dan
+              panel akan terus menampilkan pengingat sampai 2FA diaktifkan kembali.
+            </p>
+          ) : null}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="u-totp-disable">Kode verifikasi</Label>
             <Input

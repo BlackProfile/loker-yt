@@ -1721,8 +1721,8 @@ export type DraftFileMeta = {
   size: number;
 };
 
-// F8 — respons login bila OWNER wajib memasang 2FA dulu
-export type LoginRequired2FA = { ok: false; mustSetup2FA: true; setupToken: string; redirect: string };
+// F8 — (NR50-HOTFIX) tipe LoginRequired2FA dihapus bersama gate "wajib setup 2FA";
+// login OWNER tanpa TOTP kini selalu sukses dengan flag totpNotice.
 
 // E3 — kategori kind FileAsset
 export const FILE_ASSET_KINDS = ["CV", "INTRO", "COVER", "DOC", "OFFER_PDF", "DRAFT", "OTHER"] as const;
