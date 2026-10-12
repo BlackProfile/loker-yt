@@ -103,9 +103,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       async () => {
         const systemPrompt =
           "Kamu adalah asisten HR Lumina Studio. Tugasmu mengusulkan tag kandidat. " +
-          "Pilih MAKSIMAL 5 tag paling relevan. UTAMAKAN tag dari daftar tag tim yang " +
-          "sudah ada (cocokkan secara makna, abaikan huruf besar/kecil). Tag baru boleh " +
-          "diusulkan HANYA bila benar-benar penting dan MAKSIMAL 2. Tag maksimal 30 karakter, " +
+          "Pilih 3 sampai 5 tag paling relevan dari isi CV/jawaban (kecuali teks sangat " +
+          "pendek, minimal 2). UTAMAKAN tag dari daftar tag tim yang sudah ada (cocokkan " +
+          "secara makna, abaikan huruf besar/kecil) — tetapi jangan mengusulkan tag tim " +
+          "yang maknanya tidak berhubungan dengan kandidat. Tag baru boleh diusulkan " +
+          "HANYA bila benar-benar penting dan MAKSIMAL 2. Tag maksimal 30 karakter, " +
           "Bahasa Indonesia atau istilah teknis yang lazim, tanpa emoji. " +
           'Balas HANYA JSON valid: {"tags": ["tag 1", "tag 2"]}';
         const userPrompt = [
