@@ -375,16 +375,35 @@ export type DemoSubmitResult =
 
 const DEMO_SOURCE = "Demo Simulator";
 
+/** Cache daftar posisi terbuka utk mode lonjakan (per detik, hanya mode "semua posisi"). */
+let demoPositionCache: { sec: number; positions: Awaited<ReturnType<typeof db.position.findMany>> } | null =
+  null;
+
 async function createDemoApplication(positionIdOverride: string | null): Promise<DemoSubmitResult> {
   // 1. Kandidat posisi: aktif, formulir terbuka, jadwal tayang/tutupnya valid.
   const now = new Date();
-  const candidates = await db.position.findMany({
-    where: {
-      isActive: true,
-      applyOpen: true,
-      ...(positionIdOverride ? { id: positionIdOverride } : {}),
-    },
-  });
+  let candidates: Awaited<ReturnType<typeof db.position.findMany>>;
+  if (!positionIdOverride) {
+    // Lonjakan memanggil ini ratusan kali per detik — daftar posisi stabil
+    // cukup dibaca sekali per detik (kuota tetap dicek per lamaran di bawah).
+    const sec = Math.floor(now.getTime() / 1000);
+    if (demoPositionCache && demoPositionCache.sec === sec) {
+      candidates = demoPositionCache.positions;
+    } else {
+      candidates = await db.position.findMany({
+        where: { isActive: true, applyOpen: true },
+      });
+      demoPositionCache = { sec, positions: candidates };
+    }
+  } else {
+    candidates = await db.position.findMany({
+      where: {
+        isActive: true,
+        applyOpen: true,
+        id: positionIdOverride,
+      },
+    });
+  }
   const openPositions = candidates.filter(
     (p) =>
       (!p.closesAt || p.closesAt > now) &&
@@ -639,7 +658,7 @@ const MAX_RATE_PER_SEC = 500;
 const MIN_DURATION_SEC = 5;
 const MAX_DURATION_SEC = 300;
 const MAX_BURST_TOTAL = 3000; // rem mode lonjakan: berhenti otomatis pada 3.000 lamaran per jalan
-const BURST_CONCURRENCY = 12; // pembuatan lamaran paralel (diuji: 0 gagal, ±200/s pada sandbox)
+const BURST_CONCURRENCY = 8; // pembuatan lamaran paralel (diuji: 6-12, 8 paling stabil & cepat)
 const BURST_BATCH = 48; // tugas per putaran pool
 const RECENT_WINDOW_SEC = 5; // jendela hitung kecepatan aktual
 
