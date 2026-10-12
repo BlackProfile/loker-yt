@@ -269,3 +269,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+// Turbopack invalidation nudge (NR49-B).
