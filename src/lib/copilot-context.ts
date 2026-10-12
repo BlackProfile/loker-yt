@@ -119,6 +119,7 @@ export async function gatherCopilotContext(): Promise<CopilotContext> {
         id: true,
         name: true,
         createdAt: true,
+        status: true,
         position: { select: { title: true, stages: true, stageCategories: true } },
       },
     }),
