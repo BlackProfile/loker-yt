@@ -50,6 +50,7 @@ type DemoStatus = {
   targetTotal: number | null;
   inFlight: number;
   recentPerSec: number;
+  runGenerated: number;
   positionId: string | null;
   generated: number;
   failed: number;
@@ -216,9 +217,12 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
 
   const working = busy !== "";
   const isBurstRunning = running && status?.mode === "burst";
+  // Progres lonjakan memakai runGenerated (lamaran LARI INI), bukan kumulatif —
+  // agar bilah kemajuan tetap benar bila lonjakan dijalankan dua kali tanpa
+  // bersih-bersih (penghitung kumulatif tetap tampil di badge tombol Demo).
   const progressPct =
     isBurstRunning && status?.targetTotal
-      ? Math.min(100, Math.round((status.generated / status.targetTotal) * 100))
+      ? Math.min(100, Math.round((status.runGenerated / status.targetTotal) * 100))
       : 0;
   const settingsDisabled = running || working || !canMutate;
 
@@ -290,17 +294,18 @@ export function DemoSimulatorControl({ positions }: { positions: Position[] }) {
                 <p className="font-medium">Tidak aktif</p>
               )}
               <p className="mt-1 tabular-nums">
-                Dibuat: <span className="font-medium">{fmtId(status?.generated ?? 0)}</span>
-                {isBurstRunning && status?.targetTotal ? (
-                  <>
-                    {" "}dari ±{fmtId(status.targetTotal)}
-                  </>
-                ) : null}
                 {isBurstRunning ? (
                   <>
+                    Lonjakan ini: <span className="font-medium">{fmtId(status?.runGenerated ?? 0)}</span>
+                    {status?.targetTotal ? <> dari ±{fmtId(status.targetTotal)}</> : null}
                     {" "}· Aktual ±<span className="font-medium">{fmtId(status?.recentPerSec ?? 0)}</span>/s
+                    {" "}· Kumulatif {fmtId(status?.generated ?? 0)}
                   </>
-                ) : null}
+                ) : (
+                  <>
+                    Dibuat: <span className="font-medium">{fmtId(status?.generated ?? 0)}</span>
+                  </>
+                )}
                 {(status?.failed ?? 0) > 0 ? (
                   <>
                     {" "}· Gagal: <span className="font-medium">{fmtId(status?.failed ?? 0)}</span>
