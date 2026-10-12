@@ -95,6 +95,9 @@ import { ServerHealthCard } from "./server-health-card";
 import { AccessHealthCard } from "./access-health-card";
 import { ApprovalsCard } from "./approvals-card";
 import { HandoverCard } from "./handover-card";
+import { MorningBriefCard } from "./morning-brief-card";
+import { RiskScoresCard } from "./risk-scores-card";
+import { RejectionAnalysisCard } from "./rejection-analysis-card";
 import { SectionGroup } from "./section-group";
 import { AnnouncementAiDraft } from "./announcement-ai-draft";
 import { cn } from "@/lib/utils";
@@ -526,6 +529,9 @@ export function DashboardTab() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* NR49 — Brief Pagi AI: narasi harian paling atas (sebelum pemantauan). */}
+      <MorningBriefCard />
+
       {/* NR45 — Kesehatan Server + NR46 — Kesehatan Akses: pemantauan real-time.
           Posisi menonjol di paling atas dashboard (sebelum kartu statusHealth). */}
       <SectionGroup label="Pemantauan">
@@ -539,6 +545,12 @@ export function DashboardTab() {
       <SectionGroup label="Koordinasi Tim">
         <ApprovalsCard />
         <HandoverCard />
+      </SectionGroup>
+
+      {/* NR49 — AI Proaktif: skor risiko kandidat + analisis alasan penolakan. */}
+      <SectionGroup label="AI Proaktif">
+        <RiskScoresCard />
+        <RejectionAnalysisCard />
       </SectionGroup>
 
       {/* Kartu Perlu Tindakan — hilang otomatis bila semua kelompok kosong */}

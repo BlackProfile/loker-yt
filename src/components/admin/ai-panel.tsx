@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Copy,
   FileText,
+  Languages,
   Loader2,
   Mail,
   ScanText,
@@ -105,6 +106,11 @@ export function AiPanel({
   const [biasLoading, setBiasLoading] = useState(false);
   const [biasResult, setBiasResult] = useState<BiasCheckResult | null>(null);
 
+  // NR49 — terjemahan AI teks CV (tersimpan di server; semua role boleh menerjemahkan).
+  const [translation, setTranslation] = useState<{ text: string; language: string } | null>(null);
+  const [showTranslated, setShowTranslated] = useState(false);
+  const [transLoading, setTransLoading] = useState(false);
+
   // Reset hasil alat AI saat kandidat berganti.
   useEffect(() => {
     setQuestions(null);
@@ -116,6 +122,29 @@ export function AiPanel({
     setOcrLoading(false);
     setBiasResult(null);
     setBiasLoading(false);
+    setTranslation(null);
+    setShowTranslated(false);
+    setTransLoading(false);
+  }, [app.id]);
+
+  // NR49 — baca diam-diam terjemahan tersimpan saat kandidat berganti (tanpa AI).
+  // Bila sudah ada, toggle "Tampilkan terjemahan" langsung tersedia.
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ translation: { text: string; language: string } | null }>(
+      `/api/admin/applications/${app.id}/translate?field=cvText`
+    )
+      .then((res) => {
+        if (cancelled || !res.translation) return;
+        setTranslation({ text: res.translation.text, language: res.translation.language });
+        setShowTranslated(false);
+      })
+      .catch(() => {
+        // silent — terjemahan hanya pelengkap
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [app.id]);
 
   // Baca diam-diam cvText yang sudah tersimpan (tanpa menjalankan OCR).
@@ -226,6 +255,30 @@ export function AiPanel({
       reportError(err);
     } finally {
       setBiasLoading(false);
+    }
+  }
+
+  // NR49 — terjemahkan teks CV ke Bahasa Indonesia (aksi ringan, semua role).
+  async function runTranslate() {
+    if (transLoading) return;
+    setTransLoading(true);
+    try {
+      const res = await apiPost<{
+        translated: string | null;
+        language?: string | null;
+        message?: string;
+      }>(`/api/admin/applications/${app.id}/translate`, { field: "cvText" });
+      if (res.translated) {
+        setTranslation({ text: res.translated, language: res.language ?? "Asing" });
+        setShowTranslated(true);
+        toast.success("Terjemahan selesai dibuat");
+      } else {
+        toast.info(res.message ?? "Teks sudah berbahasa Indonesia.");
+      }
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setTransLoading(false);
     }
   }
 
@@ -435,6 +488,7 @@ export function AiPanel({
         {!app.cvFileId ? (
           <p className="text-xs text-muted-foreground">Lamaran ini tidak memiliki file CV.</p>
         ) : cvText ? (
+          <>
           <Collapsible open={showCvText} onOpenChange={setShowCvText}>
             <CollapsibleTrigger className="group flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
               <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" aria-hidden="true" />
@@ -461,6 +515,55 @@ export function AiPanel({
               </div>
             </CollapsibleContent>
           </Collapsible>
+
+          {/* NR49 — terjemahan AI: tombol untuk semua role + toggle asli/terjemahan. */}
+          <div className="mt-1 flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-fit text-xs"
+                onClick={() => void runTranslate()}
+                disabled={transLoading}
+              >
+                {transLoading ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    Menerjemahkan...
+                  </>
+                ) : (
+                  <>
+                    <Languages className="size-3.5" aria-hidden="true" />
+                    Terjemahkan ke Indonesia (AI)
+                  </>
+                )}
+              </Button>
+              {translation ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  onClick={() => setShowTranslated((v) => !v)}
+                >
+                  {showTranslated ? "Tampilkan asli" : "Tampilkan terjemahan"}
+                </Button>
+              ) : null}
+            </div>
+            {translation && showTranslated ? (
+              <div className="rounded-lg border bg-background p-3">
+                <Badge
+                  variant="outline"
+                  className="mb-2 border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400"
+                >
+                  Terjemahan AI · {translation.language}
+                </Badge>
+                <p className="nice-scrollbar max-h-40 overflow-y-auto text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                  {translation.text}
+                </p>
+              </div>
+            ) : null}
+          </div>
+          </>
         ) : canMutate ? (
           <Button
             variant="outline"
