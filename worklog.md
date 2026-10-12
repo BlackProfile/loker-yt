@@ -4062,3 +4062,27 @@ Work Log:
 Stage Summary:
 - 8 usulan perbaikan per-pelamar disampaikan ke user untuk dipilih (belum disetujui): A Panel Keputusan satu pandang (+badge risiko per pelamar), B Timeline Tahap + durasi per tahap, C Bandingkan dari dalam detail, D unduh .ics wawancara, E Uraian Pengalaman Terstruktur AI, F indikator kelengkapan profil, G ekspor arsip ZIP, H (opsional lanjutan).
 - Task implementasi berikutnya: NR50 (menunggu pilihan user).
+---
+Task ID: NR50-HOTFIX-2FA (orchestrator, langsung)
+Agent: Z.ai Code
+Task: Perbaikan laporan user — "saya matikan 2FA di akun OWNER, tapi pas login masih diminta, jadi tidak bisa login."
+
+Work Log:
+- DIAGNOSIS (DB + kode): akun OWNER admin@lumina.id berstatus totpEnabled=TRUE dengan secret baru + 2 audit login TOTP_SALAH + 1 Setting "pending_2fa_setup:*" tertinggal. Kronologi: user menonaktifkan 2FA -> login berikutnya dipaksa alur "wajib pasang 2FA" (gate NR41-SEC-B F4 di login route: OWNER tanpa TOTP -> mustSetup2FA + setupToken, alur UI tak bisa dilewati) -> alur paksa itu MENGAKTIFKAN KEMBALI 2FA dengan secret baru -> kode dari entri autentikator lama user tak pernah cocok -> terkunci. Kontradiksi desain: OWNER diperbolehkan menonaktifkan 2FA tetapi login memaksakan 2FA = jebakan self-lockout.
+- PEMULIHAN AKUN SEGERA (scripts/tmp/fix-totp.ts, dihapus setelahnya): AdminUser OWNER -> totpEnabled=false, totpSecret=null (sesuai keinginan user); hapus 2 audit gagal (anti lockout NR45); hapus 1 Setting pending_2fa_setup.
+- PERBAIKAN AKAR (hilangkan jebakan):
+  - src/app/api/admin/login/route.ts: gate "mustSetup2FA" DIHAPUS. OWNER tanpa TOTP kini mendapat SESI PENUH; respons baru { ok, session, mustChangePassword, totpNotice } dengan totpNotice = role OWNER && !totpEnabled. Import storePending2FASetup dibuang; header comment diperbarui.
+  - src/lib/server-auth.ts: blok "Setup 2FA tertunda" (PENDING_2FA_TTL_MS, Pending2FASetup, pending2faKey, storePending2FASetup, consumePending2FASetup) + import randomBytes dihapus (tak ada lagi pembuat token pending).
+  - src/app/api/admin/security/totp/pending/route.ts: DIHAPUS (rute mati).
+  - src/lib/types.ts: tipe mati LoginRequired2FA dihapus (komentar penanda ditinggal).
+  - login-card.tsx: seluruh alur setup wajib dibuang (state setup2fa/setupCode/..., startTwoFactorSetup, handleVerifyTwoFactor, exitTwoFactorSetup, blok JSX "Aktifkan 2FA" wajib, cabang mustSetup2FA di handleSubmit & handleDemoLogin; import ShieldCheck/Copy/copyText ikut dibuang). LoginResponse kini tunggal { ok:true, session, mustChangePassword?, totpNotice? }; totpNotice -> toast.warning "2FA Pemilik sedang nonaktif..." + diteruskan via onSuccess opts.
+  - admin-app.tsx: state totpNotice/totpBannerDismissed; onSuccess membaca opts.totpNotice; useEffect OWNER+ready GET /api/admin/security/totp (refetch saat masuk tab Pengguna) -> pengingat self-healing; BANNER AMBER sticky di atas header (pola banner Mode Pratinjau): teks peringatan + tombol "Aktifkan 2FA" (navigasi ke users) + tombol X tutup per sesi; header top-10 saat banner tampil; reset state saat logout.
+  - users-tab.tsx: dialog Nonaktifkan 2FA menampilkan peringatan khusus OWNER ("setelah nonaktif login tak meminta kode; panel terus mengingatkan").
+- VERIFIKASI API (curl, sesi OWNER): login OWNER 200 {ok:true, totpNotice:true} TANPA kode; login HR totpNotice:false; totp POST action=setup -> secret+QR; enable kode valid (TOTP dihitung lokal RFC6238) -> true; disable kode salah -> 400 "Kode 2FA tidak valid."; disable kode valid (POST action=disable) -> {"ok":true,"totpEnabled":false} (catatan: metode DELETE tak ada handler — respons kosong; jalur sah UI = POST action=disable); reset 2FA via PATCH users/[id] {totpReset:true} berfungsi utk pembersihan. Status akhir DB: totpEnabled=false, secret=null, 0 Setting pending, 0 audit gagal OWNER.
+- VERIFIKASI BROWSER (agent-browser, OWNER via tombol demo): masuk LANGSUNG tanpa 2FA; banner amber tampil di atas header; "Aktifkan 2FA" -> tab Pengguna (kartu Keamanan Akun status "Nonaktif" + tombol Aktifkan); X menutup banner; refresh -> banner KEMBALI (nag self-healing, benar); mobile 390px tanpa overflow-x; login HR TANPA banner. Page error/console error = nihil. dev.log bersih.
+- KUALITAS: bunx tsc --noEmit -> 0 error di src/ (warisan lama hanya di scripts/ & examples/, di luar lingkup); bun run lint exit 0. Skrip uji temp + cookie file dihapus.
+
+Stage Summary:
+- Jebakan self-lockout 2FA OWNER dihapus permanen: OWNER bebas menonaktifkan 2FA; login tetap sah hanya dengan sandi; panel menampilkan pengingat amber persisten sampai 2FA diaktifkan kembali (bisa ditutup per sesi, kembali setelah refresh). Kontrak login baru menyertakan totpNotice; rute pending 2FA + helper server-auth + tipe mati dibersihkan.
+- Akun user SUDAH DAPAT DIPAKAI LOGIN lagi sekarang: email + password saja, tanpa kode. Untuk mengaktifkan 2FA lagi: Pengguna > Keamanan Akun > Aktifkan > pindai QR BARU (hapus entri lama di aplikasi autentikator agar tidak tertukar; pastikan jam HP akurat).
+- Pelajaran desain: kebijakan "wajib 2FA" yang diegte di gerbang login tidak boleh berpasangan dengan kemampuan menonaktifkan 2FA — pilih salah satu: cegah penonaktifan, atau izinkan dengan pengingat persisten (yang dipilih).
