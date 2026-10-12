@@ -123,6 +123,11 @@ function CopilotActionChip({
           <Check className="size-3.5" aria-hidden="true" />
           Dijalankan
         </span>
+      ) : state === "busy" ? (
+        <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          Menjalankan...
+        </span>
       ) : state === "confirm" ? (
         <span className="inline-flex items-center gap-1">
           <Button
@@ -130,13 +135,8 @@ function CopilotActionChip({
             size="sm"
             className="h-8 bg-rose-600 px-2.5 text-xs text-white hover:bg-rose-700"
             onClick={() => void run()}
-            disabled={state === "busy"}
           >
-            {state === "busy" ? (
-              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-            ) : (
-              "Yakin? Jalankan"
-            )}
+            Yakin? Jalankan
           </Button>
           <Button
             type="button"
@@ -144,7 +144,6 @@ function CopilotActionChip({
             variant="ghost"
             className="h-8 px-2 text-xs text-muted-foreground"
             onClick={() => setState("idle")}
-            disabled={state === "busy"}
           >
             Batal
           </Button>
@@ -240,12 +239,13 @@ export function AdminAskWidget() {
       // 503 dari gate AI (fitur dimatikan/kuota habis): tampilkan pesan di area
       // jawaban dengan gaya amber — JANGAN crash dan JANGAN buang pertanyaan.
       if (err instanceof ApiError && err.status === 503) {
-        setMessages((prev) =>
-          [
-            ...prev,
-            { id: ++idRef.current, role: "assistant", content: err.message, warning: true },
-          ].slice(-MAX_MESSAGES)
-        );
+        const warningMsg: AskMessage = {
+          id: ++idRef.current,
+          role: "assistant",
+          content: err.message,
+          warning: true,
+        };
+        setMessages((prev) => [...prev, warningMsg].slice(-MAX_MESSAGES));
         return;
       }
       reportError(err);
