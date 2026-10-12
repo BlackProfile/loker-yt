@@ -94,7 +94,9 @@ export function CollapsibleCard({
             {status ? (
               <span
                 className={cn(
-                  "shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4 tabular-nums",
+                  // Tersembunyi di layar sangat kecil agar header tidak sesak
+                  // (deskripsi tetap lebar penuh); tampil mulai sm ke atas.
+                  "hidden shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4 tabular-nums sm:inline-flex",
                   STATUS_TONE_CLASS[status.tone ?? "neutral"]
                 )}
               >
