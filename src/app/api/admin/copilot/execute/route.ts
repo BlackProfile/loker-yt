@@ -325,4 +325,62 @@ async function executeBulkRejectStale(
   };
 }
 
-/** Buka/tutup satu posisi (izin kelola_posisi sudah dicek pemanggil). */
+export async function POST(req: NextRequest) {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json(UNAUTHORIZED, { status: 401 });
+    }
+
+    const body: unknown = await req.json().catch(() => null);
+    const obj =
+      body && typeof body === "object" && !Array.isArray(body)
+        ? (body as Record<string, unknown>)
+        : {};
+    const type = asSafeString(obj.type, 40);
+    const rawParams =
+      obj.params && typeof obj.params === "object" && !Array.isArray(obj.params)
+        ? (obj.params as Record<string, unknown>)
+        : {};
+
+    const permission = ACTION_PERMISSIONS[type];
+    if (!permission) {
+      return NextResponse.json({ error: "Tipe aksi tidak dikenal." }, { status: 400 });
+    }
+
+    // NR46 — matriks izin dicek ulang di server (UI tidak dipercaya).
+    if (!(await can(session.role, permission))) {
+      return NextResponse.json(
+        { error: "Aksi ini tidak diizinkan untuk role Anda — lihat Matriks Izin di Pengaturan." },
+        { status: 403 },
+      );
+    }
+
+    const actor = `${session.name} (Copilot)`;
+    let result: { message: string };
+    switch (type) {
+      case "set_application_status":
+        result = await executeSetApplicationStatus(actor, rawParams);
+        break;
+      case "toggle_position":
+        result = await executeTogglePosition(actor, rawParams);
+        break;
+      case "bulk_reject_stale":
+        result = await executeBulkRejectStale(actor, rawParams);
+        break;
+      default:
+        return NextResponse.json({ error: "Tipe aksi tidak dikenal." }, { status: 400 });
+    }
+
+    return NextResponse.json(result);
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    console.error("[POST /api/admin/copilot/execute]", error);
+    return NextResponse.json(
+      { error: "Gagal menjalankan aksi Copilot. Coba lagi nanti." },
+      { status: 500 },
+    );
+  }
+}

@@ -260,6 +260,10 @@ function InterviewSessionDialogInner({
   const [recordingUrl, setRecordingUrl] = useState(interview?.recordingUrl ?? "");
   const [savingResult, setSavingResult] = useState(false);
 
+  // NR49 Paket D — draf penilaian (AI) dari transkrip: mengisi state form
+  // scorecard sebagai USULAN; penyimpanan tetap manual lewat "Simpan Hasil".
+  const [draftLoading, setDraftLoading] = useState(false);
+
   // ---- Autosave scorecard (debounce 1,2 detik, hanya skor rubrik) ----
   const [autosaveState, setAutosaveState] = useState<"idle" | "saving" | "saved">("idle");
   const autosaveTimerRef = useRef<number | null>(null);
@@ -301,6 +305,9 @@ function InterviewSessionDialogInner({
   const positionTitle =
     interview?.positionTitle ?? create?.positionTitle ?? pos?.title ?? null;
   const trackingCode = interview?.trackingCode;
+
+  // Tombol "Draf Penilaian (AI)" hanya tampil bila transkrip tersedia.
+  const hasTranscript = Boolean((transcript ?? interview?.transcript ?? "").trim());
 
   const showLinkField = mode === "ONLINE";
   const showAddressField = mode === "ONSITE";
@@ -616,6 +623,36 @@ function InterviewSessionDialogInner({
     } catch (err) {
       setAutosaveState("idle");
       reportError(err);
+    }
+  }
+
+  /* ------------- NR49 Paket D — draf penilaian (AI) dari transkrip ------------- */
+
+  async function handleScorecardDraft() {
+    if (draftLoading || !interview) return;
+    setDraftLoading(true);
+    try {
+      const res = await apiPost<{
+        scores: Record<string, number>;
+        recommendation: InterviewRecommendation | null;
+        note: string | null;
+      }>(`/api/admin/interviews/${interview.id}/scorecard-draft`);
+      // Isi state form secara langsung (bukan handleScoreSelect) agar autosave
+      // TIDAK terpicu — AI hanya mengusulkan; admin menyimpan manual.
+      if (res.scores && Object.keys(res.scores).length > 0) {
+        setScoreValues((prev) => ({ ...prev, ...res.scores }));
+      }
+      if (res.recommendation) {
+        setRecommendation(res.recommendation);
+      }
+      if (!notes.trim() && res.note) {
+        setNotes(res.note);
+      }
+      toast.info("Draf AI diisi \u2014 silakan tinjau dan simpan manual.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDraftLoading(false);
     }
   }
 
@@ -1143,6 +1180,23 @@ function InterviewSessionDialogInner({
                     ) : null}
                   </div>
                   <div className="flex flex-col gap-3">
+                    {/* NR49 Paket D — draf penilaian AI, hanya bila transkrip ada */}
+                    {hasTranscript ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 w-fit sm:h-9"
+                        onClick={() => void handleScorecardDraft()}
+                        disabled={draftLoading || savingResult}
+                      >
+                        {draftLoading ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Sparkles className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                        )}
+                        {draftLoading ? "Menyusun draf penilaian..." : "Draf Penilaian (AI)"}
+                      </Button>
+                    ) : null}
                     {/* NR44 — rata tertimbang live (dekat ringkasan scorecard). */}
                     {liveWeighted.value != null ? (
                       <p className="text-xs text-muted-foreground" aria-live="polite">
