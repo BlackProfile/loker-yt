@@ -1,9 +1,17 @@
 // SERVER-ONLY — Simulator pelamar demo ("Mode Demo").
-// Membuat lamaran LENGKAP secara otomatis setiap beberapa detik: persona
-// Indonesia yang realistis, jawaban seluruh pertanyaan formulir (termasuk
-// field kondisional showIf), NIK + tanggal lahir terstruktur, info kehadiran
-// on-site, ekspektasi gaji, jawaban screening (mode klasik), hingga berkas
-// CV/audio mini yang valid bila posisi mewajibkannya.
+// Membuat lamaran LENGKAP secara otomatis: persona Indonesia yang realistis,
+// jawaban seluruh pertanyaan formulir (termasuk field kondisional showIf), NIK
+// + tanggal lahir terstruktur, info kehadiran on-site, ekspektasi gaji, jawaban
+// screening (mode klasik), hingga berkas CV/audio mini yang valid bila posisi
+// mewajibkannya.
+//
+// DUA MODE (NR48):
+//   - "interval" (santai): satu lamaran tiap N detik — cocok isi santai.
+//   - "burst" (lonjakan trafik): N pelamar PER DETIK selama durasi tertentu —
+//     meniru lonjakan trafik asli (mis. 217 pelamar dalam 1 detik). Pump
+//     berbasis "due" (jumlah yang seharusnya sudah masuk) sehingga kecepatan
+//     nyata yang tak terkejar diteruskan/dikoreksi sendiri, dan kecepatan
+//     aktual yang tampil di UI selalu JUJUR (dihitung per detik).
 //
 // Aliran data meniru POST /api/applications publik:
 //   persona -> jawaban form -> validateFormAnswers -> berkas -> Application
@@ -34,6 +42,7 @@ import {
 } from "@/lib/form-schema";
 import { KOMUTER_PLANS, SHIFT_PREFS } from "@/lib/types";
 import { startBackgroundProcessing } from "@/lib/processing";
+import { cancelWaitingAiJobs } from "@/lib/load-metrics";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
 /* ================================ Util acak =============================== */
@@ -622,13 +631,35 @@ async function tryCreateForPosition(positionId: string, now: Date): Promise<Demo
 
 /* ======================= Mesin status simulator (timer) ====================== */
 
-const MAX_GENERATED_PER_RUN = 200; // rem tahan-baka: hentikan otomatis pada 200 lamaran
+const MAX_GENERATED_PER_RUN = 200; // rem mode santai: hentikan otomatis pada 200 lamaran per jalan
 const MIN_INTERVAL_SEC = 5;
 const MAX_INTERVAL_SEC = 3600;
+const MIN_RATE_PER_SEC = 5; // rem mode lonjakan
+const MAX_RATE_PER_SEC = 500;
+const MIN_DURATION_SEC = 5;
+const MAX_DURATION_SEC = 300;
+const MAX_BURST_TOTAL = 3000; // rem mode lonjakan: berhenti otomatis pada 3.000 lamaran per jalan
+const BURST_CONCURRENCY = 6; // pembuatan lamaran paralel (SQLite menulis serial — jangan rakus)
+const BURST_BATCH = 48; // tugas per putaran pool
+const RECENT_WINDOW_SEC = 5; // jendela hitung kecepatan aktual
+
+export type DemoMode = "interval" | "burst";
+
+type RecentBucket = { sec: number; count: number };
 
 type DemoSimulatorInternal = {
   timer: ReturnType<typeof setTimeout> | null;
-  intervalSec: number;
+  mode: DemoMode;
+  intervalSec: number; // mode interval
+  ratePerSec: number; // mode lonjakan
+  durationSec: number | null; // mode lonjakan; null = terus sampai dihentikan
+  burstStartedAt: number; // epoch ms mulai lonjakan (basis hitung due & aktual)
+  burstDeadline: number | null; // epoch ms batas dispatch (null = tanpa durasi)
+  dispatched: number; // tugas dikirim pada lonjakan berjalan
+  runGenerated: number; // lamaran sukses pada jalan berjalan (basis rem per-jalan)
+  inFlight: number; // tugas sedang dibuat
+  pumping: boolean; // pump lonjakan aktif
+  recent: RecentBucket[]; // bucket per-detik utk kecepatan aktual
   positionId: string | null; // null = semua posisi terbuka
   running: boolean;
   generated: number;
@@ -647,7 +678,17 @@ function simulatorState(): DemoSimulatorInternal {
   if (!holder[SIM_KEY]) {
     holder[SIM_KEY] = {
       timer: null,
+      mode: "interval" as DemoMode,
       intervalSec: 15,
+      ratePerSec: 100,
+      durationSec: 30 as number | null,
+      burstStartedAt: 0,
+      burstDeadline: null,
+      dispatched: 0,
+      runGenerated: 0,
+      inFlight: 0,
+      pumping: false,
+      recent: [] as RecentBucket[],
       positionId: null,
       running: false,
       generated: 0,
@@ -664,7 +705,13 @@ function simulatorState(): DemoSimulatorInternal {
 
 export type DemoSimulatorStatus = {
   running: boolean;
+  mode: DemoMode;
   intervalSec: number;
+  ratePerSec: number;
+  durationSec: number | null;
+  targetTotal: number | null; // perkiraan total lonjakan (null utk mode interval)
+  inFlight: number;
+  recentPerSec: number; // kecepatan aktual ±N/detik (mode lonjakan)
   positionId: string | null;
   generated: number;
   failed: number;
@@ -677,9 +724,21 @@ export type DemoSimulatorStatus = {
 
 function statusSnapshot(): DemoSimulatorStatus {
   const s = simulatorState();
+  const targetTotal =
+    s.mode === "burst"
+      ? s.durationSec != null
+        ? Math.min(MAX_BURST_TOTAL, s.ratePerSec * s.durationSec)
+        : MAX_BURST_TOTAL
+      : null;
   return {
     running: s.running,
+    mode: s.mode,
     intervalSec: s.intervalSec,
+    ratePerSec: s.ratePerSec,
+    durationSec: s.durationSec,
+    targetTotal,
+    inFlight: s.inFlight,
+    recentPerSec: recentPerSec(s),
     positionId: s.positionId,
     generated: s.generated,
     failed: s.failed,
@@ -691,6 +750,32 @@ function statusSnapshot(): DemoSimulatorStatus {
   };
 }
 
+/** Catat n lamaran masuk ke bucket detik berjalan (maks 6 bucket disimpan). */
+function recordRecent(count: number): void {
+  const s = simulatorState();
+  const sec = Math.floor(Date.now() / 1000);
+  const last = s.recent[s.recent.length - 1];
+  if (last && last.sec === sec) {
+    last.count += count;
+  } else {
+    s.recent.push({ sec, count });
+    if (s.recent.length > RECENT_WINDOW_SEC + 1) s.recent.shift();
+  }
+}
+
+/** Kecepatan aktual (lamaran/detik) dari bucket per-detik terakhir — jujur. */
+function recentPerSec(s: DemoSimulatorInternal): number {
+  if (!s.running || s.mode !== "burst") return 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const elapsedSec = Math.max(1, Math.round((Date.now() - s.burstStartedAt) / 1000));
+  const window = Math.min(RECENT_WINDOW_SEC, elapsedSec);
+  let total = 0;
+  for (const bucket of s.recent) {
+    if (bucket.sec >= nowSec - window) total += bucket.count;
+  }
+  return Math.round(total / window);
+}
+
 async function runTick(): Promise<void> {
   const s = simulatorState();
   if (!s.running) return;
@@ -698,6 +783,7 @@ async function runTick(): Promise<void> {
     const result = await createDemoApplication(s.positionId);
     if (result.ok) {
       s.generated += 1;
+      s.runGenerated += 1;
       s.lastAt = new Date().toISOString();
       s.lastApplicant = {
         name: result.name,
@@ -714,11 +800,11 @@ async function runTick(): Promise<void> {
     s.lastError = error instanceof Error ? error.message : String(error);
   }
 
-  if (s.generated >= MAX_GENERATED_PER_RUN) {
+  if (s.runGenerated >= MAX_GENERATED_PER_RUN) {
     s.running = false;
     if (s.timer) clearTimeout(s.timer);
     s.timer = null;
-    s.note = `Batas ${MAX_GENERATED_PER_RUN} lamaran demo tercapai — simulator dihentikan otomatis.`;
+    s.note = `Batas ${MAX_GENERATED_PER_RUN} lamaran demo dalam satu kali jalan tercapai — simulator dihentikan otomatis.`;
     return;
   }
   if (s.running) {
@@ -728,27 +814,162 @@ async function runTick(): Promise<void> {
   }
 }
 
+/* ==================== Mode lonjakan trafik (pump per detik) =================== */
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Kumpulan pekerja: membuat `count` lamaran dengan paralel terbatas.
+ * Setiap pekerja mengecek s.running sebelum tiap tugas agar Stop terasa instan.
+ */
+async function runBurstBatch(count: number): Promise<void> {
+  const s = simulatorState();
+  let next = 0;
+  const workers = Array.from({ length: Math.min(BURST_CONCURRENCY, count) }, async () => {
+    while (s.running && next < count) {
+      next += 1;
+      s.dispatched += 1;
+      s.inFlight += 1;
+      try {
+        const result = await createDemoApplication(s.positionId);
+        if (result.ok) {
+          s.generated += 1;
+          s.runGenerated += 1;
+          s.lastAt = new Date().toISOString();
+          s.lastApplicant = {
+            name: result.name,
+            positionTitle: result.positionTitle,
+            trackingCode: result.trackingCode,
+          };
+          recordRecent(1);
+        } else {
+          s.failed += 1;
+          s.lastError = result.error;
+        }
+      } catch (error) {
+        s.failed += 1;
+        s.lastError = error instanceof Error ? error.message : String(error);
+      } finally {
+        s.inFlight = Math.max(0, s.inFlight - 1);
+      }
+    }
+  });
+  await Promise.all(workers);
+}
+
+/**
+ * Pump lonjakan: setiap putaran menghitung "due" (berapa lamaran yang
+ * seharusnya sudah masuk pada titik waktu ini = elapsed × target), lalu
+ * menyiram selisihnya. Kalau server tak mampu mengejar target, backlog
+ * menumpuk dan kecepatan aktual (recentPerSec) menunjukkan angka jujur.
+ * Berhenti saat: durasi habis + tugas berjalan selesai, batas total
+ * tercapai, tombol Hentikan (s.running = false), atau server restart.
+ */
+async function runBurstPump(): Promise<void> {
+  const s = simulatorState();
+  if (s.pumping) return; // pump lama masih hidup — ia membaca state terbaru tiap putaran
+  s.pumping = true;
+  try {
+    while (s.running && s.mode === "burst") {
+      const now = Date.now();
+      const deadlineReached = s.burstDeadline != null && now >= s.burstDeadline;
+      const capReached = s.runGenerated >= MAX_BURST_TOTAL;
+      if (deadlineReached || capReached) {
+        if (s.inFlight > 0) {
+          await sleep(80); // tunggu tugas berjalan selesai (drain)
+          continue;
+        }
+        if (capReached) {
+          s.note = `Batas ${MAX_BURST_TOTAL.toLocaleString("id-ID")} lamaran demo dalam satu kali jalan tercapai — simulator berhenti.`;
+        } else if (s.burstDeadline != null) {
+          const secs = Math.max(1, Math.round((Date.now() - s.burstStartedAt) / 1000));
+          s.note = `Lonjakan selesai — ${s.runGenerated.toLocaleString("id-ID")} lamaran dalam ±${secs} detik (target ${s.ratePerSec}/s).`;
+        }
+        s.running = false;
+        s.timer = null;
+        continue; // keluar — kondisi while tak lagi terpenuhi
+      }
+
+      const elapsedSec = Math.max(0, (now - s.burstStartedAt) / 1000);
+      const plannedTotal =
+        s.durationSec != null
+          ? Math.min(MAX_BURST_TOTAL, s.ratePerSec * s.durationSec)
+          : MAX_BURST_TOTAL;
+      const dueTotal = Math.min(plannedTotal, Math.floor(elapsedSec * s.ratePerSec));
+      const backlog = Math.max(0, dueTotal - s.dispatched);
+      if (backlog <= 0) {
+        await sleep(150);
+        continue;
+      }
+      await runBurstBatch(Math.min(backlog, BURST_BATCH));
+    }
+  } finally {
+    s.pumping = false;
+  }
+}
+
 export function startDemoSimulator(options?: {
   intervalSec?: number;
   positionId?: string | null;
+  mode?: DemoMode;
+  ratePerSec?: number;
+  durationSec?: number | null;
 }): DemoSimulatorStatus {
   const s = simulatorState();
-  const requested = Math.round(Number(options?.intervalSec ?? s.intervalSec));
-  if (Number.isFinite(requested)) {
-    s.intervalSec = Math.min(MAX_INTERVAL_SEC, Math.max(MIN_INTERVAL_SEC, requested));
+  s.mode = options?.mode === "burst" ? "burst" : "interval";
+
+  const requestedInterval = Math.round(Number(options?.intervalSec ?? s.intervalSec));
+  if (Number.isFinite(requestedInterval)) {
+    s.intervalSec = Math.min(MAX_INTERVAL_SEC, Math.max(MIN_INTERVAL_SEC, requestedInterval));
+  }
+  if (options?.ratePerSec !== undefined) {
+    const requestedRate = Math.round(Number(options.ratePerSec));
+    if (Number.isFinite(requestedRate)) {
+      s.ratePerSec = Math.min(MAX_RATE_PER_SEC, Math.max(MIN_RATE_PER_SEC, requestedRate));
+    }
+  }
+  if (options?.durationSec !== undefined) {
+    const requestedDuration = Number(options.durationSec);
+    if (
+      options.durationSec === null ||
+      !Number.isFinite(requestedDuration) ||
+      requestedDuration <= 0
+    ) {
+      s.durationSec = null; // terus sampai dihentikan
+    } else {
+      s.durationSec = Math.min(
+        MAX_DURATION_SEC,
+        Math.max(MIN_DURATION_SEC, Math.round(requestedDuration)),
+      );
+    }
   }
   if (options?.positionId !== undefined) {
     s.positionId = options.positionId && options.positionId !== "ALL" ? options.positionId : null;
   }
+
   if (s.timer) clearTimeout(s.timer);
+  s.timer = null;
   s.running = true;
   s.note = null;
   s.lastError = null;
+  s.dispatched = 0;
+  s.runGenerated = 0;
+  s.recent = [];
+  s.burstStartedAt = Date.now();
+  s.burstDeadline =
+    s.mode === "burst" && s.durationSec != null ? Date.now() + s.durationSec * 1000 : null;
   if (!s.startedAt) s.startedAt = new Date().toISOString();
-  // Tick pertama 1,5 detik setelah mulai — terasa "langsung masuk".
-  s.timer = setTimeout(() => {
-    void runTick();
-  }, 1500);
+
+  if (s.mode === "burst") {
+    void runBurstPump();
+  } else {
+    // Tick pertama 1,5 detik setelah mulai — terasa "langsung masuk".
+    s.timer = setTimeout(() => {
+      void runTick();
+    }, 1500);
+  }
   return statusSnapshot();
 }
 
