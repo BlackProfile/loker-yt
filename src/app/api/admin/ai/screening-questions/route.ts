@@ -8,6 +8,7 @@ import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { errorMessage, extractJsonObject, asTrimmedString } from "@/lib/ai-json";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 import { parseRequirements } from "@/lib/seed";
 
 export const dynamic = "force-dynamic";
@@ -105,18 +106,21 @@ export async function POST(req: NextRequest) {
       .filter(Boolean)
       .join("\n");
 
-    const completion = await withTimeout(
-      withZaiRetry((zai) =>
-        zai.chat.completions.create({
-          messages: [
-            { role: "assistant", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          thinking: { type: "disabled" },
-        }),
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const completion = await withAiGate("interview_questions", { actor: session.name }, () =>
+      withTimeout(
+        withZaiRetry((zai) =>
+          zai.chat.completions.create({
+            messages: [
+              { role: "assistant", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            thinking: { type: "disabled" },
+          }),
+        ),
+        "Pembuatan pertanyaan screening",
+        AI_TIMEOUT_MS,
       ),
-      "Pembuatan pertanyaan screening",
-      AI_TIMEOUT_MS,
     );
     const raw = completion?.choices?.[0]?.message?.content ?? "";
     const parsed = extractJsonObject(raw);
@@ -142,6 +146,9 @@ export async function POST(req: NextRequest) {
       questions: labels.map((label) => ({ label })),
     });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/ai/screening-questions]", errorMessage(error));
     return NextResponse.json(
       { error: "Gagal membuat pertanyaan screening. Coba lagi sebentar." },

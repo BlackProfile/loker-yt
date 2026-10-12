@@ -7,6 +7,8 @@
 import { analyzeApplication } from "@/lib/ai";
 import { enqueueAiJob } from "@/lib/load-metrics";
 import { db } from "@/lib/db";
+// NR49-A — gate Pusat Kendali AI untuk skrining otomatis massal.
+import { aiGateCheck, recordAiJob } from "@/lib/ai-control";
 // Task 4-a — alert kandidat menarik + aturan SCORE_TAG (keduanya tidak pernah throw).
 import { evaluateScoreTagForApplication, notifyHighScore } from "@/lib/automation-rules";
 import { sendNewApplicationNotifications } from "@/lib/notify";
@@ -39,7 +41,31 @@ async function runPipeline(applicationId: string): Promise<void> {
   try {
     // (1) AI screening
     try {
-      await analyzeApplication(applicationId);
+      // NR49-A — gate Pusat Kendali AI (pemeriksaan senyap, TANPA log): jalur massal
+      // volume tinggi sengaja tidak memakai withAiGate agar log tidak banjir baris
+      // BLOCKED. Bila fitur dimatikan/kuota habis/Mode Hemat/prioritas admin aktif,
+      // AI DILEWATI untuk lamaran ini dan pipeline LANJUT tanpa AI (lamaran tidak
+      // ditandai gagal) — perilaku lama pipeline tetap utuh.
+      const gate = await aiGateCheck("auto_screening");
+      if (gate.allowed) {
+        const started = Date.now();
+        try {
+          await analyzeApplication(applicationId);
+          await recordAiJob("auto_screening", {
+            actor: "Sistem",
+            status: "OK",
+            durationMs: Date.now() - started,
+          });
+        } catch (error) {
+          await recordAiJob("auto_screening", {
+            actor: "Sistem",
+            status: "ERROR",
+            durationMs: Date.now() - started,
+            detail: errorMessage(error),
+          });
+          throw error; // perilaku lama: hanya dicatat ke console, pipeline tetap lanjut
+        }
+      }
     } catch (error) {
       console.error("[processing] analyzeApplication gagal:", errorMessage(error));
     }

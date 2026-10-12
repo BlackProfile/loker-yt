@@ -24,13 +24,18 @@
 //       probationEnd <= now+3 hari (window 30 hari ke belakang) -> NotificationItem
 //       "Keputusan probasi {nama} jatuh tempo" + ActivityLog PROBATION_DUE (dedupe per
 //       NILAI probationEnd — detail memuat ISO probationEnd) + telegram via sendSystemEvent
+//   27. NR49 Brief Pagi AI: jam 07.00 waktu Bangkok, sekali per hari (dedupe Setting
+//       "ai_brief_cron_YYYY-MM-DD" tanggal Bangkok) — cek gate AI silent, lalu
+//       generateMorningBrief + kirim ke chat Telegram aktif via sendSystemEvent.
 // Uji manual: POST body {"forceEmailReport": true} memproses job laporan email
 // mengabaikan cek hari/jam (dedupe harian tetap berlaku).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
-import { pushNotification, queueEmail, sendSystemEvent, getSiteUrl } from "@/lib/notify";
+import { bangkokHourNow, pushNotification, queueEmail, sendSystemEvent, getSiteUrl } from "@/lib/notify";
 import type { TelegramButton } from "@/lib/notify";
+import { generateMorningBrief } from "@/lib/morning-brief";
+import { aiGateCheck } from "@/lib/ai-control";
 import { ensureMonthlyReport, previousMonthKey } from "@/lib/monthly-report";
 import { readReportEmailSchedule, runScheduledReportEmail } from "@/lib/report-email";
 import { runWeeklyExcelReport } from "@/lib/weekly-report";
@@ -733,6 +738,45 @@ export async function POST(req: NextRequest) {
       // diam — pengingat tidak boleh menggagalkan cron
     }
 
+    // 27) NR49 — Brief Pagi AI: hanya bila jam Bangkok === 7 dan penanda harian
+    //     "ai_brief_cron_YYYY-MM-DD" (tanggal Bangkok) belum ada. Penanda dibuat
+    //     SEGERA (sebelum eksekusi) agar cron berikutnya tidak mencoba ulang.
+    //     Gate AI dicek SILENT (aiGateCheck, tanpa record): bila menolak, brief
+    //     TIDAK dikirim dan TIDAK dicatat — dan karena dedupe harian sudah terpasang,
+    //     hari itu tidak dicoba lagi (BY DESIGN; brief tetap bisa dibuat manual
+    //     dari dashboard). Seluruh job dibungkus try/catch agar cron lama tak
+    //     pernah gagal karenanya.
+    let aiMorningBrief = 0;
+    try {
+      if (bangkokHourNow() === 7) {
+        const bangkokToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(now);
+        const briefDedupeKey = `ai_brief_cron_${bangkokToday}`;
+        const briefMarker = await db.setting.findUnique({ where: { key: briefDedupeKey }, select: { id: true } });
+        if (!briefMarker) {
+          const markerValue = JSON.stringify({ at: now.toISOString() });
+          await db.setting.upsert({
+            where: { key: briefDedupeKey },
+            create: { key: briefDedupeKey, value: markerValue },
+            update: { value: markerValue },
+          });
+          const gate = await aiGateCheck("morning_brief");
+          if (gate.allowed) {
+            const brief = await generateMorningBrief(false, null);
+            await sendSystemEvent({
+              title: "Brief Pagi AI",
+              detail: brief.content,
+              action: "AI_MORNING_BRIEF",
+              category: "SYSTEM",
+            });
+            aiMorningBrief = 1;
+          }
+        }
+      }
+    } catch (briefError) {
+      console.error("[POST /api/cron/reminders] aiMorningBrief", briefError);
+      // diam — brief pagi tidak boleh menggagalkan cron
+    }
+
     return NextResponse.json({
       ok: true,
       offerExpired,
@@ -762,6 +806,7 @@ export async function POST(req: NextRequest) {
       weeklyExcelReport,
       followupBell,
       probationDue,
+      aiMorningBrief,
     });
   } catch (error) {
     console.error("[POST /api/cron/reminders]", error);

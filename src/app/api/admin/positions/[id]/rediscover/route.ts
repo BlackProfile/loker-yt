@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { getSession, requireRole } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 import { parseRequirements } from "@/lib/seed";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 
@@ -196,18 +197,24 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
     let parsed: RawScore[] | null;
     try {
-      const completion = await withZaiRetryLocal((zai) =>
-        zai.chat.completions.create({
-          messages: [
-            { role: "assistant", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          thinking: { type: "disabled" },
-        }),
+      // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+      const completion = await withAiGate("talent_rediscover", { actor: session.name }, () =>
+        withZaiRetryLocal((zai) =>
+          zai.chat.completions.create({
+            messages: [
+              { role: "assistant", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            thinking: { type: "disabled" },
+          }),
+        ),
       );
       const raw = completion?.choices?.[0]?.message?.content ?? "";
       parsed = parseRediscoverResult(raw);
     } catch (error) {
+      if (error instanceof AiGateError) {
+        return NextResponse.json({ error: error.message }, { status: 503 });
+      }
       console.error("[POST /api/admin/positions/[id]/rediscover] LLM gagal:", errorMessage(error));
       return NextResponse.json({ error: "Analisis AI gagal, coba lagi." }, { status: 502 });
     }
@@ -240,6 +247,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     void emitRealtime(REALTIME_EVENTS.applications);
     return NextResponse.json({ total: candidates.length, results });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/positions/[id]/rediscover]", error);
     return NextResponse.json({ error: "Gagal mencari talent lama. Coba lagi nanti." }, { status: 500 });
   }

@@ -13,6 +13,7 @@ import { errorMessage } from "@/lib/ai-json";
 import { db } from "@/lib/db";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
 import { getSession } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 
 export const dynamic = "force-dynamic";
 
@@ -187,10 +188,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     let text = "";
     let method: string;
     if (isImage) {
-      text = await vlmExtract([
-        { type: "text", text: VLM_PROMPT },
-        { type: "image_url", image_url: { url: `data:${mimeType};base64,${buffer.toString("base64")}` } },
-      ]);
+      // NR49-A — gate Pusat Kendali AI (fitur mati/kuota habis -> 503, BLOCKED tercatat).
+      text = await withAiGate("ocr_cv", { actor: session.name }, () =>
+        vlmExtract([
+          { type: "text", text: VLM_PROMPT },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${buffer.toString("base64")}` } },
+        ]),
+      );
       method = "VLM (gambar)";
     } else {
       const extracted = extractPdfText(buffer);
@@ -199,10 +203,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         method = "teks PDF";
       } else {
         // PDF hasil pindai / tanpa lapisan teks → VLM via file_url (SDK mendukung PDF).
-        text = await vlmExtract([
-          { type: "text", text: VLM_PROMPT },
-          { type: "file_url", file_url: { url: `data:application/pdf;base64,${buffer.toString("base64")}` } },
-        ]);
+        // NR49-A — gate Pusat Kendali AI (fitur mati/kuota habis -> 503, BLOCKED tercatat).
+        text = await withAiGate("ocr_cv", { actor: session.name }, () =>
+          vlmExtract([
+            { type: "text", text: VLM_PROMPT },
+            { type: "file_url", file_url: { url: `data:application/pdf;base64,${buffer.toString("base64")}` } },
+          ]),
+        );
         method = "VLM (PDF)";
       }
     }
@@ -231,6 +238,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     return NextResponse.json({ cvText: text, cached: false });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/applications/[id]/ocr-cv]", errorMessage(error));
     return NextResponse.json(
       { error: "Gagal membaca CV dengan OCR. Coba lagi sebentar." },

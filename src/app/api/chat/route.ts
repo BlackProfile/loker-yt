@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { db } from "@/lib/db";
+// NR49-A — gate Pusat Kendali AI untuk chatbot publik (pemeriksaan senyap).
+import { aiGateCheck } from "@/lib/ai-control";
 import { getAutomationSettings } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +77,16 @@ export async function POST(req: NextRequest) {
     const automation = await getAutomationSettings();
     if (!automation.chatbotEnabled) {
       return NextResponse.json({ error: "Chatbot sedang nonaktif." }, { status: 403 });
+    }
+
+    // NR49-A — gate Pusat Kendali AI (SENYAP, tanpa recordAiJob agar log publik tidak
+    // dibanjiri bot): bila fitur "chatbot_publik" dimatikan/kuota habis, kembalikan
+    // jawaban fallback sopan dengan status 200 NORMAL — pengunjung tidak melihat error.
+    const gate = await aiGateCheck("chatbot_publik");
+    if (!gate.allowed) {
+      return NextResponse.json({
+        reply: "Asisten sedang tidak tersedia, silakan coba lagi nanti.",
+      });
     }
 
     const activePositions = await getActivePositionLines();

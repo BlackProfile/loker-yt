@@ -9,6 +9,7 @@ import { getSession } from "@/lib/server-auth";
 import { withTimeout, withZaiRetry } from "@/lib/ai";
 import type { AiCoverResponse } from "@/lib/types";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 // NR41-SEC-B (E3): varian WebP cover + verifikasi magic bytes.
 import { createWebpVariant } from "@/lib/upload";
 import { verifyMagicBytes } from "@/lib/verify-upload";
@@ -86,10 +87,13 @@ export async function POST(req: NextRequest) {
       `high quality, no text, no words, no letters`,
     ].join(" ");
 
-    const response = await withTimeout(
-      withZaiRetry((zai) => zai.images.generations.create({ prompt, size: "1344x768" })),
-      "Generate cover AI",
-      120_000,
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const response = await withAiGate("cover_draft", { actor: session.name }, () =>
+      withTimeout(
+        withZaiRetry((zai) => zai.images.generations.create({ prompt, size: "1344x768" })),
+        "Generate cover AI",
+        120_000,
+      ),
     );
 
     const base64 = response?.data?.[0]?.base64;
@@ -142,6 +146,10 @@ export async function POST(req: NextRequest) {
     void emitRealtime(REALTIME_EVENTS.positions);
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof AiGateError) {
+      const blocked: AiCoverResponse = { ok: false, error: error.message };
+      return NextResponse.json(blocked, { status: 503 });
+    }
     console.error("[POST /api/admin/ai/cover]", error);
     const fail: AiCoverResponse = { ok: false, error: "Gagal membuat cover. Coba lagi." };
     return NextResponse.json(fail, { status: 502 });

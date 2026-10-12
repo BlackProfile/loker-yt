@@ -9,6 +9,7 @@ import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { errorMessage, extractJsonObject } from "@/lib/ai-json";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 import {
   isFormSchemaActive,
   normalizeFormSchema,
@@ -135,18 +136,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       '- Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain): {"summary": "<poin dipisah \\n>", "themes": ["tema 1", "tema 2"]}',
     ].join("\n");
 
-    const completion = await withTimeout(
-      withZaiRetry((zai) =>
-        zai.chat.completions.create({
-          messages: [
-            { role: "assistant", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          thinking: { type: "disabled" },
-        }),
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    // Cache hit di atas TIDAK melewati gate (tidak ada pemanggilan AI).
+    const completion = await withAiGate("answer_summary", { actor: session.name }, () =>
+      withTimeout(
+        withZaiRetry((zai) =>
+          zai.chat.completions.create({
+            messages: [
+              { role: "assistant", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            thinking: { type: "disabled" },
+          }),
+        ),
+        "Ringkasan jawaban formulir",
+        AI_TIMEOUT_MS,
       ),
-      "Ringkasan jawaban formulir",
-      AI_TIMEOUT_MS,
     );
     const raw = completion?.choices?.[0]?.message?.content ?? "";
 
@@ -181,6 +186,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     cachePut(key, result);
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/positions/[id]/answer-summary]", errorMessage(error));
     return NextResponse.json(
       { error: "Gagal merangkum jawaban. Coba lagi sebentar." },

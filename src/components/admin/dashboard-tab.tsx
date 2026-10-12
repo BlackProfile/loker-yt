@@ -96,6 +96,7 @@ import { AccessHealthCard } from "./access-health-card";
 import { ApprovalsCard } from "./approvals-card";
 import { HandoverCard } from "./handover-card";
 import { SectionGroup } from "./section-group";
+import { AnnouncementAiDraft } from "./announcement-ai-draft";
 import { cn } from "@/lib/utils";
 
 type StatCardConfig = {
@@ -1206,6 +1207,14 @@ export function DashboardTab() {
                 void handlePostAnnouncement();
               }}
             >
+              <div className="flex justify-end">
+                <AnnouncementAiDraft
+                  onDraft={(title, body) => {
+                    setAnnTitle(title);
+                    setAnnBody(body);
+                  }}
+                />
+              </div>
               <Input
                 value={annTitle}
                 onChange={(e) => setAnnTitle(e.target.value)}

@@ -9,6 +9,7 @@ import { withTimeout, withZaiRetry } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { AiGateError, withAiGate } from "@/lib/ai-control";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -97,10 +98,13 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
     const base64Audio = buffer.toString("base64");
 
-    const asrRes = await withTimeout(
-      withZaiRetry((zai) => zai.audio.asr.create({ file_base64: base64Audio })),
-      "Transkripsi rekaman wawancara",
-      ASR_TIMEOUT_MS,
+    // NR49-A — gate Pusat Kendali AI: fitur mati/kuota habis -> 503 (BLOCKED tercatat).
+    const asrRes = await withAiGate("transcribe", { actor: session.name }, () =>
+      withTimeout(
+        withZaiRetry((zai) => zai.audio.asr.create({ file_base64: base64Audio })),
+        "Transkripsi rekaman wawancara",
+        ASR_TIMEOUT_MS,
+      ),
     );
     const transcript = (asrRes?.text ?? "").trim();
     if (!transcript) {
@@ -170,6 +174,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
     return NextResponse.json({ ok: true, transcript, transcriptSummary });
   } catch (error) {
+    if (error instanceof AiGateError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
     console.error("[POST /api/admin/interviews/[id]/transcribe]", error);
     return NextResponse.json(
       { error: "Gagal mentranskripsi rekaman. Pastikan format didukung lalu coba lagi." },
