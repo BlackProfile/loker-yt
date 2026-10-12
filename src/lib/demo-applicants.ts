@@ -639,7 +639,7 @@ const MAX_RATE_PER_SEC = 500;
 const MIN_DURATION_SEC = 5;
 const MAX_DURATION_SEC = 300;
 const MAX_BURST_TOTAL = 3000; // rem mode lonjakan: berhenti otomatis pada 3.000 lamaran per jalan
-const BURST_CONCURRENCY = 6; // pembuatan lamaran paralel (SQLite menulis serial — jangan rakus)
+const BURST_CONCURRENCY = 12; // pembuatan lamaran paralel (diuji: 0 gagal, ±200/s pada sandbox)
 const BURST_BATCH = 48; // tugas per putaran pool
 const RECENT_WINDOW_SEC = 5; // jendela hitung kecepatan aktual
 
