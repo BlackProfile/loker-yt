@@ -4150,3 +4150,20 @@ Stage Summary:
 - Lowongan tumbuh 6 → 13: 7 peran operasional & produksi pendukung kini tayang publik dengan form lamaran & berkas yang disesuaikan per peran (tanpa CV utk pekerjaan lapangan/rumah tangga, portofolio wajib utk peran kreatif teknis, dokumen identitas/SIM wajib utk peran kepercayaan, min. umur, kriteria AI & rubrik interview siap pakai).
 - Perbaikan tampilan: kartu Ketentuan di halaman detail kini jujur menyebut dokumen wajib tambahan sebelum pelamar memulai wizard.
 - Berkas utama: src/lib/defaults.ts (7 entri + tipe), src/lib/seed.ts (customDocs/minAge), scripts/add-nr52-positions.ts (baru), src/components/landing/position-detail.tsx (bugfix customDocs).
+---
+Task ID: NR53 (orchestrator, langsung)
+Agent: Z.ai Code
+Task: Perbaiki gagal unggah (user: "perbaiki gagal unggah").
+
+Work Log:
+- DIAGNOSIS: dev.log memperlihatkan `POST /api/admin/upload 404` + noise "Failed to find Server Action". Rute `src/app/api/admin/upload/route.ts` (unggah cover posisi manual, dipakai position-form-dialog.tsx:543 & position-form-page.tsx:978, kontrak AdminUploadResponse {ok,fileId,url}) TIDAK ADA di disk.
+- AKAR MASALAH: rute dihapus oleh commit auto-sync `cb50a06` (2026-10-07 12:48:01) — pola yang sama dengan insiden restore/hapus auto-sync sebelumnya (NR50-VERIFY). Hanya 1 file src/ yang dihapus commit itu; tidak ada korban lain.
+- RESTORASI: `git checkout cb50a06^ -- src/app/api/admin/upload/route.ts` — kode asli dipulihkan utuh (validasi sesi/role VIEWER, maks 3 MB, MIME PNG/JPEG/WebP, verifyMagicBytes F7, varian WebP E3, FileAsset kind=COVER, emitRealtime positions). Semua dependensi masih ada (realtime-server, server-auth, verify-upload, upload helper).
+- KUALITAS: bunx tsc --noEmit → 0 error di src/; bun run lint → exit 0. Probe curl tanpa sesi: 401 (bukan 404 lagi).
+- VERIFIKASI BROWSER (owner admin@lumina.id): Posisi → Penulis Naskah → Edit Posisi → seksi Cover → Unggah Gambar (input file disembunyikan aria-hidden, diungkap via eval lalu upload PNG uji 400x300) → toast sukses, pratinjau `image "Cover posisi Penulis Naskah"` tampil, tombol Hapus Cover aktif. dev.log: `POST /api/admin/upload 200` + `GET /api/files/cmv64nbdt… 200`. Dialog DITUTUP dengan Batal (coverFileId posisi tetap null di DB — tidak ada perubahan data posisi).
+- BERSIH-BERSIH: FileAsset uji + file fisik + varian .webp dihapus (0 FileAsset COVER tersisa). Browser ditutup. Catatan lingkungan: SPA admin sempat menampilkan "Coba Lagi"/offline sesaat saat dev recompile — pulih sendiri, bukan bug (pola dikenal dari NR50-VERIFY).
+
+Stage Summary:
+- Gagal unggah cover posisi diperbaiki: rute /api/admin/upload yang lenyap karena auto-sync dipulihkan dari riwayat git tanpa perubahan kode; alur lengkap unggah → pratinjau /api/files/{id} terverifikasi end-to-end di browser (POST 200).
+- Peringatan berulang: auto-sync terbukti pernah MENGHAPUS file sumber aktif (cb50a06). Jika fitur tiba-tiba 404, cek dulu riwayat git sebelum menulis ulang kode.
+- Berkas utama: src/app/api/admin/upload/route.ts (direstorik, 1:1 dari cb50a06^).
