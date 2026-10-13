@@ -8,6 +8,7 @@ import type {
 } from "@prisma/client";
 import { db } from "@/lib/db";
 import { parseHiddenUi } from "@/lib/hidden-ui"; // NR-22 — blok UI tersembunyi per posisi
+import { parseStageHistory } from "@/lib/stage-history"; // NR50 — riwayat tahap utk frontend
 import { parseCriteriaWeights } from "@/lib/scorecard"; // NR44 — bobot scorecard
 import { parsePositionStageNotes } from "@/lib/stage-notes";
 import { parseStageWipLimits } from "@/lib/wip-limits";
@@ -606,6 +607,36 @@ export function sanitizeHoldReason(value: string | null | undefined): HoldReason
   return (HOLD_REASONS as string[]).includes(value) ? (value as HoldReason) : null;
 }
 
+/** NR50 — parse JSON pengalaman terstruktur AI secara aman; null bila kosong/rusak. */
+function parseStructuredExperience(
+  raw: string | null | undefined,
+): { items: { company: string; position: string; period: string }[]; generatedAt: string } | null {
+  if (!raw || !raw.trim()) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const obj = parsed as Record<string, unknown>;
+    if (!Array.isArray(obj.items)) return null;
+    const items: { company: string; position: string; period: string }[] = [];
+    for (const item of obj.items) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const o = item as Record<string, unknown>;
+      const company = typeof o.company === "string" ? o.company.trim() : "";
+      const position = typeof o.position === "string" ? o.position.trim() : "";
+      const period = typeof o.period === "string" ? o.period.trim() : "";
+      if (!company && !position) continue;
+      items.push({ company, position, period });
+    }
+    if (items.length === 0) return null;
+    return {
+      items: items.slice(0, 30),
+      generatedAt: typeof obj.generatedAt === "string" ? obj.generatedAt : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Ubah record Prisma Application (include relasi) menjadi tipe `Application` v3. */
 export function serializeApplication(record: ApplicationRecord): Application {
   const status = record.status && record.status.trim().length > 0 ? record.status.trim() : "NEW";
@@ -641,6 +672,10 @@ export function serializeApplication(record: ApplicationRecord): Application {
     utmMedium: record.utmMedium,
     utmCampaign: record.utmCampaign,
     screeningAnswers: parseStringRecord(record.screeningAnswers),
+
+    // NR50 — riwayat tahap mentah + uraian pengalaman terstruktur AI
+    stageHistory: parseStageHistory(record.stageHistory),
+    experienceStructured: parseStructuredExperience(record.experienceStructured),
     formAnswers: parseFormAnswers(record.formAnswers),
 
     // Info kehadiran posisi non-remote (on-site/hybrid)

@@ -406,6 +406,20 @@ export const WEBHOOK_EVENT_LABELS: Record<string, string> = {
   "interview.completed": "Wawancara selesai",
 };
 
+/* ------------------------ NR50 — tipe fitur per pelamar baru ------------------------ */
+
+/** Entri riwayat tahap pada Application.stageHistory (JSON string di DB). */
+export type ApplicationStageEntry = { status: string; at: string };
+
+/** Satu baris pengalaman kerja hasil struktur AI dari CV. */
+export type StructuredExperienceItem = { company: string; position: string; period: string };
+
+/** Hasil analisis pengalaman terstruktur AI (tersimpan di Application.experienceStructured). */
+export type StructuredExperience = {
+  items: StructuredExperienceItem[];
+  generatedAt: string;
+};
+
 export type Application = {
   id: string;
   name: string;
@@ -439,6 +453,10 @@ export type Application = {
   utmMedium: string | null;
   utmCampaign: string | null;
   screeningAnswers: Record<string, string> | null; // {questionId: jawaban}
+
+  // NR50 — riwayat tahap mentah + uraian pengalaman terstruktur AI
+  stageHistory?: ApplicationStageEntry[];
+  experienceStructured?: StructuredExperience | null;
 
   // Info kehadiran untuk posisi non-remote (on-site/hybrid) — diisi dari wizard
   domisili?: string | null; // kota domisili pelamar
