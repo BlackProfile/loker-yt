@@ -1,7 +1,9 @@
 // GET /api/admin/interviews/ics — unduh kalender (.ics) SELURUH sesi wawancara
 // (scheduledAt >= 7 hari yang lalu, diurut naik) untuk admin yang login.
+// NR50 — dukung ?id=<interviewId> untuk unduh SATU sesi (tanpa filter sejak;
+//        nama berkas personal per pelamar) — dipakai tombol .ics di dialog detail.
 // Format mengikuti referensi /api/public/interview/ics (kompatibel Google/Apple/Outlook).
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { INTERVIEW_PLATFORM_LABELS, type InterviewPlatform } from "@/lib/types";
@@ -39,16 +41,21 @@ function unfold(line: string): string {
   return chunks.join("\r\n ");
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
     if (!session) {
       return NextResponse.json({ error: "Silakan login terlebih dahulu." }, { status: 401 });
     }
 
+    // NR50 — mode satu sesi: ?id=<interviewId> (tanpa filter waktu, satu VEVENT).
+    const singleId = req.nextUrl.searchParams.get("id")?.trim() ?? "";
+
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const interviews = await db.interview.findMany({
-      where: { scheduledAt: { gte: since } },
+      where: singleId
+        ? { id: singleId }
+        : { scheduledAt: { gte: since } },
       orderBy: { scheduledAt: "asc" },
       include: {
         application: {
@@ -119,11 +126,17 @@ export async function GET() {
     lines.push("END:VCALENDAR");
 
     const ics = lines.map(unfold).join("\r\n");
+
+    // NR50 — nama berkas personal bila mode satu sesi.
+    const filename = singleId && interviews.length > 0
+      ? `wawancara-${interviews[0].application?.trackingCode || interviews[0].id}-r${interviews[0].round}.ics`
+      : "lumina-wawancara.ics";
+
     return new NextResponse(ics, {
       status: 200,
       headers: {
         "Content-Type": "text/calendar; charset=utf-8",
-        "Content-Disposition": 'attachment; filename="lumina-wawancara.ics"',
+        "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });
   } catch (error) {
