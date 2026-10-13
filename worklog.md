@@ -4112,3 +4112,20 @@ Stage Summary:
 - Risiko no-show/offer kini terlihat per pelamar (bukan hanya kartu dashboard) lengkap dengan penjelasan AI satu klik; timeline tahap + durasi menghidupkan stageHistory yang selama ini tersimpan tapi tak pernah divisualisasikan; CV kandidat berbahasa asing kini bisa dibaca sebagai tabel pengalaman terstruktur; admin bisa membandingkan pelamar tanpa keluar dari dialog; sesi wawancara bisa dimasukkan ke kalender per sesi (.ics).
 - 5 route API mati warisan dihapus sehingga src/ kembali 0 error TypeScript.
 - Berkas utama: application-detail-dialog.tsx (strip+timeline+ics+compare), ai-panel.tsx (seksi terstruktur), [id]/experience-structured/route.ts (baru), interviews/ics/route.ts (?id=), schema.prisma, types.ts, seed.ts.
+---
+Task ID: NR50-VERIFY (orchestrator, langsung)
+Agent: Z.ai Code
+Task: Verifikasi ulang implementasi 7 usulan NR50 di dialog detail pelamar setelah kompresi konteks (user: "mau").
+
+Work Log:
+- AUDIT: entri NR50-DETAIL terbaca — 7 usulan ternyata SUDAH terimplementasi & ter-push sesi sebelumnya (ringkasan kompresi lama keliru menyatakan belum dimulai). Git bersih di 55d23ed.
+- KUALITATAS: bunx tsc --noEmit → 0 error di src/; bun run lint → exit 0; server HTTP 200.
+- VERIFIKASI BROWSER (login admin@lumina.id via #admin): (1) strip keputusan tampil — Skor AI/Rating/Wawancara/Offer/Profil 75%/Bandingkan; (2) chip Profil 75% ekspansi "6/8 item inti" + daftar "Belum tersedia:" 2 item; (3) tab AI & Berkas — seksi Pengalaman Terstruktur (AI) tabel 2 baris; (4) tab Riwayat — Timeline Tahap + badge "Tahap saat ini"; (5) tombol Bandingkan → dialog "Bandingkan 3 Pelamar" terbuka dari dalam dialog; (6) badge risiko: buat sesi wawancara uji via POST API (+2 jam) → "Risiko No-show 55%" + Jelaskan (AI) → alasan & "Saran:" naratif inline; (7) .ics: HTTP 200 text/calendar, filename wawancara-LM-VMHXEM-r1.ics, VEVENT valid; tombol ikon kalender per baris sesi tampil di tab Proses.
+- DISCOVERY: ada DUA lamaran demo bernama "Andi Maulana" (LM-VMHXEM cmv4rduch… & LM-JEWVFH cmv4sgdqy…). Sesi uji pertama tertuju ke LM-VMHXEM sementara dialog uji membuka LM-JEWVFH → badge risiko tampak "tidak muncul". Setelah sesi dibuat utk lamaran yang benar, semua fitur normal. Bukan bug kode — catatan utk sesi verifikasi berikutnya: cek tracking code, jangan hanya nama.
+- KEJADIAN LINGKUNGAN: dev server sempat restart sendiri (next-server pid baru 01:08) saat sesi uji — pulih sendiri, HTTP 200 setelahnya; bukan bug kode.
+- BERSIH-BERSIH: kedua sesi wawancara uji dihapus via Prisma (0 tersisa, total sesi 0 — kondisi sama seperti sebelum uji; hindari notifikasi Telegram palsu). Browser ditutup.
+
+Stage Summary:
+- 7/7 usulan NR50 terkonfirmasi berfungsi end-to-end di browser (strip keputusan, badge risiko + penjelasan AI, timeline tahap, bandingkan, pengalaman terstruktur AI, kelengkapan profil, .ics per sesi).
+- Tidak ada perubahan kode pada sesi ini — murni verifikasi + pembersihan data uji.
+- Catatan penting: nama pelamar demo bisa duplikat; selalu gunakan tracking code saat memverifikasi dialog detail.
