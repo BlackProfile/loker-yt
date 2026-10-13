@@ -329,6 +329,9 @@ model Application {
   // NR49 — paket onboarding hasil AI (JSON {checklist:string[], welcomeEmail, equipment:string[], generatedAt, editedAt?})
   onboardingPack String?
 
+  // NR50 — uraian pengalaman terstruktur hasil AI (JSON {items:{company,position,period}[], generatedAt})
+  experienceStructured String?
+
   // NR-39 — kartu karyawan digital untuk verifikasi (versi aktif: isCurrent)
   employeeCards EmployeeCard[]
 
