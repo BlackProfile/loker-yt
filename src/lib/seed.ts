@@ -1344,6 +1344,9 @@ async function runSeed(): Promise<void> {
           requireCv: position.requireCv ?? false,
           requireIntro: position.requireIntro ?? false,
           requirePortfolio: position.requirePortfolio ?? false,
+          // NR-52 — dokumen wajib tambahan & batas umur minimum dari seed
+          customDocs: JSON.stringify(position.customDocs ?? []),
+          minAge: position.minAge ?? null,
           showCvField: position.showCvField ?? true,
           showIntroField: position.showIntroField ?? true,
           showPortfolioField: position.showPortfolioField ?? true,
