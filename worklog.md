@@ -4129,3 +4129,24 @@ Stage Summary:
 - 7/7 usulan NR50 terkonfirmasi berfungsi end-to-end di browser (strip keputusan, badge risiko + penjelasan AI, timeline tahap, bandingkan, pengalaman terstruktur AI, kelengkapan profil, .ics per sesi).
 - Tidak ada perubahan kode pada sesi ini — murni verifikasi + pembersihan data uji.
 - Catatan penting: nama pelamar demo bisa duplikat; selalu gunakan tracking code saat memverifikasi dialog detail.
+---
+Task ID: NR52 (orchestrator, langsung)
+Agent: Z.ai Code
+Task: Tambahkan 7 lowongan baru (pembersih rumah, pembantu rumah, audio engineer, kameramen, asisten, supir, admin media sosial) + form & berkas sesuai masing-masing posisi. (user: "tambahkan lowongan untuk: ...")
+
+Work Log:
+- SKEMA: tidak ada perubahan schema.prisma — memakai mekanisme per-posisi yang sudah ada (screeningQuestions, require/show flags, customDocs, minAge, aiCriteria, rubric/checklist/noteTemplates).
+- DEFAULTS: type DefaultPositionSeed +customDocs?/minAge?; DEFAULT_POSITIONS +7 entri lengkap (order 7-13): Pembersih Rumah, Pembantu Rumah (Operasional & Rumah Tangga), Audio Engineer (Audio & Produksi), Kameramen (Produksi Video), Asisten Studio (Operasional Studio), Supir (Transportasi & Logistik), Admin Media Sosial (Social Media). Semua: deskripsi, syarat, gaji visible, benefit, fasilitas, jam kerja, workMode ONSITE/HYBRID/REMOTE (alamat studio Cikini utk ONSITE/HYBRID), screening questions per peran, aiCriteria, rubric, checklist, noteTemplates.
+- KONFIGURASI FORM/BERKAS PER POSISI: Pembersih Rumah & Pembantu Rumah & Supir = tanpa CV/intro/portofolio/sosial + tanpa ekspektasi gaji + customDocs (KTP; Supir + SIM A aktif) + minAge (18/18/21). Audio Engineer & Kameramen = portofolio wajib. Asisten Studio = CV+intro opsional + customDocs KTP. Admin Media Sosial = slot link sosial media, CV opsional, tanpa portofolio/intro.
+- SEED: blok create seed.ts kini menulis customDocs & minAge (instalasi baru otomatis dapat).
+- SCRIPT: scripts/add-nr52-positions.ts (idempoten per judul/slug) → dijalankan: 7 dibuat, 0 dilewati. Total posisi DB 6→13.
+- BUGFIX kecil ditemukan saat verifikasi: position-detail.tsx kartu "Ketentuan Lamaran" tidak pernah menyebut customDocs (tampil "Tanpa berkas khusus" untuk posisi berdokumen wajib). requiredFiles kini menyertakan position.customDocs (mode klasik).
+- VERIFIKASI BROWSER: homepage menampilkan 7 posisi baru + filter departemen baru "Audio & Produksi"; detail Supir: ketentuan "Berkas wajib: SIM A · KTP", gaji & min. umur tampil; wizard Supir 5 langkah → langkah berkas HANYA unggahan wajib SIM A + KTP (tanpa CV/intro/portofolio), field ONSITE (domisili/komuter/shift) muncul; Audio Engineer: "Berkas wajib: Tautan portofolio"; Admin Media Sosial: wizard 4 langkah, CV opsional saja + slot "Link Sosial Media" ada, "Tanpa berkas khusus" benar.
+- JALUR EMAS SUBMIT: lamaran lengkap dikirim utk Admin Media Sosial → sukses "Lamaran Terkirim!" kode LM-2D8GI6; DB: status NEW, screeningAnswers q1-q3 tersimpan, socialLinks tersimpan, posisi terkait benar. Lamaran uji + activity log + comment terkait DIHAPUS (total lamaran kembali bersih).
+- CATATAN TEKNIS: checkbox pernyataan wizard = Radix Checkbox (button[role=checkbox]) — toggle via native input TIDAK mengubah state React; otomasi harus klik button Radix (id apply-agree/apply-consent). Untuk verifikasi berikutnya: dua lamaran demo "Andi Maulana" membuat pencarian berisiko — pakai tracking code.
+- KUALITAS: bunx tsc --noEmit → 0 error di src/; bun run lint → exit 0; server HTTP 200.
+
+Stage Summary:
+- Lowongan tumbuh 6 → 13: 7 peran operasional & produksi pendukung kini tayang publik dengan form lamaran & berkas yang disesuaikan per peran (tanpa CV utk pekerjaan lapangan/rumah tangga, portofolio wajib utk peran kreatif teknis, dokumen identitas/SIM wajib utk peran kepercayaan, min. umur, kriteria AI & rubrik interview siap pakai).
+- Perbaikan tampilan: kartu Ketentuan di halaman detail kini jujur menyebut dokumen wajib tambahan sebelum pelamar memulai wizard.
+- Berkas utama: src/lib/defaults.ts (7 entri + tipe), src/lib/seed.ts (customDocs/minAge), scripts/add-nr52-positions.ts (baru), src/components/landing/position-detail.tsx (bugfix customDocs).
