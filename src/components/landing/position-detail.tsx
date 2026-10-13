@@ -1066,6 +1066,9 @@ function PositionDetailViewInner({
     position.requireCv ? t.detail.termsFilesCv : null,
     position.requireIntro ? t.detail.termsFilesIntro : null,
     position.requirePortfolio ? t.detail.termsFilesPortfolio : null,
+    // NR-52 — dokumen wajib tambahan posisi (customDocs) ikut disebut di kartu
+    // Ketentuan supaya pelamar tahu sebelum memulai wizard.
+    ...(position.customDocs ?? []),
   ].filter((x): x is string => x !== null);
 
   // Form Builder per posisi (skema v2): kartu Ketentuan berkas mengikuti
