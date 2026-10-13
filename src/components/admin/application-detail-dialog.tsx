@@ -60,6 +60,7 @@ import {
   FileText,
   Flag,
   FolderSearch,
+  Gauge,
   Globe,
   Handshake,
   Hash,
@@ -82,6 +83,7 @@ import {
   Phone,
   Send,
   Share2,
+  ShieldAlert,
   Sparkles,
   Star,
   StickyNote,
@@ -98,9 +100,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  AI_RECOMMENDATION_LABELS,
   HOLD_REASONS,
   HOLD_REASON_LABELS,
   KOMUTER_PLAN_LABELS,
+  OFFER_STATUS_LABELS,
   POSITION_TYPES,
   REJECTION_REASONS,
   REJECTION_REASON_LABELS,
@@ -109,6 +113,7 @@ import {
   STATUS_LABELS,
   type Application,
   type ApplicationHistoryItem,
+  type ApplicationStageEntry,
   type ApplicationStatus,
   type Assessment,
   type CallLog,
@@ -130,7 +135,7 @@ import {
   type FormAnswerValue,
 } from "@/lib/form-schema";
 import type { HiddenUiKey } from "@/lib/hidden-ui"; // NR-22 — kunci blok UI tersembunyi per posisi
-import { DEFAULT_STAGES, stageLabel, stagesForPosition } from "@/lib/stages";
+import { DEFAULT_STAGES, stageDotClass, stageLabel, stagesForPosition } from "@/lib/stages";
 import { parseSalaryText } from "./offer-dialog"; // NR-40 — parsa nominal gaji utk peringatan offer inline
 import { fillTemplate } from "@/components/landing/landing-utils";
 import { ApiError, apiDelete, apiFetch, apiGet, apiPatch, apiPost, jsonInit } from "./api";
@@ -150,9 +155,10 @@ import {
   localInputToIso,
   normalizeUrl,
 } from "./format";
-import { StatusBadge } from "./status-badge";
+import { StatusBadge, aiScoreStyle } from "./status-badge";
 import { RatingStars } from "./rating-stars";
 import { AiPanel } from "./ai-panel";
+import { CompareApplicantsDialog } from "./compare-applicants-dialog"; // NR50 fitur 4
 import { ApplicantAvatar } from "./applicant-avatar"; // NR38-C fitur 9
 import { salaryVerdict } from "./stage-meta"; // NR38-C fitur 2
 import { CvSummaryCard, type CvSummary } from "./cv-summary-card"; // NR38-C fitur 5
@@ -189,6 +195,126 @@ function InfoItem({ label, children }: { label: string; children: ReactNode }) {
     <div className="rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <div className="mt-0.5 text-sm break-words">{children}</div>
+    </div>
+  );
+}
+
+/* ------------------- NR50 — komponen pendukung dialog detail ------------------- */
+
+/** Item risiko ringkas dari GET /api/admin/risk-scores (subset field). */
+type RiskItemLite = {
+  kind: "interview" | "offer";
+  id: string;
+  score: number;
+  reasons: string[];
+};
+
+/** NR50 fitur 1 — chip keputusan pada panel satu pandang (ikon + label + nilai). */
+function DecisionChip({
+  icon: Icon,
+  label,
+  onClick,
+  children,
+  ariaExpanded,
+}: {
+  icon: typeof Sparkles;
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+  ariaExpanded?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={ariaExpanded}
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border bg-background px-2.5 py-1.5 text-left outline-none transition-colors hover:border-foreground/25 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50 sm:min-h-0 sm:py-1"
+    >
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+      {children}
+    </button>
+  );
+}
+
+/** NR50 fitur 3 — timeline tahap dari stageHistory (fallback: status & createdAt). */
+function StageTimeline({
+  history,
+  fallbackStatus,
+  fallbackAt,
+}: {
+  history: ApplicationStageEntry[];
+  fallbackStatus: StageKey;
+  fallbackAt: string;
+}) {
+  const source =
+    history.length > 0 ? history : [{ status: fallbackStatus, at: fallbackAt }];
+  // Gabungkan entri berurutan dengan status sama (mis. seed ulang) agar timeline rapi.
+  const entries: ApplicationStageEntry[] = [];
+  for (const entry of source) {
+    const last = entries[entries.length - 1];
+    if (last && last.status === entry.status) continue;
+    entries.push(entry);
+  }
+  const now = Date.now();
+  return (
+    <div className="rounded-lg border p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <History className="size-4 text-orange-500" aria-hidden="true" />
+        <p className="text-sm font-semibold">Timeline Tahap</p>
+        <Badge variant="outline" className="tabular-nums">
+          {entries.length} tahap
+        </Badge>
+      </div>
+      <ol className="flex flex-col">
+        {entries.map((entry, idx) => {
+          const next = entries[idx + 1];
+          const start = new Date(entry.at).getTime();
+          const end = next ? new Date(next.at).getTime() : now;
+          const days = Math.max(0, Math.round((end - start) / 86_400_000));
+          const isCurrent = !next;
+          return (
+            <li
+              key={`${entry.status}-${entry.at}-${idx}`}
+              className="relative flex gap-3 pb-3 last:pb-0"
+            >
+              {idx < entries.length - 1 ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute left-[7px] top-4 h-[calc(100%-1rem)] w-px bg-border"
+                />
+              ) : null}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "relative z-10 mt-1.5 size-[15px] shrink-0 rounded-full border-2 border-background",
+                  isCurrent ? stageDotClass(entry.status as StageKey) : "bg-muted-foreground/40"
+                )}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span
+                    className={cn(
+                      "text-sm font-semibold",
+                      !isCurrent && "text-muted-foreground"
+                    )}
+                  >
+                    {stageLabel(entry.status as StageKey)}
+                  </span>
+                  {isCurrent ? (
+                    <Badge variant="outline" className="text-[10px] font-medium">
+                      Tahap saat ini
+                    </Badge>
+                  ) : null}
+                </div>
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  {formatDateTime(entry.at)} · di tahap ini ±{days} hari
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }
@@ -1177,6 +1303,16 @@ export function ApplicationDetailDialog({
   const [dossierOpen, setDossierOpen] = useState(false);
   const [quickCallOpen, setQuickCallOpen] = useState(false);
 
+  // NR50 — risiko per pelamar, kelengkapan profil, dan bandingkan dari dialog.
+  const [riskItems, setRiskItems] = useState<RiskItemLite[]>([]);
+  const [riskExplain, setRiskExplain] = useState<{
+    reason: string;
+    suggestion: string;
+  } | null>(null);
+  const [riskExplainBusy, setRiskExplainBusy] = useState(false);
+  const [completenessOpen, setCompletenessOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
+
   // Reset form hanya saat berganti pelamar (bukan tiap update objek) agar
   // pesan penolakan/penawaran yang baru dibuat tidak ikut terhapus.
   const lastAppIdRef = useRef<string | null>(null);
@@ -1379,6 +1515,30 @@ export function ApplicationDetailDialog({
     };
   }, [applicationId]);
 
+  // NR50 — item risiko no-show/offer (heuristik server); cocokkan ke pelamar aktif.
+  // offer dicocokkan via id lamaran; no-show via id sesi wawancara milik pelamar.
+  useEffect(() => {
+    setRiskExplain(null);
+    setRiskExplainBusy(false);
+    setCompletenessOpen(false);
+    setCompareOpen(false);
+    if (!applicationId) {
+      setRiskItems([]);
+      return;
+    }
+    let cancelled = false;
+    apiGet<{ items: RiskItemLite[] }>("/api/admin/risk-scores")
+      .then((res) => {
+        if (!cancelled) setRiskItems(res.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRiskItems([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applicationId]);
+
   useLiveRefresh("interviews:changed", () => {
     void loadSessions(true);
   });
@@ -1386,6 +1546,9 @@ export function ApplicationDetailDialog({
   // NR-24 fitur 1 — navigasi prev/next: urutan id diturunkan dari daftar
   // terurut `list` yang dikirim parent; navIndex = posisi lamaran aktif.
   const navIds = useMemo(() => (list ?? []).map((a) => a.id), [list]);
+
+  // NR50 — id sesi wawancara pelamar (untuk mencocokkan risiko no-show per sesi).
+  const sessionIds = useMemo(() => new Set(sessions.map((s) => s.id)), [sessions]);
   const navIndex = application ? navIds.indexOf(application.id) : -1;
 
   // Navigasi aktif bila daftar punya >1 entri & lamaran aktif ada di dalamnya.
@@ -1459,6 +1622,64 @@ export function ApplicationDetailDialog({
 
   const app = application;
   const pos = position;
+
+  // NR50 — risiko relevan utk pelamar ini (offer via id lamaran, no-show via id sesi).
+  const appRiskItems = riskItems.filter((r) =>
+    r.kind === "offer" ? r.id === app.id : sessionIds.has(r.id)
+  );
+
+  // NR50 fitur 6 — kelengkapan profil (8 item inti; persen + daftar yang kurang).
+  const completeness = (() => {
+    const checks: { label: string; ok: boolean }[] = [
+      { label: "CV/berkas resume", ok: Boolean(app.cvFileId) },
+      { label: "Nomor WhatsApp/telepon", ok: app.phone.trim().length > 0 },
+      { label: "Domisili", ok: Boolean(app.domisili?.trim()) },
+      { label: "Uraian pengalaman", ok: app.experience.trim().length > 0 },
+      { label: "Alasan bergabung", ok: app.motivation.trim().length > 0 },
+      {
+        label: "Portfolio/link sosial",
+        ok: Boolean(app.portfolioUrl?.trim() || app.socialLinks?.trim()),
+      },
+      { label: "Ekspektasi gaji", ok: app.salaryExpectation != null },
+      { label: "NIK / tanggal lahir", ok: Boolean(app.nik?.trim() || app.birthDate) },
+    ];
+    const okCount = checks.filter((c) => c.ok).length;
+    return {
+      percent: Math.round((okCount / checks.length) * 100),
+      missing: checks.filter((c) => !c.ok).map((c) => c.label),
+      okCount,
+      total: checks.length,
+    };
+  })();
+
+  // NR50 fitur 4 — kandidat pembanding: lamaran aktif + maks 2 lainnya
+  // (prioritas posisi yang sama, sisanya urut daftar).
+  const compareApps = (() => {
+    const others = (list ?? []).filter((a) => a.id !== app.id);
+    const samePosition = others.filter((a) => a.positionId && a.positionId === app.positionId);
+    const rest = others.filter((a) => !samePosition.includes(a));
+    return [app, ...[...samePosition, ...rest].slice(0, 2)];
+  })();
+
+  // NR50 fitur 2 — minta penjelasan AI utk item risiko dengan skor tertinggi.
+  async function explainTopRisk() {
+    if (riskExplainBusy) return;
+    const target = appRiskItems[0];
+    if (!target) return;
+    setRiskExplainBusy(true);
+    setRiskExplain(null);
+    try {
+      const res = await apiPost<{ reason: string; suggestion: string }>(
+        "/api/admin/risk-explain",
+        { kind: target.kind, id: target.id },
+      );
+      setRiskExplain(res);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setRiskExplainBusy(false);
+    }
+  }
 
   // NR44 — skor tertimbang scorecard: rata per kriteria dari seluruh sesi
   // wawancara pelamar, lalu ditimbang dengan bobot kriteria posisi (fallback
@@ -2725,6 +2946,145 @@ export function ApplicationDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* ==================== NR50 — PANEL KEPUTUSAN SATU PANDANG ==================== */}
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border bg-muted/40 p-1.5">
+            <DecisionChip icon={Sparkles} label="Skor AI" onClick={() => setDetailTab("ai")}>
+              {app.aiScore != null ? (
+                <span
+                  className={cn(
+                    "rounded px-1.5 py-0.5 text-xs font-bold tabular-nums",
+                    aiScoreStyle(app.aiScore)
+                  )}
+                >
+                  {app.aiScore}
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">Belum dianalisis</span>
+              )}
+            </DecisionChip>
+            <DecisionChip icon={Star} label="Rating" onClick={() => setDetailTab("evaluasi")}>
+              <span className="text-xs font-semibold tabular-nums">
+                {app.rating > 0 ? `${app.rating}/5` : "Belum dinilai"}
+              </span>
+            </DecisionChip>
+            <DecisionChip icon={Video} label="Wawancara" onClick={() => setDetailTab("proses")}>
+              {interviewWeighted.value != null ? (
+                <span className="text-xs font-semibold tabular-nums">
+                  {formatScore1(interviewWeighted.value)}
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">Belum ada</span>
+              )}
+            </DecisionChip>
+            <DecisionChip icon={Handshake} label="Offer" onClick={() => setDetailTab("proses")}>
+              {app.offerStatus ? (
+                <span className="text-xs font-semibold">{OFFER_STATUS_LABELS[app.offerStatus]}</span>
+              ) : (
+                <span className="text-xs text-muted-foreground">Tanpa offer</span>
+              )}
+            </DecisionChip>
+            <span className="grow" aria-hidden="true" />
+            <DecisionChip
+              icon={Gauge}
+              label="Profil"
+              onClick={() => setCompletenessOpen((v) => !v)}
+              ariaExpanded={completenessOpen}
+            >
+              <span
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-xs font-bold tabular-nums",
+                  completeness.percent >= 90
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                    : completeness.percent >= 60
+                      ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                      : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+                )}
+              >
+                {completeness.percent}%
+              </span>
+            </DecisionChip>
+            {(list?.length ?? 0) >= 2 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11 px-2.5 text-xs sm:h-8"
+                onClick={() => setCompareOpen(true)}
+              >
+                <Users className="size-3.5" aria-hidden="true" />
+                Bandingkan
+              </Button>
+            ) : null}
+          </div>
+          {appRiskItems.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1.5 dark:border-amber-900 dark:bg-amber-950/40">
+              <ShieldAlert
+                className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+                aria-hidden="true"
+              />
+              {appRiskItems.map((r) => (
+                <Badge
+                  key={`${r.kind}:${r.id}`}
+                  variant="outline"
+                  className="border-amber-300 bg-amber-100 text-amber-800 tabular-nums dark:border-amber-700 dark:bg-amber-900/60 dark:text-amber-300"
+                >
+                  {r.kind === "interview" ? "Risiko No-show" : "Risiko Offer"} {r.score}%
+                </Badge>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto h-11 px-2 text-xs sm:h-7"
+                onClick={() => void explainTopRisk()}
+                disabled={riskExplainBusy}
+              >
+                {riskExplainBusy ? (
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Sparkles className="size-3.5" aria-hidden="true" />
+                )}
+                Jelaskan (AI)
+              </Button>
+            </div>
+          ) : null}
+          {riskExplain ? (
+            <div className="rounded-xl border bg-background p-3">
+              <p className="text-sm leading-relaxed whitespace-pre-line">{riskExplain.reason}</p>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                <span className="font-semibold text-foreground">Saran: </span>
+                {riskExplain.suggestion}
+              </p>
+            </div>
+          ) : null}
+          {completenessOpen ? (
+            <div className="rounded-xl border bg-background p-3">
+              <p className="text-xs font-semibold">
+                Profil {completeness.percent}% lengkap ({completeness.okCount}/{completeness.total}{" "}
+                item inti)
+              </p>
+              {completeness.missing.length > 0 ? (
+                <>
+                  <p className="mt-1 text-xs text-muted-foreground">Belum tersedia:</p>
+                  <ul className="mt-1 flex flex-wrap gap-1.5">
+                    {completeness.missing.map((m) => (
+                      <li
+                        key={m}
+                        className="rounded-full border border-dashed px-2 py-0.5 text-xs text-muted-foreground"
+                      >
+                        {m}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                  Semua item inti sudah lengkap.
+                </p>
+              )}
+            </div>
+          ) : null}
+        </div>
+
         <div
           ref={detailScrollRef}
           className="nice-scrollbar -mr-2 max-h-[75vh] overflow-y-auto pb-2 pr-2"
@@ -3916,6 +4276,18 @@ export function ApplicationDetailDialog({
                       </span>
                       <InterviewStatusChip status={i.status} />
                       <div className="flex w-full items-center gap-1.5 sm:w-auto">
+                        <a
+                          href={`/api/admin/interviews/ics?id=${i.id}`}
+                          download
+                          aria-label={`Unduh acara kalender (.ics) ronde ${i.round}`}
+                          title="Unduh .ics untuk kalender"
+                          className={cn(
+                            buttonVariants({ variant: "ghost", size: "sm" }),
+                            "h-11 px-2 text-muted-foreground sm:h-8"
+                          )}
+                        >
+                          <FileDown className="size-4" aria-hidden="true" />
+                        </a>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -4938,6 +5310,14 @@ export function ApplicationDetailDialog({
             hidden={detailTab !== "riwayat"}
             className="flex flex-col gap-4"
           >
+            {/* NR50 fitur 3 — Timeline Tahap: visualisasi stageHistory + durasi per tahap */}
+            <StageTimeline
+              key={`stages-${app.id}`}
+              history={app.stageHistory ?? []}
+              fallbackStatus={app.status}
+              fallbackAt={app.createdAt}
+            />
+
             {/* NR-24 fitur 7/12/15 — riwayat melamar, duplikat tersangka, peringatan do-not-hire */}
             <RelatedSection
               key={`related-${app.id}`}
@@ -5092,6 +5472,13 @@ export function ApplicationDetailDialog({
           open={quickCallOpen}
           onOpenChange={setQuickCallOpen}
           onSaved={onSaved}
+        />
+        {/* NR50 fitur 4 — bandingkan dari dalam dialog detail. */}
+        <CompareApplicantsDialog
+          apps={compareApps}
+          open={compareOpen}
+          onOpenChange={setCompareOpen}
+          currentUserId={session.id}
         />
       </DialogContent>
     </Dialog>
