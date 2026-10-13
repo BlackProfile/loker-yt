@@ -188,6 +188,9 @@ export type DefaultPositionSeed = {
   showSocialField?: boolean;
   // NR-24 — kolom opsional ekspektasi gaji di wizard
   showExpectedSalary?: boolean;
+  // NR-52 — dokumen wajib tambahan (customDocs) & batas umur minimum
+  customDocs?: string[];
+  minAge?: number;
   maxApplicants?: number;
   aiCriteria?: string;
   applyTemplate?: string;
