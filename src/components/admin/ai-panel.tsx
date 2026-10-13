@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import {
+  Briefcase,
   ChevronDown,
   ClipboardList,
   Copy,
@@ -22,6 +23,7 @@ import {
   AI_RECOMMENDATION_LABELS,
   type Application,
   type AiRecommendation,
+  type StructuredExperience,
 } from "@/lib/types";
 import { apiGet, apiPost } from "./api";
 import { copyText, formatDate } from "./format";
@@ -111,6 +113,10 @@ export function AiPanel({
   const [showTranslated, setShowTranslated] = useState(false);
   const [transLoading, setTransLoading] = useState(false);
 
+  // NR50 — uraian pengalaman terstruktur AI (tabel dari CV; tersimpan di server).
+  const [experience, setExperience] = useState<StructuredExperience | null>(null);
+  const [expLoading, setExpLoading] = useState(false);
+
   // Reset hasil alat AI saat kandidat berganti.
   useEffect(() => {
     setQuestions(null);
@@ -125,6 +131,8 @@ export function AiPanel({
     setTranslation(null);
     setShowTranslated(false);
     setTransLoading(false);
+    setExperience(null);
+    setExpLoading(false);
   }, [app.id]);
 
   // NR49 — baca diam-diam terjemahan tersimpan saat kandidat berganti (tanpa AI).
@@ -167,6 +175,24 @@ export function AiPanel({
       cancelled = true;
     };
   }, [app.id, app.cvFileId, cvPeeked]);
+
+  // NR50 — baca diam-diam pengalaman terstruktur tersimpan saat kandidat berganti.
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ experience: StructuredExperience | null }>(
+      `/api/admin/applications/${app.id}/experience-structured`
+    )
+      .then((res) => {
+        if (cancelled || !res.experience) return;
+        setExperience(res.experience);
+      })
+      .catch(() => {
+        // Pelengkap — abaikan kegagalan fetch.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [app.id]);
 
   async function analyze() {
     if (analyzing) return;
@@ -279,6 +305,33 @@ export function AiPanel({
       reportError(err);
     } finally {
       setTransLoading(false);
+    }
+  }
+
+  // NR50 — ekstrak pengalaman terstruktur dari CV (fallback isian pengalaman).
+  async function runExperience() {
+    if (expLoading) return;
+    setExpLoading(true);
+    try {
+      const res = await apiPost<{
+        items: StructuredExperience["items"];
+        generatedAt: string;
+        message?: string;
+      }>(`/api/admin/applications/${app.id}/experience-structured`);
+      if (res.items.length > 0) {
+        setExperience({ items: res.items, generatedAt: res.generatedAt });
+        onUpdated({
+          ...app,
+          experienceStructured: { items: res.items, generatedAt: res.generatedAt },
+        });
+        toast.success("Pengalaman berhasil diekstrak dari CV");
+      } else {
+        toast.info(res.message ?? "Tidak ditemukan pengalaman kerja pada teks sumber.");
+      }
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setExpLoading(false);
     }
   }
 
@@ -588,6 +641,77 @@ export function AiPanel({
           <p className="text-xs text-muted-foreground">
             Teks CV belum diekstraksi untuk lamaran ini.
           </p>
+        )}
+      </div>
+
+      {/* NR50 — uraian pengalaman terstruktur AI (tabel dari CV). */}
+      <div className="flex flex-col gap-2 border-t pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Briefcase className="size-4 text-muted-foreground" aria-hidden="true" />
+          <p className="text-sm font-semibold">Pengalaman Terstruktur (AI)</p>
+          {experience ? (
+            <Badge variant="outline" className="text-[10px] tabular-nums text-muted-foreground">
+              {experience.items.length} baris
+            </Badge>
+          ) : null}
+        </div>
+        {!app.cvFileId && app.experience.trim() === "" ? (
+          <p className="text-xs text-muted-foreground">
+            Tidak ada CV maupun isian pengalaman untuk dianalisis.
+          </p>
+        ) : (
+          <>
+            {experience ? (
+              <div className="overflow-hidden rounded-lg border bg-background">
+                <div className="nice-scrollbar max-h-56 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-muted/70 backdrop-blur">
+                      <tr className="text-muted-foreground">
+                        <th className="px-2.5 py-1.5 font-semibold">Perusahaan</th>
+                        <th className="px-2.5 py-1.5 font-semibold">Posisi</th>
+                        <th className="px-2.5 py-1.5 font-semibold">Periode</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {experience.items.map((row, idx) => (
+                        <tr key={`${row.company}-${idx}`} className="border-t">
+                          <td className="px-2.5 py-1.5 font-medium">{row.company}</td>
+                          <td className="px-2.5 py-1.5">{row.position}</td>
+                          <td className="px-2.5 py-1.5 text-muted-foreground">{row.period}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Belum ada uraian terstruktur. Jalankan analisis AI untuk mengekstrak daftar
+                pengalaman dari CV ke tabel rapi.
+              </p>
+            )}
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-fit text-xs"
+                onClick={() => void runExperience()}
+                disabled={expLoading}
+              >
+                {expLoading ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    Menganalisis...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="size-3.5" aria-hidden="true" />
+                    {experience ? "Analisis Ulang" : "Analisis dengan AI"}
+                  </>
+                )}
+              </Button>
+            </div>
+          </>
         )}
       </div>
     </div>
