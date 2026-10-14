@@ -1357,17 +1357,30 @@ export function DashboardTab() {
                           {item.authorName} · {formatRelative(item.createdAt)}
                         </p>
                       </div>
-                      {isOwner ? (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-8 shrink-0 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400"
-                          onClick={() => setDeleteTarget(item)}
-                          aria-label={`Hapus pengumuman: ${item.title}`}
-                        >
-                          <Trash2 className="size-4" aria-hidden="true" />
-                        </Button>
-                      ) : null}
+                      <div className="flex shrink-0 items-center gap-1">
+                        {canPostAnnouncement ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-11 w-9 p-0 shrink-0 text-muted-foreground hover:text-foreground sm:h-8"
+                            onClick={() => openEditAnnouncement(item)}
+                            aria-label={`Ubah pengumuman: ${item.title}`}
+                          >
+                            <Pencil className="size-4" aria-hidden="true" />
+                          </Button>
+                        ) : null}
+                        {isOwner ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400"
+                            onClick={() => setDeleteTarget(item)}
+                            aria-label={`Hapus pengumuman: ${item.title}`}
+                          >
+                            <Trash2 className="size-4" aria-hidden="true" />
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1403,6 +1416,71 @@ export function DashboardTab() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* NR55-E — Dialog Ubah Pengumuman (OWNER/HR): prefill dari item terpilih. */}
+      <Dialog
+        open={editTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !editSaving) setEditTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ubah Pengumuman</DialogTitle>
+            <DialogDescription>
+              Perbarui judul, isi, atau status sematan pengumuman ini.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleEditAnnouncement();
+            }}
+          >
+            <Input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Judul pengumuman (3-80 karakter)"
+              maxLength={80}
+              aria-label="Judul pengumuman"
+            />
+            <Textarea
+              value={editBody}
+              onChange={(e) => setEditBody(e.target.value)}
+              placeholder="Tulis isi pengumuman untuk tim (maks 600 karakter)..."
+              rows={3}
+              maxLength={600}
+              aria-label="Isi pengumuman"
+            />
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Switch
+                  checked={editPinned}
+                  onCheckedChange={setEditPinned}
+                  aria-label="Sematkan pengumuman di atas"
+                />
+                <Pin className="size-3.5" aria-hidden="true" />
+                Sematkan di atas
+              </span>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 sm:h-9"
+                disabled={editSaving}
+                onClick={() => setEditTarget(null)}
+              >
+                Batal
+              </Button>
+              <Button type="submit" className="h-11 sm:h-9" disabled={editSaving}>
+                {editSaving ? "Menyimpan..." : "Simpan"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <ApplicationDetailDialog
         application={detail}

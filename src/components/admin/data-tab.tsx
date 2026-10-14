@@ -47,6 +47,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Archive,
   BarChart3,
   CheckCircle2,
@@ -60,6 +68,7 @@ import {
   Info,
   Loader2,
   PauseCircle,
+  Pencil,
   Play,
   Plus,
   RotateCcw,
@@ -70,6 +79,7 @@ import {
   Trash2,
   TriangleAlert,
   Upload,
+  UserX,
   Webhook,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -81,10 +91,11 @@ import {
   type Application,
   type ApplicationStatus,
   type DataHealthReport,
+  type DoNotHireEntry,
   type SiteContent,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { apiDelete, apiGet, apiPost, apiPut, buildQuery } from "./api";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, buildQuery } from "./api";
 import { formatDateTime, formatRelative } from "./format";
 import { useAdminSession } from "./admin-context";
 import { PrivacyCard } from "./privacy-card";
