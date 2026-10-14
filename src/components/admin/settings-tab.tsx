@@ -4058,6 +4058,9 @@ function QuietHoursCard() {
 }
 
 export function SettingsTab() {
+  const { role } = useAdminSession();
+  // Gating kartu pelanggan: aksi hapus hanya OWNER/HR (VIEWER hanya melihat).
+  const canWriteSubscribers = role === "OWNER" || role === "HR";
   const [site, setSite] = useState<SiteContent | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -4065,6 +4068,9 @@ export function SettingsTab() {
   const [webhookTesting, setWebhookTesting] = useState(false);
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [origin, setOrigin] = useState("");
+  // Hapus pelanggan notifikasi (AlertDialog + optimistic removal).
+  const [subDeleteTarget, setSubDeleteTarget] = useState<Subscriber | null>(null);
+  const [subDeleting, setSubDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -4195,6 +4201,25 @@ export function SettingsTab() {
     const ok = await copyText(subscribers.map((s) => s.email).join("\n"));
     if (ok) toast.success("Daftar email disalin");
     else toast.error("Gagal menyalin ke clipboard");
+  }
+
+  /** Hapus pelanggan via DELETE ?id= — optimistik, dikembalikan bila gagal. */
+  async function handleDeleteSubscriber() {
+    if (!subDeleteTarget || subDeleting) return;
+    const target = subDeleteTarget;
+    const prev = subscribers;
+    setSubscribers(prev.filter((s) => s.id !== target.id));
+    setSubDeleteTarget(null);
+    setSubDeleting(true);
+    try {
+      await apiDelete(`/api/admin/subscribers?id=${encodeURIComponent(target.id)}`);
+      toast.success(`Pelanggan ${target.email} dihapus.`);
+    } catch (err) {
+      setSubscribers(prev);
+      toast.error(err instanceof Error ? err.message : "Gagal menghapus pelanggan.");
+    } finally {
+      setSubDeleting(false);
+    }
   }
 
   async function handleCopyEmbed() {
@@ -4921,17 +4946,67 @@ export function SettingsTab() {
               Belum ada pelanggan notifikasi.
             </p>
           ) : (
-            <div className="max-h-48 overflow-y-auto rounded-lg border p-3 nice-scrollbar">
+            <div className="nice-scrollbar max-h-48 overflow-y-auto rounded-lg border p-3">
               <ul className="flex flex-col gap-1 font-mono text-sm">
                 {subscribers.map((sub) => (
-                  <li key={sub.id} className="truncate">
-                    {sub.email}
+                  <li key={sub.id} className="flex items-center justify-between gap-2">
+                    <span className="truncate">{sub.email}</span>
+                    {canWriteSubscribers ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 shrink-0 text-muted-foreground hover:text-rose-600"
+                        onClick={() => setSubDeleteTarget(sub)}
+                        disabled={subDeleting}
+                        aria-label={`Hapus pelanggan ${sub.email}`}
+                      >
+                        <Trash2 className="size-3.5" aria-hidden="true" />
+                      </Button>
+                    ) : null}
                   </li>
                 ))}
               </ul>
             </div>
           )}
       </CollapsibleCard>
+
+      {/* Konfirmasi hapus pelanggan notifikasi */}
+      <AlertDialog
+        open={subDeleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setSubDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Berhenti berlangganan {subDeleteTarget?.email}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Email ini akan dihapus dari daftar pelanggan dan tidak lagi menerima info
+              lowongan baru.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={subDeleting}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDeleteSubscriber();
+              }}
+              disabled={subDeleting}
+            >
+              {subDeleting ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="size-4" aria-hidden="true" />
+              )}
+              Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </SectionGroup>
 
       {/* --------------- Kelompok: Otomasi & Alur Kerja --------------- */}
