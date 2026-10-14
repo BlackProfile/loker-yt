@@ -195,6 +195,11 @@ export async function POST(req: NextRequest) {
         // Thread tanya-jawab (NR-15): terbaru dulu, maks 20 untuk halaman status.
         questions: { orderBy: { createdAt: "desc" }, take: 20 },
         cvFile: { select: { filename: true } },
+        // NR-54 — tugas uji untuk pelamar (urut tenggat; nama berkas hasil karya ikut).
+        assessments: {
+          orderBy: { dueAt: "asc" },
+          include: { submittedFile: { select: { filename: true } } },
+        },
       },
     });
 
@@ -418,6 +423,23 @@ export async function POST(req: NextRequest) {
         assignmentInfo && (assignmentInfo.title || assignmentInfo.url || assignmentInfo.note)
           ? assignmentInfo
           : null,
+      // NR-54 — tugas uji versi pelamar: status TERLAMBAT dihitung efektif dari tenggat,
+      // resultNote (catatan internal admin) TIDAK diekspos.
+      assessments: application.assessments.map((a) => ({
+        id: a.id,
+        title: a.title,
+        note: a.note,
+        dueAt: a.dueAt.toISOString(),
+        status:
+          a.status === "DIKUMPUL"
+            ? ("DIKUMPUL" as const)
+            : a.status === "TERLAMBAT" || a.dueAt.getTime() < Date.now()
+              ? ("TERLAMBAT" as const)
+              : ("DIKIRIM" as const),
+        submittedAt: a.status === "DIKUMPUL" && a.completedAt ? a.completedAt.toISOString() : null,
+        submittedFileName: a.submittedFile?.filename ?? null,
+        resultScore: a.resultScore,
+      })),
       interviews: interviews.length > 0 ? interviews : undefined,
       offer,
       rejection,

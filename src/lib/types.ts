@@ -839,6 +839,9 @@ export type TrackResponse = {
   updatedAt?: string; // terakhir kali lamaran berubah apa pun (untuk "terakhir diperbarui")
   steps?: { key: string; label: string; done: boolean; at: string | null }[];
   assignment?: { title: string | null; url: string | null; note: string | null } | null; // info tes posisi (jika ada)
+  // NR-54 — tugas uji yang dikirim tim untuk lamaran ini (versi pelamar; tanpa
+  // catatan internal admin — resultNote tidak diekspos ke publik).
+  assessments?: CandidateAssessment[];
   // Sesi wawancara aktif + riwayat (terurut ronde)
   interviews?: TrackInterviewInfo[];
   offer?: TrackOfferInfo | null;
@@ -864,6 +867,20 @@ export type TrackResponse = {
     proposedAt: string | null; // saat pelamar mengusul ulang
     note: string | null; // catatan usulan pelamar
   } | null;
+};
+
+// NR-54 — tugas uji versi pelamar (TrackResponse.assessments).
+// Dipakai halaman Cek Status: pelamar melihat tugas yang dikirim tim,
+// tenggatnya, status pengumpulan, dan nilainya setelah dinilai.
+export type CandidateAssessment = {
+  id: string;
+  title: string;
+  note: string | null; // instruksi pengerjaan dari tim
+  dueAt: string;
+  status: "DIKIRIM" | "DIKUMPUL" | "TERLAMBAT"; // TERLAMBAT = efektif (DIKIRIM lewat tenggat)
+  submittedAt: string | null; // saat pelamar mengumpulkan
+  submittedFileName: string | null;
+  resultScore: number | null; // nilai 0-100 setelah dinilai (tanpa catatan internal)
 };
 
 // Ringkasan satu lamaran milik satu email (untuk daftar multi-lamaran di halaman status).
