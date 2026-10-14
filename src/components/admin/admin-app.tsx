@@ -33,6 +33,7 @@ import {
   Eye,
   FileBarChart,
   FileText,
+  FolderOpen,
   Handshake,
   Keyboard,
   LayoutDashboard,
@@ -87,6 +88,7 @@ import { HireTab } from "./hire-tab";
 import { ReportsTab } from "./reports-tab";
 import { TemplatesTab } from "./templates-tab";
 import { DataTab } from "./data-tab";
+import { FilesTab } from "./files-tab";
 import { NotificationBell } from "./notification-bell";
 import { AdminAskWidget } from "./admin-ask-widget";
 import { CommandPalette } from "./command-palette";
@@ -142,6 +144,7 @@ const NAV_GROUPS: NavGroupDef[] = [
       },
       { value: "hire", label: "Karyawan", icon: Handshake },
       { value: "templates", label: "Template", icon: FileText },
+      { value: "berkas", label: "Berkas", icon: FolderOpen },
       {
         value: "data",
         label: "Data",
@@ -175,6 +178,7 @@ const KEY_NAV_TARGETS: Record<string, string> = {
   t: "tasks", // Tugas
   u: "users", // Pengguna
   j: "templates", // Template
+  f: "berkas", // Berkas (NR56)
   s: "settings", // Pengaturan
   o: "logs", // Log
   b: "data", // Data
@@ -1245,6 +1249,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 {effectiveTab === "hire" ? <HireTab /> : null}
                 {effectiveTab === "reports" ? <ReportsTab /> : null}
                 {effectiveTab === "templates" ? <TemplatesTab /> : null}
+                {effectiveTab === "berkas" ? <FilesTab /> : null}
                 {effectiveTab === "data" && isOwner ? <DataTab /> : null}
                 {effectiveTab === "users" && isOwner ? <UsersTab /> : null}
                 {effectiveTab === "settings" && isOwner ? <SettingsTab /> : null}

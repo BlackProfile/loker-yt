@@ -6,7 +6,7 @@
 // deteksi berkas yatim, dan aksi lengkap: lihat, unduh, ganti nama, ganti isi,
 // hapus (dengan pengaman referensi), serta aksi massal khusus OWNER.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   Eye,
   Download,
@@ -15,7 +15,6 @@ import {
   FileStack,
   FileText,
   FileVideo,
-  Image as ImageIcon,
   Loader2,
   Pencil,
   RefreshCw,
@@ -26,7 +25,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -183,6 +181,7 @@ export function FilesTab() {
   const [bulkIds, setBulkIds] = useState<string[]>([]);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [pendingReplace, setPendingReplace] = useState<File | null>(null);
 
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -325,7 +324,7 @@ export function FilesTab() {
     requestAnimationFrame(() => replaceInputRef.current?.click());
   };
 
-  const onReplacePicked = (event: React.ChangeEvent<HTMLInputElement>): void => {
+  const onReplacePicked = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0] ?? null;
     event.target.value = "";
     if (!file || !replaceTarget) return;
@@ -333,11 +332,8 @@ export function FilesTab() {
       toast.error("Ukuran berkas maksimal 10 MB.");
       return;
     }
-    setReplaceTarget({ ...replaceTarget });
     setPendingReplace(file);
   };
-
-  const [pendingReplace, setPendingReplace] = useState<File | null>(null);
 
   const confirmReplace = async (): Promise<boolean> => {
     if (!replaceTarget || !pendingReplace) return false;
@@ -360,11 +356,7 @@ export function FilesTab() {
       setPendingReplace(null);
       return true;
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        reportError(error);
-      } else {
-        reportError(error);
-      }
+      reportError(error);
       return false;
     } finally {
       setReplaceBusy(false);
@@ -435,7 +427,6 @@ export function FilesTab() {
     openBulkDelete(orphanIds);
   };
 
-  const busyBulk = bulkBusy;
   const hasFilter = q.trim() !== "" || kindFilter !== "ALL" || onlyOrphan;
 
   return (
