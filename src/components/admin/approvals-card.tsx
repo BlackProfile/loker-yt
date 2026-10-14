@@ -18,6 +18,7 @@ import { Loader2, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import type { ApprovalRequestView } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CollapsibleCard } from "./collapsible-card";
@@ -75,10 +76,22 @@ function RequestRow({
 }: {
   req: ApprovalRequestView;
   busy: boolean;
-  onAct: (req: ApprovalRequestView, action: "approve" | "reject" | "cancel") => void;
+  onAct: (
+    req: ApprovalRequestView,
+    action: "approve" | "reject" | "cancel",
+    note: string
+  ) => Promise<boolean>;
 }) {
   const statusMeta = STATUS_BADGE[req.status] ?? STATUS_BADGE.PENDING;
   const isPending = req.status === "PENDING";
+  // NR55-C — catatan opsional utk approve/reject (diteruskan ke backend dan
+  // tampil sebagai resolvedNote). Dikosongkan otomatis setelah sukses.
+  const [note, setNote] = useState("");
+  function act(action: "approve" | "reject" | "cancel") {
+    void onAct(req, action, note).then((ok) => {
+      if (ok) setNote("");
+    });
+  }
   return (
     <li className="flex flex-col gap-2 rounded-lg border p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -102,30 +115,40 @@ function RequestRow({
         </p>
       ) : null}
       {isPending && !req.isMine ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 border-rose-300 bg-transparent text-rose-700 hover:bg-rose-50 hover:text-rose-800 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950"
-            disabled={busy}
-            onClick={() => onAct(req, "approve")}
-          >
-            {busy ? (
-              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-            ) : (
-              <UserCheck className="size-3.5" aria-hidden="true" />
-            )}
-            Setujui &amp; Jalankan
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9"
-            disabled={busy}
-            onClick={() => onAct(req, "reject")}
-          >
-            Tolak
-          </Button>
+        <div className="flex flex-col gap-2">
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={300}
+            placeholder="Catatan opsional (mis. alasan keputusan)"
+            aria-label="Catatan opsional persetujuan"
+            className="h-9 text-xs"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 border-rose-300 bg-transparent text-rose-700 hover:bg-rose-50 hover:text-rose-800 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950"
+              disabled={busy}
+              onClick={() => act("approve")}
+            >
+              {busy ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <UserCheck className="size-3.5" aria-hidden="true" />
+              )}
+              Setujui &amp; Jalankan
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              disabled={busy}
+              onClick={() => act("reject")}
+            >
+              Tolak
+            </Button>
+          </div>
         </div>
       ) : null}
       {isPending && req.isMine ? (
@@ -138,7 +161,7 @@ function RequestRow({
             size="sm"
             className="h-9 shrink-0"
             disabled={busy}
-            onClick={() => onAct(req, "cancel")}
+            onClick={() => act("cancel")}
           >
             Batalkan
           </Button>

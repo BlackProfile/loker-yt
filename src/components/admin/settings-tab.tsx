@@ -2136,6 +2136,8 @@ type AutomationRuleUi = {
   days: string;
   threshold: string;
   sendEmail: boolean;
+  /** Judul tampilan opsional (hanya draf UI — mis. "... (salinan)" hasil Duplikat). */
+  label?: string;
 };
 
 type AutomationSettingsUi = {
@@ -2161,6 +2163,8 @@ const AUTOMATION_RULE_META: Record<AutomationRuleTypeUi, { label: string; descri
   },
 };
 
+const AUTOMATION_RULE_MAX = 20;
+
 function defaultAutomationUi(): AutomationSettingsUi {
   return {
     triageAlertThreshold: "80",
@@ -2172,23 +2176,38 @@ function defaultAutomationUi(): AutomationSettingsUi {
   };
 }
 
+function automationRuleToUi(rule: AutomationRuleDto): AutomationRuleUi {
+  const fallback = defaultAutomationUi().rules.find((item) => item.type === rule.type);
+  return {
+    id: rule.id,
+    type: rule.type,
+    enabled: rule.enabled === true,
+    stage: rule.params.stage ?? fallback?.stage ?? "NEW",
+    days: String(rule.params.days ?? fallback?.days ?? "7"),
+    threshold: String(rule.params.threshold ?? fallback?.threshold ?? "80"),
+    sendEmail: rule.params.sendEmail === true,
+  };
+}
+
 function mapAutomationConfigToUi(config: AutomationConfigDto): AutomationSettingsUi {
   const base = defaultAutomationUi();
+  const usedIds = new Set<string>();
+  // Slot bawaan: 3 jenis tersemat memakai id tetap dari konfigurasi bila ada.
+  const rules: AutomationRuleUi[] = base.rules.map((fallback) => {
+    const found = config.rules.find(
+      (rule) => rule.type === fallback.type && !usedIds.has(rule.id),
+    );
+    if (!found) return fallback;
+    usedIds.add(found.id);
+    return automationRuleToUi(found);
+  });
+  // Aturan tambahan (custom) tetap dimuat agar tidak hilang saat disimpan ulang.
+  for (const rule of config.rules) {
+    if (!usedIds.has(rule.id)) rules.push(automationRuleToUi(rule));
+  }
   return {
     triageAlertThreshold: String(config.triageAlertThreshold ?? 80),
-    rules: base.rules.map((fallback) => {
-      const found = config.rules.find((rule) => rule.type === fallback.type);
-      if (!found) return fallback;
-      return {
-        id: found.id,
-        type: found.type,
-        enabled: found.enabled === true,
-        stage: found.params.stage ?? fallback.stage,
-        days: String(found.params.days ?? fallback.days),
-        threshold: String(found.params.threshold ?? fallback.threshold),
-        sendEmail: found.params.sendEmail === true,
-      };
-    }),
+    rules,
   };
 }
 
@@ -2209,6 +2228,17 @@ function automationUiToPayload(state: AutomationSettingsUi) {
   };
 }
 
+/** Id aturan custom: "custom-" + 8 karakter heksa acak, dijamin unik dalam draf. */
+function newCustomRuleId(rules: AutomationRuleUi[]): string {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const bytes = new Uint8Array(4);
+    crypto.getRandomValues(bytes);
+    const id = `custom-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+    if (!rules.some((rule) => rule.id === id)) return id;
+  }
+  return `custom-${Date.now().toString(16).slice(-8)}`;
+}
+
 function AutomationRulesCard() {
   const { role, reportError } = useAdminSession();
   const isOwner = role === "OWNER";
@@ -2217,6 +2247,10 @@ function AutomationRulesCard() {
   const [state, setState] = useState<AutomationSettingsUi>(defaultAutomationUi);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Form pilih jenis aturan baru (inline) + target konfirmasi hapus aturan.
+  const [addOpen, setAddOpen] = useState(false);
+  const [addType, setAddType] = useState<AutomationRuleTypeUi>("STAGE_AGING");
+  const [deleteRuleTarget, setDeleteRuleTarget] = useState<AutomationRuleUi | null>(null);
 
   const load = useCallback(async () => {
     if (!canLoad) {
@@ -2243,6 +2277,72 @@ function AutomationRulesCard() {
       ...prev,
       rules: prev.rules.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule)),
     }));
+  }
+
+  /** Tambah aturan baru ke draf (id custom unik + default sesuai jenis). */
+  function addRule() {
+    if (!isOwner || saving) return;
+    if (state.rules.length >= AUTOMATION_RULE_MAX) {
+      toast.error(`Maksimal ${AUTOMATION_RULE_MAX} aturan.`);
+      return;
+    }
+    const fallback = defaultAutomationUi().rules.find((item) => item.type === addType);
+    const type = addType;
+    setState((prev) => ({
+      ...prev,
+      rules: [
+        ...prev.rules,
+        {
+          id: newCustomRuleId(prev.rules),
+          type,
+          enabled: false,
+          stage: fallback?.stage ?? "NEW",
+          days: fallback?.days ?? "7",
+          threshold: fallback?.threshold ?? "80",
+          sendEmail: fallback?.sendEmail ?? false,
+        },
+      ],
+    }));
+    setAddOpen(false);
+    toast.info(
+      `Aturan "${AUTOMATION_RULE_META[type].label}" ditambahkan — atur parameternya lalu tekan Simpan.`,
+    );
+  }
+
+  /** Duplikat aturan: salinan dengan id unik, nonaktif, label akhiran " (salinan)". */
+  function duplicateRule(rule: AutomationRuleUi) {
+    if (!isOwner || saving) return;
+    if (state.rules.length >= AUTOMATION_RULE_MAX) {
+      toast.error(`Maksimal ${AUTOMATION_RULE_MAX} aturan.`);
+      return;
+    }
+    const sourceLabel = rule.label ?? AUTOMATION_RULE_META[rule.type].label;
+    setState((prev) => {
+      const index = prev.rules.findIndex((item) => item.id === rule.id);
+      const clone: AutomationRuleUi = {
+        ...rule,
+        id: newCustomRuleId(prev.rules),
+        // Salinan default nonaktif agar aturan ganda tidak mengirim alert dobel.
+        enabled: false,
+        label: `${sourceLabel} (salinan)`,
+      };
+      const rules = [...prev.rules];
+      rules.splice(index + 1, 0, clone);
+      return { ...prev, rules };
+    });
+    toast.info("Salinan aturan ditambahkan (nonaktif) — tekan Simpan untuk menyimpan.");
+  }
+
+  /** Hapus aturan dari draf (berlaku setelah Simpan). */
+  function removeRuleConfirmed() {
+    if (!deleteRuleTarget) return;
+    const label = deleteRuleTarget.label ?? AUTOMATION_RULE_META[deleteRuleTarget.type].label;
+    setState((prev) => ({
+      ...prev,
+      rules: prev.rules.filter((rule) => rule.id !== deleteRuleTarget.id),
+    }));
+    setDeleteRuleTarget(null);
+    toast.info(`Aturan "${label}" dihapus dari draf — tekan Simpan untuk menerapkan.`);
   }
 
   async function handleSave() {
@@ -2311,22 +2411,45 @@ function AutomationRulesCard() {
           </div>
 
           {/* Daftar aturan */}
-          {state.rules.map((rule) => {
-            const meta = AUTOMATION_RULE_META[rule.type];
-            return (
-              <div key={rule.id} className="flex flex-col gap-3 rounded-lg border p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{meta.label}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{meta.description}</p>
+          <div className="nice-scrollbar flex max-h-96 flex-col gap-4 overflow-y-auto pr-1">
+            {state.rules.map((rule) => {
+              const meta = AUTOMATION_RULE_META[rule.type];
+              return (
+                <div key={rule.id} className="flex flex-col gap-3 rounded-lg border p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{rule.label ?? meta.label}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{meta.description}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        disabled={saving || !isOwner}
+                        onClick={() => duplicateRule(rule)}
+                        aria-label={`Duplikat aturan ${meta.label}`}
+                      >
+                        <Copy className="size-4" aria-hidden="true" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-rose-600 hover:text-rose-700 dark:text-rose-400"
+                        disabled={saving || !isOwner}
+                        onClick={() => setDeleteRuleTarget(rule)}
+                        aria-label={`Hapus aturan ${meta.label}`}
+                      >
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      </Button>
+                      <Switch
+                        checked={rule.enabled}
+                        disabled={saving || !isOwner}
+                        onCheckedChange={(checked) => updateRule(rule.id, { enabled: checked })}
+                        aria-label={`Aktifkan aturan ${meta.label}`}
+                      />
+                    </div>
                   </div>
-                  <Switch
-                    checked={rule.enabled}
-                    disabled={saving || !isOwner}
-                    onCheckedChange={(checked) => updateRule(rule.id, { enabled: checked })}
-                    aria-label={`Aktifkan aturan ${meta.label}`}
-                  />
-                </div>
 
                 {rule.type === "STAGE_AGING" ? (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -2426,7 +2549,61 @@ function AutomationRulesCard() {
                 ) : null}
               </div>
             );
-          })}
+            })}
+          </div>
+
+          {/* Tambah aturan baru (pilih jenis inline) — hanya mengubah draf */}
+          {isOwner ? (
+            addOpen ? (
+              <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed p-4">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="automation-add-type">Jenis aturan baru</Label>
+                  <Select
+                    value={addType}
+                    onValueChange={(value) => setAddType(value as AutomationRuleTypeUi)}
+                  >
+                    <SelectTrigger id="automation-add-type" className="h-10 w-64">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(AUTOMATION_RULE_META) as AutomationRuleTypeUi[]).map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {AUTOMATION_RULE_META[type].label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button className="h-10" onClick={addRule}>
+                  <Plus className="size-4" aria-hidden="true" />
+                  Tambah
+                </Button>
+                <Button variant="ghost" className="h-10" onClick={() => setAddOpen(false)}>
+                  Batal
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  variant="outline"
+                  className="h-10 w-fit"
+                  disabled={saving || state.rules.length >= AUTOMATION_RULE_MAX}
+                  onClick={() => {
+                    setAddType("STAGE_AGING");
+                    setAddOpen(true);
+                  }}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  Tambah Aturan
+                </Button>
+                {state.rules.length >= AUTOMATION_RULE_MAX ? (
+                  <p className="text-xs text-muted-foreground">
+                    Maksimal {AUTOMATION_RULE_MAX} aturan.
+                  </p>
+                ) : null}
+              </div>
+            )
+          ) : null}
 
           <div className="flex items-center gap-3">
             <Button
@@ -2450,6 +2627,40 @@ function AutomationRulesCard() {
           </div>
         </div>
       )}
+
+      {/* Konfirmasi hapus aturan — perubahan baru diterapkan setelah Simpan */}
+      <AlertDialog
+        open={deleteRuleTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteRuleTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus aturan?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Aturan &quot;
+              {deleteRuleTarget?.label ??
+                (deleteRuleTarget ? AUTOMATION_RULE_META[deleteRuleTarget.type].label : "")}
+              &quot; akan dihapus dari daftar. Perubahan baru berlaku setelah tombol Simpan
+              ditekan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              onClick={(event) => {
+                event.preventDefault();
+                removeRuleConfirmed();
+              }}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+              Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </CollapsibleCard>
   );
 }
