@@ -1762,3 +1762,38 @@ export type DraftFileMeta = {
 // E3 — kategori kind FileAsset
 export const FILE_ASSET_KINDS = ["CV", "INTRO", "COVER", "DOC", "OFFER_PDF", "DRAFT", "OTHER"] as const;
 export type FileAssetKind = (typeof FILE_ASSET_KINDS)[number];
+
+// NR56 — Pusat Kelola Berkas (tab "Berkas"): satu baris item berkas untuk UI admin.
+export type AdminFileRefs = {
+  // Lamaran yang memakai berkas ini (CV, video intro, dokumen JSON, jawaban form, dst.)
+  applications: {
+    id: string;
+    name: string;
+    trackingCode: string | null;
+    position: string | null;
+    /** Label sumber pemakaian: "CV", "Video Intro", "Dokumen Wajib", dst. */
+    sources: string[];
+  }[];
+  // Posisi yang memakainya sebagai cover
+  positions: { id: string; title: string }[];
+  // Tugas uji yang hasilnya berkas ini
+  assessments: { id: string; title: string }[];
+  // Dokumen internal (label saja — isinya sensitif)
+  internalDocs: { label: string }[];
+  // Draft wizard yang masih menyimpan berkas ini
+  drafts: { email: string }[];
+  // Jumlah rekaman wawancara yang menunjuk berkas ini (/api/files/{id})
+  interviews: number;
+};
+
+export type AdminFileItem = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  kind: string | null;
+  createdAt: string;
+  /** true = tidak dirujuk entri mana pun (kandidat pembersihan). */
+  orphan: boolean;
+  refs: AdminFileRefs;
+};
