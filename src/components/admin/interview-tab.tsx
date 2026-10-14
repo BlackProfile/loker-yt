@@ -29,6 +29,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -44,6 +52,7 @@ import {
   CalendarX2,
   Inbox,
   MapPin,
+  Pencil,
   Trash2,
   UserCheck,
   UserX,
@@ -485,7 +494,9 @@ function RoundBadge({ round }: { round: number }) {
 /* --------------------- Slot wawancara self-service (admin) --------------------- */
 
 // Panel kelola slot jadwal yang bisa dipilih sendiri oleh pelamar dari halaman status.
-// GET/POST /api/admin/slots + DELETE /api/admin/slots/[id] (hanya slot yang belum dibooking).
+// API: GET/POST /api/admin/slots + PATCH/DELETE /api/admin/slots/[id] (OWNER/HR).
+// PATCH & DELETE menolak slot yang sudah dibooking pelamar dengan HTTP 409 —
+// batalkan sesi wawancaranya lewat /api/admin/interviews/[id] terlebih dahulu.
 function SlotManagerPanel({ positions }: { positions: Position[] }) {
   const { canMutate, reportError } = useAdminSession();
   const [slots, setSlots] = useState<InterviewSlot[]>([]);
@@ -504,6 +515,20 @@ function SlotManagerPanel({ positions }: { positions: Position[] }) {
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<InterviewSlot | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Form ubah slot (NR55-B): dialog terpisah yang memirror form buka slot;
+  // posisi slot sengaja tidak bisa diganti (PATCH /api/admin/slots/[id] tidak
+  // menerimanya). Tombol Ubah tetap aktif untuk slot booked — server menolak
+  // dengan 409 dan pesannya ditampilkan sebagai toast.
+  const [editTarget, setEditTarget] = useState<InterviewSlot | null>(null);
+  const [editScheduledAtLocal, setEditScheduledAtLocal] = useState("");
+  const [editDurationMin, setEditDurationMin] = useState("45");
+  const [editMode, setEditMode] = useState<InterviewMode>("ONLINE");
+  const [editPlatform, setEditPlatform] = useState<InterviewPlatform>("GOOGLE_MEET");
+  const [editMeetingLink, setEditMeetingLink] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editInterviewersText, setEditInterviewersText] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   const load = useCallback(
     async (silent = false) => {
@@ -664,6 +689,70 @@ function SlotManagerPanel({ positions }: { positions: Position[] }) {
     }
   }
 
+  // Buka dialog ubah slot: prefill semua field dari baris yang dipilih.
+  function openEditSlot(slot: InterviewSlot) {
+    setEditTarget(slot);
+    setEditScheduledAtLocal(isoToLocalInput(slot.scheduledAt));
+    setEditDurationMin(String(slot.durationMin));
+    setEditMode(slot.mode);
+    setEditPlatform(slot.platform);
+    setEditMeetingLink(slot.meetingLink ?? "");
+    setEditAddress(slot.address ?? "");
+    setEditInterviewersText(slot.interviewers.join(", "));
+  }
+
+  // Simpan ubahan via PATCH /api/admin/slots/[id] — validasi klien mengikuti
+  // form buka slot; pesan error server (409 slot booked, 400 validasi) ditampilkan
+  // apa adanya lewat reportError.
+  async function handleEditSlot(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editTarget || editSaving) return;
+    const iso = localInputToIso(editScheduledAtLocal);
+    if (!iso) {
+      toast.error("Pilih tanggal dan jam slot terlebih dahulu.");
+      return;
+    }
+    const duration = Number(editDurationMin);
+    if (!Number.isInteger(duration) || duration < 10 || duration > 480) {
+      toast.error("Durasi harus angka bulat 10-480 menit.");
+      return;
+    }
+    if (editMode === "ONLINE" && !/^https?:\/\//i.test(editMeetingLink.trim())) {
+      toast.error("Link meeting harus diawali http:// atau https://.");
+      return;
+    }
+    if (editMode === "ONSITE" && !editAddress.trim()) {
+      toast.error("Alamat wajib diisi untuk slot onsite.");
+      return;
+    }
+    const interviewers = editInterviewersText
+      .split(",")
+      .map((n) => n.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+    setEditSaving(true);
+    try {
+      await apiPatch<InterviewSlot>(`/api/admin/slots/${editTarget.id}`, {
+        scheduledAt: iso,
+        durationMin: duration,
+        mode: editMode,
+        platform: editPlatform,
+        // Kirim null utk field di luar mode aktif agar nilai lama tak tertinggal
+        // saat mode berganti (mis. ONLINE -> ONSITE menghapus link meeting).
+        meetingLink: editMode === "ONLINE" ? editMeetingLink.trim() : null,
+        address: editMode === "ONSITE" ? editAddress.trim() : null,
+        interviewers,
+      });
+      toast.success("Slot wawancara diperbarui");
+      setEditTarget(null);
+      await load(true);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   function slotBadge(slot: InterviewSlot) {
     if (slot.bookedByApplicationId) {
       return (
@@ -763,16 +852,29 @@ function SlotManagerPanel({ positions }: { positions: Position[] }) {
                           </p>
                         ) : null}
                       </div>
-                      {canMutate && !slot.bookedByApplicationId ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-11 shrink-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:h-8 dark:text-rose-400 dark:hover:bg-rose-950"
-                          onClick={() => setDeleteTarget(slot)}
-                          aria-label={`Hapus slot ${formatDateTime(slot.scheduledAt)}`}
-                        >
-                          <Trash2 className="size-4" aria-hidden="true" />
-                        </Button>
+                      {canMutate ? (
+                        <div className="flex shrink-0 items-start gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-11 w-9 p-0 sm:h-8"
+                            onClick={() => openEditSlot(slot)}
+                            aria-label={`Ubah slot ${formatDateTime(slot.scheduledAt)}`}
+                          >
+                            <Pencil className="size-4" aria-hidden="true" />
+                          </Button>
+                          {!slot.bookedByApplicationId ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-11 shrink-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:h-8 dark:text-rose-400 dark:hover:bg-rose-950"
+                              onClick={() => setDeleteTarget(slot)}
+                              aria-label={`Hapus slot ${formatDateTime(slot.scheduledAt)}`}
+                            >
+                              <Trash2 className="size-4" aria-hidden="true" />
+                            </Button>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
                   ))}
@@ -978,6 +1080,141 @@ function SlotManagerPanel({ positions }: { positions: Position[] }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog ubah slot: field sama dengan form buka slot, prefill dari baris. */}
+      <Dialog
+        open={!!editTarget}
+        onOpenChange={(o) => {
+          if (!o) setEditTarget(null);
+        }}
+      >
+        <DialogContent className="max-h-[92vh] overflow-y-auto nice-scrollbar rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ubah Slot Wawancara</DialogTitle>
+            <DialogDescription>
+              Perubahan langsung terlihat pada pilihan jadwal pelamar. Posisi slot tidak dapat diganti.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditSlot} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Posisi</Label>
+              <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                {editTarget?.positionTitle ?? "Tanpa posisi"}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="slot-edit-scheduledAt">Tanggal &amp; Jam</Label>
+                <Input
+                  id="slot-edit-scheduledAt"
+                  type="datetime-local"
+                  value={editScheduledAtLocal}
+                  onChange={(e) => setEditScheduledAtLocal(e.target.value)}
+                  className="h-11 sm:h-10"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="slot-edit-duration">Durasi (menit)</Label>
+                <Input
+                  id="slot-edit-duration"
+                  type="number"
+                  min={10}
+                  max={480}
+                  step={5}
+                  value={editDurationMin}
+                  onChange={(e) => setEditDurationMin(e.target.value)}
+                  className="h-11 sm:h-10"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label>Mode</Label>
+                <Select value={editMode} onValueChange={(v) => setEditMode(v as InterviewMode)}>
+                  <SelectTrigger className="h-11 w-full sm:h-10" aria-label="Mode slot">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INTERVIEW_MODES.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {INTERVIEW_MODE_LABELS[m]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Platform</Label>
+                <Select value={editPlatform} onValueChange={(v) => setEditPlatform(v as InterviewPlatform)}>
+                  <SelectTrigger className="h-11 w-full sm:h-10" aria-label="Platform slot">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INTERVIEW_PLATFORMS.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {INTERVIEW_PLATFORM_LABELS[p]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {editMode === "ONLINE" ? (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="slot-edit-link">Link Meeting</Label>
+                <Input
+                  id="slot-edit-link"
+                  type="url"
+                  value={editMeetingLink}
+                  onChange={(e) => setEditMeetingLink(e.target.value)}
+                  placeholder="https://meet.google.com/xxx-xxxx-xxx"
+                  className="h-11 sm:h-10"
+                />
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="slot-edit-address">Alamat Lokasi</Label>
+                <Input
+                  id="slot-edit-address"
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                  placeholder="mis. Jl. Sudirman No. 10, Jakarta"
+                  className="h-11 sm:h-10"
+                />
+              </div>
+            )}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="slot-edit-interviewers">Pewawancara (pisahkan koma)</Label>
+              <Input
+                id="slot-edit-interviewers"
+                value={editInterviewersText}
+                onChange={(e) => setEditInterviewersText(e.target.value)}
+                placeholder="mis. Rani, Bagus"
+                maxLength={200}
+                className="h-11 sm:h-10"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 sm:h-10"
+                onClick={() => setEditTarget(null)}
+                disabled={editSaving}
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                className="h-11 active:scale-[0.99] sm:h-10"
+                disabled={editSaving}
+              >
+                {editSaving ? "Menyimpan..." : "Simpan Perubahan"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
