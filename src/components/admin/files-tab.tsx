@@ -448,7 +448,7 @@ export function FilesTab() {
               variant="outline"
               className="h-11 gap-2 border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800 sm:h-9 dark:border-rose-500/40 dark:text-rose-400 dark:hover:bg-rose-950/40"
               onClick={cleanOrphans}
-              disabled={busyBulk || (items?.every((i) => !i.orphan) ?? true)}
+              disabled={bulkBusy || (items?.every((i) => !i.orphan) ?? true)}
             >
               <Trash2 className="size-4" aria-hidden="true" />
               Bersihkan Yatim{stats.orphanCount > 0 ? ` (${stats.orphanCount})` : ""}
@@ -781,16 +781,16 @@ export function FilesTab() {
               variant="outline"
               className="h-11 sm:h-9"
               onClick={clearSelection}
-              disabled={busyBulk}
+              disabled={bulkBusy}
             >
               Kosongkan
             </Button>
             <Button
               className="h-11 bg-rose-600 text-white hover:bg-rose-700 sm:h-9"
               onClick={() => openBulkDelete(selectedIds)}
-              disabled={busyBulk}
+              disabled={bulkBusy}
             >
-              {busyBulk ? (
+              {bulkBusy ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               ) : (
                 <Trash2 className="size-4" aria-hidden="true" />
@@ -974,18 +974,18 @@ export function FilesTab() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="h-11 sm:h-9" disabled={busyBulk}>
+            <AlertDialogCancel className="h-11 sm:h-9" disabled={bulkBusy}>
               Batal
             </AlertDialogCancel>
             <AlertDialogAction
               className="h-11 bg-rose-600 text-white hover:bg-rose-700 sm:h-9"
-              disabled={busyBulk}
+              disabled={bulkBusy}
               onClick={(e) => {
                 e.preventDefault();
                 void runBulkDelete(bulkIds);
               }}
             >
-              {busyBulk ? (
+              {bulkBusy ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               ) : null}
               Ya, Hapus Semua

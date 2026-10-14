@@ -260,7 +260,7 @@ export async function DELETE(
     }
 
     const rawRefs = await refsFor(id);
-    if (hasReferences(rawRefs) && !confirm) {
+    if (rawRefs && hasReferences(rawRefs) && !confirm) {
       return NextResponse.json(
         {
           error: "Berkas masih dipakai. Kirim confirm=YA untuk melepas referensinya lalu menghapus.",
