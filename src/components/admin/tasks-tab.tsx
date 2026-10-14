@@ -12,7 +12,9 @@ import type { LucideIcon } from "lucide-react";
 import {
   AlertCircle,
   Bell,
+  CalendarCheck,
   CalendarClock,
+  CalendarX2,
   ClipboardCheck,
   Clock,
   Copy,
@@ -31,6 +33,7 @@ import {
   type ActionItemsResponse,
   type Application,
   type HoldReason,
+  type Interview,
 } from "@/lib/types";
 import { daysUntil, formatDate, formatDateTime, formatRelative, formatShortDateTime } from "./format";
 import { apiGet, apiPatch } from "./api";
@@ -216,7 +219,7 @@ function TaskGroup({
 }
 
 export function TasksTab() {
-  const { reportError } = useAdminSession();
+  const { canMutate, reportError } = useAdminSession();
 
   const [items, setItems] = useState<ExtendedActionItems | null>(null);
   const [applications, setApplications] = useState<ApplicationRow[]>([]);
@@ -295,52 +298,57 @@ export function TasksTab() {
   }, [applications]);
 
   /**
-   * Aksi cepat panel (optimistik + toast). PATCH hanya memakai field yang
-   * DIDUKUNG whitelist endpoint [id]: followUpAt (null/ISO) dan holdClear /
-   * holdReason+holdReviewAt. snoozeUntil & offerDeadline tidak didukung
-   * endpoint — baris jenis itu hanya menyediakan "Buka Detail".
+   * NR55-C — inti aksi cepat follow-up/HOLD, dipakai bersama oleh panel
+   * "Perlu Dihubungi Hari Ini" dan grup duplikat dari action-items
+   * (followUpsDue / holdReviewsDue). PATCH hanya memakai field yang DIDUKUNG
+   * whitelist endpoint [id]: followUpAt (null/ISO) dan holdClear /
+   * holdReason+holdReviewAt. Optimistik + rollback + toast; mengembalikan
+   * true bila PATCH sukses (pemanggil bisa memicu refresh daftar tindakan).
    */
-  async function runContactAction(task: ContactTask, action: "done" | "snooze3") {
-    if (workingTasks.has(task.key)) return;
-    const app = task.app;
+  async function patchApplicationFollowUp(params: {
+    key: string;
+    applicationId: string;
+    name: string;
+    kind: "followup" | "hold";
+    action: "done" | "snooze3";
+    holdReason?: string | null;
+  }): Promise<boolean> {
+    const { key, applicationId, name, kind, action } = params;
+    if (workingTasks.has(key)) return false;
     const in3Days = new Date(Date.now() + THREE_DAYS_MS).toISOString();
     let body: Record<string, unknown>;
     let optimistic: Partial<ApplicationRow>;
     let message: string;
-    if (task.kind === "followup") {
+    if (kind === "followup") {
       if (action === "done") {
         body = { followUpAt: null };
         optimistic = { followUpAt: null };
-        message = `Follow-up ${app.name} ditandai selesai`;
+        message = `Follow-up ${name} ditandai selesai`;
       } else {
         body = { followUpAt: in3Days };
         optimistic = { followUpAt: in3Days };
-        message = `Follow-up ${app.name} ditunda 3 hari`;
+        message = `Follow-up ${name} ditunda 3 hari`;
       }
-    } else if (task.kind === "hold") {
-      if (action === "done") {
-        // "Selesai" review HOLD = lepas tahanan — satu-satunya jalur resmi
-        // endpoint untuk mengosongkan holdReviewAt (holdClear).
-        body = { holdClear: true };
-        optimistic = { holdAt: null, holdReason: null, holdNote: null, holdReviewAt: null };
-        message = `HOLD ${app.name} dilepas`;
-      } else {
-        if (!app.holdReason) return; // PATCH ulang menuntut alasan hold yang valid
-        body = { holdReason: app.holdReason, holdReviewAt: in3Days };
-        optimistic = { holdReviewAt: in3Days };
-        message = `Review HOLD ${app.name} ditunda 3 hari`;
-      }
+    } else if (action === "done") {
+      // "Selesai" review HOLD = lepas tahanan — satu-satunya jalur resmi
+      // endpoint untuk mengosongkan holdReviewAt (holdClear).
+      body = { holdClear: true };
+      optimistic = { holdAt: null, holdReason: null, holdNote: null, holdReviewAt: null };
+      message = `HOLD ${name} dilepas`;
     } else {
-      return; // snooze / offer: tidak ada PATCH yang didukung
+      if (!params.holdReason) return false; // PATCH ulang menuntut alasan hold yang valid
+      body = { holdReason: params.holdReason, holdReviewAt: in3Days };
+      optimistic = { holdReviewAt: in3Days };
+      message = `Review HOLD ${name} ditunda 3 hari`;
     }
-    setWorkingTasks((prev) => new Set(prev).add(task.key));
+    setWorkingTasks((prev) => new Set(prev).add(key));
     const previous = applications;
     setApplications((prev) =>
-      prev.map((a) => (a.id === app.id ? { ...a, ...optimistic } : a))
+      prev.map((a) => (a.id === applicationId ? { ...a, ...optimistic } : a))
     );
     try {
       const updated = await apiPatch<Application>(
-        `/api/admin/applications/${app.id}`,
+        `/api/admin/applications/${applicationId}`,
         body
       );
       // Merge agar field tambahan payload list tidak hilang.
@@ -350,13 +358,93 @@ export function TasksTab() {
         )
       );
       toast.success(message);
+      return true;
     } catch (err) {
       setApplications(previous);
+      reportError(err);
+      return false;
+    } finally {
+      setWorkingTasks((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
+  /**
+   * Aksi cepat panel (optimistik + toast). Baris jenis snooze/offer tidak
+   * menyediakan PATCH — hanya "Buka Detail" (lihat catatan panel).
+   */
+  async function runContactAction(task: ContactTask, action: "done" | "snooze3") {
+    if (task.kind !== "followup" && task.kind !== "hold") {
+      return; // snooze / offer: tidak ada PATCH yang didukung
+    }
+    await patchApplicationFollowUp({
+      key: task.key,
+      applicationId: task.app.id,
+      name: task.app.name,
+      kind: task.kind,
+      action,
+      holdReason: task.app.holdReason,
+    });
+  }
+
+  // NR55-C — aksi cepat grup duplikat "Tindak Lanjut Jatuh Tempo" (followUpsDue).
+  async function runFollowUpRowAction(row: FollowUpItem, action: "done" | "snooze3") {
+    const ok = await patchApplicationFollowUp({
+      key: `actionItem:followup:${row.applicationId}`,
+      applicationId: row.applicationId,
+      name: row.name,
+      kind: "followup",
+      action,
+    });
+    // Segarkan daftar tindakan agar baris hilang sesuai data server.
+    if (ok) void loadAll(true);
+  }
+
+  // NR55-C — aksi cepat grup duplikat "Review Lamaran Ditahan" (holdReviewsDue).
+  async function runHoldReviewRowAction(row: HoldReviewItem, action: "done" | "snooze3") {
+    const ok = await patchApplicationFollowUp({
+      key: `actionItem:hold:${row.applicationId}`,
+      applicationId: row.applicationId,
+      name: row.name,
+      kind: "hold",
+      action,
+      holdReason: row.holdReason,
+    });
+    if (ok) void loadAll(true);
+  }
+
+  // NR55-C — aksi cepat "Permintaan Ubah Jadwal": setujui (pakai jadwal usulan)
+  // atau tolak (kembali ke jadwal awal). Semantik persis interview-tab:
+  // PATCH /api/admin/interviews/{id} {scheduledAt} / {dismissReschedule:true}.
+  async function runRescheduleAction(
+    row: ActionItemsResponse["rescheduleRequests"][number],
+    action: "approve" | "reject"
+  ) {
+    const key = `reschedule:${row.interviewId}`;
+    if (workingTasks.has(key)) return;
+    if (!canMutate) {
+      toast.error("Anda tidak memiliki akses untuk aksi ini.");
+      return;
+    }
+    if (action === "approve" && !row.proposedAt) return; // butuh jadwal usulan pelamar
+    setWorkingTasks((prev) => new Set(prev).add(key));
+    try {
+      await apiPatch<{ interview: Interview }>(
+        `/api/admin/interviews/${row.interviewId}`,
+        action === "approve" ? { scheduledAt: row.proposedAt } : { dismissReschedule: true }
+      );
+      toast.success(action === "approve" ? "Usulan jadwal disetujui" : "Usulan jadwal ditolak");
+      // Usulan sudah diproses — segarkan daftar tindakan (baris hilang).
+      void loadAll(true);
+    } catch (err) {
       reportError(err);
     } finally {
       setWorkingTasks((prev) => {
         const next = new Set(prev);
-        next.delete(task.key);
+        next.delete(key);
         return next;
       });
     }

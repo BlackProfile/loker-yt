@@ -16,7 +16,8 @@ const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
 
 export type RiskItem = {
   kind: "interview" | "offer";
-  id: string; // interviewId / applicationId
+  id: string; // interviewId / applicationId (semantik lama dipertahankan)
+  applicationId: string; // NR55-C — id lamaran utk Detail & Kirim Reminder
   name: string;
   positionTitle: string | null;
   when: string | null; // ISO — jadwal wawancara / batas jawaban offer
@@ -110,6 +111,7 @@ export async function GET() {
       items.push({
         kind: "interview",
         id: iv.id,
+        applicationId: iv.application.id,
         name: iv.application.name,
         positionTitle: iv.application.position?.title ?? null,
         when: iv.scheduledAt.toISOString(),
@@ -136,6 +138,7 @@ export async function GET() {
       items.push({
         kind: "offer",
         id: app.id,
+        applicationId: app.id,
         name: app.name,
         positionTitle: app.position?.title ?? null,
         when: (app.offerDeadline ?? app.offerSentAt)?.toISOString() ?? null,
