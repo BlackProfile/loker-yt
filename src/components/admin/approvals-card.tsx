@@ -216,19 +216,26 @@ export function ApprovalsCard() {
   async function handleAct(
     req: ApprovalRequestView,
     action: "approve" | "reject" | "cancel",
-  ) {
-    if (busyId) return;
+    note: string
+  ): Promise<boolean> {
+    if (busyId) return false;
     setBusyId(req.id);
     try {
+      // NR55-C — kirim catatan opsional hanya untuk approve/reject bila diisi
+      // (server memotong ke 300 karakter; cancel tidak menerima catatan).
+      const trimmed = note.trim().slice(0, 300);
       const res = await apiPost<{ ok?: boolean; message?: string }>("/api/admin/approvals", {
         id: req.id,
         action,
+        ...(action !== "cancel" && trimmed ? { note: trimmed } : {}),
       });
       toast.success(res.message ?? "Permintaan diproses.");
       void refresh(true);
+      return true;
     } catch (err) {
       // 409/403/400: tampilkan pesan dari body server.
       toast.error(actionErrorMessage(err, "Gagal memproses persetujuan."));
+      return false;
     } finally {
       setBusyId(null);
     }
@@ -289,12 +296,7 @@ export function ApprovalsCard() {
       ) : (
         <ul className="flex flex-col gap-3">
           {requests.map((req) => (
-            <RequestRow
-              key={req.id}
-              req={req}
-              busy={busyId === req.id}
-              onAct={(r, action) => void handleAct(r, action)}
-            />
+            <RequestRow key={req.id} req={req} busy={busyId === req.id} onAct={handleAct} />
           ))}
         </ul>
       )}

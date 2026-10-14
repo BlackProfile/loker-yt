@@ -2905,6 +2905,10 @@ function TeamTagsCard() {
   const [name, setName] = useState("");
   const [color, setColor] = useState<TagColor>("rose");
   const [saving, setSaving] = useState(false);
+  // Edit chip inline: index yang sedang diedit + draft nama/warna.
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState<TagColor>("rose");
 
   async function addTag() {
     if (!canMutate || saving) return;
@@ -2947,6 +2951,58 @@ function TeamTagsCard() {
     }
   }
 
+  function startEditTag(index: number) {
+    const tag = tagDefs[index];
+    if (!tag) return;
+    setEditIndex(index);
+    setEditName(tag.name);
+    setEditColor((TAG_COLORS as readonly string[]).includes(tag.color) ? (tag.color as TagColor) : "zinc");
+  }
+
+  function cancelEditTag() {
+    setEditIndex(null);
+  }
+
+  async function saveEditTag() {
+    if (editIndex === null || !canMutate) return;
+    const original = tagDefs[editIndex];
+    if (!original) {
+      setEditIndex(null);
+      return;
+    }
+    const trimmed = editName.trim();
+    if (!trimmed) {
+      toast.error("Nama tag wajib diisi.");
+      return;
+    }
+    if (trimmed.length > 24) {
+      toast.error("Nama tag maksimal 24 karakter.");
+      return;
+    }
+    if (tagDefs.some((t, i) => i !== editIndex && t.name.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error(`Tag "${trimmed}" sudah terdaftar.`);
+      return;
+    }
+    if (!(TAG_COLORS as readonly string[]).includes(editColor)) {
+      toast.error("Warna tag tidak valid.");
+      return;
+    }
+    if (trimmed === original.name && editColor === original.color) {
+      setEditIndex(null);
+      return;
+    }
+    setSaving(true);
+    try {
+      await save(tagDefs.map((t, i) => (i === editIndex ? { name: trimmed, color: editColor } : t)));
+      setEditIndex(null);
+      toast.success("Daftar tag disimpan");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <CollapsibleCard
       id="tag-tim"
@@ -2963,28 +3019,107 @@ function TeamTagsCard() {
           </p>
         ) : (
           <ul className="flex flex-wrap gap-2" aria-label="Daftar tag tim">
-            {tagDefs.map((tag, index) => (
-              <li
-                key={`${tag.name}-${index}`}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium",
-                  TAG_COLOR_CLASSES[tag.color] ?? TAG_COLOR_CLASSES.zinc
-                )}
-              >
-                {tag.name}
-                {canMutate ? (
-                  <button
-                    type="button"
-                    onClick={() => void removeTag(index)}
+            {tagDefs.map((tag, index) =>
+              editIndex === index ? (
+                <li
+                  key={`${tag.name}-${index}`}
+                  className="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2"
+                >
+                  <Input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void saveEditTag();
+                      if (e.key === "Escape") cancelEditTag();
+                    }}
+                    maxLength={24}
+                    className="h-8 w-44"
+                    aria-label="Nama tag"
+                    autoFocus
                     disabled={saving}
-                    aria-label={`Hapus tag ${tag.name}`}
-                    className="-mr-1 rounded-full p-0.5 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                  />
+                  <Select
+                    value={editColor}
+                    onValueChange={(v) => setEditColor(v as TagColor)}
+                    disabled={saving}
                   >
-                    <X className="size-3" aria-hidden="true" />
-                  </button>
-                ) : null}
-              </li>
-            ))}
+                    <SelectTrigger className="h-8 w-32" aria-label="Warna tag">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TAG_COLORS.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          <span className="flex items-center gap-2">
+                            <span
+                              className={cn(
+                                "inline-block size-3 shrink-0 rounded-full border border-black/10 dark:border-white/20",
+                                TAG_COLOR_CLASSES[c]
+                              )}
+                              aria-hidden="true"
+                            />
+                            {TAG_COLOR_LABELS[c]}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    className="h-8"
+                    onClick={() => void saveEditTag()}
+                    disabled={saving}
+                  >
+                    {saving ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Save className="size-4" aria-hidden="true" />
+                    )}
+                    Simpan
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8"
+                    onClick={cancelEditTag}
+                    disabled={saving}
+                  >
+                    Batal
+                  </Button>
+                </li>
+              ) : (
+                <li
+                  key={`${tag.name}-${index}`}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium",
+                    TAG_COLOR_CLASSES[tag.color] ?? TAG_COLOR_CLASSES.zinc
+                  )}
+                >
+                  {tag.name}
+                  {canMutate ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => startEditTag(index)}
+                        disabled={saving}
+                        aria-label={`Ubah tag ${tag.name}`}
+                        className="-mr-1 rounded-full p-0.5 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                      >
+                        <Pencil className="size-3" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void removeTag(index)}
+                        disabled={saving}
+                        aria-label={`Hapus tag ${tag.name}`}
+                        className="-mr-1 rounded-full p-0.5 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                      >
+                        <X className="size-3" aria-hidden="true" />
+                      </button>
+                    </>
+                  ) : null}
+                </li>
+              )
+            )}
           </ul>
         )}
 
@@ -3334,6 +3469,9 @@ function TagsCard() {
   const [loaded, setLoaded] = useState(false);
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
+  // Rename chip inline: tag yang sedang diedit + nilai draft.
+  const [editTag, setEditTag] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -3352,8 +3490,8 @@ function TagsCard() {
     void load();
   }, [load]);
 
-  async function persist(next: string[]) {
-    if (!canEdit || saving) return;
+  async function persist(next: string[]): Promise<boolean> {
+    if (!canEdit || saving) return false;
     setSaving(true);
     try {
       const data = await apiPut<{ tags: string[] }>("/api/admin/tags", {
@@ -3361,8 +3499,10 @@ function TagsCard() {
       });
       setTags(data.tags);
       toast.success("Daftar tag disimpan");
+      return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -3385,6 +3525,30 @@ function TagsCard() {
 
   function removeTag(tag: string) {
     void persist(tags.filter((t) => t !== tag));
+  }
+
+  function startEditTag(tag: string) {
+    setEditTag(tag);
+    setEditValue(tag);
+  }
+
+  async function saveEditTag() {
+    if (editTag === null || !canEdit) return;
+    const next = editValue.trim().slice(0, TAG_LIBRARY_MAX_LEN);
+    if (!next) {
+      toast.error("Nama tag wajib diisi.");
+      return;
+    }
+    if (tags.some((t) => t !== editTag && t.toLowerCase() === next.toLowerCase())) {
+      toast.error("Tag dengan nama itu sudah ada.");
+      return;
+    }
+    if (next === editTag) {
+      setEditTag(null);
+      return;
+    }
+    const ok = await persist(tags.map((t) => (t === editTag ? next : t)));
+    if (ok) setEditTag(null);
   }
 
   return (
@@ -3426,25 +3590,82 @@ function TagsCard() {
             </p>
           ) : (
             <ul className="flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <li
-                  key={tag}
-                  className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
-                >
-                  <span className="truncate">{tag}</span>
-                  {canEdit ? (
-                    <button
-                      type="button"
-                      className="ml-0.5 shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-rose-600"
-                      onClick={() => removeTag(tag)}
+              {tags.map((tag) =>
+                editTag === tag ? (
+                  <li
+                    key={tag}
+                    className="flex items-center gap-2 rounded-lg border bg-background px-2.5 py-1.5"
+                  >
+                    <Input
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void saveEditTag();
+                        }
+                        if (e.key === "Escape") setEditTag(null);
+                      }}
+                      maxLength={TAG_LIBRARY_MAX_LEN}
+                      className="h-8 w-44"
+                      aria-label="Nama tag baru"
+                      autoFocus
                       disabled={saving}
-                      aria-label={`Hapus tag ${tag}`}
+                    />
+                    <Button
+                      size="sm"
+                      className="h-8"
+                      onClick={() => void saveEditTag()}
+                      disabled={saving}
                     >
-                      <X className="size-3" aria-hidden="true" />
-                    </button>
-                  ) : null}
-                </li>
-              ))}
+                      {saving ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Save className="size-4" aria-hidden="true" />
+                      )}
+                      Simpan
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8"
+                      onClick={() => setEditTag(null)}
+                      disabled={saving}
+                    >
+                      Batal
+                    </Button>
+                  </li>
+                ) : (
+                  <li
+                    key={tag}
+                    className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground"
+                  >
+                    <span className="truncate">{tag}</span>
+                    {canEdit ? (
+                      <>
+                        <button
+                          type="button"
+                          className="ml-0.5 shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                          onClick={() => startEditTag(tag)}
+                          disabled={saving}
+                          aria-label={`Ubah tag ${tag}`}
+                        >
+                          <Pencil className="size-3" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className="ml-0.5 shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-rose-600"
+                          onClick={() => removeTag(tag)}
+                          disabled={saving}
+                          aria-label={`Hapus tag ${tag}`}
+                        >
+                          <X className="size-3" aria-hidden="true" />
+                        </button>
+                      </>
+                    ) : null}
+                  </li>
+                )
+              )}
             </ul>
           )}
 
