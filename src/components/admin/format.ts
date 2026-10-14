@@ -171,6 +171,9 @@ export const ACTION_LABELS: Record<string, string> = {
   CHECKLIST: "Checklist Evaluasi",
   AUTO_CLOSE: "Tutup Otomatis",
   AUTO_SHORTLIST: "Shortlist Otomatis",
+  // NR56 — Pusat Kelola Berkas
+  FILE_DELETED: "Hapus Berkas",
+  FILE_REPLACED: "Ganti Berkas",
 };
 
 export function actionLabel(action: string): string {
@@ -202,4 +205,13 @@ export function roleBadgeClass(role: string): string {
 
 export function cnIf(...classes: Array<string | false | null | undefined>): string {
   return cn(...classes);
+}
+
+// NR56 — format ukuran berkas: 523 -> "523 B", 2048 -> "2.0 KB", dst.
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
