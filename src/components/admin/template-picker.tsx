@@ -192,131 +192,246 @@ export function TemplatePicker({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FileText className="size-5 text-rose-600 dark:text-rose-400" aria-hidden="true" />
-            Pilih Template {KIND_LABELS[kind]}
-          </DialogTitle>
-          <DialogDescription>
-            Template mengisi area pesan. Variabel seperti{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-[11px]">{"{nama}"}</code> dan{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-[11px]">{"{posisi}"}</code>{" "}
-            akan diisi otomatis sesuai konteks.
-          </DialogDescription>
-        </DialogHeader>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="size-5 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+              Pilih Template {KIND_LABELS[kind]}
+            </DialogTitle>
+            <DialogDescription>
+              Template mengisi area pesan. Variabel seperti{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">{"{nama}"}</code> dan{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">{"{posisi}"}</code>{" "}
+              akan diisi otomatis sesuai konteks.
+            </DialogDescription>
+          </DialogHeader>
 
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            Memuat template...
-          </div>
-        ) : rows.length === 0 && !showAdd ? (
-          <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Belum ada template {KIND_LABELS[kind].toLowerCase()}.
-          </p>
-        ) : (
-          <ul className="flex max-h-96 flex-col divide-y overflow-y-auto rounded-xl border nice-scrollbar">
-            {rows.map((template) => (
-              <li
-                key={template.id}
-                className="flex items-start justify-between gap-3 p-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{template.name}</p>
-                  <p className="mt-1 line-clamp-2 whitespace-pre-line text-xs text-muted-foreground">
-                    {template.body}
-                  </p>
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Memuat template...
+            </div>
+          ) : rows.length === 0 && !showAdd ? (
+            <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Belum ada template {KIND_LABELS[kind].toLowerCase()}.
+            </p>
+          ) : (
+            <ul className="flex max-h-96 flex-col divide-y overflow-y-auto rounded-xl border nice-scrollbar">
+              {rows.map((template) => (
+                <li
+                  key={template.id}
+                  className="flex items-start justify-between gap-3 p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{template.name}</p>
+                    <p className="mt-1 line-clamp-2 whitespace-pre-line text-xs text-muted-foreground">
+                      {template.body}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2.5 text-xs"
+                      onClick={() => handlePick(template)}
+                    >
+                      Pakai
+                    </Button>
+                    {canMutate ? (
+                      <>
+                        {/* NR55-D — Ubah template dari picker */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => openEdit(template)}
+                          aria-label={`Ubah template ${template.name}`}
+                        >
+                          <Pencil className="size-3.5" aria-hidden="true" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950"
+                          onClick={() => setDeleteTarget(template)}
+                          aria-label={`Hapus template ${template.name}`}
+                        >
+                          <Trash2 className="size-3.5" aria-hidden="true" />
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {canMutate ? (
+            showAdd ? (
+              <div className="flex flex-col gap-3 rounded-xl border p-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="template-picker-name">Nama template</Label>
+                  <Input
+                    id="template-picker-name"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder={`Mis. Offer ramah — ${KIND_LABELS[kind]}`}
+                    maxLength={120}
+                    className="h-10"
+                  />
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="template-picker-body">Isi pesan</Label>
+                  <Textarea
+                    id="template-picker-body"
+                    value={newBody}
+                    onChange={(e) => setNewBody(e.target.value)}
+                    placeholder={"Halo {nama},\n\nKami dari Lumina Studio terkait lamaran {posisi} kamu..."}
+                    rows={4}
+                    maxLength={4000}
+                  />
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 px-2.5 text-xs"
-                    onClick={() => handlePick(template)}
+                    className="h-9"
+                    onClick={() => setShowAdd(false)}
+                    disabled={adding}
                   >
-                    Pakai
+                    Batal
                   </Button>
-                  {canMutate ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950"
-                      onClick={() => void handleDelete(template)}
-                      aria-label={`Hapus template ${template.name}`}
-                    >
-                      <Trash2 className="size-3.5" aria-hidden="true" />
-                    </Button>
-                  ) : null}
+                  <Button
+                    size="sm"
+                    className="h-9 active:scale-[0.99]"
+                    onClick={() => void handleAdd()}
+                    disabled={adding}
+                  >
+                    {adding ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Plus className="size-4" aria-hidden="true" />
+                    )}
+                    Simpan Template
+                  </Button>
                 </div>
-              </li>
-            ))}
-          </ul>
-        )}
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 w-fit gap-1.5"
+                onClick={() => setShowAdd(true)}
+              >
+                <Plus className="size-4" aria-hidden="true" />
+                Template Baru
+              </Button>
+            )
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
-        {canMutate ? (
-          showAdd ? (
-            <div className="flex flex-col gap-3 rounded-xl border p-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="template-picker-name">Nama template</Label>
-                <Input
-                  id="template-picker-name"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder={`Mis. Offer ramah — ${KIND_LABELS[kind]}`}
-                  maxLength={120}
-                  className="h-10"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="template-picker-body">Isi pesan</Label>
-                <Textarea
-                  id="template-picker-body"
-                  value={newBody}
-                  onChange={(e) => setNewBody(e.target.value)}
-                  placeholder={"Halo {nama},\n\nKami dari Lumina Studio terkait lamaran {posisi} kamu..."}
-                  rows={4}
-                  maxLength={4000}
-                />
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9"
-                  onClick={() => setShowAdd(false)}
-                  disabled={adding}
-                >
-                  Batal
-                </Button>
-                <Button
-                  size="sm"
-                  className="h-9 active:scale-[0.99]"
-                  onClick={() => void handleAdd()}
-                  disabled={adding}
-                >
-                  {adding ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Plus className="size-4" aria-hidden="true" />
-                  )}
-                  Simpan Template
-                </Button>
-              </div>
+      {/* NR55-D — dialog Ubah template (nama + isi; jenis tetap mengikuti filter kind) */}
+      <Dialog
+        open={editTarget !== null}
+        onOpenChange={(dialogOpen) => {
+          if (!dialogOpen) setEditTarget(null);
+        }}
+      >
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ubah Template</DialogTitle>
+            <DialogDescription>
+              Jenis template tetap {KIND_LABELS[kind]}. Variabel seperti{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">{"{nama}"}</code> dan{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">{"{posisi}"}</code>{" "}
+              dibiarkan apa adanya.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="template-picker-edit-name">Nama template</Label>
+              <Input
+                id="template-picker-edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                maxLength={120}
+                className="h-10"
+                autoFocus
+              />
             </div>
-          ) : (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="template-picker-edit-body">Isi pesan</Label>
+              <Textarea
+                id="template-picker-edit-body"
+                value={editBody}
+                onChange={(e) => setEditBody(e.target.value)}
+                rows={5}
+                maxLength={4000}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
             <Button
               variant="outline"
-              size="sm"
-              className="h-9 w-fit gap-1.5"
-              onClick={() => setShowAdd(true)}
+              onClick={() => setEditTarget(null)}
+              disabled={savingEdit}
+              className="h-11 sm:h-9"
             >
-              <Plus className="size-4" aria-hidden="true" />
-              Template Baru
+              Batal
             </Button>
-          )
-        ) : null}
-      </DialogContent>
-    </Dialog>
+            <Button
+              onClick={() => void handleEditSave()}
+              disabled={savingEdit || editName.trim().length === 0 || editBody.trim().length === 0}
+              className="h-11 active:scale-[0.99] sm:h-9"
+            >
+              {savingEdit ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Pencil className="size-4" aria-hidden="true" />
+              )}
+              Simpan Perubahan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* NR55-D — konfirmasi hapus template (AlertDialog, bukan window.confirm) */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(dialogOpen) => {
+          if (!dialogOpen) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus template?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? `Template "${deleteTarget.name}" akan dihapus permanen dan tidak bisa dikembalikan.`
+                : "Template akan dihapus permanen."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteConfirmed();
+              }}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="size-4" aria-hidden="true" />
+              )}
+              Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

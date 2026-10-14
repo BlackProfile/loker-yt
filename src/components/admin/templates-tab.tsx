@@ -3,10 +3,12 @@
 // Tab Template — pustaka template pesan global (lintas posisi).
 // CRUD MessageTemplate via /api/admin/templates; dipakai offer/reject/invite
 // melalui komponen TemplatePicker. VIEWER hanya dapat melihat.
+// NR55-D — tiap baris punya "Duplikat" (Copy): POST /api/admin/templates
+// dgn name + " (salinan)", kind & body sama, lalu refresh daftar + toast.
 
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Plus, Sparkles, Trash2, TriangleAlert } from "lucide-react";
+import { Copy, Loader2, Plus, Sparkles, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -139,6 +141,28 @@ export function TemplatesTab() {
     }
   }
 
+  async function handleDuplicate(row: TemplateRow) {
+    if (busy) return;
+    setBusy(`dup:${row.id}`);
+    try {
+      // Nama salinan dijamin <= 120 karakter (batas POST) tanpa memotong akhiran.
+      const suffix = " (salinan)";
+      const name = `${row.name.slice(0, 120 - suffix.length)}${suffix}`;
+      const kind = (KINDS as string[]).includes(row.kind) ? row.kind : "CUSTOM";
+      await apiPost("/api/admin/templates", {
+        name,
+        kind,
+        body: row.body,
+      });
+      toast.success(`Template "${name}" dibuat.`);
+      await load(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menduplikasi template.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return;
     setBusy(deleteTarget.id);
@@ -239,6 +263,20 @@ export function TemplatesTab() {
                       <div className="flex shrink-0 gap-2">
                         <Button variant="outline" size="sm" className="h-9" onClick={() => openEdit(row)}>
                           Ubah
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-9 px-2"
+                          onClick={() => void handleDuplicate(row)}
+                          aria-label={`Duplikat template ${row.name}`}
+                          disabled={busy !== null}
+                        >
+                          {busy === `dup:${row.id}` ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Copy className="size-4" aria-hidden="true" />
+                          )}
                         </Button>
                         <Button
                           variant="ghost"

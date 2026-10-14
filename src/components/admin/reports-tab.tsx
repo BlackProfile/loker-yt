@@ -23,6 +23,7 @@ import {
   Megaphone,
   Printer,
   RefreshCw,
+  RotateCw,
   Search,
   Sparkles,
   Star,
@@ -30,6 +31,16 @@ import {
   Timer,
   type LucideIcon,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardTitle } from "@/components/ui/card";
@@ -670,6 +681,9 @@ export function ReportsTab() {
   const [monthlyLoading, setMonthlyLoading] = useState(true);
   const [monthlyGenerating, setMonthlyGenerating] = useState(false);
   const [printMonth, setPrintMonth] = useState<MonthlyReportRow | null>(null);
+  // Generate ulang satu snapshot (NR55-F) — POST { month } memakai bulan baris terpilih.
+  const [regenTarget, setRegenTarget] = useState<MonthlyReportRow | null>(null);
+  const [regenBusy, setRegenBusy] = useState(false);
   const [survey, setSurvey] = useState<SurveyRecapResponse | null>(null);
   const [surveyLoading, setSurveyLoading] = useState(true);
 
@@ -800,6 +814,27 @@ export function ReportsTab() {
       setMonthlyGenerating(false);
     }
   }, [loadMonthly, reportError]);
+
+  /**
+   * Generate ulang snapshot bulan tertentu (NR55-F) — snapshot lama ditimpa
+   * (upsert per bulan di server), jadi baris berdata rusak/kosong pun bisa
+   * diperbaiki lewat tombol ini.
+   */
+  const regenerateMonthly = useCallback(async () => {
+    if (!regenTarget || regenBusy) return;
+    const target = regenTarget;
+    setRegenBusy(true);
+    try {
+      await apiPost("/api/admin/reports/monthly", { month: target.month });
+      await loadMonthly(true);
+      toast.success(`Rekap bulan ${monthLabel(target.month)} dibuat ulang`);
+      setRegenTarget(null);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setRegenBusy(false);
+    }
+  }, [regenTarget, regenBusy, loadMonthly, reportError]);
 
   const loadSurvey = useCallback(
     async (silent = false) => {
@@ -1466,16 +1501,28 @@ export function ReportsTab() {
                         Snapshot dibuat {formatCreated(row.createdAt)}
                       </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-9 shrink-0"
-                      onClick={() => setPrintMonth(row)}
-                      disabled={!data}
-                    >
-                      <Printer className="size-4" aria-hidden="true" />
-                      Cetak PDF
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() => setPrintMonth(row)}
+                        disabled={!data}
+                      >
+                        <Printer className="size-4" aria-hidden="true" />
+                        Cetak PDF
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        onClick={() => setRegenTarget(row)}
+                        disabled={regenBusy}
+                      >
+                        <RotateCw className="size-4" aria-hidden="true" />
+                        Generate Ulang
+                      </Button>
+                    </div>
                   </div>
                   {data ? (
                     <>
@@ -1614,6 +1661,44 @@ export function ReportsTab() {
       />
 
       <MonthlyPrintDialog report={printMonth} onOpenChange={(open) => !open && setPrintMonth(null)} />
+
+      {/* Konfirmasi generate ulang rekap bulanan (NR55-F) */}
+      <AlertDialog
+        open={!!regenTarget}
+        onOpenChange={(open) => {
+          if (!open && !regenBusy) setRegenTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Generate ulang rekap ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {regenTarget
+                ? `Rekap bulan ${monthLabel(regenTarget.month)} akan dibuat ulang dengan data terkini. Snapshot lama untuk bulan ini akan ditimpa.`
+                : "Rekap akan dibuat ulang dengan data terkini."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={regenBusy}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void regenerateMonthly();
+              }}
+              disabled={regenBusy}
+            >
+              {regenBusy ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Membuat ulang...
+                </>
+              ) : (
+                "Ya, Generate Ulang"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
