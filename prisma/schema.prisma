@@ -180,6 +180,7 @@ model FileAsset {
   cvApplications Application[] @relation("cvFile")
   introApp       Application[] @relation("introFile")
   coverPositions Position[]    @relation("coverFile")
+  submittedAssessments Assessment[] @relation("assessmentSubmittedFile")
 }
 
 // Lamaran yang masuk dari form publik
@@ -766,6 +767,7 @@ model Assessment {
   resultScore     Int? // nilai akhir 0-100 (dipakai bersama rubrik saat keputusan)
   resultNote      String? // catatan hasil penilaian
   submittedFileId String? // file hasil karya pelamar (FileAsset)
+  submittedFile   FileAsset? @relation("assessmentSubmittedFile", fields: [submittedFileId], references: [id], onDelete: SetNull)
   completedAt     DateTime? // saat dikumpulkan/dinilai
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
