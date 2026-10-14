@@ -85,6 +85,7 @@ import { OfferCard } from "./status/status-offer";
 import { OfferLetterOverlay } from "./status/status-offer-letter";
 import { StartDateCard } from "./status/status-start-date";
 import { CvUpdatePanel } from "./status/status-cv-panel";
+import { TestTasksPanel, TEST_FILE_EXTENSIONS } from "./status/status-test-tasks";
 import { QaPanel } from "./status/status-qa-panel";
 import { OnboardingPanel } from "./status/status-onboarding";
 import { AcceptedNotice, RejectedNotice } from "./status/status-final-banners";
@@ -159,6 +160,11 @@ function StatusPageInner({
   // ---------- NR-15-c: perbarui CV ----------
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [cvUploading, setCvUploading] = useState(false);
+
+  // ---------- NR-54: kumpulkan hasil tugas uji ----------
+  const [testFile, setTestFile] = useState<File | null>(null);
+  const [testFileFor, setTestFileFor] = useState<{ id: string; name: string } | null>(null);
+  const [testBusyId, setTestBusyId] = useState<string | null>(null);
 
   // ---------- NR-15-c: overlay cetak surat offer ----------
   const [letterOpen, setLetterOpen] = useState(false);
@@ -622,6 +628,65 @@ function StatusPageInner({
       toast.error(t.status.actionFailed);
     } finally {
       setCvUploading(false);
+    }
+  }
+
+  /** Pilih berkas hasil tugas uji (NR-54) — validasi klien: ekstensi & ukuran. */
+  function selectTestFile(assessmentId: string, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = ""; // reset agar file yang sama bisa dipilih ulang
+    if (!file) return;
+    const ext = `.${file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase()}`;
+    const allowed = TEST_FILE_EXTENSIONS.includes(ext);
+    if (!allowed) {
+      toast.error(t.status.test.invalidType);
+      return;
+    }
+    if (file.size > CV_MAX_BYTES) {
+      toast.error(t.status.test.tooBig);
+      return;
+    }
+    setTestFile(file);
+    setTestFileFor({ id: assessmentId, name: file.name });
+  }
+
+  /** Kirim hasil tugas uji (NR-54) — server memverifikasi auth + magic bytes. */
+  async function submitTestWork(assessmentId: string) {
+    const file = testFile;
+    if (!session || !selectedCode || !file || testBusyId) return;
+    if (testFileFor?.id !== assessmentId) return;
+    setTestBusyId(assessmentId);
+    try {
+      const fd = new FormData();
+      fd.append("code", selectedCode);
+      fd.append("email", session.email);
+      fd.append("assessmentId", assessmentId);
+      fd.append("file", file);
+      const res = await fetch("/api/public/assessment/submit", {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: unknown; error?: unknown; fileName?: unknown }
+        | null;
+      if (res.status === 429) {
+        toast.error(t.status.rateLimited);
+        return;
+      }
+      if (!res.ok || !data || data.ok !== true) {
+        const serverError =
+          typeof data?.error === "string" && data.error ? data.error : null;
+        toast.error(serverError ?? t.status.actionFailed);
+        return;
+      }
+      toast.success(t.status.test.sentToast);
+      setTestFile(null);
+      setTestFileFor(null);
+      scheduleSilentRecheck(ACTION_RECHECK_DELAY_MS);
+    } catch {
+      toast.error(t.status.actionFailed);
+    } finally {
+      setTestBusyId(null);
     }
   }
 
