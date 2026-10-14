@@ -269,6 +269,29 @@ export function isOrphan(refs: FileRefDisplay | undefined): boolean {
   );
 }
 
+/** Buang entri dengan fileId target dari array JSON [{fileId,...}] — return null bila tak berubah. */
+function stripArrayFileId(raw: string, fileId: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    let changed = false;
+    const filtered = parsed.filter((item) => {
+      const id =
+        item && typeof item === "object" && !Array.isArray(item)
+          ? (item as Record<string, unknown>).fileId
+          : undefined;
+      if (id === fileId) {
+        changed = true;
+        return false;
+      }
+      return true;
+    });
+    return changed ? JSON.stringify(filtered) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Lepas SEMUA referensi non-FK untuk fileId (JSON lamaran, dokumen internal,
  * draft, rekaman wawancara). Relasi FK dibiarkan Prisma yang SetNull saat row dihapus.
@@ -287,30 +310,9 @@ export async function detachFileReferences(fileId: string): Promise<number> {
     });
     if (!app) continue;
 
-    const stripArray = (raw: string): string | null => {
-      try {
-        const parsed: unknown = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return null;
-        let changed = false;
-        const filtered = parsed.filter((item) => {
-          const id = item && typeof item === "object" && !Array.isArray(item)
-            ? (item as Record<string, unknown>).fileId
-            : undefined;
-          if (id === fileId) {
-            changed = true;
-            return false;
-          }
-          return true;
-        });
-        return changed ? JSON.stringify(filtered) : null;
-      } catch {
-        return null;
-      }
-    };
-
     const data: Record<string, string> = {};
     for (const field of ["extraDocs", "onboardingDocs", "botFiles"] as const) {
-      const next = stripArray(app[field]);
+      const next = stripArrayFileId(app[field], fileId);
       if (next !== null) {
         data[field] = next;
         detached += 1;
@@ -360,7 +362,7 @@ export async function detachFileReferences(fileId: string): Promise<number> {
   for (const token of refs.draftTokens) {
     const draft = await db.applicationDraft.findUnique({ where: { token }, select: { files: true } });
     if (!draft) continue;
-    const next = stripArray(draft.files);
+    const next = stripArrayFileId(draft.files, fileId);
     if (next !== null) {
       await db.applicationDraft.update({ where: { token }, data: { files: next } });
       detached += 1;
