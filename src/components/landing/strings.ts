@@ -1054,6 +1054,24 @@ type idDictShape = {
     rejected: string;
     assignmentTitle: string;
     openBrief: string;
+    test: {
+      title: string;
+      desc: string;
+      statusDikirim: string;
+      statusDikumpul: string;
+      statusTerlambat: string;
+      dueLabel: string;
+      submittedLabel: string;
+      choose: string;
+      chosenLabel: string;
+      submit: string;
+      sending: string;
+      invalidType: string;
+      tooBig: string;
+      sentToast: string;
+      resultLabel: string;
+      noteLabel: string;
+    };
     rateLimited: string;
     actionFailed: string;
     formCancel: string;
@@ -1740,6 +1758,24 @@ const en: Dict = {
     rejected: "Not Selected",
     assignmentTitle: "Selection Test",
     openBrief: "Open Test Brief",
+    test: {
+      title: "Test Tasks",
+      desc: "Work on the tasks from the team, then submit your work here before the deadline.",
+      statusDikirim: "Waiting for submission",
+      statusDikumpul: "Submitted",
+      statusTerlambat: "Past deadline",
+      dueLabel: "Deadline",
+      submittedLabel: "Submitted",
+      choose: "Choose File",
+      chosenLabel: "File selected",
+      submit: "Submit Work",
+      sending: "Submitting...",
+      invalidType: "File format not supported. Use PDF, document, image, audio, video, or ZIP.",
+      tooBig: "Maximum file size is 10 MB.",
+      sentToast: "Your test work has been submitted. Thank you!",
+      resultLabel: "Score",
+      noteLabel: "Instructions",
+    },
     rateLimited: "That was a bit fast. Please wait a moment and try again.",
     actionFailed: "Something went wrong. Please try again shortly.",
     formCancel: "Cancel",
