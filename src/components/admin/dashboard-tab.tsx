@@ -28,6 +28,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -54,6 +62,7 @@ import {
   LogIn,
   MailCheck,
   Megaphone,
+  Pencil,
   Pin,
   RefreshCw,
   Sparkles,
@@ -73,7 +82,7 @@ import {
   type ApplicationStatus,
   type PositionStatsRow,
 } from "@/lib/types";
-import { apiDelete, apiGet, apiPost } from "./api";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { formatDate, formatDateTime, formatRelative, initialsOf } from "./format";
@@ -284,6 +293,12 @@ export function DashboardTab() {
   const [annPinned, setAnnPinned] = useState(false);
   const [annPosting, setAnnPosting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AnnouncementItem | null>(null);
+  // NR55-E — pengubahan pengumuman (OWNER/HR) lewat dialog kecil.
+  const [editTarget, setEditTarget] = useState<AnnouncementItem | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [editPinned, setEditPinned] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
 
   const loadActionItems = useCallback(async () => {
     try {
@@ -459,6 +474,45 @@ export function DashboardTab() {
       await loadAnnouncements(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Gagal menghapus pengumuman.");
+    }
+  }
+
+  // NR55-E — buka dialog Ubah Pengumuman dengan nilai awal dari item terpilih.
+  function openEditAnnouncement(item: AnnouncementItem) {
+    setEditTarget(item);
+    setEditTitle(item.title);
+    setEditBody(item.body);
+    setEditPinned(item.pinned);
+  }
+
+  // NR55-E — simpan perubahan pengumuman (PATCH) lalu segarkan daftar senyap.
+  async function handleEditAnnouncement() {
+    if (!editTarget || editSaving) return;
+    const title = editTitle.trim();
+    const body = editBody.trim();
+    if (title.length < 3 || title.length > 80) {
+      toast.error("Judul pengumuman wajib 3-80 karakter.");
+      return;
+    }
+    if (body.length < 1 || body.length > 600) {
+      toast.error("Isi pengumuman wajib 1-600 karakter.");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await apiPatch("/api/admin/announcements", {
+        id: editTarget.id,
+        title,
+        body,
+        pinned: editPinned,
+      });
+      toast.success("Pengumuman diperbarui.");
+      setEditTarget(null);
+      await loadAnnouncements(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mengubah pengumuman.");
+    } finally {
+      setEditSaving(false);
     }
   }
 

@@ -2,6 +2,7 @@
 //                             hanya 4 karakter awal + "…" sebagai penanda.
 // POST   /api/admin/webhooks — daftarkan endpoint baru (OWNER). Secret penuh dikembalikan
 //                             SEKALI pada respons POST ini — simpan segera.
+// PATCH  /api/admin/webhooks — ubah endpoint (OWNER): { id, url?, events?, active? } (min. satu field).
 // DELETE /api/admin/webhooks?id=... — hapus endpoint (OWNER).
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
@@ -140,6 +141,97 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("[POST /api/admin/webhooks]", error);
     return NextResponse.json({ error: "Gagal membuat endpoint webhook. Coba lagi nanti." }, { status: 500 });
+  }
+}
+
+// PATCH: ubah endpoint webhook (OWNER) — { id, url?, events?, active? }, min. satu field.
+// Validasi URL/event dicerminkan dari POST; secret tidak pernah bisa diubah lewat PATCH.
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json(UNAUTHORIZED, { status: 401 });
+    }
+    if (session.role !== "OWNER") {
+      return NextResponse.json(FORBIDDEN, { status: 403 });
+    }
+
+    const body: unknown = await req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Data tidak valid." }, { status: 400 });
+    }
+    const data = body as Record<string, unknown>;
+
+    const id = typeof data.id === "string" ? data.id.trim() : "";
+    if (!id) {
+      return NextResponse.json({ error: "Parameter id wajib diisi." }, { status: 400 });
+    }
+
+    const hasUrl = data.url !== undefined;
+    const hasEvents = data.events !== undefined;
+    const hasActive = data.active !== undefined;
+    if (!hasUrl && !hasEvents && !hasActive) {
+      return NextResponse.json(
+        { error: "Tidak ada perubahan yang dikirim." },
+        { status: 400 },
+      );
+    }
+
+    const updateData: { url?: string; events?: string; active?: boolean } = {};
+    if (hasUrl) {
+      const url = typeof data.url === "string" ? data.url.trim() : "";
+      if (!url) {
+        return NextResponse.json({ error: "URL webhook wajib diisi." }, { status: 400 });
+      }
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        return NextResponse.json({ error: "URL tidak valid." }, { status: 400 });
+      }
+      if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+        return NextResponse.json({ error: "URL harus diawali http:// atau https://." }, { status: 400 });
+      }
+      updateData.url = parsedUrl.toString();
+    }
+    if (hasEvents) {
+      const events = sanitizeEvents(data.events);
+      if (!events) {
+        return NextResponse.json(
+          { error: "Pilih minimal satu event, atau gunakan opsi Semua event." },
+          { status: 400 },
+        );
+      }
+      updateData.events = JSON.stringify(events);
+    }
+    if (hasActive) {
+      if (typeof data.active !== "boolean") {
+        return NextResponse.json({ error: "Nilai aktif tidak valid." }, { status: 400 });
+      }
+      updateData.active = data.active;
+    }
+
+    const existing = await db.webhookEndpoint.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Endpoint webhook tidak ditemukan." }, { status: 404 });
+    }
+
+    const updated = await db.webhookEndpoint.update({ where: { id }, data: updateData });
+
+    return NextResponse.json({
+      id: updated.id,
+      url: updated.url,
+      events: parseEvents(updated.events),
+      active: updated.active,
+      lastStatus: updated.lastStatus,
+      lastFiredAt: updated.lastFiredAt?.toISOString() ?? null,
+      failCount: updated.failCount,
+      createdAt: updated.createdAt.toISOString(),
+      secretPreview: maskSecret(updated.secret),
+    });
+  } catch (error) {
+    console.error("[PATCH /api/admin/webhooks]", error);
+    return NextResponse.json({ error: "Gagal mengubah endpoint webhook. Coba lagi nanti." }, { status: 500 });
   }
 }
 
