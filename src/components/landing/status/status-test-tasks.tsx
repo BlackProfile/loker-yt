@@ -15,7 +15,7 @@ import { StatusSection } from "./status-shared";
 type TestStrings = Dict["status"]["test"];
 
 /** Ekstensi yang diterima klien — server tetap memverifikasi magic bytes. */
-const TEST_FILE_ACCEPT = [
+export const TEST_FILE_EXTENSIONS = [
   ".pdf",
   ".doc",
   ".docx",
@@ -41,7 +41,9 @@ const TEST_FILE_ACCEPT = [
   ".txt",
   ".md",
   ".csv",
-].join(",");
+];
+
+const TEST_FILE_ACCEPT = TEST_FILE_EXTENSIONS.join(",");
 
 /** Chip status tugas: warna konsisten dengan gaya halaman status (amber/teal/rose). */
 function statusChipClass(status: CandidateAssessment["status"]): string {

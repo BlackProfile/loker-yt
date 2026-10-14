@@ -475,6 +475,13 @@ export function AssessmentSection({
                     <Clock className="size-3" aria-hidden="true" />
                     Tenggat: {formatDateTime(item.dueAt)}
                   </span>
+                  {/* NR-54 — waktu pengumpulan hasil (bila sudah DIKUMPUL) */}
+                  {item.status === "DIKUMPUL" && item.completedAt ? (
+                    <span>Dikumpulkan: {formatDateTime(item.completedAt)}</span>
+                  ) : null}
+                  {item.status === "DIKIRIM" ? (
+                    <span className="text-[11px]">Pelamar mengumpulkan dari halaman Cek Status</span>
+                  ) : null}
                   {graded ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 font-semibold text-teal-700 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-400">
                       <CheckCircle2 className="size-3" aria-hidden="true" />

@@ -1193,6 +1193,8 @@ function StatusPageInner({
   const onboardingDoneCount = onboardingDocs.filter((doc) => doc.done).length;
   // Slot jadwal self-service (dari track API — hanya ada bila tahap belum final).
   const availableSlots = detail?.slots ?? [];
+  // NR-54 — tugas uji untuk lamaran ini (versi pelamar dari track API).
+  const assessments = detail?.assessments ?? [];
   const heroChip = statusChip(detail?.status, detail?.rejectionReason);
   const canWithdraw =
     !!detail && detail.found && !!detail.status && !isFinalStatus(detail.status);
@@ -1200,8 +1202,8 @@ function StatusPageInner({
   /* ---------- PL-2b (butir 14): aksi yang diminta dari pelamar ----------
    * Dihitung murni dari TrackResponse yang sudah ada (tanpa endpoint baru).
    * Panel hanya ringkasan + navigasi — logika aksi asli tidak diubah.
-   * Item (e) assignment DILEWATI: TrackResponse tidak menyediakan status
-   * pengumpulan tugas, jadi tidak ada penanda yang bisa diandalkan.
+   * NR-54: item tugas uji kini dihitung dari detail.assessments (sebelumnya
+   * DILEWATI karena TrackResponse belum menyediakan status pengumpulan).
    */
   const requiredActions: RequiredActionItem[] = [];
   if (offer && offer.status === "PENDING") {
@@ -1217,6 +1219,20 @@ function StatusPageInner({
         ? `Jawab penawaran sebelum ${deadlineText}`
         : "Jawab penawaran yang menunggu respons kamu",
       targetId: "bagian-penawaran",
+    });
+  }
+  // NR-54 — tugas uji aktif: ingatkan pelamar mengumpulkan hasil sebelum tenggat.
+  const pendingTests = assessments.filter((a) => a.status !== "DIKUMPUL");
+  if (pendingTests.length > 0) {
+    requiredActions.push({
+      key: "test-submit",
+      tone: "amber",
+      icon: ClipboardList,
+      text:
+        pendingTests.length === 1
+          ? `Kumpulkan hasil tugas uji "${pendingTests[0].title}"`
+          : `Kumpulkan hasil ${pendingTests.length} tugas uji`,
+      targetId: "bagian-tugas-uji",
     });
   }
   const upcomingInterview = interviews
@@ -1457,6 +1473,20 @@ function StatusPageInner({
                           ) : null}
                         </div>
                       </div>
+                    </div>
+                  ) : null}
+
+                  {/* NR-54: tugas uji dari tim + pengumpulan hasil langsung di sini */}
+                  {detail && assessments.length > 0 && finalStatus !== "REJECTED" ? (
+                    <div id="bagian-tugas-uji">
+                      <TestTasksPanel
+                        assessments={assessments}
+                        chosenFor={testFileFor}
+                        busyId={testBusyId}
+                        onSelectTestFile={selectTestFile}
+                        onSubmitTest={submitTestWork}
+                        ts={t.status.test}
+                      />
                     </div>
                   ) : null}
 
