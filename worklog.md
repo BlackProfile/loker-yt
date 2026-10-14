@@ -4193,3 +4193,23 @@ Stage Summary:
 - Desain keamanan: auth ganda kode+email, respons gagal seragam, tolak lamaran final & tugas yang sudah dikumpul, catatan penilaian internal (resultNote) tidak pernah bocor ke pelamar.
 - Catatan operasional: (1) auto-sync TERBUKTI berulang menghidupkan kembali 5 route mati — jika tsc tiba-tiba error di route lama, hapus ulang, cek worklog; (2) cache Turbopack bisa korup saat restart tak bersih — pulihkan dengan rm -rf .next.
 - Berkas utama: src/app/api/public/assessment/submit/route.ts (baru), src/app/api/public/track/route.ts, prisma/schema.prisma, src/lib/types.ts, src/components/landing/status/status-test-tasks.tsx (baru), status-page.tsx, strings.ts, detail-nr24-sections.tsx.
+---
+Task ID: NR55-B
+Agent: general-purpose
+Task: Edit slot wawancara self-service (PATCH /api/admin/slots/[id] kini dipakai UI) + perbaiki komentar usang
+
+Work Log:
+- Baca worklog (konvensi: tanpa emoji/biru, api helpers, canMutate gating, toast sonner) + kontrak API: PATCH /api/admin/slots/[id] menerima field opsional {scheduledAt (ISO), durationMin (int 10-480), mode, platform, meetingLink (string|null, wajib http(s)), address (string|null), interviewers (array string -> disimpan JSON, maks 6)}; 409 bila slot booked; 400 bila ONLINE tanpa link / ONSITE tanpa alamat; interviewers di UI = input teks dipisah koma (konsisten dgn form buka slot).
+- src/components/admin/interview-tab.tsx (SATU-SATUNYA file yang diubah):
+  - Komentar usang di atas SlotManagerPanel diperbaiki: kini mencantumkan GET/POST /api/admin/slots + PATCH/DELETE /api/admin/slots/[id] (OWNER/HR) + catatan 409 utk slot booked.
+  - Tombol "Ubah" (Pencil, ghost ikon, aria-label "Ubah slot {tanggal}") ditambah di tiap baris slot, digate canMutate sama seperti Hapus, tetap tampil utk slot booked (server menolak 409; tanpa title tooltip). Hapus tetap disembunyikan utk slot booked; keduanya dibungkus div flex.
+  - Dialog shadcn "Ubah Slot Wawancara" (opsi b: form terpisah pengguna form buka slot — form lama inline, bukan komponen): posisi tampil read-only (PATCH tak menerima positionId), tanggal & jam (datetime-local, prefill via isoToLocalInput), durasi menit, mode, platform, link meeting (ONLINE) / alamat (ONSITE), pewawancara (koma). max-h-[92vh] overflow-y-auto nice-scrollbar sm:max-w-md — aman di 390px.
+  - handleEditSlot: validasi klien sama persis dgn handleCreateSlot (tanggal wajib, durasi int 10-480, link http(s) utk ONLINE, alamat wajib utk ONSITE) lalu PATCH /api/admin/slots/{id}; meetingLink/address dikirim null utk mode non-aktif agar nilai lama tak tertinggal saat mode berganti (server menerima null).
+  - Sukses: toast "Slot wawancara diperbarui" -> dialog ditutup -> refresh senyap via load(true) yang ada. Gagal: reportError(err) — 409 "Slot sudah dipilih pelamar dan tidak bisa diubah." dsb. tampil sebagai toast pesan server (pola reportError: 401 sesi, 403 akses, selain itu pesan server).
+- KUALITAS: bunx tsc --noEmit -> 0 error di src/ (warisan lama hanya scripts/, examples/, skills/); bun run lint -> exit 0. Tanpa restart dev server, tanpa git, tanpa browser.
+
+Stage Summary:
+- Slot wawancara self-service kini bisa diubah langsung (jam/durasi/mode/platform/link/alamat/pewawancara) tanpa hapus + buat ulang; backend PATCH yang sejak awal lengkap akhirnya terpakai UI-nya.
+- Keputusan: opsi (b) dialog terpisah — form create ternyata inline di SlotManagerPanel (bukan komponen), generalisasi akan memaksa ekstraksi besar; posisi slot tidak dapat diubah di dialog (memang tak didukung PATCH), ditampilkan sebagai teks read-only.
+- Payload PATCH: { scheduledAt: ISO, durationMin: number, mode, platform, meetingLink: string|null, address: string|null, interviewers: string[] }.
+- Berkas utama: src/components/admin/interview-tab.tsx (satu-satunya).
