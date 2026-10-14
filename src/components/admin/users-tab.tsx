@@ -51,6 +51,7 @@ import {
   EyeOff,
   KeyRound,
   Loader2,
+  LogOut,
   MailPlus,
   MoreVertical,
   Pencil,
@@ -227,6 +228,10 @@ export function UsersTab() {
   const [inviteSaving, setInviteSaving] = useState(false);
   const [inviteActionBusy, setInviteActionBusy] = useState(false);
   const [cancelInviteTarget, setCancelInviteTarget] = useState<AdminUser | null>(null);
+
+  // Cabut semua sesi pengguna (OWNER, NR55-F) — dari menu aksi undangan.
+  const [revokeSessionsTarget, setRevokeSessionsTarget] = useState<AdminUser | null>(null);
+  const [revokingSessions, setRevokingSessions] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -590,6 +595,24 @@ export function UsersTab() {
     }
   }
 
+  // Cabut SEMUA sesi login satu pengguna (OWNER): semua perangkat logout paksa.
+  // Endpoint: DELETE /api/admin/sessions?scope=user&userId=...
+  async function handleRevokeSessions() {
+    if (!revokeSessionsTarget || revokingSessions) return;
+    setRevokingSessions(true);
+    try {
+      await apiDelete(
+        `/api/admin/sessions?scope=user&userId=${encodeURIComponent(revokeSessionsTarget.id)}`
+      );
+      toast.success("Semua sesi pengguna dicabut");
+      setRevokeSessionsTarget(null);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setRevokingSessions(false);
+    }
+  }
+
   // NR46 — true bila role diubah dan konfirmasi email belum cocok (kunci simpan).
   const roleConfirmMismatch =
     !!editing &&
@@ -864,6 +887,15 @@ export function UsersTab() {
                             <UserX className="size-4" aria-hidden="true" />
                             Batalkan undangan
                           </DropdownMenuItem>
+                          {role === "OWNER" ? (
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() => setRevokeSessionsTarget(user)}
+                            >
+                              <LogOut className="size-4" aria-hidden="true" />
+                              Cabut Semua Sesi
+                            </DropdownMenuItem>
+                          ) : null}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : null}
@@ -1425,6 +1457,38 @@ export function UsersTab() {
               disabled={inviteActionBusy}
             >
               {inviteActionBusy ? "Membatalkan..." : "Ya, Batalkan Undangan"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Konfirmasi cabut semua sesi pengguna (OWNER) */}
+      <AlertDialog
+        open={!!revokeSessionsTarget}
+        onOpenChange={(open) => {
+          if (!open) setRevokeSessionsTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cabut semua sesi pengguna ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {revokeSessionsTarget
+                ? `Semua perangkat pengguna ini akan logout dan harus login ulang (${revokeSessionsTarget.email}).`
+                : "Semua perangkat pengguna ini akan logout dan harus login ulang."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={revokingSessions}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleRevokeSessions();
+              }}
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              disabled={revokingSessions}
+            >
+              {revokingSessions ? "Mencabut..." : "Ya, Cabut Semua Sesi"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

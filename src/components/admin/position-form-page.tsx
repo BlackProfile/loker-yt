@@ -1088,7 +1088,7 @@ export function PositionFormPage({
           </p>
         </div>
 
-        {/* Baris aksi template: isi dari template (create) + simpan sebagai template */}
+        {/* Baris aksi template: isi dari template (create) + simpan sebagai template + kelola (OWNER) */}
         <div className="flex flex-wrap items-center gap-2">
           {!editing ? (
             <DropdownMenu onOpenChange={handleTemplatesOpenChange}>
@@ -1128,6 +1128,22 @@ export function PositionFormPage({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+          ) : null}
+          {role === "OWNER" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-11 text-muted-foreground hover:text-foreground sm:size-9"
+              onClick={() => {
+                ensureTemplatesLoaded();
+                setManageTemplatesOpen(true);
+              }}
+              aria-label="Kelola template posisi"
+              title="Kelola Template"
+            >
+              <Settings2 className="size-4" aria-hidden="true" />
+            </Button>
           ) : null}
           <Button
             type="button"
@@ -1906,6 +1922,102 @@ export function PositionFormPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog kelola template posisi (OWNER) — daftar semua template + hapus per item */}
+      <Dialog open={manageTemplatesOpen} onOpenChange={setManageTemplatesOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Kelola Template Posisi</DialogTitle>
+            <DialogDescription>
+              Daftar semua template posisi. Menghapus template tidak memengaruhi posisi yang sudah
+              dibuat dari template tersebut.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="nice-scrollbar flex max-h-96 flex-col gap-2 overflow-y-auto">
+            {templatesLoading ? (
+              <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                Memuat template...
+              </div>
+            ) : templates !== null && templates.length > 0 ? (
+              templates.map((tpl) => (
+                <div
+                  key={tpl.id}
+                  className="flex items-center gap-2 rounded-lg border px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{tpl.name}</p>
+                    {tpl.note ? (
+                      <p className="truncate text-xs text-muted-foreground">{tpl.note}</p>
+                    ) : null}
+                    <p className="text-xs text-muted-foreground">
+                      Dibuat {formatDateTime(tpl.createdAt)}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-11 shrink-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:size-9 dark:hover:bg-rose-950"
+                    onClick={() => setTplDeleteTarget(tpl)}
+                    aria-label={`Hapus template ${tpl.name}`}
+                  >
+                    <Trash2 className="size-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              ))
+            ) : (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Belum ada template posisi.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setManageTemplatesOpen(false)}>
+              Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Konfirmasi hapus template posisi (OWNER) */}
+      <AlertDialog
+        open={!!tplDeleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setTplDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus template ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {tplDeleteTarget
+                ? `Template "${tplDeleteTarget.name}" akan dihapus permanen dan tidak bisa dipakai lagi untuk "Isi dari Template".`
+                : "Tindakan tidak bisa dibatalkan."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingTemplate}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteTemplate();
+              }}
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              disabled={deletingTemplate}
+            >
+              {deletingTemplate ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menghapus...
+                </>
+              ) : (
+                "Ya, Hapus Template"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

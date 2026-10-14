@@ -38,6 +38,7 @@ import {
   ClipboardList,
   Copy,
   ExternalLink,
+  Eye,
   FileText,
   Inbox,
   LayoutDashboard,
@@ -74,6 +75,7 @@ import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { Reveal } from "./motion-primitives";
 import { AiScoreBadge, StatusBadge } from "./status-badge";
+import { ApplicationDetailDialog } from "./application-detail-dialog";
 import { PositionFormPage } from "./position-form-page";
 import { FormBuilderPage } from "./form-builder-page";
 import {
@@ -151,6 +153,8 @@ export function PositionManagePage({
 
   const [applicants, setApplicants] = useState<Application[] | null>(null);
   const [applicantsLoading, setApplicantsLoading] = useState(true);
+  // Dialog detail lamaran (NR55-F) — baris pelamar kini bisa dibuka detailnya.
+  const [detailApp, setDetailApp] = useState<Application | null>(null);
 
   const loadApplicants = useCallback(async () => {
     try {
@@ -772,19 +776,29 @@ export function PositionManagePage({
                 {applicants.map((applicant) => (
                   <li
                     key={applicant.id}
-                    className="flex items-center gap-3 rounded-lg border px-3 py-2"
+                    className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3 py-2"
                   >
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-600 to-amber-500 text-[11px] font-bold text-white">
                       {initialsOf(applicant.name)}
                     </span>
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-[140px] flex-1">
                       <p className="truncate text-sm font-medium">{applicant.name}</p>
                       <p className="truncate text-xs text-muted-foreground">
                         {formatDateTime(applicant.createdAt)} · {applicant.trackingCode}
                       </p>
                     </div>
-                    <AiScoreBadge score={applicant.aiScore} />
-                    <StatusBadge status={applicant.status} />
+                    <AiScoreBadge score={applicant.aiScore} className="shrink-0" />
+                    <StatusBadge status={applicant.status} className="shrink-0" />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-11 shrink-0 gap-1.5 px-2.5 text-xs sm:h-9"
+                      onClick={() => setDetailApp(applicant)}
+                      aria-label={`Detail lamaran ${applicant.name}`}
+                    >
+                      <Eye className="size-4" aria-hidden="true" />
+                      Detail
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -916,6 +930,16 @@ export function PositionManagePage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog detail lamaran — baris "Pelamar Posisi Ini" (NR55-F) */}
+      <ApplicationDetailDialog
+        application={detailApp}
+        onOpenChange={(open) => {
+          if (!open) setDetailApp(null);
+        }}
+        onSaved={() => void loadApplicants()}
+        onDeleted={() => void loadApplicants()}
+      />
     </div>
   );
 }

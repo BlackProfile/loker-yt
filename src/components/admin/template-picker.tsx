@@ -3,7 +3,9 @@
 // TemplatePicker — dialog pemilih template pesan global (MessageTemplate).
 // Dipakai offer-dialog (kind OFFER) dan quick-reject-dialog (kind REJECT):
 // pilih template -> body dikembalikan lewat onPick untuk mengisi field pesan/catatan.
-// Menyediakan kelola sederhana inline: tambah template baru & hapus (OWNER/HR).
+// Menyediakan kelola sederhana inline: tambah, ubah, & hapus template (OWNER/HR).
+// NR55-D — hapus memakai AlertDialog (bukan window.confirm) dan tiap baris
+// punya "Ubah" (Pencil) -> dialog kecil nama+isi -> PATCH /api/admin/templates/[id].
 // Variabel {nama}, {posisi}, dll dibiarkan apa adanya — pengisian variabel
 // ditangani mekanisme template per posisi yang sudah ada.
 
@@ -12,16 +14,27 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FileText, Loader2, Plus, Trash2 } from "lucide-react";
+import { FileText, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { apiDelete, apiGet, apiPost } from "./api";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import { useAdminSession } from "./admin-context";
 
 export type TemplateKind = "OFFER" | "REJECT" | "INVITE" | "CUSTOM";
@@ -60,6 +73,15 @@ export function TemplatePicker({
   const [newName, setNewName] = useState("");
   const [newBody, setNewBody] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  // NR55-D — hapus lewat AlertDialog (menggantikan window.confirm).
+  const [deleteTarget, setDeleteTarget] = useState<TemplateRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // NR55-D — Ubah template: dialog kecil nama + isi (jenis tetap mengikuti
+  // filter kind picker; PATCH hanya {name, body}).
+  const [editTarget, setEditTarget] = useState<TemplateRow | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -117,20 +139,59 @@ export function TemplatePicker({
     }
   }
 
-  async function handleDelete(template: TemplateRow) {
-    const ok = window.confirm(`Hapus template "${template.name}"?`);
-    if (!ok) return;
+  function openEdit(template: TemplateRow) {
+    setEditTarget(template);
+    setEditName(template.name);
+    setEditBody(template.body);
+  }
+
+  async function handleEditSave() {
+    if (!editTarget || savingEdit) return;
+    const name = editName.trim();
+    const body = editBody.trim();
+    if (!name) {
+      toast.error("Nama template wajib diisi.");
+      return;
+    }
+    if (!body) {
+      toast.error("Isi template wajib diisi.");
+      return;
+    }
+    setSavingEdit(true);
     try {
-      await apiDelete(`/api/admin/templates/${template.id}`);
-      setRows((prev) => prev.filter((t) => t.id !== template.id));
-      toast.success("Template dihapus");
+      const res = await apiPatch<{ template: TemplateRow }>(
+        `/api/admin/templates/${editTarget.id}`,
+        { name, body }
+      );
+      // Refresh list data dari respons PATCH (authoritative) tanpa flash spinner.
+      setRows((prev) => prev.map((t) => (t.id === res.template.id ? res.template : t)));
+      setEditTarget(null);
+      toast.success("Template diperbarui");
     } catch (err) {
       reportError(err);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleDeleteConfirmed() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await apiDelete(`/api/admin/templates/${deleteTarget.id}`);
+      setRows((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+      toast.success("Template dihapus");
+      setDeleteTarget(null);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDeleting(false);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

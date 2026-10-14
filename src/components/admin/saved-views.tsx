@@ -692,6 +692,61 @@ export function SavedViewsBar({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* NR55-D — dialog kecil Ubah Nama (dipakai view lokal & server) */}
+      <Dialog
+        open={renamingTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRenamingTarget(null);
+        }}
+      >
+        <DialogContent className="rounded-2xl sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Ubah Nama Tampilan</DialogTitle>
+            <DialogDescription>
+              {renamingTarget?.server
+                ? "Perubahan nama tersimpan di server dan tersinkron antar perangkat admin."
+                : "Perubahan nama hanya berlaku di peramban ini."}
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={renameInput}
+            onChange={(e) => setRenameInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleRenameSave();
+              }
+            }}
+            placeholder="Nama tampilan"
+            aria-label="Nama tampilan baru"
+            maxLength={renamingTarget?.server ? SERVER_NAME_MAX : MAX_NAME}
+            autoFocus
+          />
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setRenamingTarget(null)}
+              disabled={renaming}
+              className="h-11 sm:h-9"
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={() => void handleRenameSave()}
+              disabled={renaming || renameInput.trim().length === 0}
+              className="h-11 active:scale-[0.99] sm:h-9"
+            >
+              {renaming ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Pencil className="size-4" aria-hidden="true" />
+              )}
+              Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
