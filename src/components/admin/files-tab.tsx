@@ -104,7 +104,6 @@ function isImageMime(mimeType: string, filename: string): boolean {
 function FileThumb({ item }: { item: AdminFileItem }) {
   if (isImageMime(item.mimeType, item.filename)) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={`/api/files/${encodeURIComponent(item.id)}?inline=1`}
         alt={item.filename}
