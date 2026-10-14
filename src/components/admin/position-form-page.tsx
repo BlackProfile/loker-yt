@@ -28,6 +28,16 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -59,6 +69,7 @@ import {
   MapPin,
   Pin,
   Send,
+  Settings2,
   Trash2,
   Upload,
   Wallet,
@@ -86,7 +97,7 @@ import {
   type WorkMode,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { apiFetch, apiGet, apiPatch, apiPost } from "./api";
+import { apiDelete, apiFetch, apiGet, apiPatch, apiPost } from "./api";
 import { formatDateTime, isoToLocalInput, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
 import { StringListEditor } from "./position-list-editors";
@@ -589,7 +600,7 @@ export function PositionFormPage({
   onSaved: (updated: Position) => void;
   onCancel: () => void;
 }) {
-  const { reportError } = useAdminSession();
+  const { reportError, role } = useAdminSession();
   const [form, setForm] = useState<FormState>(() =>
     editing ? buildFormState(editing) : EMPTY_FORM
   );
@@ -613,6 +624,10 @@ export function PositionFormPage({
   const [tplNote, setTplNote] = useState("");
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
+  // Kelola Template (OWNER): dialog daftar template + hapus per item.
+  const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false);
+  const [tplDeleteTarget, setTplDeleteTarget] = useState<PositionTemplateMeta | null>(null);
+  const [deletingTemplate, setDeletingTemplate] = useState(false);
 
   // Dokumen wajib tambahan — editornya kini ada di halaman setelan Penerimaan;
   // nilainya tetap diinisialisasi dari posisi & dikirim utuh di payload.
@@ -656,17 +671,49 @@ export function PositionFormPage({
 
   // ---- Template posisi ----
 
-  // Muat daftar template saat dropdown "Isi dari Template" pertama kali dibuka.
-  function handleTemplatesOpenChange(open: boolean) {
-    if (!open || templates !== null || templatesLoading) return;
+  // Muat daftar template saat dropdown "Isi dari Template" / dialog Kelola
+  // pertama kali dibuka (sekali muat, dipakai bersama).
+  function ensureTemplatesLoaded() {
+    if (templates !== null || templatesLoading) return;
+    void refreshTemplates();
+  }
+
+  async function refreshTemplates() {
     setTemplatesLoading(true);
-    apiGet<PositionTemplateMeta[]>("/api/admin/position-templates")
-      .then((rows) => setTemplates(Array.isArray(rows) ? rows : []))
-      .catch((err) => {
-        reportError(err);
-        setTemplates([]);
-      })
-      .finally(() => setTemplatesLoading(false));
+    try {
+      const rows = await apiGet<PositionTemplateMeta[]>("/api/admin/position-templates");
+      setTemplates(Array.isArray(rows) ? rows : []);
+    } catch (err) {
+      reportError(err);
+      setTemplates([]);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  function handleTemplatesOpenChange(open: boolean) {
+    if (!open) return;
+    ensureTemplatesLoaded();
+  }
+
+  // Hapus template posisi (hanya OWNER di server: DELETE ...?id=), lalu muat
+  // ulang daftar agar dialog Kelola tetap segar.
+  async function handleDeleteTemplate() {
+    if (!tplDeleteTarget || deletingTemplate) return;
+    const target = tplDeleteTarget;
+    setDeletingTemplate(true);
+    try {
+      await apiDelete(
+        `/api/admin/position-templates?id=${encodeURIComponent(target.id)}`
+      );
+      toast.success(`Template "${target.name}" dihapus`);
+      setTplDeleteTarget(null);
+      await refreshTemplates();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDeletingTemplate(false);
+    }
   }
 
   async function handleApplyTemplate(id: string) {

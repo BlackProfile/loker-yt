@@ -1268,6 +1268,256 @@ function WebhooksCard() {
   );
 }
 
+/* ------------------- Do-not-Hire Global (NR55-E) ------------------- */
+
+// Kelola daftar global pelamar yang diblokir (GET/PUT/DELETE /api/admin/donothire).
+// Lihat (OWNER/HR): daftar kunci (email lowercase / telepon digit) + alasan.
+// Tambah (OWNER/HR): PUT {key, reason}. Hapus (OWNER saja): DELETE ?key=&confirm=YA.
+function DoNotHireCard() {
+  const { role, reportError } = useAdminSession();
+  const isOwner = role === "OWNER";
+  const canManage = role === "OWNER" || role === "HR";
+
+  const [entries, setEntries] = useState<DoNotHireEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [key, setKey] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DoNotHireEntry | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const load = useCallback(async () => {
+    if (role !== "OWNER" && role !== "HR") {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await apiGet<{ entries: DoNotHireEntry[] }>("/api/admin/donothire");
+      setEntries(data.entries ?? []);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [role, reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // VIEWER: seluruh kartu disembunyikan (backend juga menolak 403).
+  if (!canManage) return null;
+
+  // Normalisasi kunci mirip backend: ber-@ -> email lowercase, selain itu digit saja.
+  function normalizeKey(raw: string): string {
+    const trimmed = raw.trim();
+    return trimmed.includes("@") ? trimmed.toLowerCase() : trimmed.replace(/\D/g, "");
+  }
+
+  async function handleAdd() {
+    if (saving) return;
+    const normalized = normalizeKey(key);
+    if (!normalized) {
+      toast.error("Masukkan email yang valid atau nomor telepon yang berisi angka.");
+      return;
+    }
+    if (normalized.length > 120) {
+      toast.error("Kunci maksimal 120 karakter.");
+      return;
+    }
+    const cleanReason = reason.trim();
+    if (!cleanReason) {
+      toast.error("Alasan wajib diisi.");
+      return;
+    }
+    if (cleanReason.length > 300) {
+      toast.error("Alasan maksimal 300 karakter.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiPut<{ ok: boolean; entries: DoNotHireEntry[] }>(
+        "/api/admin/donothire",
+        { key: normalized, reason: cleanReason },
+      );
+      setEntries(res.entries ?? []);
+      setKey("");
+      setReason("");
+      toast.success("Entri Do-not-Hire disimpan.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const res = await apiDelete<{ ok: boolean; entries: DoNotHireEntry[] }>(
+        `/api/admin/donothire?key=${encodeURIComponent(deleteTarget.key)}&confirm=YA`,
+      );
+      setEntries(res.entries ?? []);
+      setDeleteTarget(null);
+      toast.success("Entri Do-not-Hire dihapus.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <DataCard
+      icon={UserX}
+      title="Do-not-Hire Global"
+      description="Pelamar dengan email atau nomor telepon terdaftar akan diblokir saat submit lamaran baru dan kartu karyawannya dicabut otomatis."
+      status={
+        loading
+          ? undefined
+          : entries.length === 0
+            ? { label: "Kosong", tone: "neutral" }
+            : { label: `${entries.length} entri`, tone: "warn" }
+      }
+    >
+      {/* Form tambah entri */}
+      <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50/60 p-4 dark:bg-zinc-900/40">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="dnh-key">Email atau Nomor Telepon</Label>
+          <Input
+            id="dnh-key"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="mis. nama@email.com atau 081234567890"
+            className="h-10"
+            inputMode="email"
+            maxLength={120}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="dnh-reason">Alasan</Label>
+          <Textarea
+            id="dnh-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="mis. Dokumen palsu saat wawancara (maks 300 karakter)"
+            rows={2}
+            maxLength={300}
+          />
+        </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={() => void handleAdd()}
+            disabled={saving}
+            className="h-11 active:scale-[0.99] sm:h-9"
+          >
+            {saving ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Plus className="size-4" aria-hidden="true" />
+            )}
+            Tambah ke Daftar
+          </Button>
+        </div>
+      </div>
+
+      {/* Daftar entri */}
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Memuat daftar Do-not-Hire...
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 py-6 text-center">
+          <UserX className="size-8 text-muted-foreground/50" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground">
+            Belum ada pelamar di daftar Do-not-Hire. Tambahkan email atau nomor telepon di
+            atas bila ada pelamar yang perlu diblokir.
+          </p>
+        </div>
+      ) : (
+        <div className="flex max-h-96 flex-col gap-2 overflow-y-auto nice-scrollbar">
+          {entries.map((entry) => (
+            <div key={entry.key} className="rounded-lg border p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                    >
+                      {entry.key.includes("@") ? "Email" : "Telepon"}
+                    </Badge>
+                    <p className="min-w-0 break-all text-sm font-medium">{entry.key}</p>
+                  </div>
+                  <p className="mt-1 text-xs whitespace-pre-line text-muted-foreground">
+                    {entry.reason}
+                  </p>
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    Ditambahkan {entry.by} • {formatDateTime(entry.at)}
+                  </p>
+                </div>
+                {isOwner ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-11 w-9 shrink-0 border-rose-200 p-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700 sm:h-9 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                    aria-label={`Hapus entri ${entry.key}`}
+                    onClick={() => setDeleteTarget(entry)}
+                  >
+                    <Trash2 className="size-4" aria-hidden="true" />
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Konfirmasi hapus entri */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!deleting && !open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus entri Do-not-Hire?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-medium break-all">{deleteTarget?.key}</span> akan
+              dikeluarkan dari daftar blokir. Pelamar dengan email/nomor telepon ini{" "}
+              <strong>bisa melamar kembali</strong> seperti biasa.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDelete();
+              }}
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Menghapus...
+                </>
+              ) : (
+                "Ya, Hapus Entri"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </DataCard>
+  );
+}
+
 /* ---------------------------- Arsip Otomatis ---------------------------- */
 
 function AutoArchiveCard() {
@@ -3195,6 +3445,9 @@ export function DataTab() {
 
       {/* ------------------------ Pusat Privasi (4-c) ------------------------ */}
       <PrivacyCard />
+
+      {/* ------------------ Do-not-Hire Global (NR55-E) ------------------ */}
+      <DoNotHireCard />
       </SectionGroup>
 
       {/* -------------------- Kelompok: Situs & Integrasi -------------------- */}

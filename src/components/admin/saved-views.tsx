@@ -9,6 +9,11 @@
 // Baris chip dirender DI ATAS bar filter: klik chip = terapkan filter,
 // ikon x kecil = hapus (konfirmasi inline, tanpa dialog besar).
 // Chip yang filternya identik dengan state aktif diberi ring rose.
+// NR55-D — aksi edit: chip server punya menu kecil (Ubah Nama / Perbarui
+// Filter dengan snapshot filter aktif saat ini / Bagikan-Berhenti Bagikan)
+// via PATCH /api/admin/saved-views/[id]; chip lokal punya Ubah Nama.
+// Menu edit server hanya tampil untuk pemilik view ATAU OWNER — cermin
+// enforcement PATCH (role OWNER/HR, bukan VIEWER, sesi asli).
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -20,21 +25,40 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { BookmarkPlus, Check, Cloud, Loader2, X } from "lucide-react";
+import {
+  BookmarkPlus,
+  Check,
+  Cloud,
+  CloudOff,
+  Loader2,
+  MoreVertical,
+  Pencil,
+  RefreshCw,
+  Share2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { SavedViewDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { apiDelete, apiGet, apiPost } from "./api";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
 import { useAdminSession } from "./admin-context";
 
 const STORAGE_KEY = "lumina.admin.savedViews";
 const MAX_VIEWS = 12;
 const MAX_NAME = 40;
+/** NR55-D — batas nama view server (NAME_MAX di route PATCH). */
+const SERVER_NAME_MAX = 80;
 const VIEW_TAB = "applications";
 
 /** Snapshot filter aktif tab Pelamar — semua nilai harus serializable. */
@@ -153,8 +177,15 @@ export function SavedViewsBar({
   /** Terapkan snapshot ke state filter induk. */
   onApply: (filters: AdminFilterSnapshot) => void;
 }) {
-  const { role, reportError } = useAdminSession();
+  const { session, role, canMutate, reportError } = useAdminSession();
   const isOwner = role === "OWNER";
+
+  // NR55-D — cermin enforcement PATCH /api/admin/saved-views/[id]: hanya
+  // pemilik view ATAU OWNER yang boleh mengubah (route memakai sesi asli,
+  // bukan role pratinjau) dan role bukan VIEWER (PATCH menolak 403).
+  function canEditServerView(view: SavedViewDto): boolean {
+    return canMutate && (view.ownerId === session.id || session.role === "OWNER");
+  }
 
   // Komponen ini hanya termount di panel admin (client-only), jadi inisialisasi
   // lazy dari localStorage aman terhadap SSR/hidrasi (pola yang sama dgn sidebar).
@@ -171,6 +202,13 @@ export function SavedViewsBar({
   const [saveToServer, setSaveToServer] = useState(false);
   const [shared, setShared] = useState(false);
   const [deletingServer, setDeletingServer] = useState(false);
+
+  // NR55-D — Ubah Nama (dialog kecil, dipakai view lokal & server) + status
+  // mutasi PATCH per view server (menu trigger menampilkan spinner).
+  const [renamingTarget, setRenamingTarget] = useState<{ server: boolean; id: string } | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [mutatingServerId, setMutatingServerId] = useState<string | null>(null);
 
   const loadServerViews = useCallback(async () => {
     try {
@@ -242,6 +280,64 @@ export function SavedViewsBar({
     loadServerViews,
     reportError,
   ]);
+
+  /** NR55-D — buka dialog Ubah Nama untuk view lokal atau server. */
+  function openRename(target: { server: boolean; id: string; name: string }) {
+    setRenameInput(target.name);
+    setRenamingTarget({ server: target.server, id: target.id });
+  }
+
+  /** NR55-D — PATCH view server ({name?, query?, shared?}) lalu muat ulang daftar. */
+  async function patchServerView(
+    view: SavedViewDto,
+    body: Record<string, unknown>,
+    successMessage: string
+  ) {
+    if (mutatingServerId) return;
+    setMutatingServerId(view.id);
+    try {
+      await apiPatch<SavedViewDto>(
+        `/api/admin/saved-views/${encodeURIComponent(view.id)}`,
+        body
+      );
+      await loadServerViews();
+      toast.success(successMessage);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setMutatingServerId(null);
+    }
+  }
+
+  /** NR55-D — simpan hasil Ubah Nama (lokal: localStorage; server: PATCH). */
+  async function handleRenameSave() {
+    if (!renamingTarget || renaming) return;
+    const name = renameInput.trim().slice(0, renamingTarget.server ? SERVER_NAME_MAX : MAX_NAME);
+    if (!name) {
+      toast.error("Tulis nama tampilan terlebih dahulu.");
+      return;
+    }
+    setRenaming(true);
+    try {
+      if (renamingTarget.server) {
+        await apiPatch<SavedViewDto>(
+          `/api/admin/saved-views/${encodeURIComponent(renamingTarget.id)}`,
+          { name }
+        );
+        await loadServerViews();
+      } else {
+        const next = views.map((v) => (v.id === renamingTarget.id ? { ...v, name } : v));
+        persistViews(next);
+        setViews(next);
+      }
+      toast.success(`Nama tampilan diperbarui menjadi "${name}"`);
+      setRenamingTarget(null);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setRenaming(false);
+    }
+  }
 
   /** Hapus view server (pemilik view ATAU OWNER). 403 → toast via reportError. */
   async function deleteServerView(view: SavedViewDto) {
@@ -319,6 +415,16 @@ export function SavedViewsBar({
                   title={`Terapkan tampilan "${view.name}"`}
                 >
                   {view.name}
+                </button>
+                {/* NR55-D — Ubah Nama view lokal (localStorage) */}
+                <button
+                  type="button"
+                  className="flex h-full items-center border-l border-zinc-200 px-1.5 text-muted-foreground transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800"
+                  onClick={() => openRename({ server: false, id: view.id, name: view.name })}
+                  aria-label={`Ubah nama tampilan ${view.name}`}
+                  title="Ubah nama tampilan"
+                >
+                  <Pencil className="size-3.5" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -403,6 +509,75 @@ export function SavedViewsBar({
                     </Badge>
                   ) : null}
                 </button>
+                {/* NR55-D — menu edit view server (pemilik ATAU OWNER): Ubah Nama,
+                    Perbarui Filter (snapshot aktif saat ini), Bagikan/Stop share */}
+                {canEditServerView(view) ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-full items-center border-l border-zinc-200 px-1.5 text-muted-foreground transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-800 dark:hover:bg-zinc-800"
+                        disabled={mutatingServerId === view.id}
+                        aria-label={`Aksi tampilan server ${view.name}`}
+                        title="Aksi tampilan"
+                      >
+                        {mutatingServerId === view.id ? (
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <MoreVertical className="size-3.5" aria-hidden="true" />
+                        )}
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-60">
+                      <DropdownMenuItem
+                        onClick={() => openRename({ server: true, id: view.id, name: view.name })}
+                      >
+                        <Pencil className="size-4" aria-hidden="true" />
+                        Ubah Nama
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() =>
+                          void patchServerView(
+                            view,
+                            { query: currentSnapshot },
+                            "Filter tersimpan diperbarui"
+                          )
+                        }
+                      >
+                        <RefreshCw className="size-4" aria-hidden="true" />
+                        Perbarui Filter
+                      </DropdownMenuItem>
+                      {isOwner && !view.shared ? (
+                        <DropdownMenuItem
+                          onClick={() =>
+                            void patchServerView(
+                              view,
+                              { shared: true },
+                              "Tampilan dibagikan ke semua admin"
+                            )
+                          }
+                        >
+                          <Share2 className="size-4" aria-hidden="true" />
+                          Bagikan ke Semua Admin
+                        </DropdownMenuItem>
+                      ) : null}
+                      {view.shared ? (
+                        <DropdownMenuItem
+                          onClick={() =>
+                            void patchServerView(
+                              view,
+                              { shared: false },
+                              "Tampilan berhenti dibagikan"
+                            )
+                          }
+                        >
+                          <CloudOff className="size-4" aria-hidden="true" />
+                          Berhenti Bagikan
+                        </DropdownMenuItem>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
                 <button
                   type="button"
                   className="flex h-full items-center border-l border-zinc-200 px-1.5 text-muted-foreground transition-colors hover:bg-rose-50 hover:text-rose-600 dark:border-zinc-800 dark:hover:bg-rose-950 dark:hover:text-rose-400"
