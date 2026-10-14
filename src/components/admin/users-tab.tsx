@@ -858,6 +858,18 @@ export function UsersTab() {
                         <ShieldOff className="size-4" aria-hidden="true" />
                       </Button>
                     ) : null}
+                    {role === "OWNER" ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-11 sm:size-9"
+                        onClick={() => setRevokeSessionsTarget(user)}
+                        aria-label={`Cabut semua sesi pengguna ${user.name}`}
+                        title="Cabut Semua Sesi"
+                      >
+                        <LogOut className="size-4" aria-hidden="true" />
+                      </Button>
+                    ) : null}
                     {user.invitePending ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
