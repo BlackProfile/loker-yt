@@ -778,6 +778,12 @@ function WebhooksCard() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WebhookEndpointRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // NR55-E — pengubahan endpoint (url/events/aktif) lewat dialog yang menyalin form tambah.
+  const [editTarget, setEditTarget] = useState<WebhookEndpointRow | null>(null);
+  const [editUrl, setEditUrl] = useState("");
+  const [editEvents, setEditEvents] = useState<string[]>(["*"]);
+  const [editActive, setEditActive] = useState(true);
+  const [editSaving, setEditSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (role !== "OWNER") {
@@ -815,6 +821,55 @@ function WebhooksCard() {
       }
       return prev.filter((v) => v !== event);
     });
+  }
+
+  // NR55-E — varian toggleEvent untuk daftar event di dialog ubah.
+  function toggleEditEvent(event: string, checked: boolean) {
+    setEditEvents((prev) => {
+      if (checked) {
+        if (event === "*") return ["*"];
+        const next = prev.filter((v) => v !== "*");
+        return next.includes(event) ? next : [...next, event];
+      }
+      return prev.filter((v) => v !== event);
+    });
+  }
+
+  // NR55-E — buka dialog Ubah Endpoint dengan nilai awal dari baris terpilih.
+  function openEditEndpoint(row: WebhookEndpointRow) {
+    setEditTarget(row);
+    setEditUrl(row.url);
+    setEditEvents(row.events.length > 0 ? [...row.events] : ["*"]);
+    setEditActive(row.active);
+  }
+
+  // NR55-E — simpan perubahan endpoint (PATCH) lalu perbarui barisnya di daftar.
+  async function handleEditSave() {
+    if (!editTarget || editSaving) return;
+    if (!editUrl.trim()) {
+      toast.error("URL webhook wajib diisi.");
+      return;
+    }
+    if (editEvents.length === 0) {
+      toast.error("Pilih minimal satu event yang dikirim.");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const updated = await apiPatch<WebhookEndpointRow>("/api/admin/webhooks", {
+        id: editTarget.id,
+        url: editUrl.trim(),
+        events: editEvents,
+        active: editActive,
+      });
+      setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setEditTarget(null);
+      toast.success("Endpoint webhook diperbarui.");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   async function handleCreate() {
@@ -1053,6 +1108,15 @@ function WebhooksCard() {
                     <Button
                       variant="outline"
                       size="sm"
+                      className="h-11 w-9 p-0 sm:h-9"
+                      aria-label={`Ubah endpoint ${row.url}`}
+                      onClick={() => openEditEndpoint(row)}
+                    >
+                      <Pencil className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       className="h-9"
                       disabled={testingId !== null}
                       onClick={() => void handleTest(row.id)}
@@ -1116,6 +1180,88 @@ function WebhooksCard() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          {/* NR55-E — Dialog Ubah Endpoint: menyalin form tambah (url + event) + switch Aktif. */}
+          <Dialog
+            open={editTarget !== null}
+            onOpenChange={(open) => {
+              if (!open && !editSaving) setEditTarget(null);
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Ubah Endpoint Webhook</DialogTitle>
+                <DialogDescription>
+                  Perbarui URL, event yang dikirim, atau status aktif endpoint ini. Secret tidak
+                  berubah.
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleEditSave();
+                }}
+              >
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="webhook-edit-url">URL Endpoint</Label>
+                  <Input
+                    id="webhook-edit-url"
+                    value={editUrl}
+                    onChange={(e) => setEditUrl(e.target.value)}
+                    placeholder="https://contoh.com/webhooks/lumina"
+                    className="h-10"
+                    type="url"
+                    inputMode="url"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Event yang dikirim</Label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {eventOptions.map((event) => (
+                      <label
+                        key={event}
+                        className="flex cursor-pointer items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm"
+                      >
+                        <Checkbox
+                          checked={editEvents.includes(event)}
+                          onCheckedChange={(checked) => toggleEditEvent(event, checked === true)}
+                          aria-label={WEBHOOK_EVENT_LABELS[event] ?? event}
+                        />
+                        <span className="min-w-0 truncate">
+                          {WEBHOOK_EVENT_LABELS[event] ?? event}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                  <Label htmlFor="webhook-edit-active" className="text-sm font-normal">
+                    Endpoint aktif — kirim event saat terjadi
+                  </Label>
+                  <Switch
+                    id="webhook-edit-active"
+                    checked={editActive}
+                    onCheckedChange={setEditActive}
+                  />
+                </div>
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 sm:h-9"
+                    disabled={editSaving}
+                    onClick={() => setEditTarget(null)}
+                  >
+                    Batal
+                  </Button>
+                  <Button type="submit" className="h-11 sm:h-9" disabled={editSaving}>
+                    {editSaving ? "Menyimpan..." : "Simpan"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </DataCard>
