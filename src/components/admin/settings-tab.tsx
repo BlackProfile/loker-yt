@@ -74,6 +74,7 @@ import {
   MoonStar,
   PanelBottom,
   PenTool,
+  Pencil,
   Plus,
   Quote,
   RefreshCw,
@@ -225,6 +226,11 @@ function EmailOutboxCard() {
   // Baris yang menunggu konfirmasi kirim ulang (AlertDialog).
   const [resendTarget, setResendTarget] = useState<EmailOutboxAdminRow | null>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
+  // Hapus satu baris log (AlertDialog) + hapus massal yang gagal/dilewati.
+  const [deleteTarget, setDeleteTarget] = useState<EmailOutboxAdminRow | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteFailedOpen, setDeleteFailedOpen] = useState(false);
+  const [deletingFailed, setDeletingFailed] = useState(false);
 
   /**
    * Muat halaman log email (50/halaman, urut terbaru). `pages` = jumlah halaman
@@ -332,6 +338,41 @@ function EmailOutboxCard() {
   }
 
   const canLoadMore = rows.length < total;
+  // Tombol "Hapus yang Gagal" hanya muncul bila ada baris Gagal/Dilewati di daftar.
+  const hasFailedRows = rows.some((row) => row.status === "FAILED" || row.status === "SKIPPED");
+
+  /** Hapus satu baris log via DELETE ?id= lalu segarkan daftar. */
+  async function handleDeleteRow() {
+    if (!deleteTarget || deletingId) return;
+    const target = deleteTarget;
+    setDeletingId(target.id);
+    try {
+      await apiDelete<{ ok: boolean }>(`/api/admin/emails?id=${encodeURIComponent(target.id)}`);
+      toast.success("Email dihapus dari kotak keluar.");
+      setDeleteTarget(null);
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  /** Hapus semua email FAILED/SKIPPED via DELETE ?scope=failed lalu segarkan daftar. */
+  async function handleDeleteFailed() {
+    if (deletingFailed) return;
+    setDeletingFailed(true);
+    try {
+      const res = await apiDelete<{ ok: boolean; deleted: number }>("/api/admin/emails?scope=failed");
+      toast.success(`${res.deleted} email gagal/dilewati dihapus dari log.`);
+      setDeleteFailedOpen(false);
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
+    } finally {
+      setDeletingFailed(false);
+    }
+  }
 
   return (
     <CollapsibleCard
@@ -363,6 +404,21 @@ function EmailOutboxCard() {
           >
             <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} aria-hidden="true" />
           </Button>
+          {hasFailedRows ? (
+            <Button
+              variant="outline"
+              className="h-9 shrink-0 gap-1.5 border-rose-200 px-3 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+              onClick={() => setDeleteFailedOpen(true)}
+              disabled={deletingFailed || deletingId !== null || loading}
+            >
+              {deletingFailed ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="size-4" aria-hidden="true" />
+              )}
+              Hapus yang Gagal
+            </Button>
+          ) : null}
         </>
       }
     >
@@ -455,25 +511,35 @@ function EmailOutboxCard() {
                       )}
                     </TableCell>
                     <TableCell className="px-3 py-2.5 text-right">
-                      {row.status === "FAILED" || row.status === "SKIPPED" ? (
+                      <div className="flex items-center justify-end gap-1">
+                        {row.status === "FAILED" || row.status === "SKIPPED" ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 px-2 text-xs"
+                            onClick={() => setResendTarget(row)}
+                            disabled={resendingId !== null || deletingId !== null}
+                            aria-label={`Kirim ulang email "${row.subject}"`}
+                          >
+                            {resendingId === row.id ? (
+                              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <RefreshCw className="size-3.5" aria-hidden="true" />
+                            )}
+                            Kirim ulang
+                          </Button>
+                        ) : null}
                         <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 gap-1.5 px-2 text-xs"
-                          onClick={() => setResendTarget(row)}
-                          disabled={resendingId !== null}
-                          aria-label={`Kirim ulang email "${row.subject}"`}
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 shrink-0 text-muted-foreground hover:text-rose-600"
+                          onClick={() => setDeleteTarget(row)}
+                          disabled={deletingId !== null || deletingFailed}
+                          aria-label={`Hapus email "${row.subject}"`}
                         >
-                          {resendingId === row.id ? (
-                            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                          ) : (
-                            <RefreshCw className="size-3.5" aria-hidden="true" />
-                          )}
-                          Kirim ulang
+                          <Trash2 className="size-4" aria-hidden="true" />
                         </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

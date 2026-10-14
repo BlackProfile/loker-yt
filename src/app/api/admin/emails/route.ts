@@ -1,9 +1,12 @@
 // NR-41 H16 — Kotak keluar email versi admin (log pengiriman + retry manual).
-// GET  /api/admin/emails?status=&page=&pageSize= → { items: EmailOutboxAdminRow[], total }
-//      (urut createdAt desc; OWNER/HR).
-// POST /api/admin/emails { id } → retry manual satu email berstatus FAILED/SKIPPED:
-//      memanggil jalur kirim SMTP yang sama dengan queueEmail; attempts++ dan
-//      status/sentAt/error/nextRetryAt diperbarui; kembalikan row terbaru.
+// GET    /api/admin/emails?status=&page=&pageSize= → { items: EmailOutboxAdminRow[], total }
+//        (urut createdAt desc; OWNER/HR).
+// POST   /api/admin/emails { id } → retry manual satu email berstatus FAILED/SKIPPED:
+//        memanggil jalur kirim SMTP yang sama dengan queueEmail; attempts++ dan
+//        status/sentAt/error/nextRetryAt diperbarui; kembalikan row terbaru.
+// DELETE /api/admin/emails?id=... → hapus satu baris log (OWNER/HR).
+// DELETE /api/admin/emails?scope=failed → hapus semua baris berstatus FAILED/SKIPPED
+//        (OWNER/HR); kembalikan { ok:true, deleted:<jumlah> }.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/server-auth";
@@ -194,5 +197,47 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("[POST /api/admin/emails]", error);
     return NextResponse.json({ error: "Gagal mengirim ulang email. Coba lagi nanti." }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await requireRole(["OWNER", "HR"]);
+    if (!session) {
+      const anySession = await requireRole(["OWNER", "HR", "VIEWER"]);
+      return NextResponse.json(anySession ? FORBIDDEN : UNAUTHORIZED, {
+        status: anySession ? 403 : 401,
+      });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const scope = (searchParams.get("scope") ?? "").trim().toLowerCase();
+    const id = (searchParams.get("id") ?? "").trim();
+
+    // scope=failed — bersihkan semua log yang gagal/dilewati sekaligus.
+    if (scope === "failed") {
+      const result = await db.emailOutbox.deleteMany({
+        where: { status: { in: ["FAILED", "SKIPPED"] } },
+      });
+      return NextResponse.json({ ok: true, deleted: result.count });
+    }
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Parameter id atau scope=failed wajib diisi." },
+        { status: 400 },
+      );
+    }
+
+    const existing = await db.emailOutbox.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Email tidak ditemukan." }, { status: 404 });
+    }
+
+    await db.emailOutbox.delete({ where: { id } });
+    return NextResponse.json({ ok: true, deleted: 1 });
+  } catch (error) {
+    console.error("[DELETE /api/admin/emails]", error);
+    return NextResponse.json({ error: "Gagal menghapus email. Coba lagi nanti." }, { status: 500 });
   }
 }

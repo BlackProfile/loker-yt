@@ -809,30 +809,60 @@ export function TasksTab() {
               <p className="text-sm text-muted-foreground">Tidak ada.</p>
             ) : (
               <div className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1 nice-scrollbar">
-                {reschedules.map((row) => (
-                  <div
-                    key={row.interviewId}
-                    className="flex flex-wrap items-center gap-2 rounded-xl border p-2.5"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{row.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {row.positionTitle ?? "Tanpa posisi"} &middot; jadwal{" "}
-                        {formatShortDateTime(row.scheduledAt)}
-                        {row.reason ? ` &middot; alasan: ${row.reason}` : ""}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => openDetail(row.applicationId, row.name)}
+                {reschedules.map((row) => {
+                  const working = workingTasks.has(`reschedule:${row.interviewId}`);
+                  return (
+                    <div
+                      key={row.interviewId}
+                      className="flex flex-wrap items-center gap-2 rounded-xl border p-2.5"
                     >
-                      <Eye className="size-3.5" aria-hidden="true" />
-                      Buka Detail
-                    </Button>
-                  </div>
-                ))}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{row.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {row.positionTitle ?? "Tanpa posisi"} &middot; jadwal{" "}
+                          {formatShortDateTime(row.scheduledAt)}
+                          {row.proposedAt
+                            ? ` &middot; usulan ${formatShortDateTime(row.proposedAt)}`
+                            : ""}
+                          {row.reason ? ` &middot; alasan: ${row.reason}` : ""}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        disabled={working || !row.proposedAt}
+                        title="Terima jadwal sesuai usulan pelamar"
+                        onClick={() => void runRescheduleAction(row, "approve")}
+                        aria-label={`Setujui usulan ubah jadwal ${row.name}`}
+                      >
+                        <CalendarCheck className="size-3.5" aria-hidden="true" />
+                        Setujui
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        disabled={working}
+                        title="Kembali ke jadwal awal & abaikan usulan"
+                        onClick={() => void runRescheduleAction(row, "reject")}
+                        aria-label={`Tolak usulan ubah jadwal ${row.name}`}
+                      >
+                        <CalendarX2 className="size-3.5" aria-hidden="true" />
+                        Tolak
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => openDetail(row.applicationId, row.name)}
+                      >
+                        <Eye className="size-3.5" aria-hidden="true" />
+                        Buka Detail
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </TaskGroup>
@@ -984,6 +1014,26 @@ export function TasksTab() {
                     <Badge className="shrink-0 rounded-full border-transparent bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
                       Tindak lanjut
                     </Badge>
+                    {/* NR55-C — aksi cepat sama dengan panel Perlu Dihubungi Hari Ini. */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      disabled={workingTasks.has(`actionItem:followup:${row.applicationId}`)}
+                      onClick={() => void runFollowUpRowAction(row, "done")}
+                    >
+                      Selesai
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      disabled={workingTasks.has(`actionItem:followup:${row.applicationId}`)}
+                      title="Geser tindak lanjut 3 hari ke depan"
+                      onClick={() => void runFollowUpRowAction(row, "snooze3")}
+                    >
+                      Tunda 3 hari
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -1031,6 +1081,30 @@ export function TasksTab() {
                     <Badge className="shrink-0 rounded-full border-transparent bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
                       HOLD
                     </Badge>
+                    {/* NR55-C — aksi cepat sama dengan panel Perlu Dihubungi Hari Ini. */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      disabled={
+                        workingTasks.has(`actionItem:hold:${row.applicationId}`) ||
+                        !row.holdReason
+                      }
+                      title="Geser jadwal review HOLD 3 hari ke depan"
+                      onClick={() => void runHoldReviewRowAction(row, "snooze3")}
+                    >
+                      Tunda 3 hari
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950"
+                      disabled={workingTasks.has(`actionItem:hold:${row.applicationId}`)}
+                      title="Lepas tahanan & kosongkan jadwal review HOLD"
+                      onClick={() => void runHoldReviewRowAction(row, "done")}
+                    >
+                      Lepas HOLD
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
