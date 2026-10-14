@@ -4,12 +4,24 @@
 // Daftar kandidat berisiko (wawancara berpotensi tidak hadir / offer tak
 // dijawab) dengan skor heuristik deterministik dari server. Tombol "Tanya AI"
 // meminta penjelasan naratif + saran tindakan (ditampilkan inline di bawah item).
+// NR55-C — aksi cepat per item: "Detail" (dialog detail pelamar, pola sama
+// dengan dashboard-tab: butuh objek Application penuh) dan "Kirim Reminder"
+// untuk item offer saja (endpoint remind hanya berlaku utk offer PENDING).
 // Polling 5 menit (detik dilewati saat tab tersembunyi; interval dibersihkan).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BadgeCheck, Loader2, ShieldAlert, Sparkles } from "lucide-react";
+import {
+  BadgeCheck,
+  BellRing,
+  Eye,
+  Loader2,
+  ShieldAlert,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
+import type { Application } from "@/lib/types";
 import { CollapsibleCard, type CardStatus } from "./collapsible-card";
+import { ApplicationDetailDialog } from "./application-detail-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +33,8 @@ import { cn } from "@/lib/utils";
 type RiskItem = {
   kind: "interview" | "offer";
   id: string;
+  // NR55-C — id lamaran dari backend (interview & offer sama-sama mengirim).
+  applicationId: string;
   name: string;
   positionTitle: string | null;
   when: string | null;
@@ -47,12 +61,17 @@ function scoreLabel(score: number): string {
 }
 
 export function RiskScoresCard() {
-  const { reportError } = useAdminSession();
+  const { canMutate, reportError } = useAdminSession();
 
   const [items, setItems] = useState<RiskItem[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [explain, setExplain] = useState<Record<string, RiskExplain>>({});
   const [explainBusyId, setExplainBusyId] = useState<string | null>(null);
+  // NR55-C — dialog detail pelamar (pola dashboard-tab: butuh Application penuh)
+  // + status sibuk per aksi (anti dobel klik).
+  const [detail, setDetail] = useState<Application | null>(null);
+  const [detailBusyId, setDetailBusyId] = useState<string | null>(null);
+  const [remindBusyId, setRemindBusyId] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   const load = useCallback(async () => {
@@ -93,6 +112,55 @@ export function RiskScoresCard() {
       reportError(err);
     } finally {
       setExplainBusyId(null);
+    }
+  }
+
+  // NR55-C — buka dialog detail pelamar. Dialog butuh objek Application penuh
+  // (bukan hanya id), jadi ikuti pola dashboard-tab openAppById: ambil daftar
+  // lamaran lalu cari barisnya.
+  async function openDetail(item: RiskItem) {
+    if (detailBusyId) return;
+    setDetailBusyId(item.id);
+    try {
+      const apps = await apiGet<Application[]>("/api/admin/applications");
+      if (!mountedRef.current) return;
+      const app = apps.find((a) => a.id === item.applicationId);
+      if (app) {
+        setDetail(app);
+      } else {
+        toast.error("Lamaran tidak ditemukan.");
+      }
+    } catch (err) {
+      reportError(err);
+    } finally {
+      if (mountedRef.current) setDetailBusyId(null);
+    }
+  }
+
+  // NR55-C — kirim email pengingat penawaran (hanya item kind "offer":
+  // endpoint remind menolak selain offerStatus PENDING).
+  async function sendReminder(item: RiskItem) {
+    if (remindBusyId) return;
+    if (!canMutate) {
+      toast.error("Anda tidak memiliki akses untuk aksi ini.");
+      return;
+    }
+    setRemindBusyId(item.id);
+    try {
+      const res = await apiPost<{ ok?: boolean; alreadySent?: boolean; message?: string }>(
+        `/api/admin/applications/${item.applicationId}/remind`
+      );
+      if (res.alreadySent) {
+        toast.info(res.message ?? "Email pengingat untuk offer ini sudah pernah dikirim.");
+      } else {
+        toast.success(`Pengingat dikirim ke ${item.name}`);
+      }
+      // Segarkan daftar risiko (status kandidat bisa berubah setelah email).
+      void load();
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setRemindBusyId(null);
     }
   }
 
@@ -174,7 +242,7 @@ export function RiskScoresCard() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 w-fit text-xs"
+                    className="h-11 w-fit text-xs sm:h-9"
                     onClick={() => void askAi(item)}
                     disabled={explainBusyId !== null}
                   >
@@ -190,6 +258,42 @@ export function RiskScoresCard() {
                       </>
                     )}
                   </Button>
+                  {/* NR55-C — Detail: dialog detail pelamar (butuh Application penuh). */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-11 w-fit text-xs sm:h-9"
+                    onClick={() => void openDetail(item)}
+                    disabled={detailBusyId !== null}
+                    aria-label={`Buka detail lamaran ${item.name}`}
+                  >
+                    {detailBusyId === item.id ? (
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Eye className="size-3.5" aria-hidden="true" />
+                    )}
+                    Detail
+                  </Button>
+                  {/* Kirim Reminder hanya utk offer — endpoint remind menolak
+                      selain offerStatus PENDING (409 untuk baris wawancara). */}
+                  {item.kind === "offer" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-11 w-fit text-xs sm:h-9"
+                      onClick={() => void sendReminder(item)}
+                      disabled={remindBusyId !== null}
+                      title="Kirim email pengingat jawaban penawaran (maks satu kali per offer)"
+                      aria-label={`Kirim pengingat penawaran ke ${item.name}`}
+                    >
+                      {remindBusyId === item.id ? (
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <BellRing className="size-3.5" aria-hidden="true" />
+                      )}
+                      Kirim Reminder
+                    </Button>
+                  ) : null}
                 </div>
 
                 {itemExplain ? (
@@ -208,6 +312,24 @@ export function RiskScoresCard() {
           })}
         </ul>
       )}
+
+      {/* NR55-C — dialog detail pelamar milik kartu ini (self-sufficient dengan
+          objek Application + callback; pola pemasangan sama dengan dashboard-tab). */}
+      <ApplicationDetailDialog
+        application={detail}
+        onOpenChange={(open) => {
+          if (!open) setDetail(null);
+        }}
+        onSaved={() => {
+          // Perubahan dari dialog (status/HOLD/offer dsb.) bisa mengubah skor
+          // risiko — segarkan daftar.
+          void load();
+        }}
+        onDeleted={() => {
+          setDetail(null);
+          void load();
+        }}
+      />
     </CollapsibleCard>
   );
 }

@@ -609,6 +609,79 @@ function EmailOutboxCard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Konfirmasi hapus satu baris log email */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus email dari log?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? `Email "${deleteTarget.subject}" ke ${deleteTarget.toEmail} akan dihapus permanen dari kotak keluar. Riwayat pengiriman tidak bisa dikembalikan.`
+                : "Email akan dihapus permanen dari log."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingId !== null}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteRow();
+              }}
+              disabled={deletingId !== null}
+            >
+              {deletingId !== null ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="size-4" aria-hidden="true" />
+              )}
+              Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Konfirmasi hapus massal semua email gagal/dilewati */}
+      <AlertDialog
+        open={deleteFailedOpen}
+        onOpenChange={(open) => {
+          if (!open) setDeleteFailedOpen(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus semua email yang gagal?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Semua email berstatus Gagal atau Dilewati akan dihapus permanen dari log
+              pengiriman. Email yang sudah terkirim atau masih menunggu tidak terpengaruh.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingFailed}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteFailed();
+              }}
+              disabled={deletingFailed}
+            >
+              {deletingFailed ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="size-4" aria-hidden="true" />
+              )}
+              Ya, Hapus Semua
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </CollapsibleCard>
   );
 }
@@ -708,9 +781,10 @@ function ReferralSourcesCard() {
   const [savingId, setSavingId] = useState<string | null>(null);
   // Baris yang menunggu konfirmasi hapus (AlertDialog).
   const [deleteTarget, setDeleteTarget] = useState<ReferralSourceDto | null>(null);
-  // Edit nama inline: id yang sedang diedit + nilai draft.
+  // Edit nama + jenis inline: id yang sedang diedit + nilai draft.
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [editKind, setEditKind] = useState<ReferralSourceKind>("JOB_BOARD");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -777,21 +851,30 @@ function ReferralSourcesCard() {
     }
   }
 
-  async function handleRenameSave(item: ReferralSourceDto) {
+  async function handleEditSave(item: ReferralSourceDto) {
     const name = editName.trim();
-    if (!name || name === item.name) {
-      setEditId(null);
+    if (!name) {
+      toast.error("Nama sumber wajib diisi.");
       return;
     }
     if (savingId) return;
+    const nameChanged = name !== item.name;
+    const kindChanged = editKind !== item.kind;
+    if (!nameChanged && !kindChanged) {
+      setEditId(null);
+      return;
+    }
     setSavingId(item.id);
     try {
-      await apiPatch<ReferralSourceDto>(`/api/admin/referral-sources/${item.id}`, { name });
+      await apiPatch<ReferralSourceDto>(`/api/admin/referral-sources/${item.id}`, {
+        ...(nameChanged ? { name } : {}),
+        ...(kindChanged ? { kind: editKind } : {}),
+      });
       setEditId(null);
-      toast.success("Nama sumber diperbarui.");
+      toast.success("Sumber diperbarui.");
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Gagal mengubah nama.");
+      toast.error(err instanceof Error ? err.message : "Gagal menyimpan sumber.");
       reportError(err);
     } finally {
       setSavingId(null);
@@ -864,22 +947,38 @@ function ReferralSourcesCard() {
                 >
                   <div className="min-w-0 flex-1">
                     {editId === item.id ? (
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Input
                           value={editName}
                           onChange={(event) => setEditName(event.target.value)}
                           onKeyDown={(event) => {
-                            if (event.key === "Enter") void handleRenameSave(item);
+                            if (event.key === "Enter") void handleEditSave(item);
                             if (event.key === "Escape") setEditId(null);
                           }}
                           className="h-8 max-w-xs"
                           aria-label="Nama sumber baru"
                           autoFocus
                         />
+                        <Select
+                          value={editKind}
+                          onValueChange={(value) => setEditKind(value as ReferralSourceKind)}
+                          disabled={savingId === item.id}
+                        >
+                          <SelectTrigger className="h-8 w-36" aria-label="Jenis sumber">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {REFERRAL_SOURCE_KINDS.map((kind) => (
+                              <SelectItem key={kind} value={kind}>
+                                {REFERRAL_SOURCE_KIND_LABELS[kind]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <Button
                           size="sm"
                           className="h-8"
-                          onClick={() => void handleRenameSave(item)}
+                          onClick={() => void handleEditSave(item)}
                           disabled={savingId === item.id}
                         >
                           {savingId === item.id ? (
@@ -941,8 +1040,9 @@ function ReferralSourcesCard() {
                         onClick={() => {
                           setEditId(item.id);
                           setEditName(item.name);
+                          setEditKind(item.kind);
                         }}
-                        aria-label={`Ubah nama sumber ${item.name}`}
+                        aria-label={`Ubah sumber ${item.name}`}
                       >
                         <PenTool className="size-4" aria-hidden="true" />
                       </Button>
