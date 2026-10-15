@@ -73,7 +73,7 @@ import {
 } from "@/lib/types";
 import { useRealtimeConnected } from "@/lib/live-client";
 import { cn } from "@/lib/utils";
-import { ApiError, apiGet, apiPost } from "./api";
+import { ApiError, apiGet, apiPost, buildQuery } from "./api";
 import { roleBadgeClass } from "./format";
 import { useLiveRefresh } from "./use-live-refresh";
 import { AdminSessionProvider } from "./admin-context";
@@ -447,8 +447,10 @@ function NewApplicationToaster() {
 
   const checkCount = useCallback(async () => {
     try {
-      const data = await apiGet<Application[]>("/api/admin/applications");
-      const count = Array.isArray(data) ? data.length : 0;
+      // NR59 — mode hitung cepat (?count=1): puluhan byte, bukan daftar penuh
+      // (dulu ±20 MB per event realtime hanya untuk membandingkan angka).
+      const data = await apiGet<{ count: number }>("/api/admin/applications?count=1");
+      const count = typeof data?.count === "number" ? data.count : 0;
       const prev = lastCountRef.current;
       if (prev === null) {
         // Muatan pertama: simpan baseline saja, tanpa toast.
@@ -919,7 +921,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     void (async () => {
       let match: Application | null = null;
       try {
-        const list = await apiGet<Application[]>("/api/admin/applications");
+        // NR59 — cari via server (q kini mencocokkan trackingCode) + lite:
+        // respons puluhan KB, bukan menarik seluruh daftar (dulu ±20 MB).
+        const list = await apiGet<Application[]>(
+          `/api/admin/applications${buildQuery({ q: code, lite: "1" })}`,
+        );
         const needle = code.toLowerCase();
         match =
           (Array.isArray(list) ? list : []).find(

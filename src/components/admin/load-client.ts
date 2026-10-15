@@ -135,6 +135,10 @@ export function peekCachedAgeSec(url: string): number | null {
 
 export function rememberJson(url: string, body: unknown): void {
   try {
+    // NR59 — jangan simpan array raksasa di memori tab (daftar lite posisi
+    // viral bisa ±3 MB, daftar penuh ±20 MB); cache stale-first tetap aktif
+    // untuk respons normal (halaman paginate, posisi kecil, dsb.).
+    if (Array.isArray(body) && body.length > 1500) return;
     jsonCache.set(url, { at: Date.now(), body });
     if (jsonCache.size > CACHE_MAX) {
       const oldest = [...jsonCache.entries()].sort((a, b) => a[1].at - b[1].at);
