@@ -933,6 +933,22 @@ export type AnalyticsResponse = {
   monthly: { month: string; applications: number; hires: number }[]; // 6 bulan terakhir
 };
 
+// NR60 (2-c D1) — GET /api/admin/dropoff — drop-off wizard per langkah.
+// positionId: echo filter posisi yang dipakai (null = tanpa filter, semua
+// posisi — perilaku lama dipertahankan; respons lama tanpa field ini tetap
+// kompatibel karena field baru bersifat tambahan).
+export type DropoffResponse = {
+  days: number;
+  positionId?: string | null;
+  steps: {
+    step: number;
+    entered: number;
+    advanced: number;
+    submitted: number;
+    dropPercent: number;
+  }[];
+};
+
 // GET /api/admin/action-items — kartu "Perlu Tindakan" dashboard
 export type ActionItemsResponse = {
   rescheduleRequests: {

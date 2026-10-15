@@ -1,7 +1,10 @@
 // GET /api/admin/dropoff — drop-off formulir lamaran per langkah wizard.
-// Query ?days=N (default 30, dijepit 1-90). Agregasi FormStepStat sejak N hari:
-// per langkah dihitung jumlah event "enter", "advance", dan "submit" — dihitung
-// di JS (groupBy) karena SQLite tidak mendukung agregasi kondisional yang rapi.
+// Query ?days=N (default 30, dijepit 1-90) dan ?positionId=... (opsional —
+// NR60 2-c/D1): bila diisi, hanya event FormStepStat posisi itu yang
+// diagregasi (baris positionId NULL otomatis terkeluar karena equality
+// dengan string). Tanpa param, perilaku lama = semua posisi.
+// Agregasi per langkah dihitung di JS (groupBy) karena SQLite tidak
+// mendukung agregasi kondisional yang rapi.
 // dropPercent = 100 - advanced/entered*100 (langkah terakhir memakai submitted).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -11,6 +14,9 @@ export const dynamic = "force-dynamic";
 
 const UNAUTHORIZED = { error: "Silakan login terlebih dahulu." };
 const DAY_MS = 24 * 60 * 60 * 1000;
+// ID posisi dari cuid/uuid — cukup panjang; clamp defensif agar query liar
+// tidak jadi sarana mengirim string raksasa.
+const POSITION_ID_MAX = 64;
 
 /** days dari query: default 30, dijepit 1-90 (integer). */
 function parseDays(raw: string | null): number {
@@ -18,6 +24,16 @@ function parseDays(raw: string | null): number {
   const n = Math.round(Number(raw));
   if (!Number.isFinite(n)) return 30;
   return Math.min(90, Math.max(1, n));
+}
+
+/**
+ * positionId dari query: null = tanpa filter (semua posisi — perilaku lama).
+ * String kosong/spasi = dianggap tanpa filter agar URL ?positionId= tetap aman.
+ */
+function parsePositionId(raw: string | null): string | null {
+  const value = (raw ?? "").trim();
+  if (!value) return null;
+  return value.slice(0, POSITION_ID_MAX);
 }
 
 type StepAccumulator = {
@@ -36,10 +52,17 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const days = parseDays(searchParams.get("days"));
+    const positionId = parsePositionId(searchParams.get("positionId"));
     const cutoff = new Date(Date.now() - days * DAY_MS);
 
     const stats = await db.formStepStat.findMany({
-      where: { createdAt: { gte: cutoff } },
+      // NR60 (2-c D1) — filter posisi opsional: equality dengan string sudah
+      // menyaring baris positionId NULL (tidak cocok), jadi mode "posisi ini"
+      // tidak mencampur event lama tanpa atribusi posisi.
+      where: {
+        createdAt: { gte: cutoff },
+        ...(positionId ? { positionId } : {}),
+      },
       select: { step: true, event: true },
     });
 
@@ -78,7 +101,9 @@ export async function GET(req: NextRequest) {
         };
       });
 
-    return NextResponse.json({ days, steps });
+    // positionId: echo filter yang dipakai (null = semua posisi) — dipakai UI
+    // untuk menampilkan filter aktif & memastikan respons sesuai permintaan.
+    return NextResponse.json({ days, positionId, steps });
   } catch (error) {
     console.error("[GET /api/admin/dropoff]", error);
     return NextResponse.json(
