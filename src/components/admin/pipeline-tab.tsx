@@ -705,7 +705,7 @@ export function PipelineTab({
       toast.success(successMessage.replace("{n}", String(res.affected)));
       setSelectedIds(new Set());
       setBulkStage("");
-      await loadAll(true);
+      await Promise.all([loadAll(true), loadApps(true)]);
     } catch (err) {
       reportError(err);
     } finally {
@@ -759,20 +759,35 @@ export function PipelineTab({
      
   }, [buckets.REVIEW, searchLower, reviewSort]);
 
+  // NR59 — peta sesi aktif terdekat per lamaran: dihitung SEKALI per perubahan
+  // wawancara, bukan memfilter seluruh daftar di setiap pembandingan sort
+  // (dulu O(n²·m) — diam-diam membebani saat daftar wawancara membesar).
+  const nextSessionAtByApp = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const iv of interviews) {
+      if (!["SCHEDULED", "CONFIRMED", "RESCHEDULE_REQUESTED"].includes(iv.status)) continue;
+      const prev = map.get(iv.applicationId);
+      if (prev == null || iv.scheduledAt.localeCompare(prev) < 0) {
+        map.set(iv.applicationId, iv.scheduledAt);
+      }
+    }
+    return map;
+  }, [interviews]);
+
   const filteredInterview = useMemo(
     () =>
       buckets.INTERVIEW
         .filter(matchesSearch)
         .sort((a, b) => {
-          const na = nextSessionOf(a.id);
-          const nb = nextSessionOf(b.id);
-          if (na && nb) return na.scheduledAt.localeCompare(nb.scheduledAt);
+          const na = nextSessionAtByApp.get(a.id) ?? null;
+          const nb = nextSessionAtByApp.get(b.id) ?? null;
+          if (na && nb) return na.localeCompare(nb);
           if (na) return -1;
           if (nb) return 1;
           return b.createdAt.localeCompare(a.createdAt);
         }),
      
-    [buckets.INTERVIEW, searchLower, interviews]
+    [buckets.INTERVIEW, searchLower, nextSessionAtByApp]
   );
 
   const filteredAccepted = useMemo(
@@ -803,6 +818,48 @@ export function PipelineTab({
         : category === "ACCEPTED"
           ? filteredAccepted
           : filteredRejected;
+
+  /* ---------------------- Render bertahap (anti-freeze) ---------------------- */
+
+  // NR59 — lowongan viral bisa punya ribuan pelamar (data nyata: 3.797 pada
+  // satu posisi). Me-render semuanya sekaligus membekukan browser, jadi kartu
+  // dirender bertahap: 30 pertama, lalu +30 tiap sentinel terlihat (scroll),
+  // dengan batas aman 300 — sisanya bisa dimuat manual lewat tombol eksplisit.
+  const RENDER_BATCH = 30;
+  const RENDER_ANIMATE_MAX = 60; // kartu ke-1..60 beranimasi, sisanya polos
+  const RENDER_HARD_MAX = 300;
+
+  const [renderCap, setRenderCap] = useState(RENDER_BATCH);
+  useEffect(() => {
+    setRenderCap(RENDER_BATCH);
+  }, [positionId, category, searchLower, reviewSort]);
+
+  const visibleList = useMemo(
+    () => currentList.slice(0, renderCap),
+    [currentList, renderCap]
+  );
+  const hiddenCount = Math.max(0, currentList.length - visibleList.length);
+
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el || hiddenCount <= 0) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setRenderCap((c) => Math.min(c + RENDER_BATCH, RENDER_HARD_MAX));
+        }
+      },
+      { rootMargin: "600px 0px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hiddenCount > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // NR59 — daftar dianggap sibuk saat data posisi aktif belum siap (baru
+  // berganti posisi / muat pertama); refresh senyap tidak memicu skeleton.
+  const listBusy = position ? loading || appsFor !== position.id : loading;
 
   /* ---------------------------------- Render --------------------------------- */
 
@@ -1287,7 +1344,7 @@ export function PipelineTab({
         onRejected={(app) => {
           updateApp(app);
           setRejectTarget(null);
-          void loadAll(true);
+          void Promise.all([loadAll(true), loadApps(true)]);
         }}
       />
 
@@ -1300,7 +1357,7 @@ export function PipelineTab({
         onSaved={(app) => {
           updateApp(app);
           setOfferTarget(null);
-          void loadAll(true);
+          void Promise.all([loadAll(true), loadApps(true)]);
         }}
       />
 
