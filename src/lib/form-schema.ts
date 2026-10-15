@@ -95,7 +95,9 @@ export const FORM_LIMITS = {
   ratingMaxDefault: 5,
   ratingMaxLimit: 10,
   retiredMax: 50,
-  fileMaxBytes: 20 * 1024 * 1024, // 20 MB per berkas field form
+  // NR60 (A3) — disamakan dengan MAX_UPLOAD_BYTES (src/lib/upload.ts): 10 MB
+  // per berkas field form. Hint & pesan error UI diambil dinamis dari nilai ini.
+  fileMaxBytes: 10 * 1024 * 1024,
   checkboxMaxItems: 20,
   numberMax: 1_000_000_000,
 } as const;

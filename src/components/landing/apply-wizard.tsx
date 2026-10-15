@@ -1022,10 +1022,10 @@ export function ApplyWizard({
     setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
   };
 
-  /** Simpan jawaban screening (dipotong 500 karakter) + hapus error saat diketik. */
+  /** NR60 (A4) — simpan jawaban screening TANPA pemotongan senyap: batas 500
+   * karakter ditegakkan maxLength textarea + server; counter tampil di UI. */
   const setAnswer = (questionId: string, value: string) => {
-    const clipped = value.slice(0, SCREENING_MAX);
-    setScreeningAnswers((prev) => ({ ...prev, [questionId]: clipped }));
+    setScreeningAnswers((prev) => ({ ...prev, [questionId]: value }));
     const key = `${SCREENING_KEY_PREFIX}${questionId}` as FieldKey;
     setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
   };
@@ -2486,7 +2486,9 @@ export function ApplyWizard({
         const record: Record<string, string> = {};
         for (const question of screeningQuestions) {
           const answer = (screeningAnswers[question.id] ?? "").trim();
-          if (answer) record[question.id] = answer.slice(0, SCREENING_MAX);
+          // NR60 (A4) — tanpa .slice(0, 500): tidak ada pemotongan senyap;
+          // server menolak >500 dengan pesan jelas bila terjadi.
+          if (answer) record[question.id] = answer;
         }
         fd.append("screeningAnswers", JSON.stringify(record));
       }
@@ -3742,6 +3744,8 @@ export function ApplyWizard({
                   errors.experience ? "apply-experience-error" : undefined
                 }
               />
+              {/* NR60 (A4) — counter karakter (server tanpa batas maks: hitungan netral). */}
+              <CharCount value={values.experience} lang={lang} />
               {expHelp ? (
                 <p className="text-xs text-muted-foreground">{expHelp}</p>
               ) : null}
@@ -3777,6 +3781,8 @@ export function ApplyWizard({
                   errors.motivation ? "apply-motivation-error" : undefined
                 }
               />
+              {/* NR60 (A4) — counter karakter (server tanpa batas maks: hitungan netral). */}
+              <CharCount value={values.motivation} lang={lang} />
               {motHelp ? (
                 <p className="text-xs text-muted-foreground">{motHelp}</p>
               ) : null}
@@ -3836,6 +3842,12 @@ export function ApplyWizard({
                           error &&
                             "border-rose-400 focus-visible:ring-rose-400/40 dark:border-rose-500",
                         )}
+                      />
+                      {/* NR60 (A4) — counter jujur 500 karakter (amber ≥80%, rose ≥100%). */}
+                      <CharCount
+                        value={screeningAnswers[question.id] ?? ""}
+                        max={SCREENING_MAX}
+                        lang={lang}
                       />
                       {error ? (
                         <p
