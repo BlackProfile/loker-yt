@@ -4472,3 +4472,18 @@ Work Log:
 
 Stage Summary:
 - Admin kini bisa melihat form persis seperti pelamar sebelum menerapkan skema, dan menganalisis drop-off per posisi (bukan hanya agregat global). tsc src/ 0 error, lint exit 0.
+---
+Task ID: NR60 (orchestrator: integrasi, A5, verifikasi E2E, kebersihan data uji)
+Agent: Z.ai Code
+Task: "buat semuanya" — Form Pendaftaran 2.0 (12 item, 4 paket): A1 autofill prefill, A2 email konfirmasi submit, A3 limit berkas 10MB, A4 counter karakter, A5 hapus apply-form.tsx, B1 banner draft cerdas, B2 thumbnail berkas, B3 estimasi waktu, B4 tautan lanjutkan share, C1 peringatan duplikat, C2 log bot, D1 drop-off per posisi, D2 pratinjau Form Builder.
+
+Work Log:
+- Delegasi: 2-a (backend routes), 2-b (wizard + ekstraksi renderer), 2-c (admin D1+D2). Agent 2-b & 2-c kena deadline tool sebelum laporan akhir — audit manual membuktikan SEMUA fitur tertinggal lengkap & kompilable; entri 2-b/2-c ditulis orkestrator berdasar audit.
+- A5: src/components/landing/apply-form.tsx (380 baris, tak pernah di-import) dihapus; verifikasi tak ada referensi tersisa.
+- VERIFIKASI E2E (agent-browser, mobile 390px): A1 chip "Gunakan data ini" → nama+WA terisi otomatis (juan nisaqih / +6244987892309). A4 counter "134 karakter" ada di DOM. B3 "±5 mnt lagi" → "±4" → "±2" mengikuti langkah. B4 "Salin tautan" tampil & aktif. C1 dialog konfirmasi menampilkan "Catatan: kamu tercatat sudah melamar posisi ini pada 14 Okt 2026, 02.32. Mengirim lagi akan membuat lamaran baru." A2 submit nyata → Application LM-1VF1FB + EmailOutbox kind=APPLY_CONFIRM subjek "Lamaran terkirim — Video Editor (kode LM-1VF1FB)" status QUEUED (tanpa SMTP = arsip, benar). C2 curl honeypot → fake 200 + ActivityLog BOT_BLOCKED "Honeypot terisi dari IP ::1" + TIDAK ada lamaran tersimpan. D1 dropdown "Filter posisi drop-off" (Semua posisi + 10 posisi) → pilih Video Editor → deskripsi "Posisi: Video Editor", baris terfilter. D2 "Pratinjau sebagai pelamar" → dialog 11 field + 4 bagian (Video Editor), Editor Video Meme 5 radiogroup; showIf: "Tautkan konten paling viral kamu" sembunyi → klik "Ya, pernah" → MUNCUL. B1 reload → banner "Draft ditemukan" + waktu relatif + chip "Data diri" + tombol Pulihkan/Hapus. B2 thumbnail ImageThumb dipakai di 3 titik wizard + renderer. Console browser bersih (hanya info/HMR).
+- KEBERSIHAN DATA UJI: Application LM-1VF1FB dihapus (ActivityLog ikut via cascade), EmailOutbox APPLY_CONFIRM dihapus, Candidate pelamar uji DIPERTAHANKAN (masih punya 1 lamaran sah lama), 7 FormStepStat sesi uji dihapus, 1 ActivityLog BOT_BLOCKED (uji curl) dihapus, draft server otomatis terkonsumsi oleh submit (perilaku NR-41 benar). localStorage draft uji hanya sisi klien.
+- Insiden kecil: dev server OOM/dead saat mulai verifikasi → restart nohup, semua verifikasi lanjut sukses. Gangguan kecil verifikasi: klik label checkbox pertama tidak mengubah state React (Radix) — bukan bug aplikasi (klik native tombol checkbox bekerja normal), diakali teknik klik.
+- KUALITAS FINAL: bunx tsc --noEmit → 0 error src/; bun run lint → exit 0; dev.log bersih tanpa error runtime.
+
+Stage Summary:
+- Form pendaftaran kini: mengisi dirinya sendiri (autofill pelamar lama), memperingatkan duplikat sebelum kirim, mengirim bukti berkode ke email, jujur soal limit & panjang teks, bisa dilanjutkan lintas perangkat via tautan (salin/bagikan), dan admin bisa melihat form persis seperti pelamar + menganalisis drop-off per posisi. Data uji tidak meninggalkan jejak.
