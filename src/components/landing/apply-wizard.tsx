@@ -2832,6 +2832,11 @@ export function ApplyWizard({
     setBirthDate("");
     setDedupe(null);
     dedupeDismissedRef.current = false;
+    // NR60 (A1) — prefill & kartunya ikut direset untuk pengisi berikutnya.
+    setPrefillInfo(null);
+    setPrefillCardOpen(false);
+    prefillEmailRef.current = "";
+    prefillAbortRef.current?.abort();
     // Saat lockPosition, posisi milik halaman detail — jangan direset.
     if (!lockPosition) onPositionIdChange("");
     try {
@@ -3193,6 +3198,14 @@ export function ApplyWizard({
   const portfolioLabelOverride =
     fileSec && coreItem(fileSec, "portfolio").label?.trim()
       ? (coreItem(fileSec, "portfolio").label as string)
+      : null;
+
+  // NR60 (C1) — entri riwayat lamaran terakhir untuk posisi yang SEDANG
+  // dilamar (sumber: prefillInfo dari A1). Peringatan LUNAK di dialog
+  // konfirmasi — submit tetap mungkin (lamaran baru yang sah).
+  const duplicateRecentEntry =
+    positionId && prefillInfo
+      ? (prefillInfo.recent.find((item) => item.positionId === positionId) ?? null)
       : null;
 
   return (
@@ -4848,6 +4861,27 @@ export function ApplyWizard({
               <AlertDialogDescription>
                 {t.apply.preview.confirmDesc}
               </AlertDialogDescription>
+              {/* NR60 (C1) — peringatan duplikat lunak: pelamar tercatat sudah
+                  mengirim lamaran untuk posisi ini (dari riwayat prefill A1).
+                  Sifatnya informatif — tombol kirim tetap aktif. */}
+              {duplicateRecentEntry ? (
+                <div
+                  role="note"
+                  className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-left text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                >
+                  <AlertTriangle
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+                    aria-hidden="true"
+                  />
+                  <span>
+                    {fillTemplate(t.apply.preview.duplicateWarn, {
+                      date: duplicateRecentEntry.appliedAt
+                        ? formatDateTimeId(duplicateRecentEntry.appliedAt)
+                        : "-",
+                    })}
+                  </span>
+                </div>
+              ) : null}
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={submitting}>
