@@ -89,11 +89,18 @@ function snapshotInfo(): LoadInfo {
   };
 }
 
-/**
- * Untuk React: pasangkan dengan useSyncExternalStore —
- * `useSyncExternalStore(subscribeLoad, getLoadSnapshotValue)`.
- */
-export { subscribeLoad, snapshotInfo as getLoadSnapshotValue };
+/** Langganan perubahan sinyal beban (untuk useSyncExternalStore). */
+export function subscribeLoad(cb: () => void): () => void {
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+/** Nilai saat ini untuk useSyncExternalStore (getSnapshot harus stabil). */
+export function getLoadSnapshotValue(): LoadInfo {
+  return snapshotInfo();
+}
 
 // ---------------------------------------------------------------------------
 // D10 — cache stale-first sederhana (memori tab): hasil GET admin terakhir
