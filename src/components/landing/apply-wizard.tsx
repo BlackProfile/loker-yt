@@ -186,6 +186,18 @@ function isAllowedExtraDoc(file: File): boolean {
   return ALLOWED_EXTRA_DOC_EXTS.includes(ext);
 }
 
+/**
+ * NR60 (A1/C1) — respons GET /api/public/apply-prefill (kontrak dengan backend
+ * agent 2-a): nama & WA dari lamaran terakhir + riwayat posisi terbaru.
+ * 429/gagal = diperlakukan sebagai null semua — TIDAK pernah menampilkan error.
+ */
+type ApplyPrefillInfo = {
+  name: string | null;
+  phone: string | null;
+  lastAppliedAt: string | null;
+  recent: { positionId: string; title: string; appliedAt: string }[];
+};
+
 /* ------------------- Form Builder per posisi (skema aktif) ------------------- */
 
 /** Hasil validasi satu langkah bagian skema (mode skema aktif). */
@@ -499,6 +511,17 @@ export function ApplyWizard({
   const dedupeDismissedRef = useRef(false);
   const dedupeAbortRef = useRef<AbortController | null>(null);
   const dedupeTimerRef = useRef<number | null>(null);
+  // NR60 (A1) — prefill "Lengkapi dari lamaran terakhir" dari
+  // /api/public/apply-prefill: respons utuh disimpan untuk fitur C1 (peringatan
+  // duplikat di dialog konfirmasi), kartu kecil hanya tampil bila ada nama.
+  const [prefillInfo, setPrefillInfo] = useState<ApplyPrefillInfo | null>(null);
+  // Kartu prefill terbuka (ditutup oleh tombol Gunakan/Tutup).
+  const [prefillCardOpen, setPrefillCardOpen] = useState(false);
+  // Email (lowercase) yang prefillInfo-nya SEDANG berlaku — kartu otomatis
+  // hilang saat isian email diubah ke nilai lain (tanpa state ekstra).
+  const prefillEmailRef = useRef<string>("");
+  const prefillAbortRef = useRef<AbortController | null>(null);
+  const prefillTimerRef = useRef<number | null>(null);
   // Mode tutup rekrutmen (Setting "site" via /api/public/site) — saat aktif,
   // tombol kirim di langkah akhir dinonaktifkan dan pengiriman diblokir.
   const [recruitmentClosed, setRecruitmentClosed] = useState(false);
@@ -704,10 +727,13 @@ export function ApplyWizard({
   }, []);
 
   // NR-32 — bersihkan permintaan dedupe & timer debounce saat wizard dilepas.
+  // NR60 (A1) — permintaan/timer prefill ikut dibersihkan (AbortController).
   useEffect(
     () => () => {
       dedupeAbortRef.current?.abort();
       if (dedupeTimerRef.current !== null) window.clearTimeout(dedupeTimerRef.current);
+      prefillAbortRef.current?.abort();
+      if (prefillTimerRef.current !== null) window.clearTimeout(prefillTimerRef.current);
     },
     [],
   );
@@ -1115,6 +1141,94 @@ export function ApplyWizard({
     dedupeDismissedRef.current = true;
     dedupeAbortRef.current?.abort();
     setDedupe(null);
+  }
+
+  /**
+   * NR60 (A1) — ambil prefill lamaran terakhir (fire-and-forget, debounce 600ms
+   * dari pemanggil). Hanya sekali per email (berbeda dari fetch terakhir);
+   * 429/gagal/abort = senyap — kartu tidak tampil, navigasi tidak pernah
+   * diblokir. Respons utuh disimpan di prefillInfo untuk fitur C1.
+   */
+  function fetchPrefill(email: string) {
+    const key = email.trim().toLowerCase();
+    if (!key || !EMAIL_RE.test(key) || prefillEmailRef.current === key) return;
+    prefillEmailRef.current = key;
+    prefillAbortRef.current?.abort();
+    const controller = new AbortController();
+    prefillAbortRef.current = controller;
+    fetch(`/api/public/apply-prefill?email=${encodeURIComponent(key)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((res) => {
+        // 429 (server ramai) / 5xx = diperlakukan tanpa prefill, tanpa error.
+        if (!res.ok) return null;
+        return res.json().catch(() => null);
+      })
+      .then((json: unknown) => {
+        if (controller.signal.aborted) return;
+        if (!isRecord(json)) {
+          setPrefillInfo(null);
+          setPrefillCardOpen(false);
+          return;
+        }
+        const info: ApplyPrefillInfo = {
+          name:
+            typeof json.name === "string" && json.name.trim() ? json.name.trim() : null,
+          phone:
+            typeof json.phone === "string" && json.phone.trim() ? json.phone.trim() : null,
+          lastAppliedAt:
+            typeof json.lastAppliedAt === "string" ? json.lastAppliedAt : null,
+          recent: Array.isArray(json.recent)
+            ? json.recent
+                .filter(isRecord)
+                .map((item) => ({
+                  positionId:
+                    typeof item.positionId === "string" ? item.positionId : "",
+                  title: typeof item.title === "string" ? item.title : "",
+                  appliedAt:
+                    typeof item.appliedAt === "string" ? item.appliedAt : "",
+                }))
+                .filter((item) => item.positionId !== "" && item.title !== "")
+            : [],
+        };
+        setPrefillInfo(info.name ? info : null);
+        setPrefillCardOpen(true);
+      })
+      .catch(() => {
+        // abort / jaringan gagal — senyap, prefill bersifat opsional
+      });
+  }
+
+  /** NR60 (A1) — jadwalkan cek prefill 600ms setelah email selesai diketik. */
+  function schedulePrefillCheck(email: string) {
+    const trimmed = email.trim();
+    if (!trimmed || !EMAIL_RE.test(trimmed)) return;
+    if (prefillTimerRef.current !== null) window.clearTimeout(prefillTimerRef.current);
+    prefillTimerRef.current = window.setTimeout(() => {
+      prefillTimerRef.current = null;
+      fetchPrefill(trimmed);
+    }, 600);
+  }
+
+  /**
+   * NR60 (A1) — terapkan prefill: isi nama & WA dari lamaran terakhir (WA hanya
+   * bila berbeda); portofolio/link sosial TIDAK disentuh. Error lama dibersihkan.
+   */
+  function applyPrefill() {
+    if (!prefillInfo) return;
+    const info = prefillInfo;
+    setValues((prev) => {
+      const next = { ...prev };
+      if (info.name) next.name = info.name;
+      if (info.phone && info.phone !== prev.phone) next.phone = info.phone;
+      return next;
+    });
+    setErrors((prev) =>
+      prev.name || prev.phone ? { ...prev, name: undefined, phone: undefined } : prev,
+    );
+    setPrefillCardOpen(false);
+    toast.success(t.apply.prefill.applied);
   }
 
   /**
@@ -3416,6 +3530,9 @@ export function ApplyWizard({
                     // Snapshot nilai dari event agar callback debounce tidak membaca
                     // closure basi.
                     const snapshot = e.currentTarget.value;
+                    // NR60 (A1) — prefill "lengkapi dari lamaran terakhir":
+                    // jadwal yang sama (600ms), independen dari dismiss dedupe.
+                    schedulePrefillCheck(snapshot);
                     if (dedupeDismissedRef.current) return;
                     if (dedupeTimerRef.current !== null) {
                       window.clearTimeout(dedupeTimerRef.current);
@@ -3438,6 +3555,49 @@ export function ApplyWizard({
                   <p id="apply-email-error" className="text-sm text-rose-600">
                     {errors.email}
                   </p>
+                ) : null}
+                {/* NR60 (A1) — kartu prefill: email tercatat pernah melamar →
+                    tawarkan isi nama & WA dari lamaran terakhir (bisa ditutup). */}
+                {prefillInfo &&
+                prefillCardOpen &&
+                prefillInfo.name &&
+                values.email.trim().toLowerCase() === prefillEmailRef.current ? (
+                  <div className="flex items-start justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-sm font-medium text-amber-900 dark:text-amber-200">
+                        <History
+                          className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+                          aria-hidden="true"
+                        />
+                        {t.apply.prefill.title}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-amber-800/90 dark:text-amber-200/80">
+                        {prefillInfo.name}
+                        {prefillInfo.phone ? ` · ${prefillInfo.phone}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 border-amber-300 text-xs text-amber-800 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+                        onClick={applyPrefill}
+                      >
+                        {t.apply.prefill.use}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-amber-700 dark:text-amber-300"
+                        aria-label={t.apply.prefill.dismiss}
+                        onClick={() => setPrefillCardOpen(false)}
+                      >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </div>
+                  </div>
                 ) : null}
               </div>
             </div>
