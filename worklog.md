@@ -4358,3 +4358,20 @@ Stage Summary:
 - Berkas yatim terdefinisi ketat (tanpa rujukan & bukan arsip OFFER_PDF & draft kadaluarsa dihitung yatim) — terbukti presisi saat uji: file INTRO kembar nama tidak tersapu.
 - Keputusan desain: mutasi berkas OWNER-only (HR/VIEWER lihat+unduh), filter/sort client-side (data tercap 1000), replace selalu konfirmasi karena isi lama tak bisa dikembalikan.
 - Berkas utama: src/lib/file-refs.ts (baru), src/app/api/admin/files/route.ts + files/[id]/route.ts + files/bulk/route.ts (baru), src/components/admin/files-tab.tsx (baru), src/components/admin/admin-app.tsx, src/components/admin/format.ts, src/lib/types.ts.
+---
+Task ID: NR57
+Agent: Z.ai Code
+Task: "buat yang bagus" — rombak tata letak kanan header Panel Admin supaya enak dilihat: gabungkan 3 kontrol pratinjau menjadi 1 menu dropdown, pindahkan Keluar ke menu akun avatar, rapikan kelompok ikon dengan pemisah.
+
+Work Log:
+- DIAGNOSIS (dari screenshot user + kode admin-app.tsx): kanan header memuat 9 kontrol berjejer (Search, Keyboard, pill Live, Theme, Bell, Select "Lihat sebagai", tombol "Lihat sebagai Pelamar", tombol "Lihat Halaman Publik", tombol "Keluar") — ramai, 3 kontrol pratinjau terpisah-padahal sekeluarga, dan Keluar dobel (header + kaki sidebar) sambil bersebelahan dengan aksi lain.
+- KOMPONEN BARU di admin-app.tsx: (1) PreviewMenu — DropdownMenu trigger outline (Eye + "Pratinjau" + ChevronDown; teks disembunyikan < md) berisi: label "Pratinjau peran panel" + "Lihat sebagai HR" (UserCog) + "Lihat sebagai Pengamat" (Eye) [hanya OWNER asli && !previewRole, perilaku gating NR46 dipertahankan], separator, "Lihat sebagai Pelamar" (UserRound, anchor /?preview=1 target _blank asChild), "Lihat Halaman Publik" (ExternalLink → onExit sama seperti tombol lama). (2) AccountMenu — trigger lingkaran inisial gradient rose-600→amber-500 (konsisten kaki sidebar, size-11 sm:size-9, focus ring) berisi: nama + Badge peran ASLI sesi (roleBadgeClass), "Pintasan keyboard" (buka ShortcutOverlay), separator, "Keluar" (rose, ikon LogOut → handleLogout).
+- HEADER BARU: [Search][Keyboard][Live][Theme][Bell] │ pemisah vertikal h-6 w-px bg-border (hidden mobile) │ [Pratinjau ▾][Avatar ▾] — dari 9 kontrol menjadi 6, hanya satu tombol outline, gap diseragamkan gap-1 sm:gap-1.5.
+- DIHAPUS dari header: Select "Lihat sebagai" (+ import select.tsx dibuang), tombol "Lihat sebagai Pelamar", tombol "Lihat Halaman Publik", tombol "Keluar" (logout kaki sidebar tetap). Icon import baru: ChevronDown, UserRound; komentar lama NR46/FAB diperbarui.
+- KUALITAS: bunx tsc --noEmit → 0 error di src/ (error tersisa hanya di scripts/ & skills/ di luar cakupan); bun run lint → exit 0.
+- VERIFIKASI BROWSER (owner admin@lumina.id, agent-browser): header ter-render 6 kontrol sesuai desain; menu Pratinjau memuat 4 item lengkap; "Lihat sebagai HR" → banner Mode Pratinjau muncul + "Kembali sebagai Pemilik" memulihkan; "Lihat sebagai Pelamar" membuka tab baru /?preview=1; "Lihat Halaman Publik" keluar ke landing; menu akun menampilkan "Pemilik Studio" + badge "Pemilik" + item Pintasan keyboard (membuka dialog "Pintasan Keyboard") + Keluar (logout → kembali ke kartu login; login ulang sukses); desktop 1440px rapi dengan pemisah; mobile 390px scrollWidth==innerWidth (tanpa overflow-x), Pratinjau ikon saja, avatar tetap; console bersih; dev.log semua API 200.
+
+Stage Summary:
+- Kanan header kini berhirarki: ikon utilitas (status) → pemisah → aksi pratinjau → akun; beban visual turun dari 9 menjadi 6 elemen dan tidak ada lagi dua tombol "Lihat…" yang mirip maupun tombol Keluar yang rawan salah klik.
+- Semua fungsi lama tetap utuh: pratinjau peran OWNER (banner + server tetap menegakkan role asli), pratinjau pelamar (tab baru), halaman publik (onExit), overlay pintasan (2 jalur: ikon header + menu akun), logout (menu akun + kaki sidebar).
+- Berkas utama: src/components/admin/admin-app.tsx (satu-satunya file yang berubah).
