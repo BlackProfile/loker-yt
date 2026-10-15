@@ -182,14 +182,18 @@ export function ImageThumb({
   viewLabel: string;
 }) {
   const isImage = file.type.startsWith("image/");
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  // Pola sama dengan LocalFileViewerDialog: URL objek dibuat via useMemo dan
+  // dicabut effect cleanup saat berganti berkas / unmount (tanpa setState —
+  // thumbnail tersedia sejak render pertama).
+  const objectUrl = useMemo(
+    () => (isImage ? URL.createObjectURL(file) : null),
+    [file, isImage],
+  );
 
   useEffect(() => {
-    if (!isImage) return;
-    const url = URL.createObjectURL(file);
-    setObjectUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file, isImage]);
+    if (!objectUrl) return;
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [objectUrl]);
 
   if (!isImage || !objectUrl) return null;
   return (
@@ -200,7 +204,6 @@ export function ImageThumb({
       title={file.name}
       className="shrink-0 overflow-hidden rounded-md border transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={objectUrl}
         alt=""

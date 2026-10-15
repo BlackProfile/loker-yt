@@ -3088,6 +3088,72 @@ export function ApplyWizard({
     openStatusPage();
   }
 
+  // NR60 (B1) — chip lompatan banner draft: bagian formulir yang SUDAH berisi
+  // isi pada draft (data diri / cerita / berkas). Bagian kosong = tanpa chip;
+  // langkah tujuan mengikuti mode (klasik 0/1/filesStep, skema langkah bagian).
+  const draftPartChips = useMemo(() => {
+    if (!draft) return [];
+    const val = (key: keyof FormValues): string => {
+      const raw = draft.values?.[key];
+      return typeof raw === "string" ? raw.trim() : "";
+    };
+    const dataStep = schema ? biodataStepIndex : 0;
+    const storyStep = schema ? experienceStepIndex : 1;
+    const fileStepChip = schema ? schemaFilesStepIndex : filesStep;
+    const parts: { key: "data" | "story" | "files"; label: string; step: number }[] = [];
+    if ((val("name") || val("email") || val("phone")) && dataStep >= 0) {
+      parts.push({ key: "data", label: t.apply.draft.chipData, step: dataStep });
+    }
+    if ((val("experience") || val("motivation")) && storyStep >= 0) {
+      parts.push({ key: "story", label: t.apply.draft.chipStory, step: storyStep });
+    }
+    if (draftFiles.length > 0 && fileStepChip >= 0) {
+      parts.push({ key: "files", label: t.apply.draft.chipFiles, step: fileStepChip });
+    }
+    return parts;
+  }, [
+    draft,
+    draftFiles,
+    schema,
+    biodataStepIndex,
+    experienceStepIndex,
+    schemaFilesStepIndex,
+    filesStep,
+    t,
+  ]);
+
+  // NR60 (B3) — estimasi waktu tersisa: detik kasar per langkah yang belum
+  // selesai (termasuk langkah aktif — pratinjau 20 dtk tetap terhitung → "±1
+  // mnt lagi"). Dibulatkan ke atas ke menit penuh; jujur & sederhana.
+  const remainingSeconds = useMemo(() => {
+    let total = 0;
+    const add = (idx: number, sec: number) => {
+      if (idx >= 0 && idx >= step) total += sec;
+    };
+    if (schema) {
+      for (const entry of sectionSteps) {
+        add(
+          entry.stepIndex,
+          entry.section.kind === "biodata"
+            ? 90
+            : entry.section.kind === "experience"
+              ? 120
+              : entry.section.kind === "files"
+                ? 60
+                : 45,
+        );
+      }
+    } else {
+      add(0, 90);
+      add(1, 120);
+      add(filesStep, 60);
+    }
+    add(attendanceStepIndex, 30);
+    add(previewStep, 20);
+    return total;
+  }, [schema, sectionSteps, filesStep, attendanceStepIndex, previewStep, step]);
+  const minutesLeft = Math.max(1, Math.ceil(remainingSeconds / 60));
+
   if (success) {
     const briefUrl = safeExternalUrl(success.assignment?.url ?? "");
     return (
@@ -3297,72 +3363,6 @@ export function ApplyWizard({
     positionId && prefillInfo
       ? (prefillInfo.recent.find((item) => item.positionId === positionId) ?? null)
       : null;
-
-  // NR60 (B1) — chip lompatan banner draft: bagian formulir yang SUDAH berisi
-  // isi pada draft (data diri / cerita / berkas). Bagian kosong = tanpa chip;
-  // langkah tujuan mengikuti mode (klasik 0/1/filesStep, skema langkah bagian).
-  const draftPartChips = useMemo(() => {
-    if (!draft) return [];
-    const val = (key: keyof FormValues): string => {
-      const raw = draft.values?.[key];
-      return typeof raw === "string" ? raw.trim() : "";
-    };
-    const dataStep = schema ? biodataStepIndex : 0;
-    const storyStep = schema ? experienceStepIndex : 1;
-    const fileStepChip = schema ? schemaFilesStepIndex : filesStep;
-    const parts: { key: "data" | "story" | "files"; label: string; step: number }[] = [];
-    if ((val("name") || val("email") || val("phone")) && dataStep >= 0) {
-      parts.push({ key: "data", label: t.apply.draft.chipData, step: dataStep });
-    }
-    if ((val("experience") || val("motivation")) && storyStep >= 0) {
-      parts.push({ key: "story", label: t.apply.draft.chipStory, step: storyStep });
-    }
-    if (draftFiles.length > 0 && fileStepChip >= 0) {
-      parts.push({ key: "files", label: t.apply.draft.chipFiles, step: fileStepChip });
-    }
-    return parts;
-  }, [
-    draft,
-    draftFiles,
-    schema,
-    biodataStepIndex,
-    experienceStepIndex,
-    schemaFilesStepIndex,
-    filesStep,
-    t,
-  ]);
-
-  // NR60 (B3) — estimasi waktu tersisa: detik kasar per langkah yang belum
-  // selesai (termasuk langkah aktif — pratinjau 20 dtk tetap terhitung → "±1
-  // mnt lagi"). Dibulatkan ke atas ke menit penuh; jujur & sederhana.
-  const remainingSeconds = useMemo(() => {
-    let total = 0;
-    const add = (idx: number, sec: number) => {
-      if (idx >= 0 && idx >= step) total += sec;
-    };
-    if (schema) {
-      for (const entry of sectionSteps) {
-        add(
-          entry.stepIndex,
-          entry.section.kind === "biodata"
-            ? 90
-            : entry.section.kind === "experience"
-              ? 120
-              : entry.section.kind === "files"
-                ? 60
-                : 45,
-        );
-      }
-    } else {
-      add(0, 90);
-      add(1, 120);
-      add(filesStep, 60);
-    }
-    add(attendanceStepIndex, 30);
-    add(previewStep, 20);
-    return total;
-  }, [schema, sectionSteps, filesStep, attendanceStepIndex, previewStep, step]);
-  const minutesLeft = Math.max(1, Math.ceil(remainingSeconds / 60));
 
   return (
     <div className="@container flex flex-col gap-6">
