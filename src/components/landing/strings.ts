@@ -236,7 +236,8 @@ const id = {
       formOption: "Jawaban \"{label}\" harus salah satu opsi yang tersedia.",
       formFileType:
         "Format berkas untuk \"{label}\" tidak didukung. Gunakan PDF, gambar, Word, audio, atau video.",
-      formFileSize: "Ukuran berkas \"{label}\" maksimal 20 MB.",
+      // NR60 (A3) — ukuran dari FORM_LIMITS via {max} (tidak hardcode "20 MB").
+      formFileSize: "Ukuran berkas \"{label}\" maksimal {max}.",
       portfolioRequired: "Portofolio atau link sosial media wajib untuk posisi ini.",
       cvRequired: "CV wajib diunggah untuk posisi ini.",
       introRequired: "Audio/video perkenalan wajib diunggah untuk posisi ini.",
@@ -256,6 +257,31 @@ const id = {
       restore: "Pulihkan",
       discard: "Hapus",
       savedPrefix: "Disimpan",
+      // NR60 (B1) — waktu relatif + chip lompatan bagian.
+      relTimeNow: "baru saja",
+      relTimeMin: "{n} mnt lalu",
+      relTimeHour: "{n} jam lalu",
+      relTimeDay: "{n} hari lalu",
+      chipData: "Data diri",
+      chipStory: "Cerita",
+      chipFiles: "Berkas",
+      // NR60 (B4) — tautan draft via salin/bagikan.
+      copyLink: "Salin tautan",
+      shareLink: "Bagikan",
+      copied: "Tautan disalin",
+      linkFailed: "Gagal menyiapkan tautan. Coba lagi.",
+      shareTitle: "Lanjutkan lamaran — Lumina Studio",
+    },
+    // NR60 (A1) — prefill dari lamaran terakhir (email dikenali).
+    prefill: {
+      title: "Kami menemukan lamaranmu sebelumnya",
+      use: "Gunakan data ini",
+      dismiss: "Tutup",
+      applied: "Data lamaran sebelumnya diisi.",
+    },
+    // NR60 (B3) — estimasi waktu di header progres.
+    progress: {
+      timeLeft: "mnt lagi",
     },
     summary: {
       title: "Ringkasan Lamaran",
@@ -295,6 +321,9 @@ const id = {
       consentNote:
         "Data kamu hanya dipakai untuk proses rekrutmen di studio ini.",
       changeOrRemove: "Ganti / Hapus",
+      // NR60 (C1) — peringatan lunak lamaran duplikat di dialog konfirmasi.
+      duplicateWarn:
+        "Catatan: kamu tercatat sudah melamar posisi ini pada {date}. Mengirim lagi akan membuat lamaran baru.",
     },
     uploads: {
       cvLabel: "CV (PDF, maks 5 MB)",
@@ -337,7 +366,8 @@ const id = {
       fileChoose: "Pilih berkas",
       fileChange: "Ulangi",
       fileRemove: "Hapus",
-      fileHint: "PDF, gambar, Word, audio, video — maks 20 MB",
+      // NR60 (A3) — ukuran dari FORM_LIMITS via {max} (tidak hardcode).
+      fileHint: "PDF, gambar, Word, audio, video — maks {max}",
       previewTitle: "Jawaban Tambahan",
       fileAnswer: "Berkas diunggah",
     },
@@ -941,6 +971,27 @@ type idDictShape = {
       restore: string;
       discard: string;
       savedPrefix: string;
+      relTimeNow: string;
+      relTimeMin: string;
+      relTimeHour: string;
+      relTimeDay: string;
+      chipData: string;
+      chipStory: string;
+      chipFiles: string;
+      copyLink: string;
+      shareLink: string;
+      copied: string;
+      linkFailed: string;
+      shareTitle: string;
+    };
+    prefill: {
+      title: string;
+      use: string;
+      dismiss: string;
+      applied: string;
+    };
+    progress: {
+      timeLeft: string;
     };
     summary: {
       title: string;
@@ -973,6 +1024,7 @@ type idDictShape = {
       consentRequired: string;
       consentNote: string;
       changeOrRemove: string;
+      duplicateWarn: string;
     };
     uploads: {
       cvLabel: string;
@@ -1012,7 +1064,6 @@ type idDictShape = {
       fileChange: string;
       fileRemove: string;
       fileHint: string;
-      previewTitle: string;
       fileAnswer: string;
     };
     buttons: {

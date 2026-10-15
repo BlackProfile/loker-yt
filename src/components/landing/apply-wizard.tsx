@@ -3022,6 +3022,51 @@ export function ApplyWizard({
     }
   }
 
+  /**
+   * NR60 (B4) — pastikan draft server ada (ensureServerDraft dipanggil LAZY
+   * saat tombol diklik, bukan saat render) lalu bangun URL share dengan format
+   * yang SAMA dengan tautan email: {origin}/?posisi=<slug>&draft=<token>
+   * (tanpa param posisi bila slug kosong — cermin /api/public/apply-draft).
+   * Gagal = null + toast error lokal (pola error yang sudah ada).
+   */
+  async function buildDraftShareUrl(): Promise<string | null> {
+    if (!positionId) return null;
+    let token = draftTokenRef.current;
+    if (!token) {
+      token = await ensureServerDraft();
+      if (!token) {
+        toast.error(t.apply.draft.linkFailed);
+        return null;
+      }
+    }
+    const slug = selectedPosition?.slug ?? "";
+    const posisiParam = slug ? `posisi=${encodeURIComponent(slug)}&` : "";
+    return `${window.location.origin}/?${posisiParam}draft=${token}`;
+  }
+
+  /** NR60 (B4) — salin tautan "lanjutkan lamaran" ke clipboard. */
+  async function handleCopyDraftLink() {
+    const url = await buildDraftShareUrl();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(t.apply.draft.copied);
+    } catch {
+      toast.error(t.apply.draft.linkFailed);
+    }
+  }
+
+  /** NR60 (B4) — bagikan tautan via Web Share API (AbortError = batal, senyap). */
+  async function handleShareDraftLink() {
+    const url = await buildDraftShareUrl();
+    if (!url) return;
+    try {
+      await navigator.share({ title: t.apply.draft.shareTitle, url });
+    } catch {
+      // dibatalkan pengguna / tidak didukung — abaikan senyap
+    }
+  }
+
   async function copyTrackingCode() {
     if (!success?.trackingCode) return;
     try {
@@ -3444,6 +3489,35 @@ export function ApplyWizard({
                 {sendingLink ? "Mengirim..." : "Kirim tautan ke email"}
               </Button>
             </form>
+            {/* NR60 (B4) — salin/bagikan tautan draft (tanpa email). Tombol
+                type="button" agar tidak memicu submit; token draft dijamin
+                ensureServerDraft() LAZY saat pertama diklik. */}
+            {positionId && (values.name.trim() || values.experience.trim()) ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-muted-foreground"
+                  onClick={() => void handleCopyDraftLink()}
+                >
+                  <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  {t.apply.draft.copyLink}
+                </Button>
+                {typeof navigator.share === "function" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs text-muted-foreground"
+                    onClick={() => void handleShareDraftLink()}
+                  >
+                    <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t.apply.draft.shareLink}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             {!positionId ? (
               <p className="mt-2 text-xs text-muted-foreground">
                 Pilih posisi lamaran terlebih dahulu untuk mengirim tautan.
