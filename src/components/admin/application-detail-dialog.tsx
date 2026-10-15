@@ -1177,10 +1177,13 @@ export function ApplicationDetailDialog({
   // daftar ribuan kandidat tidak membekukan browser). Saat lite, versi utuh
   // diambil sekali per lamaran via GET /api/admin/applications/[id].
   const [fullApp, setFullApp] = useState<Application | null>(null);
+  const [fullFetchNonce, setFullFetchNonce] = useState(0);
+  const [fullFetchFailed, setFullFetchFailed] = useState(false);
   const fullAppId = applicationRow?.id ?? null;
   const needFullFetch = applicationRow?.lite === true;
   useEffect(() => {
     setFullApp(null);
+    setFullFetchFailed(false);
     if (!needFullFetch || !fullAppId) return;
     let cancelled = false;
     apiGet<Application>(`/api/admin/applications/${fullAppId}`)
@@ -1188,17 +1191,19 @@ export function ApplicationDetailDialog({
         if (!cancelled) setFullApp(full);
       })
       .catch(() => {
-        // Gagal memuat versi utuh: dialog tetap tampil memakai baris lite.
+        // Gagal memuat versi utuh: jangan render baris lite (field string
+        // wajib bisa null dan membuat dialog crash) — tampil penawaran coba lagi.
+        if (!cancelled) setFullFetchFailed(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [fullAppId, needFullFetch]);
+  }, [fullAppId, needFullFetch, fullFetchNonce]);
 
   // Selalu utamakan baris TERBARU dari parent (bukan lite → sudah utuh);
   // versi fetch hanya dipakai selama parent masih mengirim baris lite.
   const application =
-    applicationRow && applicationRow.lite !== true ? applicationRow : (fullApp ?? applicationRow);
+    applicationRow && applicationRow.lite !== true ? applicationRow : fullApp;
   const { tagDefs, colorClassOf } = useTagDefs();
   const [editStatus, setEditStatus] = useState<StageKey>("NEW");
   const [editNotes, setEditNotes] = useState("");
@@ -1660,13 +1665,31 @@ export function ApplicationDetailDialog({
       >
         <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-3xl">
           <div className="flex flex-col items-center gap-3 py-16 text-center" role="status">
-            <Loader2 className="size-6 animate-spin text-rose-600" aria-hidden="true" />
-            <div>
-              <p className="text-sm font-semibold">Memuat detail lengkap…</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {applicationRow.name} · {applicationRow.trackingCode}
-              </p>
-            </div>
+            {fullFetchFailed ? (
+              <>
+                <p className="text-sm font-semibold">Gagal memuat detail lengkap.</p>
+                <p className="text-xs text-muted-foreground">
+                  Periksa koneksi lalu coba lagi.
+                </p>
+                <Button
+                  size="sm"
+                  className="mt-1"
+                  onClick={() => setFullFetchNonce((n) => n + 1)}
+                >
+                  Coba lagi
+                </Button>
+              </>
+            ) : (
+              <>
+                <Loader2 className="size-6 animate-spin text-rose-600" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-semibold">Memuat detail lengkap…</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {applicationRow.name} · {applicationRow.trackingCode}
+                  </p>
+                </div>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
