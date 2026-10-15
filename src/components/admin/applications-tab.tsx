@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -66,6 +73,7 @@ import {
   Trash2,
   Users,
   XCircle,
+  Clock3,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -90,7 +98,34 @@ import type { TalentMatchResult } from "@/lib/talent-match"; // PL-2b — tipe h
 import { apiDelete, apiGet, apiPatch, apiPost, buildQuery } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
+// NR58 (B5/D10) — stale-first cache + chip umur data snapshot.
+import {
+  peekCachedJson,
+  subscribeLoad,
+  getLoadSnapshotValue,
+} from "./load-client";
 import { ApplicationDetailDialog } from "./application-detail-dialog";
+
+// NR58 (B5) — chip "data lama": tampil HANYA saat server menyajikan snapshot
+// basi (Mode Hemat / beban kritis — header X-Data-AsOf, dibaca load-client).
+// Server pulih → respons segar membersihkan chip otomatis.
+function StaleDataNote() {
+  const info = useSyncExternalStore(subscribeLoad, getLoadSnapshotValue);
+  if (info.dataAgeSec == null || info.dataAgeSec < 30) return null;
+  const m = Math.floor(info.dataAgeSec / 60);
+  return (
+    <div
+      className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+      role="status"
+    >
+      <Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
+      <span>
+        Menampilkan data {m < 1 ? "kurang dari 1" : m} menit lalu — server sedang
+        sibuk. Daftar diperbarui otomatis saat kondisi pulih.
+      </span>
+    </div>
+  );
+}
 import { ApplicationsTable } from "./applications-table";
 import { KanbanBoard } from "./kanban-board";
 import { ComparisonDialog } from "./comparison-dialog";
@@ -478,8 +513,28 @@ export function ApplicationsTab() {
     async (silent = false) => {
       if (!silent) setLoading(true);
       const seq = ++fetchSeqRef.current;
+      const url = fetchUrlRef.current;
+
+      // NR58 (D10) — STALE-FIRST: bila cache memori tab sudah punya hasil URL
+      // ini, tampilkan SEGERA (tanpa menunggu jaringan) lalu tetap segarkan di
+      // latar. Saat server berat, tab terbuka instan dengan data lama —
+      // bukan skeleton kosong.
+      if (!silent) {
+        const cached = peekCachedJson<PaginatedApplications | ApplicationRow[]>(url);
+        if (cached != null) {
+          if (Array.isArray(cached)) {
+            setApplications(cached as ApplicationRow[]);
+          } else if (Array.isArray(cached.items)) {
+            const items = cached.items as ApplicationRow[];
+            setApplications(items);
+            setServerTotal(cached.total);
+            setServerTotalPages(cached.totalPages);
+          }
+          setLoading(false);
+        }
+      }
+
       try {
-        const url = fetchUrlRef.current;
         if (url.includes("paginate=1")) {
           const data = await apiGet<PaginatedApplications>(url);
           if (seq !== fetchSeqRef.current) return;
@@ -1145,6 +1200,7 @@ export function ApplicationsTab() {
 
   return (
     <div className="flex flex-col gap-4">
+      <StaleDataNote />
       {/* Toolbar filter */}
       <div className="flex flex-col gap-3">
         {/* NR38-B fitur 2 — baris chip tampilan tersimpan, di atas bar filter. */}

@@ -55,11 +55,14 @@ export function noteLoadResponse(res: Response): void {
       raw === "SAVE" || raw === "CRIT" || raw === "WARN" || raw === "OK"
         ? raw
         : null;
+    if (mode === null && asOf === null) return;
     const asOfMs = asOf ? Date.parse(asOf) : NaN;
-    if (mode === null && Number.isNaN(asOfMs)) return;
+    // Respons rute sadar-beban (punya X-Load) TANPA X-Data-AsOf berarti data
+    // segar — chip "data lama" dibersihkan otomatis saat server pulih.
     state = {
       mode: mode ?? state.mode,
-      dataAsOf: Number.isNaN(asOfMs) ? state.dataAsOf : asOfMs,
+      dataAsOf:
+        mode !== null ? (Number.isNaN(asOfMs) ? null : asOfMs) : state.dataAsOf,
       updatedAt: Date.now(),
     };
     emit();
