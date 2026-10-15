@@ -1664,6 +1664,10 @@ export function ApplicationDetailDialog({
         }}
       >
         <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-3xl">
+          {/* Judul sr-only: DialogContent wajib punya DialogTitle (a11y). */}
+          <DialogTitle className="sr-only">
+            Memuat detail lamaran {applicationRow.name}
+          </DialogTitle>
           <div className="flex flex-col items-center gap-3 py-16 text-center" role="status">
             {fullFetchFailed ? (
               <>
