@@ -56,6 +56,7 @@ import {
   type Interview,
   type OfferStatus,
   type Position,
+  type PositionStatsRow,
   type RejectionReason,
   type StageCategory,
   type StageKey,
@@ -253,6 +254,10 @@ export function PipelineTab({
   const [applications, setApplications] = useState<Application[]>([]);
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [loading, setLoading] = useState(true);
+  // NR59 — posisi yang datanya SUDAH dimuat (daftar kini per posisi, bukan semua).
+  const [appsFor, setAppsFor] = useState<string>("");
+  // NR59 — hitungan lamaran per posisi untuk chip lowongan (dari /position-stats).
+  const [statsRows, setStatsRows] = useState<PositionStatsRow[]>([]);
 
   const [positionId, setPositionId] = useState<string>("");
   const [category, setCategory] = useState<StageCategory>("REVIEW");
@@ -286,18 +291,50 @@ export function PipelineTab({
 
   /* ------------------------------ Pemuatan data ------------------------------ */
 
+  // NR59 — posisi aktif terkini untuk guard hasil fetch (posisi bisa berganti
+  // saat permintaan masih dalam penerbangan; hasil lamanya dibuang).
+  const positionIdRef = useRef(positionId);
+  positionIdRef.current = positionId;
+
+  // NR59 — daftar lamaran HANYA untuk posisi aktif + mode lite (field teks
+  // berat dipangkas server). Sebelumnya satu fetch menarik SEMUA lamaran
+  // semua posisi (±20 MB / 7477 baris) dan tab me-render ribuan kartu
+  // sekaligus — itulah yang membuat halaman macet.
+  const loadApps = useCallback(
+    async (silent = true) => {
+      const pid = positionIdRef.current;
+      if (!pid) return;
+      if (!silent) setLoading(true);
+      try {
+        const apps = await apiGet<Application[]>(
+          `/api/admin/applications${buildQuery({ positionId: pid, lite: "1" })}`,
+        );
+        if (pid === positionIdRef.current) {
+          setApplications(apps);
+          setAppsFor(pid);
+        }
+      } catch (err) {
+        reportError(err);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [reportError]
+  );
+
+  // Statik ringan: posisi, wawancara, statistik per posisi (untuk chip jumlah).
   const loadAll = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        const [pos, apps, ivs] = await Promise.all([
+        const [pos, ivs, stats] = await Promise.all([
           apiGet<Position[]>("/api/admin/positions"),
-          apiGet<Application[]>("/api/admin/applications"),
           apiGet<Interview[]>("/api/admin/interviews"),
+          apiGet<{ rows: PositionStatsRow[] }>("/api/admin/position-stats"),
         ]);
         setPositions(pos);
-        setApplications(apps);
         setInterviews(ivs);
+        setStatsRows(stats.rows);
       } catch (err) {
         reportError(err);
       } finally {
@@ -310,6 +347,12 @@ export function PipelineTab({
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  // Ganti posisi → muat daftar lamaran posisi itu (senyap; area daftar
+  // menampilkan skeleton selama data posisi lama masih ditampilkan).
+  useEffect(() => {
+    void loadApps(true);
+  }, [positionId, loadApps]);
 
   // Deep-link bot Telegram (?kandidat=): AdminApp sudah menemukan lamarannya
   // dan memindahkan tab ke Pipeline — buka dialog detail persis seperti klik
@@ -361,10 +404,17 @@ export function PipelineTab({
   // (daftar lama tetap tampil sampai data baru siap — anti-flicker).
   useLiveRefresh("applications:changed", () => {
     void loadAll(true);
+    void loadApps(true);
     void loadDuplicates();
   });
-  useLiveRefresh("interviews:changed", () => void loadAll(true));
-  useLiveRefresh("positions:changed", () => void loadAll(true));
+  useLiveRefresh("interviews:changed", () => {
+    void loadAll(true);
+    void loadApps(true);
+  });
+  useLiveRefresh("positions:changed", () => {
+    void loadAll(true);
+    void loadApps(true);
+  });
 
   // Pilihan lowongan bertahan antar kunjungan (localStorage).
   useEffect(() => {
