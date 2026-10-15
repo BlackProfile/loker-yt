@@ -8,7 +8,7 @@
 // Setiap kategori punya daftar fitur ("Fitur tahap ini") dan kartu kandidat
 // dengan aksi cepat yang relevan — supaya alur kerja HR jadi jelas & mudah.
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   BadgeCheck,
@@ -460,6 +460,13 @@ export function PipelineTab({
     [applications, positionId]
   );
 
+  // NR59 — jumlah lamaran per posisi (untuk chip lowongan; data live hanya
+  // dimuat untuk posisi aktif, posisi lain memakai ringkasan /position-stats).
+  const statsMap = useMemo(
+    () => new Map(statsRows.map((r) => [r.positionId, r.applications])),
+    [statsRows]
+  );
+
   // Jumlah lamaran duplikat pada posisi aktif (fitur Task 20-a).
   const duplicateCount = useMemo(
     () => positionApps.reduce((n, a) => (duplicateIds.has(a.id) ? n + 1 : n), 0),
@@ -898,7 +905,12 @@ export function PipelineTab({
             aria-label="Pilih lowongan"
           >
             {positions.map((p) => {
-              const count = applications.filter((a) => a.positionId === p.id).length;
+              // NR59 — hitungan chip: posisi aktif dari data live, lainnya dari
+              // statistik ringan (daftar lamaran kini hanya dimuat per posisi).
+              const count =
+                p.id === positionId
+                  ? positionApps.length
+                  : (statsMap.get(p.id) ?? 0);
               const active = p.id === positionId;
               return (
                 <button
@@ -1152,7 +1164,7 @@ export function PipelineTab({
           </div>
 
           {/* Daftar kandidat per kategori */}
-          {loading && applications.length === 0 ? (
+          {listBusy ? (
             <div className="flex flex-col gap-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-24 w-full rounded-2xl" />
@@ -1168,59 +1180,101 @@ export function PipelineTab({
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
-              {currentList.map((app) => (
-                <Reveal key={app.id} slideY={8} duration={0.2}>
-                  {category === "REVIEW" ? (
-                    <ReviewCard
-                      app={app}
-                      canMutate={canMutate}
-                      positionStages={positionStages}
-                      selected={selectedIds.has(app.id)}
-                      onToggle={(c) => toggleSelect(app.id, c)}
-                      onStageChange={(s) => void handleStageChange(app, s)}
-                      onRate={(r) => void handleRate(app, r)}
-                      onSchedule={() => openCreateSession(app)}
-                      onReject={() => setRejectTarget(app)}
-                      onDetail={() => setDetail(app)}
-                    />
-                  ) : category === "INTERVIEW" ? (
-                    <InterviewCard
-                      app={app}
-                      canMutate={canMutate}
-                      nextSession={nextSessionOf(app.id)}
-                      lastSession={lastSessionOf(app.id)}
-                      allSessions={sessionsOf(app.id)}
-                      onSchedule={() => openCreateSession(app)}
-                      onOpenSession={(i) => {
-                        setSessionReset((n) => n + 1);
-                        setSessionTarget({ mode: "edit", interview: i });
-                      }}
-                      onOffer={() => setOfferTarget(app)}
-                      onReject={() => setRejectTarget(app)}
-                      onDetail={() => setDetail(app)}
-                    />
-                  ) : category === "ACCEPTED" ? (
-                    <AcceptedCard
-                      app={app}
-                      canMutate={canMutate}
-                      onOffer={() => setOfferTarget(app)}
-                      onReject={() => setRejectTarget(app)}
-                      onDetail={() => setDetail(app)}
-                    />
+            <>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {visibleList.map((app, i) => {
+                  const card =
+                    category === "REVIEW" ? (
+                      <ReviewCard
+                        app={app}
+                        canMutate={canMutate}
+                        positionStages={positionStages}
+                        selected={selectedIds.has(app.id)}
+                        onToggle={(c) => toggleSelect(app.id, c)}
+                        onStageChange={(s) => void handleStageChange(app, s)}
+                        onRate={(r) => void handleRate(app, r)}
+                        onSchedule={() => openCreateSession(app)}
+                        onReject={() => setRejectTarget(app)}
+                        onDetail={() => setDetail(app)}
+                      />
+                    ) : category === "INTERVIEW" ? (
+                      <InterviewCard
+                        app={app}
+                        canMutate={canMutate}
+                        nextSession={nextSessionOf(app.id)}
+                        lastSession={lastSessionOf(app.id)}
+                        allSessions={sessionsOf(app.id)}
+                        onSchedule={() => openCreateSession(app)}
+                        onOpenSession={(iv) => {
+                          setSessionReset((n) => n + 1);
+                          setSessionTarget({ mode: "edit", interview: iv });
+                        }}
+                        onOffer={() => setOfferTarget(app)}
+                        onReject={() => setRejectTarget(app)}
+                        onDetail={() => setDetail(app)}
+                      />
+                    ) : category === "ACCEPTED" ? (
+                      <AcceptedCard
+                        app={app}
+                        canMutate={canMutate}
+                        onOffer={() => setOfferTarget(app)}
+                        onReject={() => setRejectTarget(app)}
+                        onDetail={() => setDetail(app)}
+                      />
+                    ) : (
+                      <RejectedCard
+                        app={app}
+                        canMutate={canMutate}
+                        cooldownDays={position.reapplyCooldownDays}
+                        onTalentPool={(v) => void handleTalentPool(app, v)}
+                        onRestore={() => void handleRestore(app)}
+                        onDetail={() => setDetail(app)}
+                      />
+                    );
+                  // NR59 — animasi masuk hanya untuk 60 kartu pertama; kartu
+                  // lanjutan (batch scroll) dirender polos agar membesar-besar
+                  // daftar tidak menghentikan halaman.
+                  return i < RENDER_ANIMATE_MAX ? (
+                    <Reveal key={app.id} slideY={8} duration={0.2}>
+                      {card}
+                    </Reveal>
                   ) : (
-                    <RejectedCard
-                      app={app}
-                      canMutate={canMutate}
-                      cooldownDays={position.reapplyCooldownDays}
-                      onTalentPool={(v) => void handleTalentPool(app, v)}
-                      onRestore={() => void handleRestore(app)}
-                      onDetail={() => setDetail(app)}
+                    <div key={app.id}>{card}</div>
+                  );
+                })}
+              </div>
+
+              {/* NR59 — sentinel muat-lagi + status jumlah tampil */}
+              {hiddenCount > 0 ? (
+                <div ref={loadMoreRef} className="flex flex-col items-center gap-2 py-2">
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    Menampilkan {visibleList.length.toLocaleString("id-ID")} dari{" "}
+                    {currentList.length.toLocaleString("id-ID")} kandidat
+                  </p>
+                  {visibleList.length >= RENDER_HARD_MAX &&
+                  currentList.length > RENDER_HARD_MAX ? (
+                    <>
+                      <p className="text-center text-xs text-muted-foreground">
+                        Persempit pencarian untuk memuat lebih cepat, atau muat semuanya:
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9"
+                        onClick={() => setRenderCap(currentList.length)}
+                      >
+                        Tampilkan semua {currentList.length.toLocaleString("id-ID")} kandidat
+                      </Button>
+                    </>
+                  ) : (
+                    <Loader2
+                      className="size-4 animate-spin text-muted-foreground"
+                      aria-hidden="true"
                     />
                   )}
-                </Reveal>
-              ))}
-            </div>
+                </div>
+              ) : null}
+            </>
           )}
 
           {/* Aksi massal (kategori Ditinjau) */}
