@@ -15,6 +15,23 @@ let state: {
   updatedAt: number;
 } = { mode: "OK", dataAsOf: null, updatedAt: 0 };
 
+// NR58 — objek info HARUS stabil antar panggilan getSnapshot
+// (useSyncExternalStore): objek baru setiap panggilan memicu loop render
+// tak terbatas. Dibuat ulang HANYA saat state benar-benar berubah.
+let info: LoadInfo = { mode: "OK", saveActive: false, dataAgeSec: null };
+
+function recomputeInfo(): void {
+  info = {
+    mode: state.mode,
+    saveActive: state.mode === "SAVE",
+    dataAgeSec:
+      state.dataAsOf != null
+        ? Math.max(0, Math.round((Date.now() - state.dataAsOf) / 1000))
+        : null,
+  };
+}
+recomputeInfo();
+
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -65,6 +82,7 @@ export function noteLoadResponse(res: Response): void {
         mode !== null ? (Number.isNaN(asOfMs) ? null : asOfMs) : state.dataAsOf,
       updatedAt: Date.now(),
     };
+    recomputeInfo();
     emit();
   } catch {
     // header tidak ada / parse gagal — abaikan
@@ -79,14 +97,7 @@ export type LoadInfo = {
 };
 
 function snapshotInfo(): LoadInfo {
-  return {
-    mode: state.mode,
-    saveActive: state.mode === "SAVE",
-    dataAgeSec:
-      state.dataAsOf != null
-        ? Math.max(0, Math.round((Date.now() - state.dataAsOf) / 1000))
-        : null,
-  };
+  return info;
 }
 
 /** Langganan perubahan sinyal beban (untuk useSyncExternalStore). */
