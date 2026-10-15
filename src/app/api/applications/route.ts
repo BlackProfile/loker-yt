@@ -2,6 +2,10 @@
 // Menerima multipart/form-data (dengan file CV/audio intro) ATAU application/json (kompatibilitas).
 // Mendukung fitur per posisi v3: kuota pelamar, berkas wajib, pertanyaan screening,
 // sumber pelamar + UTM, auto-reply template, dan info tes/assignment.
+// NR60 — email konfirmasi otomatis dikirim fire-and-forget setelah lamaran tersimpan.
+// NR60 — anti-spam: percobaan bot (honeypot/time-trap) dicatat ke ActivityLog
+// action BOT_BLOCKED (hanya IP — isian & identitas TIDAK dilog).
+
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
@@ -34,6 +38,8 @@ import { ensureCandidate } from "@/lib/candidates";
 // NR41-SEC-B (F7): verifikasi magic bytes unggahan.
 import { UploadInvalidError } from "@/lib/upload";
 import { verifyMagicBytes } from "@/lib/verify-upload";
+// NR60 (A2) — email konfirmasi submit: antre ke EmailOutbox + URL situs utk body.
+import { getSiteUrl, queueEmail } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -385,7 +391,9 @@ async function handlePost(req: NextRequest) {
 
     // Rate limit per IP (Task 27): maks 5 submit per jam — dipersona sebagai error biasa.
     const nowMs = Date.now();
-    const ipKey = `apply:${clientIp(req)}`;
+    // NR60 (C2) — IP dipakai juga utk mencatat percobaan bot (BOT_BLOCKED).
+    const ip = clientIp(req);
+    const ipKey = `apply:${ip}`;
     const hits = (rateMap.get(ipKey) ?? []).filter((ts) => nowMs - ts < RATE_WINDOW_MS);
     if (hits.length >= RATE_LIMIT_MAX) {
       return NextResponse.json(
@@ -403,7 +411,17 @@ async function handlePost(req: NextRequest) {
 
     // Honeypot (Task 27): field "website" tersembunyi terisi = bot pengisi otomatis.
     // Balas sukses palsu (200) TANPA menyimpan apa pun, agar bot tidak mencoba lagi.
+    // NR60 (C2) — percobaan bot dicatat fire-and-forget (hanya IP; isian tidak dilog).
     if (asOptionalString(fields.website)) {
+      void db.activityLog
+        .create({
+          data: {
+            actor: "Sistem",
+            action: "BOT_BLOCKED",
+            detail: `Honeypot terisi dari IP ${ip}`,
+          },
+        })
+        .catch(() => {});
       return NextResponse.json(fakeSuccessResponse(), { status: 200 });
     }
 
@@ -412,6 +430,16 @@ async function handlePost(req: NextRequest) {
     const startedAt = Number(fields.formStartedAt);
     const elapsed = nowMs - startedAt;
     if (Number.isFinite(startedAt) && startedAt > 0 && elapsed >= 0 && elapsed < MIN_FILL_MS) {
+      // NR60 (C2) — percobaan bot dicatat fire-and-forget (hanya IP & durasi, tanpa isian).
+      void db.activityLog
+        .create({
+          data: {
+            actor: "Sistem",
+            action: "BOT_BLOCKED",
+            detail: `Time-trap: formulir terisi ${elapsed}ms (< ${MIN_FILL_MS}ms) dari IP ${ip}`,
+          },
+        })
+        .catch(() => {});
       return NextResponse.json(fakeSuccessResponse(), { status: 200 });
     }
 
@@ -870,6 +898,45 @@ async function handlePost(req: NextRequest) {
         await db.applicationDraft.delete({ where: { id: draftFiles.draftId } });
       } catch {
         // penghapusan gagal — biarkan kedaluwarsa alami
+      }
+    }
+
+    // NR60 (A2) — email konfirmasi otomatis ke pelamar (fire-and-forget): masuk
+    // antrean EmailOutbox lalu terkirim via SMTP bila terkonfigurasi. Submit TIDAK
+    // menunggu email dan kegagalannya tidak boleh menggagalkan submit — queueEmail
+    // sendiri tak pernah melempar, dibungkus try/catch lagi sebagai pengaman.
+    // Hanya bila email terisi (email bisa opsional per posisi — NR-26).
+    if (email) {
+      try {
+        const siteUrl = getSiteUrl();
+        const receivedAt = now.toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" });
+        void queueEmail({
+          toEmail: email,
+          // trackingCode = kode asli lamaran yang baru dibuat (identik dgn isi respons 201).
+          subject: `Lamaran terkirim — ${position.title} (kode ${trackingCode})`,
+          body: [
+            `Halo ${name},`,
+            "",
+            `Terima kasih! Lamaranmu untuk posisi ${position.title} di Lumina Studio sudah kami terima pada ${receivedAt}.`,
+            "",
+            `Kode pelacakan: ${trackingCode}`,
+            "Simpan email ini — kode ini adalah satu-satunya cara mengakses halaman status lamaranmu.",
+            "",
+            "Cek status lamaran:",
+            `- Buka ${siteUrl}`,
+            '- Klik "Cek Status Lamaran"',
+            "- Masukkan email ini dan kode di atas",
+            "",
+            "Kami akan mengabari perkembangan lamaranmu lewat email atau WhatsApp. Jangan balas email ini.",
+            "",
+            "Salam,",
+            "Tim Rekrutmen Lumina Studio",
+          ].join("\n"),
+          kind: "APPLY_CONFIRM",
+          applicationId: created.id,
+        });
+      } catch {
+        // fire-and-forget: email gagal tidak boleh menggagalkan submit
       }
     }
 
