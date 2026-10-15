@@ -4,7 +4,7 @@
 // + daftar beban pewawancara. Sumber: GET /api/admin/analytics, refresh senyap
 // saat event applications:changed / interviews:changed (anti-flicker).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -33,6 +33,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -44,6 +51,8 @@ import {
   STATUS_LABELS,
   type AnalyticsResponse,
   type ApplicationStatus,
+  type DropoffResponse,
+  type Position,
 } from "@/lib/types";
 import { apiGet } from "./api";
 import { useAdminSession } from "./admin-context";
@@ -55,16 +64,9 @@ const ROSE = "#f43f5e";
 const AMBER = "#f59e0b";
 const EMERALD = "#10b981";
 
-// Drop-off formulir (GET /api/admin/dropoff) — agregasi event per langkah wizard.
-type DropoffStep = {
-  step: number;
-  entered: number;
-  advanced: number;
-  submitted: number;
-  dropPercent: number;
-};
-
-type DropoffResponse = { days: number; steps: DropoffStep[] };
+// Drop-off formulir (GET /api/admin/dropoff) — agregasi event per langkah
+// wizard. Kontrak respons (termasuk filter posisi NR60 2-c D1) kini hidup di
+// src/lib/types.ts (sumber tunggal tipe).
 
 // Efektivitas kanal rekrutmen (GET /api/admin/channels).
 type ChannelRow = {
@@ -172,8 +174,19 @@ export function AnalyticsTab() {
   const [data, setData] = useState<AnalyticsResponseExtended | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Drop-off formulir (GET /api/admin/dropoff).
+  // Drop-off formulir (GET /api/admin/dropoff) + filter posisi (NR60 2-c D1).
   const [dropoff, setDropoff] = useState<DropoffResponse | null>(null);
+  const [dropoffBusy, setDropoffBusy] = useState(false); // skeleton saat ganti filter
+  const [positions, setPositions] = useState<Position[]>([]);
+  // "ALL" = tanpa filter (semua posisi) — pola sama dengan ReportsTab.
+  const [positionFilter, setPositionFilter] = useState("ALL");
+
+  // Ref filter agar refresh senyap (live event / tombol Segarkan) selalu
+  // memakai filter posisi terbaru tanpa ikut me-render ulang callback.
+  const positionFilterRef = useRef(positionFilter);
+  useEffect(() => {
+    positionFilterRef.current = positionFilter;
+  }, [positionFilter]);
 
   // Efektivitas kanal (GET /api/admin/channels).
   const [channels, setChannels] = useState<ChannelsResponse | null>(null);
@@ -194,14 +207,32 @@ export function AnalyticsTab() {
     [reportError]
   );
 
-  const loadDropoff = useCallback(async () => {
-    try {
-      const res = await apiGet<DropoffResponse>("/api/admin/dropoff");
-      setDropoff(res);
-    } catch {
-      // Kartu pelengkap; senyap saat gagal (data lama dipertahankan).
-    }
-  }, []);
+  const loadDropoff = useCallback(
+    async (opts?: { positionId?: string; busy?: boolean }) => {
+      // Filter dari argumen (ganti pilihan) atau dari ref (refresh senyap).
+      const pid = opts?.positionId ?? positionFilterRef.current;
+      if (opts?.busy) setDropoffBusy(true);
+      try {
+        const qs =
+          pid && pid !== "ALL"
+            ? `?positionId=${encodeURIComponent(pid)}`
+            : "";
+        const res = await apiGet<DropoffResponse>(`/api/admin/dropoff${qs}`);
+        setDropoff(res);
+      } catch {
+        // Kartu pelengkap; senyap saat gagal (data lama dipertahankan).
+      } finally {
+        if (opts?.busy) setDropoffBusy(false);
+      }
+    },
+    []
+  );
+
+  // Ganti filter posisi drop-off: simpan pilihan + fetch ulang dengan skeleton.
+  function handleDropoffPositionChange(next: string) {
+    setPositionFilter(next);
+    void loadDropoff({ positionId: next, busy: true });
+  }
 
   const loadChannels = useCallback(async () => {
     try {
@@ -223,6 +254,21 @@ export function AnalyticsTab() {
   useEffect(() => {
     void loadChannels();
   }, [loadChannels]);
+
+  // Daftar posisi utk filter drop-off (pelengkap — gagal = tanpa filter).
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<Position[]>("/api/admin/positions")
+      .then((rows) => {
+        if (!cancelled) setPositions(rows);
+      })
+      .catch(() => {
+        // Kartu pelengkap; filter posisi tetap disembunyikan.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useLiveRefresh("applications:changed", () => {
     void load(true);
@@ -785,17 +831,54 @@ export function AnalyticsTab() {
             {/* Drop-off formulir lamaran (bar CSS sederhana, tanpa library chart) */}
             <Card className="gap-0 rounded-2xl py-6">
               <CardHeader className="px-6">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendingDown className="size-4 text-rose-500" aria-hidden="true" />
-                  Drop-off Formulir Lamaran
-                </CardTitle>
-                <CardDescription className="mt-1">
-                  Persentase pendaftar yang berhenti di tiap langkah wizard dalam{" "}
-                  {dropoff?.days ?? 30} hari terakhir.
-                </CardDescription>
+                {/* NR60 (2-c D1) — filter posisi di area header: judul+deskripsi
+                    kiri, Select kanan; flex-wrap agar mobile menumpuk rapi. */}
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <TrendingDown className="size-4 text-rose-500" aria-hidden="true" />
+                      Drop-off Formulir Lamaran
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Persentase pendaftar yang berhenti di tiap langkah wizard dalam{" "}
+                      {dropoff?.days ?? 30} hari terakhir.
+                      <span className="mt-0.5 block">
+                        {positionFilter !== "ALL" ? (
+                          <>
+                            Posisi:{" "}
+                            <span className="font-medium text-foreground">
+                              {positions.find((p) => p.id === positionFilter)?.title ??
+                                "Posisi"}
+                            </span>
+                          </>
+                        ) : (
+                          "Semua posisi"
+                        )}
+                      </span>
+                    </CardDescription>
+                  </div>
+                  {positions.length > 0 ? (
+                    <Select value={positionFilter} onValueChange={handleDropoffPositionChange}>
+                      <SelectTrigger
+                        className="h-8 w-full shrink-0 text-xs sm:w-44"
+                        aria-label="Filter posisi drop-off"
+                      >
+                        <SelectValue placeholder="Semua posisi" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">Semua posisi</SelectItem>
+                        {positions.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
+                </div>
               </CardHeader>
               <CardContent className="px-6">
-                {dropoff === null ? (
+                {dropoff === null || dropoffBusy ? (
                   <div className="flex flex-col gap-3">
                     {Array.from({ length: 3 }).map((_, i) => (
                       <Skeleton key={i} className="h-12 w-full rounded-lg" />
