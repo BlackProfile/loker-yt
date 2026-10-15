@@ -4421,3 +4421,22 @@ Stage Summary:
 - Tab Pipeline kini tahan ribuan pelamar per posisi: payload ±60% lebih ramping (per posisi, bukan semua posisi), DOM dibatasi batch 30 (bukan ribuan), animasi dibatasi 60 kartu pertama, dialog detail mengambil data utuh on-demand, dan poller notifikasi tak lagi menarik 20 MB per event.
 - Prinsip tetap "nampak tidak berat": pengguna melihat 30 kandidat instan + indikator "Menampilkan X dari Y", memilih massal tetap seluruh hasil pencarian, dan tidak ada data yang disembunyikan permanen (tombol "Tampilkan semua" eksplisit).
 - Berkas utama: seed.ts, types.ts, api/admin/applications/route.ts, pipeline-tab.tsx, application-detail-dialog.tsx, admin-app.tsx, load-client.ts.
+
+---
+Task ID: 2-a
+Agent: general-purpose
+Task: NR60 backend — email konfirmasi submit (A2), prefill+recent-90d (C1), log bot (C2)
+
+Work Log:
+- A2 (src/app/api/applications/route.ts): setelah lamaran dibuat + ActivityLog APPLICATION_SUBMITTED + konsumsi draft (sebelum deteksi duplikat & respons 201), blok fire-and-forget `void queueEmail({toEmail: email, subject: "Lamaran terkirim — {posisi} (kode {trackingCode})", kind: "APPLY_CONFIRM", applicationId: created.id})` dikirim ke pelamar — body plain text Bahasa Indonesia berisi kode pelacakan, cara cek status via {siteUrl} (getSiteUrl()), dan larangan membalas email. trackingCode = variabel lokal yang sama yang disimpan ke created.trackingCode & dikembalikan di respons 201 (bukan kode baru). Guard `if (email)` karena email bisa opsional per posisi (NR-26); dibungkus try/catch + queueEmail sendiri tak pernah melempar → submit tidak pernah terpengaruh, tanpa await (latensi tetap).
+- C2 (src/app/api/applications/route.ts): kedua jalur bot (honeypot "website" terisi ~line 415 & time-trap <3 dtk ~line 432) kini menulis ActivityLog fire-and-forget `void db.activityLog.create({data:{actor:"Sistem", action:"BOT_BLOCKED", detail}}).catch(()=>{})` tepat sebelum fakeSuccessResponse 200 — honeypot: "Honeypot terisi dari IP {ip}"; time-trap: "Time-trap: formulir terisi {elapsed}ms (< 3000ms) dari IP {ip}". Tanpa PII selain IP (isian honeypot & email tidak dilog). Variabel `ip` diekstrak dari pemanggilan clientIp(req) yang inline (kini `const ip = clientIp(req)` dipakai ulang rate-map + log). Komentar atas berkas ditambah 2 baris (email konfirmasi + BOT_BLOCKED).
+- C1 (src/app/api/public/apply-prefill/route.ts): respons GET diperluas jadi {name, phone, lastAppliedAt, recent:[{positionId,title,appliedAt}]}. Satu findMany bounded (email contains lowercase → filter eksak case-insensitive di JS, pola dedupe; orderBy desc, take 50) — name/phone dari lamaran terakhir (perilaku lama dipertahankan), lastAppliedAt ISO dari baris terbaru, recent = lamaran ≤90 hari (konsisten dgn deteksi duplikat submit), deletedAt null, dedupe per positionId (terbaru menang), maks 8 posisi unik; baris tanpa positionId (posisi terhapus/SetNull) dilewati.
+- C1 rate limit: rateMap per IP persis pola /api/public/dedupe (20 req/mnt, kunci "prefill:{ip}", cleanup saat map >500); 429 mengembalikan {name:null,phone:null,lastAppliedAt:null,recent:[]} TANPA field error agar wizard memperlakukannya sebagai tanpa data. 400 utk email invalid dipertahankan; 500 gaya lama dipertahankan.
+- KUALITAS: bunx tsc --noEmit → 0 error di src/ (23 error pra-ada hanya di examples/, scripts/, skills/ — di luar cakupan; TIDAK ada error di file agen paralel apply-wizard/form-field-renderer/form-schema/strings); bun run lint → exit 0. Tanpa dev server, tanpa git commit/push manual.
+
+Stage Summary:
+- Submit lamaran kini otomatis mengantre email konfirmasi (kind APPLY_CONFIRM) berisi kode pelacakan & panduan cek status — fire-and-forget, tidak menambah latensi, tidak pernah menggagalkan submit; bot yang tersaring honeypot/time-trap TIDAK menerima email (jalur fake-success kembali sebelum blok email).
+- Percobaan bot tercatat di Log Aktivitas (action BOT_BLOCKED, actor "Sistem", hanya IP) — admin bisa melihat pola serangan tanpa menyimpan data palsu.
+- /api/public/apply-prefill kini menyediakan data peringatan duplikat (lastAppliedAt + recent 8 posisi unik 90 hari) untuk wizard, terlindungi rate limit 20/mnt/IP dengan 429 ramah tanpa-data.
+- Kontrak respons baru prefill: { name: string|null, phone: string|null, lastAppliedAt: string|null, recent: {positionId: string, title: string, appliedAt: string}[] }.
+- Berkas utama: src/app/api/applications/route.ts (A2+C2), src/app/api/public/apply-prefill/route.ts (C1).
