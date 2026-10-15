@@ -2143,10 +2143,18 @@ export function ApplyWizard({
         {cvFile ? (
           <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
             <span className="flex min-w-0 items-center gap-2 text-sm">
-              <FileText
-                className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                aria-hidden="true"
+              {/* NR60 (B2) — thumbnail 40x40 utk berkas gambar (klik = pratinjau). */}
+              <ImageThumb
+                file={cvFile}
+                onView={() => setViewerFile(cvFile)}
+                viewLabel={t.apply.uploads.view}
               />
+              {!cvFile.type.startsWith("image/") ? (
+                <FileText
+                  className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                  aria-hidden="true"
+                />
+              ) : null}
               <span className="truncate">{cvFile.name}</span>
               <span className="shrink-0 text-xs text-muted-foreground">
                 {formatMb(cvFile.size)}
@@ -2246,10 +2254,18 @@ export function ApplyWizard({
         {introFile ? (
           <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
             <span className="flex min-w-0 items-center gap-2 text-sm">
-              <Mic
-                className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                aria-hidden="true"
+              {/* NR60 (B2) — thumbnail 40x40 utk berkas gambar (klik = pratinjau). */}
+              <ImageThumb
+                file={introFile}
+                onView={() => setViewerFile(introFile)}
+                viewLabel={t.apply.uploads.view}
               />
+              {!introFile.type.startsWith("image/") ? (
+                <Mic
+                  className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                  aria-hidden="true"
+                />
+              ) : null}
               <span className="truncate">{introFile.name}</span>
               <span className="shrink-0 text-xs text-muted-foreground">
                 {formatMb(introFile.size)}
@@ -3271,6 +3287,38 @@ export function ApplyWizard({
     t,
   ]);
 
+  // NR60 (B3) — estimasi waktu tersisa: detik kasar per langkah yang belum
+  // selesai (termasuk langkah aktif — pratinjau 20 dtk tetap terhitung → "±1
+  // mnt lagi"). Dibulatkan ke atas ke menit penuh; jujur & sederhana.
+  const remainingSeconds = useMemo(() => {
+    let total = 0;
+    const add = (idx: number, sec: number) => {
+      if (idx >= 0 && idx >= step) total += sec;
+    };
+    if (schema) {
+      for (const entry of sectionSteps) {
+        add(
+          entry.stepIndex,
+          entry.section.kind === "biodata"
+            ? 90
+            : entry.section.kind === "experience"
+              ? 120
+              : entry.section.kind === "files"
+                ? 60
+                : 45,
+        );
+      }
+    } else {
+      add(0, 90);
+      add(1, 120);
+      add(filesStep, 60);
+    }
+    add(attendanceStepIndex, 30);
+    add(previewStep, 20);
+    return total;
+  }, [schema, sectionSteps, filesStep, attendanceStepIndex, previewStep, step]);
+  const minutesLeft = Math.max(1, Math.ceil(remainingSeconds / 60));
+
   return (
     <div className="@container flex flex-col gap-6">
       <div>
@@ -3441,7 +3489,8 @@ export function ApplyWizard({
           (@container, bukan viewport): di kolom kanan desktop yang sempit
           hanya lingkaran + garis, tanpa label agar tidak meluber keluar kartu. */}
       <div className="flex flex-col gap-2.5">
-        <ol className="flex items-center gap-2" aria-label={t.apply.stepOf}>
+        <div className="flex items-center gap-3">
+          <ol className="flex min-w-0 flex-1 items-center gap-2" aria-label={t.apply.stepOf}>
           {stepLabels.map((label, index) => {
             const isDone = index < step;
             const isActive = index === step;
@@ -3496,7 +3545,16 @@ export function ApplyWizard({
               </li>
             );
           })}
-        </ol>
+          </ol>
+          {/* NR60 (B3) — estimasi waktu tersisa (badge kecil, sisi kanan stepper). */}
+          <span
+            role="note"
+            className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+          >
+            <Timer className="h-3.5 w-3.5" aria-hidden="true" />
+            ±{minutesLeft} {t.apply.progress.timeLeft}
+          </span>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
@@ -4471,10 +4529,18 @@ export function ApplyWizard({
                       {file ? (
                         <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
                           <span className="flex min-w-0 items-center gap-2 text-sm">
-                            <FileText
-                              className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                              aria-hidden="true"
+                            {/* NR60 (B2) — thumbnail 40x40 utk berkas gambar. */}
+                            <ImageThumb
+                              file={file}
+                              onView={() => setViewerFile(file)}
+                              viewLabel={t.apply.uploads.view}
                             />
+                            {!file.type.startsWith("image/") ? (
+                              <FileText
+                                className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                aria-hidden="true"
+                              />
+                            ) : null}
                             <span className="truncate">{file.name}</span>
                             <span className="shrink-0 text-xs text-muted-foreground">
                               {formatMb(file.size)}
