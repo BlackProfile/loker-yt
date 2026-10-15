@@ -846,6 +846,36 @@ export function maskApplicationForViewer(app: Application): Application {
   };
 }
 
+/**
+ * NR59 — pangkas field teks berat dari lamaran untuk respons DAFTAR (?lite=1).
+ * Form Builder answers, narasi pengalaman/motivasi, transcript audio, riwayat
+ * tahap, dan dokumen tambahan menyumbang ±60% ukuran payload (diukur: 20,4 MB
+ * untuk 7477 baris) padahal tidak dipakai kartu pipeline/tabel daftar — hanya
+ * dialog detail yang membutuhkan (fetch utuh per id). Operasi murah: shallow
+ * copy + set field berat ke null. Urutan aman dipanggil SEBELUM masking VIEWER.
+ */
+const LITE_OMITTED_KEYS = [
+  "formAnswers",
+  "experience",
+  "motivation",
+  "screeningAnswers",
+  "experienceStructured",
+  "transcript",
+  "videoNotes",
+  "stageHistory",
+  "extraDocs",
+  "socialLinks",
+  "portfolioUrl",
+] as const;
+
+export function stripApplicationForList(app: Application): Application {
+  const copy = { ...app, lite: true } as Application;
+  for (const key of LITE_OMITTED_KEYS) {
+    (copy as Record<string, unknown>)[key] = null;
+  }
+  return copy;
+}
+
 /* ------------------------------ Parsing konten situs ------------------------------ */
 
 function pickString(source: Record<string, unknown>, key: keyof SiteContent, fallback: string): string {

@@ -545,6 +545,11 @@ export type Application = {
   doNotHireReason?: string | null; // alasan do-not-hire
   mergedIntoId?: string | null; // lamaran digabung ke lamaran utama
 
+  // NR59 — penanda respons daftar "lite" (?lite=1): field teks berat (formAnswers,
+  // experience, motivation, dll.) sengaja dipangkas agar daftar ribuan baris tidak
+  // membekukan browser. Dialog detail wajib fetch utuh via GET /api/admin/applications/[id].
+  lite?: boolean;
+
   createdAt: string;
 };
 
