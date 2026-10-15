@@ -110,6 +110,7 @@ import {
   isWaRequired,
   newFormId,
   normalizeFormSchema,
+  sectionHasStep,
   type CoreItemKey,
   type CoreItemOverride,
   type CoreOverrides,
@@ -120,6 +121,7 @@ import {
   type FormSection,
 } from "@/lib/form-schema";
 import { FORM_TEMPLATES, expandTemplateFields, type FormTemplate } from "@/lib/form-templates";
+import { FormBuilderPreviewDialog } from "./form-builder-preview-dialog";
 import { STATUS_LABELS, type ApplicationStatus, type Position } from "@/lib/types";
 import { ApiError, apiGet, apiPost, apiPut } from "./api";
 import { formatDateTime } from "./format";
@@ -1291,7 +1293,10 @@ function FieldEditorCard({
 
       {field.type === "file" ? (
         <p className="rounded-lg border bg-zinc-50/60 px-3 py-2 text-xs text-muted-foreground dark:bg-zinc-900/40">
-          PDF, gambar, Word, audio, video — maks. 20 MB.
+          {/* NR60 — ukuran dinamis dari FORM_LIMITS (bukan hardcode) agar
+              tidak ter-ketinggalan lagi bila batas berubah. */}
+          PDF, gambar, Word, audio, video — maks.{" "}
+          {Math.round(FORM_LIMITS.fileMaxBytes / (1024 * 1024))} MB.
         </p>
       ) : null}
 
@@ -1494,6 +1499,9 @@ export function FormBuilderPage({
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
+  // NR60 (2-c D2) — dialog "Pratinjau sebagai pelamar": merender SKEMA DRAF
+  // (termasuk editan yang belum disimpan) persis seperti wizard publik.
+  const [previewOpen, setPreviewOpen] = useState(false);
   // NR-23 — kunci anti-hapus bagian inti: default TERKUNCI, dibuka manual per
   // sesi edit (tidak tersimpan) agar setiap muat ulang kembali terkunci.
   // NR-26 — buka/tutup kunci edit item inti satu bagian bawaan.
@@ -1963,6 +1971,12 @@ export function FormBuilderPage({
   const csvUrl = `/api/admin/positions/${position.id}/form-responses?format=csv`;
   const totalFields = draft.fields.length;
   const customCount = customSectionCount(draft);
+  // NR60 (2-c D2) — pratinjau pelamar dinonaktifkan bila tak ada bagian yang
+  // menghasilkan langkah wizard (skema kosong / semua bagian inti di-hash).
+  const previewable = useMemo(
+    () => draft.sections.some((section) => sectionHasStep(draft, section)),
+    [draft],
+  );
   // NR-23 — kartu bagian hanya menampilkan bagian aktif (bukan tombstone);
   // batu nisan bagian bawaan muncul di area "Bagian bawaan yang dihapus".
   const visibleSections = useMemo(() => draft.sections.filter((s) => !s.removed), [draft.sections]);
@@ -2026,6 +2040,19 @@ export function FormBuilderPage({
             >
               <Eye className="size-4" aria-hidden="true" />
               Pratinjau
+            </Button>
+            {/* NR60 (2-c D2) — pratinjau draf (TERMASUK editan belum disimpan)
+                dalam dialog, tanpa keluar dari halaman builder. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-11 sm:h-9"
+              onClick={() => setPreviewOpen(true)}
+              disabled={loading || !previewable}
+              title="Merender formulir seperti yang dilihat pelamar — termasuk pertanyaan kondisional dan editan yang belum disimpan."
+            >
+              <Eye className="size-4" aria-hidden="true" />
+              Pratinjau sebagai pelamar
             </Button>
             <Button
               variant="outline"
@@ -2493,6 +2520,14 @@ export function FormBuilderPage({
           )}
         </TabsContent>
       </Tabs>
+
+      {/* NR60 (2-c D2) — pratinjau skema draf sebagai pelamar (dialog). */}
+      <FormBuilderPreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        schema={draft}
+        positionTitle={position.title}
+      />
 
       {/* Konfirmasi buang perubahan */}
       <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
