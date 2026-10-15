@@ -12,12 +12,13 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -28,6 +29,7 @@ import {
   Briefcase,
   CalendarClock,
   CalendarDays,
+  ChevronDown,
   Database,
   ExternalLink,
   Eye,
@@ -51,6 +53,7 @@ import {
   Settings,
   Sun,
   UserCog,
+  UserRound,
   Users,
   Wifi,
   WifiOff,
@@ -282,6 +285,132 @@ function RealtimeIndicator() {
         {connected ? "Live" : "Offline"}
       </span>
     </span>
+  );
+}
+
+// NR57 — menu pratinjau gabungan: SATU tombol untuk semua cara melihat dari
+// sudut pandang lain (pratinjau peran HR/Pengamat khusus OWNER asli, halaman
+// pelamar di tab baru, dan halaman publik). Menggantikan Select "Lihat
+// sebagai" + tombol "Lihat sebagai Pelamar" + tombol "Lihat Halaman Publik"
+// yang sebelumnya berjejer terpisah di header.
+function PreviewMenu({
+  canPreviewRole,
+  onPreviewRole,
+  onExit,
+}: {
+  canPreviewRole: boolean;
+  onPreviewRole: (r: Role) => void;
+  onExit: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          className="h-11 gap-1.5 active:scale-[0.99] sm:h-10"
+          aria-label="Menu pratinjau — lihat sebagai peran lain"
+        >
+          <Eye className="size-4" aria-hidden="true" />
+          <span className="hidden md:inline">Pratinjau</span>
+          <ChevronDown className="size-3.5 opacity-60" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        {canPreviewRole ? (
+          <>
+            <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+              Pratinjau peran panel
+            </DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => onPreviewRole("HR")}>
+              <UserCog className="size-4" aria-hidden="true" />
+              Lihat sebagai HR
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onPreviewRole("VIEWER")}>
+              <Eye className="size-4" aria-hidden="true" />
+              Lihat sebagai Pengamat
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
+        <DropdownMenuItem asChild>
+          <a
+            href="/?preview=1"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2"
+          >
+            <UserRound className="size-4" aria-hidden="true" />
+            Lihat sebagai Pelamar
+          </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onExit}>
+          <ExternalLink className="size-4" aria-hidden="true" />
+          Lihat Halaman Publik
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// NR57 — menu akun: lingkaran inisial (konsisten dengan kaki sidebar) yang
+// membuka identitas (nama + badge peran asli), overlay pintasan keyboard, dan
+// Keluar (merah, di pojok aman — tidak lagi bersebelahan dengan tombol lain).
+// Tombol "Keluar" lama di header dihapus; logout di kaki sidebar tetap ada.
+function AccountMenu({
+  name,
+  role,
+  onOpenShortcuts,
+  onLogout,
+}: {
+  name: string;
+  role: Role;
+  onOpenShortcuts: () => void;
+  onLogout: () => void;
+}) {
+  const initials =
+    (name ?? "?")
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w.charAt(0).toUpperCase())
+      .join("") || "?";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-600 to-amber-500 text-xs font-bold text-white outline-none transition-[box-shadow,transform] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] sm:size-9"
+          aria-label={`Menu akun — ${name}`}
+        >
+          {initials}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel>
+          <p className="truncate text-sm leading-tight font-semibold">
+            {name}
+          </p>
+          <Badge
+            variant="outline"
+            className={cn("mt-1", roleBadgeClass(role))}
+          >
+            {ROLE_LABELS[role]}
+          </Badge>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onOpenShortcuts}>
+          <Keyboard className="size-4" aria-hidden="true" />
+          Pintasan keyboard
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={onLogout}
+          className="text-rose-600 focus:text-rose-600 focus:bg-rose-50 dark:text-rose-400 dark:focus:text-rose-400 dark:focus:bg-rose-950/40"
+        >
+          <LogOut className="size-4" aria-hidden="true" />
+          Keluar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -987,8 +1116,8 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
       />
       {/* FAB "Tanya Data" — WAJIB di luar <header>: backdrop-blur pada header
           menciptakan containing block sehingga position:fixed tombol salah
-          anchor (menempel di header, menutupi tombol Keluar). Di samping root
-          layout, fixed bottom-right kembali akurat terhadap viewport. */}
+          anchor (menempel di header, menutupi tombol paling kanan). Di samping
+          root layout, fixed bottom-right kembali akurat terhadap viewport. */}
       <AdminAskWidget />
       <div className="flex min-h-screen bg-zinc-50 dark:bg-background">
         {/* Overlay drawer seluler */}
@@ -1123,7 +1252,12 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                   </p>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              {/* NR57 — kanan header ditata ulang: kelompok ikon utilitas
+                  (pencarian, pintasan, live, tema, notifikasi) → pemisah
+                  tipis → tombol "Pratinjau" (menu gabungan) → menu akun
+                  (avatar). Dari 9 kontrol menjadi 6; Keluar pindah ke menu
+                  akun agar tidak bersebelahan dengan aksi lain. */}
+              <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1134,8 +1268,8 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                   <Search className="size-4" aria-hidden="true" />
                 </Button>
                 {/* NR-28 (item 14): tombol bantuan pintasan keyboard.
-                    NR46: disembunyikan di layar sentuh kecil (tanpa keyboard fisik)
-                    sekaligus mencegah overflow-x header setelah masuk Select pratinjau. */}
+                    Disembunyikan di layar sentuh kecil (tanpa keyboard fisik);
+                    akses alternatif tersedia di menu akun (NR57). */}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1148,65 +1282,25 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 <RealtimeIndicator />
                 <ThemeToggle />
                 <NotificationBell onOpenTasks={() => setActiveTab("tasks")} />
-                {/* NR46 Paket A — pratinjau peran (OWNER asli saja): lihat panel
-                    sebagai HR/Pengamat. Keluar lewat tombol pada banner. */}
-                {session.role === "OWNER" && !previewRole ? (
-                  <Select
-                    onValueChange={(v) => {
-                      if (v === "HR" || v === "VIEWER") startPreview(v);
-                    }}
-                  >
-                    <SelectTrigger
-                      className="h-11 w-11 justify-center px-0 sm:h-10 sm:w-44 sm:justify-between sm:px-3"
-                      aria-label="Lihat panel sebagai role lain"
-                      title="Lihat panel sebagai role lain"
-                    >
-                      <SelectValue
-                        placeholder={
-                          <span className="flex items-center gap-1.5">
-                            <Eye className="size-4 shrink-0" aria-hidden="true" />
-                            <span className="hidden lg:inline">Lihat sebagai</span>
-                          </span>
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent align="end">
-                      <SelectItem value="HR">Sebagai HR</SelectItem>
-                      <SelectItem value="VIEWER">Sebagai Pengamat</SelectItem>
-                    </SelectContent>
-                  </Select>
-                ) : null}
-                <Button
-                  variant="outline"
-                  className="h-11 active:scale-[0.99] sm:h-10"
-                  onClick={() =>
-                    window.open("/?preview=1", "_blank", "noopener,noreferrer")
-                  }
-                  aria-label="Lihat sebagai pelamar"
-                >
-                  <Eye className="size-4" aria-hidden="true" />
-                  <span className="hidden xl:inline">Lihat sebagai Pelamar</span>
-                  <span className="hidden sm:inline xl:hidden">Pelamar</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="hidden h-11 active:scale-[0.99] sm:inline-flex sm:h-10"
-                  onClick={onExit}
-                  aria-label="Lihat halaman publik"
-                >
-                  <ExternalLink className="size-4" aria-hidden="true" />
-                  <span className="hidden xl:inline">Lihat Halaman Publik</span>
-                  <span className="hidden sm:inline xl:hidden">Publik</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="h-11 sm:h-10"
-                  onClick={() => void handleLogout()}
-                  aria-label="Keluar dari panel admin"
-                >
-                  <LogOut className="size-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">Keluar</span>
-                </Button>
+                {/* NR57 — pemisah kelompok: utilitas vs aksi pratinjau & akun. */}
+                <div
+                  aria-hidden="true"
+                  className="mx-1 hidden h-6 w-px shrink-0 bg-border sm:block"
+                />
+                {/* NR46 Paket A + NR57 — pratinjau peran (OWNER asli saja)
+                    kini bagian dari menu Pratinjau gabungan. Keluar pratinjau
+                    lewat tombol pada banner. */}
+                <PreviewMenu
+                  canPreviewRole={session.role === "OWNER" && !previewRole}
+                  onPreviewRole={startPreview}
+                  onExit={onExit}
+                />
+                <AccountMenu
+                  name={session.name ?? "Admin"}
+                  role={session.role}
+                  onOpenShortcuts={() => setShortcutsOpen(true)}
+                  onLogout={() => void handleLogout()}
+                />
               </div>
             </div>
           </header>
