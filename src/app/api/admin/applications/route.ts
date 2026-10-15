@@ -20,6 +20,7 @@ import {
   parseApplicationFilters,
   parseAssignedPositions,
   serializeApplication,
+  stripApplicationForList,
 } from "@/lib/seed";
 import type { PaginatedApplications, Application } from "@/lib/types";
 
@@ -156,8 +157,38 @@ async function loadApplicationsBody(
     positionSalaryMax: record.position?.salaryMax ?? null,
   }));
 
+  // NR59 — mode lite (?lite=1): field teks berat dipangkas (±60% payload).
+  // Dipakai tab Pipeline yang memuat ribuan lamaran satu posisi sekaligus;
+  // dialog detail mengambil versi utuh via GET /api/admin/applications/[id].
+  const lite = searchParams.get("lite") === "1" || searchParams.get("lite") === "true";
+  const shaped = lite ? data.map(stripApplicationForList) : data;
+
   // VIEWER: mask PII (phone & CV) hanya pada level respons list.
-  return session.role === "VIEWER" ? data.map(maskApplicationForViewer) : data;
+  return session.role === "VIEWER" ? shaped.map(maskApplicationForViewer) : shaped;
+}
+
+/**
+ * NR59 — mode hitung cepat (?count=1): cukup jumlah lamaran untuk filter yang
+ * diminta. Dipakai notifikasi "lamaran baru" yang polling rutin — mengganti
+ * fetch daftar penuh 20 MB menjadi respons puluhan byte.
+ */
+async function loadApplicationsCount(
+  session: NonNullable<Awaited<ReturnType<typeof getSession>>>,
+  baseWhere: Prisma.ApplicationWhereInput,
+): Promise<{ count: number }> {
+  let where = { ...baseWhere, deletedAt: null };
+  if (session.role === "HR") {
+    const admin = await db.adminUser.findUnique({
+      where: { email: session.email },
+      select: { assignedPositions: true },
+    });
+    const scope = parseAssignedPositions(admin?.assignedPositions);
+    if (scope.length > 0) {
+      where = { ...where, AND: [{ positionId: { in: scope } }] };
+    }
+  }
+  const count = await db.application.count({ where });
+  return { count };
 }
 
 export async function GET(req: NextRequest) {
@@ -172,6 +203,12 @@ export async function GET(req: NextRequest) {
     const { where: baseWhere, orderBy, valid } = parseApplicationFilters(searchParams, session.id);
     if (!valid) {
       return NextResponse.json({ error: "Status tidak valid." }, { status: 400 });
+    }
+
+    // NR59 — mode hitung cepat untuk poller notifikasi lamaran baru.
+    if (searchParams.get("count") === "1") {
+      const body = await loadApplicationsCount(session, baseWhere);
+      return NextResponse.json(body, { headers: loadHintHeaders() });
     }
 
     // NR58 (B5) — SNAPSHOT BERAT: daftar lamaran adalah query termahal panel

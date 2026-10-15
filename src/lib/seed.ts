@@ -1102,7 +1102,13 @@ export function parseApplicationFilters(
 
   const q = searchParams.get("q")?.trim();
   if (q) {
-    where.OR = [{ name: { contains: q } }, { email: { contains: q } }];
+    // NR59 — trackingCode ikut dicocokkan: deep-link Telegram (?kandidat=KODE)
+    // kini cukup memuat satu kandidat via q, tanpa menarik daftar penuh.
+    where.OR = [
+      { name: { contains: q } },
+      { email: { contains: q } },
+      { trackingCode: { contains: q } },
+    ];
   }
 
   const ratingMin = Number.parseInt(searchParams.get("ratingMin") ?? "", 10);
