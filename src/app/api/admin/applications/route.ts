@@ -13,11 +13,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 // NR58 (B5) — snapshot berat + header X-Load untuk polling adaptif klien.
-import {
-  memoGetHeavy,
-  getLoadHint,
-  loadHintHeaders,
-} from "@/lib/load-metrics";
+import { memoGetHeavy, loadHintHeaders } from "@/lib/load-metrics";
 import {
   APPLICATION_INCLUDE,
   maskApplicationForViewer,
@@ -192,6 +188,8 @@ export async function GET(req: NextRequest) {
       async () => {
         return loadApplicationsBody(searchParams, session, baseWhere, orderBy);
       },
+      // Respons daftar bisa ±15 MB — simpan maksimal 4 snapshot terbaru.
+      { prefix: "admin:apps", maxEntries: 4 },
     );
 
     return NextResponse.json(body, {

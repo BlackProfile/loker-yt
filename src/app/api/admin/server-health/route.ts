@@ -10,6 +10,7 @@ import {
   deactivateSaveMode,
   enqueueAiJob,
   getServerLoadSnapshot,
+  loadHintHeaders,
   memoClear,
   memoStats,
   recordSlowRequest,
@@ -28,7 +29,9 @@ export async function GET() {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     const snapshot = await getServerLoadSnapshot();
-    return NextResponse.json(snapshot);
+    // NR58 (B4) — snapshot menentukan level terbaru; header X-Load menyertai
+    // respons agar poller klien menyesuaikan kecepatan pollingnya.
+    return NextResponse.json(snapshot, { headers: loadHintHeaders() });
   } catch (error) {
     console.error("[GET /api/admin/server-health]", error);
     return NextResponse.json(

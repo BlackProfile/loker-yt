@@ -231,6 +231,9 @@ export async function memoGetHeavy<T>(
   ttlMs: number,
   serveStaleMs: number,
   loader: () => Promise<T>,
+  // NR58 — batasi jumlah entri per prefiks (respons besar seperti daftar
+  // lamaran tidak boleh menumpuk di memori: 4 snapshot × ±15 MB, bukan 60).
+  opts?: { prefix?: string; maxEntries?: number },
 ): Promise<{
   value: T;
   cached: boolean;
@@ -272,6 +275,16 @@ export async function memoGetHeavy<T>(
   try {
     const value = await loader();
     s.cache.set(key, { expiresAt: now + ttlMs, value, storedAt: now });
+    if (opts?.prefix) {
+      // Evict khusus prefiks: simpan hanya N snapshot terbaru.
+      const max = opts.maxEntries ?? 4;
+      const siblings = [...s.cache.entries()]
+        .filter(([k]) => k.startsWith(opts.prefix!))
+        .sort((a, b) => a[1].storedAt - b[1].storedAt);
+      for (let i = 0; i < siblings.length - max; i++) {
+        s.cache.delete(siblings[i][0]);
+      }
+    }
     if (s.cache.size > 60) {
       for (const [k, entry] of s.cache) {
         if (entry.expiresAt <= now) s.cache.delete(k);

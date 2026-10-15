@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
 import { allowedCategoriesFor } from "@/lib/notification-prefs";
+// NR58 (B4) — header X-Load untuk polling adaptif klien.
+import { loadHintHeaders } from "@/lib/load-metrics";
 
 export const dynamic = "force-dynamic";
 
@@ -39,22 +41,25 @@ export async function GET() {
         : [];
     const nameById = new Map(apps.map((app) => [app.id, app.name]));
 
-    return NextResponse.json({
-      notifications: visible.map((row) => ({
-        id: row.id,
-        title: row.title,
-        body: row.body,
-        category: row.category,
-        applicationId: row.applicationId,
-        applicationName: row.applicationId ? (nameById.get(row.applicationId) ?? null) : null,
-        isRead: row.isRead,
-        createdAt: row.createdAt.toISOString(),
-      })),
-      unreadCount: unreadVisible,
-      // NR46 — info penyaringan untuk UI (bila semua disembunyikan jam senyap, bell bisa
-      // menampilkan keterangan).
-      filteredOut: rows.length - visible.length,
-    });
+    return NextResponse.json(
+      {
+        notifications: visible.map((row) => ({
+          id: row.id,
+          title: row.title,
+          body: row.body,
+          category: row.category,
+          applicationId: row.applicationId,
+          applicationName: row.applicationId ? (nameById.get(row.applicationId) ?? null) : null,
+          isRead: row.isRead,
+          createdAt: row.createdAt.toISOString(),
+        })),
+        unreadCount: unreadVisible,
+        // NR46 — info penyaringan untuk UI (bila semua disembunyikan jam senyap, bell bisa
+        // menampilkan keterangan).
+        filteredOut: rows.length - visible.length,
+      },
+      { headers: loadHintHeaders() },
+    );
   } catch (error) {
     console.error("[GET /api/admin/notifications]", error);
     return NextResponse.json(
