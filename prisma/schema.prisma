@@ -361,6 +361,11 @@ model Application {
 
   @@index([email])
   @@index([candidateId])
+  // NR58 (C7) — indeks query panas: daftar admin memfilter status + urut
+  // createdAt; filter posisi; sampah lunak deletedAt.
+  @@index([status, createdAt])
+  @@index([positionId])
+  @@index([deletedAt])
 }
 
 // Sesi wawancara per lamaran — mendukung multi-ronde (HR, user, final).
@@ -416,6 +421,9 @@ model ActivityLog {
   action        String // mis. STATUS_CHANGE, NOTE, AI_SCREENING, WEBHOOK, UPLOAD, dll
   detail        String?
   createdAt     DateTime     @default(now())
+
+  // NR58 (C7) — log aktivitas selalu dibaca "terbaru dulu" dengan batas.
+  @@index([createdAt])
 }
 
 // Email pelamar yang berlangganan notifikasi posisi baru
