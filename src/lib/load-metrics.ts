@@ -69,6 +69,9 @@ type LoadState = {
   queueRunning: Set<string>;
   queueProcessed: number;
   save: SaveModeState;
+  /** NR58 — level kesehatan terakhir yang terukur (untuk header X-Load murah). */
+  lastLevel: "OK" | "WARN" | "CRIT";
+  lastLevelAt: number;
 };
 
 const g = globalThis as unknown as { __luminaLoad?: LoadState };
@@ -95,6 +98,8 @@ function state(): LoadState {
         okStreak: 0,
         lastAlertAt: 0,
       },
+      lastLevel: "OK",
+      lastLevelAt: 0,
     };
   }
   return g.__luminaLoad;
@@ -177,6 +182,93 @@ export function memoStats(): {
     lastClearedAt:
       s.cacheLastClearedAt != null ? new Date(s.cacheLastClearedAt).toISOString() : null,
   };
+}
+
+// ============================================================
+// NR58 — HINT BEBAN MURAH + SERVE-STALE
+// ============================================================
+
+/**
+ * Sinyal beban tanpa query: Mode Hemat aktif → "SAVE", selain itu level
+ * kesehatan terakhir yang terukur (dari snapshot admin/cron atau /api/health).
+ * Dipakai header X-Load pada respons admin (polling adaptif klien) dan untuk
+ * memutuskan serve-stale pada endpoint berat/publik.
+ */
+export function getLoadHint(): {
+  mode: "OK" | "WARN" | "CRIT" | "SAVE";
+  save: boolean;
+} {
+  try {
+    const s = state();
+    if (s.save.active) return { mode: "SAVE", save: true };
+    // Level terakhir dianggap basi setelah 10 menit tanpa pengukuran → OK.
+    const fresh = Date.now() - s.lastLevelAt < 10 * 60_000;
+    return { mode: fresh ? s.lastLevel : "OK", save: false };
+  } catch {
+    return { mode: "OK", save: false };
+  }
+}
+
+/** Header X-Load untuk ditempel pada respons admin (NR58 polling adaptif). */
+export function loadHintHeaders(): Record<string, string> {
+  const hint = getLoadHint();
+  return { "X-Load": hint.mode };
+}
+
+/**
+ * NR58 (A2/B5) — memoGet dengan lapisan serve-stale:
+ * - Hit segar → kembalikan tanpa menyentuh loader.
+ * - Hit basi:
+ *   - Mode SAVE/CRIT → kembalikan data basi LANGSUNG (lindungi DB) selama
+ *     umurnya belum melewati `serveStaleMs`.
+ *   - Normal → coba loader; bila loader GAGAL dan basi masih dalam batas,
+ *     kembalikan data basi (pengunjung tidak pernah melihat error karena beban).
+ * - Tanpa hit apa pun → loader biasa.
+ * `cached` dan `stale` dipakai untuk header X-Cache / X-Data-AsOf.
+ */
+export async function memoGetHeavy<T>(
+  key: string,
+  ttlMs: number,
+  serveStaleMs: number,
+  loader: () => Promise<T>,
+): Promise<{ value: T; cached: boolean; stale: boolean }> {
+  const s = state();
+  const now = Date.now();
+  const hit = s.cache.get(key);
+
+  if (hit && hit.expiresAt > now) {
+    s.cacheHits += 1;
+    return { value: hit.value as T, cached: true, stale: false };
+  }
+
+  const staleAge = hit ? now - (hit.expiresAt - ttlMs) : 0;
+  const staleUsable = hit != null && staleAge <= serveStaleMs;
+  const hint = getLoadHint();
+  const underPressure = hint.save || hint.mode === "CRIT";
+
+  if (staleUsable && underPressure) {
+    // Server berat: jangan ganggu DB — sajikan snapshot terakhir.
+    s.cacheHits += 1;
+    return { value: hit!.value as T, cached: true, stale: true };
+  }
+
+  s.cacheMisses += 1;
+  try {
+    const value = await loader();
+    s.cache.set(key, { expiresAt: now + ttlMs, value });
+    if (s.cache.size > 60) {
+      for (const [k, entry] of s.cache) {
+        if (entry.expiresAt <= now) s.cache.delete(k);
+      }
+    }
+    return { value, cached: false, stale: false };
+  } catch (err) {
+    if (staleUsable) {
+      // Loader gagal (DB lambat/locked) — basi lebih baik daripada error.
+      return { value: hit!.value as T, cached: true, stale: true };
+    }
+    throw err;
+  }
 }
 
 // ============================================================
@@ -716,6 +808,14 @@ export async function getServerLoadSnapshot() {
 
   // Efek samping terkontrol: streak, Mode Hemat AUTO, alert Telegram.
   await noteHealthResult(level);
+  // NR58 — simpan level terakhir agar getLoadHint() murah (tanpa query).
+  try {
+    const s = state();
+    s.lastLevel = level;
+    s.lastLevelAt = Date.now();
+  } catch {
+    // diam
+  }
   return snapshot;
 }
 
@@ -746,6 +846,16 @@ export function getServerLoadLite(dbLatencyMs: number, dbOk: boolean) {
   const slow = slowStats24h();
   if (slow.perHour > LOAD_THRESHOLDS.slowPerHourWarn)
     bump("WARN", `Permintaan lambat menumpuk: ${slow.perHour}/jam.`);
+
+  // NR58 — perbarui hint beban murah dari ping publik (tanpa efek samping
+  // transisi/alert; hanya menyegarkan lastLevel untuk header X-Load).
+  try {
+    const s = state();
+    s.lastLevel = level;
+    s.lastLevelAt = Date.now();
+  } catch {
+    // diam
+  }
 
   return {
     level,

@@ -12,6 +12,8 @@
 //     survei (surveyToken), dan konfirmasi tanggal mulai (candidateStart).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+// NR58 (A1) — rate limit berlapis rute publik (di atas throttle status-gate).
+import { publicRateGuard, PUBLIC_RATE_LIMITS } from "@/lib/public-guard";
 import { parseRequirements } from "@/lib/seed";
 import { isBuiltInStage } from "@/lib/stages";
 import { appendStageHistory, parseStageHistory } from "@/lib/stage-history";
@@ -146,6 +148,15 @@ async function computeStageEstimates(): Promise<Record<string, number>> {
 
 export async function POST(req: NextRequest) {
   try {
+    // NR58 (A1) — lapisan 1: jendela bergeser 20 cek/5 mnt/IP.
+    const limited = publicRateGuard(
+      req,
+      "track",
+      PUBLIC_RATE_LIMITS.trackPer5Min,
+      5 * 60_000,
+    );
+    if (limited) return limited;
+
     const ip = clientIp(req);
     if (isLockedOut(ip)) {
       return NextResponse.json(
