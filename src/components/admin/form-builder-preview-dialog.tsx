@@ -485,15 +485,17 @@ function SectionFieldsPreview({
 }) {
   const { lang } = useLang();
   const visible = fields.filter((field) => isFieldVisible(field, answers));
-  let lastGroup: string | undefined;
   return (
     <>
-      {visible.map((field) => {
-        const groupChanged = (field.group ?? undefined) !== lastGroup;
-        lastGroup = field.group ?? undefined;
+      {visible.map((field, index) => {
+        // Sub-header grup tampil saat grup field ini BEDA dari grup field
+        // terlihat sebelumnya (murni dari index — tanpa variabel mutasi agar
+        // aman render ulang; hasil identik dengan pola wizard).
+        const prevGroup = index > 0 ? (visible[index - 1].group ?? undefined) : undefined;
+        const showGroup = !!field.group && (field.group ?? undefined) !== prevGroup;
         return (
           <Fragment key={field.id}>
-            {groupChanged && field.group ? (
+            {showGroup ? (
               <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground first:mt-0">
                 {lang === "en" && field.groupEn ? field.groupEn : field.group}
               </p>
