@@ -20,7 +20,7 @@
 // LangProvider sendiri agar aman dipakai di panel admin (pola position-detail).
 // TIDAK menyentuh apply-wizard.tsx.
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Eye, FileText, Info, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +37,7 @@ import { LangProvider, useLang } from "@/components/landing/lang-context";
 import {
   FormFieldRenderer,
   ImageThumb,
+  LocalFileViewerDialog,
   formSectionTitle,
   type FormAnswerInput,
   type FormAnswers,
@@ -45,7 +46,6 @@ import { formatMb } from "@/components/landing/landing-utils";
 import {
   coreItem,
   coreItemLabel,
-  isBiodataCoreEnabled,
   isBirthDateEnabled,
   isBirthDateRequired,
   isCvEnabled,
@@ -69,7 +69,6 @@ import {
   type FormSchema,
   type FormSection,
 } from "@/lib/form-schema";
-import { Fragment } from "react";
 
 /* ------------------------------ Komponen utama ------------------------------ */
 
@@ -207,265 +206,261 @@ function PreviewBody({
         {t.apply.requiredAfter}
       </p>
 
-      {steps.map((section, index) => {
-        const bioSec = section;
-        return (
-          <section
-            key={section.id}
-            aria-label={formSectionTitle(section, lang)}
-            className="flex flex-col gap-4 rounded-2xl border bg-background p-4 sm:p-5"
-          >
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Bagian {index + 1}
-              </p>
-              <h4 className="text-sm font-bold leading-tight">
-                {formSectionTitle(section, lang)}
-              </h4>
-              {section.description ? (
-                <p className="mt-1 text-xs text-muted-foreground">{section.description}</p>
+      {steps.map((section, index) => (
+        <section
+          key={section.id}
+          aria-label={formSectionTitle(section, lang)}
+          className="flex flex-col gap-4 rounded-2xl border bg-background p-4 sm:p-5"
+        >
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Bagian {index + 1}
+            </p>
+            <h4 className="text-sm font-bold leading-tight">
+              {formSectionTitle(section, lang)}
+            </h4>
+            {section.description ? (
+              <p className="mt-1 text-xs text-muted-foreground">{section.description}</p>
+            ) : null}
+          </div>
+
+          {/* Item inti ringkas per jenis bagian — label/placeholder/bantuan
+              mengikuti kustomisasi admin (NR-26), status wajib dari getter. */}
+          {section.kind === "biodata" ? (
+            <>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="preview-core-name" className="gap-2">
+                  {coreItemLabel(section, "name")} {requiredMark(true)}
+                </Label>
+                {coreItem(section, "name").helpText ? (
+                  <p className="text-xs text-muted-foreground">
+                    {coreItem(section, "name").helpText}
+                  </p>
+                ) : null}
+                <Input
+                  id="preview-core-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={
+                    coreItem(section, "name").placeholder?.trim() || t.apply.fields.namePh
+                  }
+                  autoComplete="name"
+                  className="h-11"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="preview-core-email" className="gap-2">
+                  {coreItemLabel(section, "email")} {requiredMark(isEmailRequired(section))}
+                </Label>
+                {coreItem(section, "email").helpText ? (
+                  <p className="text-xs text-muted-foreground">
+                    {coreItem(section, "email").helpText}
+                  </p>
+                ) : null}
+                <Input
+                  id="preview-core-email"
+                  type="email"
+                  inputMode="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={
+                    coreItem(section, "email").placeholder?.trim() || t.apply.fields.emailPh
+                  }
+                  autoComplete="email"
+                  className="h-11"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="preview-core-wa" className="gap-2">
+                  {coreItemLabel(section, "wa")} {requiredMark(isWaRequired(section))}
+                </Label>
+                {coreItem(section, "wa").helpText ? (
+                  <p className="text-xs text-muted-foreground">
+                    {coreItem(section, "wa").helpText}
+                  </p>
+                ) : null}
+                <Input
+                  id="preview-core-wa"
+                  type="tel"
+                  inputMode="tel"
+                  value={wa}
+                  onChange={(e) => setWa(e.target.value)}
+                  placeholder={
+                    coreItem(section, "wa").placeholder?.trim() || t.apply.fields.phonePh
+                  }
+                  autoComplete="tel"
+                  className="h-11"
+                />
+              </div>
+              {/* NR-32 — NIK & Tanggal Lahir: hanya bila diaktifkan admin. */}
+              {isNikEnabled(section) ? (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="preview-core-nik" className="gap-2">
+                    {coreItemLabel(section, "nik")} {requiredMark(isNikRequired(section))}
+                  </Label>
+                  {coreItem(section, "nik").helpText ? (
+                    <p className="text-xs text-muted-foreground">
+                      {coreItem(section, "nik").helpText}
+                    </p>
+                  ) : null}
+                  <Input
+                    id="preview-core-nik"
+                    inputMode="numeric"
+                    value={nik}
+                    onChange={(e) => setNik(e.target.value)}
+                    placeholder={coreItem(section, "nik").placeholder?.trim() || "16 digit"}
+                    className="h-11"
+                  />
+                </div>
               ) : null}
-            </div>
-
-            {/* Item inti ringkas per jenis bagian — label/placeholder/bantuan
-                mengikuti kustomisasi admin (NR-26), status wajib dari getter. */}
-            {section.kind === "biodata" ? (
-              <>
+              {isBirthDateEnabled(section) ? (
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="preview-core-name" className="gap-2">
-                    {coreItemLabel(bioSec, "name")} {requiredMark(true)}
+                  <Label htmlFor="preview-core-birthdate" className="gap-2">
+                    {coreItemLabel(section, "birthDate")}{" "}
+                    {requiredMark(isBirthDateRequired(section))}
                   </Label>
-                  {coreItem(bioSec, "name").helpText ? (
+                  {coreItem(section, "birthDate").helpText ? (
                     <p className="text-xs text-muted-foreground">
-                      {coreItem(bioSec, "name").helpText}
+                      {coreItem(section, "birthDate").helpText}
                     </p>
                   ) : null}
                   <Input
-                    id="preview-core-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder={
-                      coreItem(bioSec, "name").placeholder?.trim() || t.apply.fields.namePh
-                    }
-                    autoComplete="name"
+                    id="preview-core-birthdate"
+                    type="date"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
                     className="h-11"
                   />
                 </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {section.kind === "experience" ? (
+            <>
+              {isExperienceEnabled(section) ? (
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="preview-core-email" className="gap-2">
-                    {coreItemLabel(bioSec, "email")} {requiredMark(isEmailRequired(bioSec))}
+                  <Label htmlFor="preview-core-experience" className="gap-2">
+                    {coreItemLabel(section, "experience")}{" "}
+                    {requiredMark(isExperienceRequired(section))}
                   </Label>
-                  {coreItem(bioSec, "email").helpText ? (
+                  {coreItem(section, "experience").helpText ? (
                     <p className="text-xs text-muted-foreground">
-                      {coreItem(bioSec, "email").helpText}
+                      {coreItem(section, "experience").helpText}
+                    </p>
+                  ) : null}
+                  <Textarea
+                    id="preview-core-experience"
+                    rows={3}
+                    value={experience}
+                    onChange={(e) => setExperience(e.target.value)}
+                    placeholder={
+                      coreItem(section, "experience").placeholder?.trim() ||
+                      t.apply.fields.experiencePh
+                    }
+                  />
+                </div>
+              ) : null}
+              {isMotivationEnabled(section) ? (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="preview-core-motivation" className="gap-2">
+                    {coreItemLabel(section, "motivation")}{" "}
+                    {requiredMark(isMotivationRequired(section))}
+                  </Label>
+                  {coreItem(section, "motivation").helpText ? (
+                    <p className="text-xs text-muted-foreground">
+                      {coreItem(section, "motivation").helpText}
+                    </p>
+                  ) : null}
+                  <Textarea
+                    id="preview-core-motivation"
+                    rows={3}
+                    value={motivation}
+                    onChange={(e) => setMotivation(e.target.value)}
+                    placeholder={
+                      coreItem(section, "motivation").placeholder?.trim() ||
+                      t.apply.fields.motivationPh
+                    }
+                  />
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {section.kind === "files" ? (
+            <>
+              {isCvEnabled(section) ? (
+                <CoreFileSlot
+                  id="preview-core-cv"
+                  label={coreItemLabel(section, "cv")}
+                  fallbackLabel={t.apply.uploads.cvLabel}
+                  helpText={coreItem(section, "cv").helpText}
+                  required={isCvRequired(section)}
+                  requiredHint={t.apply.uploads.cvRequiredHint}
+                  accept=".pdf,application/pdf"
+                  file={cvFile}
+                  onFile={setCvFile}
+                  optionalText={t.apply.uploads.optional}
+                  dropHint={t.apply.uploads.dropHint}
+                  viewLabel={t.apply.uploads.view}
+                  removeLabel={t.apply.uploads.remove}
+                />
+              ) : null}
+              {isIntroEnabled(section) ? (
+                <CoreFileSlot
+                  id="preview-core-intro"
+                  label={coreItemLabel(section, "intro")}
+                  fallbackLabel={t.apply.uploads.introLabel}
+                  helpText={coreItem(section, "intro").helpText}
+                  required={isIntroRequired(section)}
+                  requiredHint={t.apply.uploads.introRequiredHint}
+                  accept="audio/*,video/*"
+                  file={introFile}
+                  onFile={setIntroFile}
+                  optionalText={t.apply.uploads.optional}
+                  dropHint={t.apply.uploads.dropHint}
+                  viewLabel={t.apply.uploads.view}
+                  removeLabel={t.apply.uploads.remove}
+                />
+              ) : null}
+              {isPortfolioEnabled(section) ? (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="preview-core-portfolio" className="gap-2">
+                    {coreItemLabel(section, "portfolio")}{" "}
+                    {requiredMark(isPortfolioRequired(section))}
+                  </Label>
+                  {coreItem(section, "portfolio").helpText ? (
+                    <p className="text-xs text-muted-foreground">
+                      {coreItem(section, "portfolio").helpText}
                     </p>
                   ) : null}
                   <Input
-                    id="preview-core-email"
-                    type="email"
-                    inputMode="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    id="preview-core-portfolio"
+                    type="url"
+                    value={portfolioUrl}
+                    onChange={(e) => setPortfolioUrl(e.target.value)}
                     placeholder={
-                      coreItem(bioSec, "email").placeholder?.trim() || t.apply.fields.emailPh
+                      coreItem(section, "portfolio").placeholder?.trim() || "https://..."
                     }
-                    autoComplete="email"
                     className="h-11"
                   />
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="preview-core-wa" className="gap-2">
-                    {coreItemLabel(bioSec, "wa")} {requiredMark(isWaRequired(bioSec))}
-                  </Label>
-                  {coreItem(bioSec, "wa").helpText ? (
-                    <p className="text-xs text-muted-foreground">
-                      {coreItem(bioSec, "wa").helpText}
-                    </p>
-                  ) : null}
-                  <Input
-                    id="preview-core-wa"
-                    type="tel"
-                    inputMode="tel"
-                    value={wa}
-                    onChange={(e) => setWa(e.target.value)}
-                    placeholder={
-                      coreItem(bioSec, "wa").placeholder?.trim() || t.apply.fields.phonePh
-                    }
-                    autoComplete="tel"
-                    className="h-11"
-                  />
-                </div>
-                {/* NR-32 — NIK & Tanggal Lahir: hanya bila diaktifkan admin. */}
-                {isNikEnabled(bioSec) ? (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="preview-core-nik" className="gap-2">
-                      {coreItemLabel(bioSec, "nik")} {requiredMark(isNikRequired(bioSec))}
-                    </Label>
-                    {coreItem(bioSec, "nik").helpText ? (
-                      <p className="text-xs text-muted-foreground">
-                        {coreItem(bioSec, "nik").helpText}
-                      </p>
-                    ) : null}
-                    <Input
-                      id="preview-core-nik"
-                      inputMode="numeric"
-                      value={nik}
-                      onChange={(e) => setNik(e.target.value)}
-                      placeholder={coreItem(bioSec, "nik").placeholder?.trim() || "16 digit"}
-                      className="h-11"
-                    />
-                  </div>
-                ) : null}
-                {isBirthDateEnabled(bioSec) ? (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="preview-core-birthdate" className="gap-2">
-                      {coreItemLabel(bioSec, "birthDate")}{" "}
-                      {requiredMark(isBirthDateRequired(bioSec))}
-                    </Label>
-                    {coreItem(bioSec, "birthDate").helpText ? (
-                      <p className="text-xs text-muted-foreground">
-                        {coreItem(bioSec, "birthDate").helpText}
-                      </p>
-                    ) : null}
-                    <Input
-                      id="preview-core-birthdate"
-                      type="date"
-                      value={birthDate}
-                      onChange={(e) => setBirthDate(e.target.value)}
-                      className="h-11"
-                    />
-                  </div>
-                ) : null}
-              </>
-            ) : null}
+              ) : null}
+            </>
+          ) : null}
 
-            {section.kind === "experience" ? (
-              <>
-                {isExperienceEnabled(section) ? (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="preview-core-experience" className="gap-2">
-                      {coreItemLabel(section, "experience")}{" "}
-                      {requiredMark(isExperienceRequired(section))}
-                    </Label>
-                    {coreItem(section, "experience").helpText ? (
-                      <p className="text-xs text-muted-foreground">
-                        {coreItem(section, "experience").helpText}
-                      </p>
-                    ) : null}
-                    <Textarea
-                      id="preview-core-experience"
-                      rows={3}
-                      value={experience}
-                      onChange={(e) => setExperience(e.target.value)}
-                      placeholder={
-                        coreItem(section, "experience").placeholder?.trim() ||
-                        t.apply.fields.experiencePh
-                      }
-                    />
-                  </div>
-                ) : null}
-                {isMotivationEnabled(section) ? (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="preview-core-motivation" className="gap-2">
-                      {coreItemLabel(section, "motivation")}{" "}
-                      {requiredMark(isMotivationRequired(section))}
-                    </Label>
-                    {coreItem(section, "motivation").helpText ? (
-                      <p className="text-xs text-muted-foreground">
-                        {coreItem(section, "motivation").helpText}
-                      </p>
-                    ) : null}
-                    <Textarea
-                      id="preview-core-motivation"
-                      rows={3}
-                      value={motivation}
-                      onChange={(e) => setMotivation(e.target.value)}
-                      placeholder={
-                        coreItem(section, "motivation").placeholder?.trim() ||
-                        t.apply.fields.motivationPh
-                      }
-                    />
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-
-            {section.kind === "files" ? (
-              <>
-                {isCvEnabled(section) ? (
-                  <CoreFileSlot
-                    id="preview-core-cv"
-                    label={coreItemLabel(section, "cv")}
-                    fallbackLabel={t.apply.uploads.cvLabel}
-                    helpText={coreItem(section, "cv").helpText}
-                    required={isCvRequired(section)}
-                    accept=".pdf,application/pdf"
-                    file={cvFile}
-                    onFile={setCvFile}
-                    optionalText={`(${t.apply.uploads.optional})`}
-                    requiredHint={t.apply.uploads.cvRequiredHint}
-                    dropHint={t.apply.uploads.dropHint}
-                    viewLabel={t.apply.uploads.view}
-                    removeLabel={t.apply.uploads.remove}
-                  />
-                ) : null}
-                {isIntroEnabled(section) ? (
-                  <CoreFileSlot
-                    id="preview-core-intro"
-                    label={coreItemLabel(section, "intro")}
-                    fallbackLabel={t.apply.uploads.introLabel}
-                    helpText={coreItem(section, "intro").helpText}
-                    required={isIntroRequired(section)}
-                    accept="audio/*,video/*"
-                    file={introFile}
-                    onFile={setIntroFile}
-                    optionalText={`(${t.apply.uploads.optional})`}
-                    requiredHint={t.apply.uploads.introRequiredHint}
-                    dropHint={t.apply.uploads.dropHint}
-                    viewLabel={t.apply.uploads.view}
-                    removeLabel={t.apply.uploads.remove}
-                  />
-                ) : null}
-                {isPortfolioEnabled(section) ? (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="preview-core-portfolio" className="gap-2">
-                      {coreItemLabel(section, "portfolio")}{" "}
-                      {requiredMark(isPortfolioRequired(section))}
-                    </Label>
-                    {coreItem(section, "portfolio").helpText ? (
-                      <p className="text-xs text-muted-foreground">
-                        {coreItem(section, "portfolio").helpText}
-                      </p>
-                    ) : null}
-                    <Input
-                      id="preview-core-portfolio"
-                      type="url"
-                      value={portfolioUrl}
-                      onChange={(e) => setPortfolioUrl(e.target.value)}
-                      placeholder={
-                        coreItem(section, "portfolio").placeholder?.trim() ||
-                        "https://..."
-                      }
-                      className="h-11"
-                    />
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-
-            {/* Pertanyaan kustom bagian ini — hanya yang TERLIHAT (showIf cocok
-                dgn jawaban saat ini), sub-header grup tampil saat berganti grup
-                (semantik persis renderSectionFields di wizard publik). */}
-            <SectionFieldsPreview
-              fields={sectionFields(schema, section.id)}
-              answers={answers}
-              errors={formErrors}
-              onAnswer={handleFormAnswer}
-              onAnswerError={handleFormAnswerError}
-            />
-          </section>
-        );
-      })}
+          {/* Pertanyaan kustom bagian ini — hanya yang TERLIHAT (showIf cocok
+              dgn jawaban saat ini), sub-header grup tampil saat berganti grup
+              (semantik persis renderSectionFields di wizard publik). */}
+          <SectionFieldsPreview
+            fields={sectionFields(schema, section.id)}
+            answers={answers}
+            errors={formErrors}
+            onAnswer={handleFormAnswer}
+            onAnswerError={handleFormAnswerError}
+          />
+        </section>
+      ))}
     </div>
   );
 }
@@ -529,8 +524,9 @@ function SectionFieldsPreview({
 
 /**
  * Slot berkas inti ringan (CV / audio-video perkenalan): kotak unggah gaya
- * wizard + baris berkas terpilih (thumbnail gambar via ImageThumb). Berkas
- * hanya di state lokal — tidak ada unggahan jaringan apa pun.
+ * wizard + baris berkas terpilih (thumbnail gambar via ImageThumb, pratinjau
+ * isi via LocalFileViewerDialog blob lokal). Berkas hanya di state lokal —
+ * tidak ada unggahan jaringan apa pun.
  */
 function CoreFileSlot({
   id,
@@ -538,11 +534,11 @@ function CoreFileSlot({
   fallbackLabel,
   helpText,
   required,
+  requiredHint,
   accept,
   file,
   onFile,
   optionalText,
-  requiredHint,
   dropHint,
   viewLabel,
   removeLabel,
@@ -552,15 +548,16 @@ function CoreFileSlot({
   fallbackLabel: string;
   helpText?: string;
   required: boolean;
+  requiredHint: string;
   accept: string;
   file: File | null;
   onFile: (file: File | null) => void;
   optionalText: string;
-  requiredHint: string;
   dropHint: string;
   viewLabel: string;
   removeLabel: string;
 }) {
+  const [viewOpen, setViewOpen] = useState(false);
   const effectiveLabel = label.trim() ? label : fallbackLabel;
   return (
     <div className="flex flex-col gap-2">
@@ -569,7 +566,9 @@ function CoreFileSlot({
         {required ? (
           <span className="text-xs font-normal text-rose-600">({requiredHint})</span>
         ) : (
-          <span className="text-xs font-normal text-muted-foreground">{optionalText}</span>
+          <span className="text-xs font-normal text-muted-foreground">
+            ({optionalText})
+          </span>
         )}
       </Label>
       {helpText ? <p className="text-xs text-muted-foreground">{helpText}</p> : null}
@@ -594,7 +593,12 @@ function CoreFileSlot({
       {file ? (
         <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
           <span className="flex min-w-0 items-center gap-2 text-sm">
-            <ImageThumb file={file} onView={() => undefined} viewLabel={viewLabel} />
+            {/* NR60 (B2) — thumbnail 40x40 utk berkas gambar (klik = pratinjau). */}
+            <ImageThumb
+              file={file}
+              onView={() => setViewOpen(true)}
+              viewLabel={viewLabel}
+            />
             {!file.type.startsWith("image/") ? (
               <FileText
                 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
@@ -606,18 +610,32 @@ function CoreFileSlot({
               {formatMb(file.size)}
             </span>
           </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            aria-label={removeLabel}
-            onClick={() => onFile(null)}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-xs text-muted-foreground"
+              onClick={() => setViewOpen(true)}
+            >
+              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+              {viewLabel}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              aria-label={removeLabel}
+              onClick={() => onFile(null)}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
       ) : null}
+      {/* NR-36 — pratinjau isi berkas lokal (blob:) tanpa jaringan. */}
+      <LocalFileViewerDialog file={file} open={viewOpen} onOpenChange={setViewOpen} />
     </div>
   );
 }
