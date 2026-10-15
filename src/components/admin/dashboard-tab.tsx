@@ -359,25 +359,58 @@ export function DashboardTab() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // NR58 (B6) — SATU permintaan untuk seluruh data awal dashboard (bundle).
+  // Loader per bagian di atas tetap dipakai oleh refresh realtime (event)
+  // dan sebagai fallback bila salah satu bagian bundle gagal (null).
+  type DashboardBundle = {
+    overview: AdminOverviewResponse | null;
+    positionStats: AdminPositionStatsResponse | null;
+    actionItems: ActionItemsResponse | null;
+    sla: SlaResponse | null;
+    announcements: AnnouncementItem[] | null;
+  };
+  const loadBundle = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const data = await apiGet<DashboardBundle>(
+          "/api/admin/dashboard-bundle",
+        );
+        let missing = false;
+        if (data.overview) setOverview(data.overview);
+        else missing = true;
+        if (data.positionStats) setPosStats(data.positionStats.rows);
+        else missing = true;
+        if (data.actionItems) setActionItems(data.actionItems);
+        else missing = true;
+        if (data.sla) setSla(data.sla);
+        else missing = true;
+        if (data.announcements) setAnnouncements(data.announcements);
+        else missing = true;
+        if (missing) {
+          // Bagian gagal → ambil ulang hanya bagian itu (pola senyap).
+          void load(true);
+          void loadPosStats(true);
+          void loadActionItems();
+          void loadSla();
+          void loadAnnouncements(true);
+        }
+      } catch (err) {
+        reportError(err);
+      } finally {
+        if (!silent) {
+          setLoading(false);
+          setPosStatsLoading(false);
+          setAnnLoading(false);
+        }
+      }
+    },
+    [reportError, load, loadPosStats, loadActionItems, loadSla, loadAnnouncements],
+  );
 
   useEffect(() => {
-    void loadPosStats();
-  }, [loadPosStats]);
-
-  useEffect(() => {
-    void loadActionItems();
-  }, [loadActionItems]);
-
-  useEffect(() => {
-    void loadSla();
-  }, [loadSla]);
-
-  useEffect(() => {
-    void loadAnnouncements();
-  }, [loadAnnouncements]);
+    void loadBundle();
+  }, [loadBundle]);
 
   // Realtime: lamaran baru/perubahan status memengaruhi overview + statistik + SLA.
   useLiveRefresh("applications:changed", () => {
