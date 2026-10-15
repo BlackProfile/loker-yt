@@ -1064,6 +1064,7 @@ type idDictShape = {
       fileChange: string;
       fileRemove: string;
       fileHint: string;
+      previewTitle: string;
       fileAnswer: string;
     };
     buttons: {
@@ -1664,7 +1665,8 @@ const en: Dict = {
       formOption: "The answer to \"{label}\" must be one of the available options.",
       formFileType:
         "The file format for \"{label}\" is not supported. Use PDF, image, Word, audio, or video.",
-      formFileSize: "The file \"{label}\" must be at most 20 MB.",
+      // NR60 (A3) — size comes from FORM_LIMITS via {max} (no hardcoded size).
+      formFileSize: "The file \"{label}\" must be at most {max}.",
       portfolioRequired: "A portfolio or social media link is required for this position.",
       cvRequired: "A CV is required for this position.",
       introRequired: "An intro audio/video is required for this position.",
@@ -1684,6 +1686,31 @@ const en: Dict = {
       restore: "Restore",
       discard: "Discard",
       savedPrefix: "Saved",
+      // NR60 (B1) — relative time + section jump chips.
+      relTimeNow: "just now",
+      relTimeMin: "{n} min ago",
+      relTimeHour: "{n} h ago",
+      relTimeDay: "{n} d ago",
+      chipData: "Personal data",
+      chipStory: "Story",
+      chipFiles: "Files",
+      // NR60 (B4) — draft link via copy/share.
+      copyLink: "Copy link",
+      shareLink: "Share",
+      copied: "Link copied",
+      linkFailed: "Could not prepare the link. Please try again.",
+      shareTitle: "Continue your application — Lumina Studio",
+    },
+    // NR60 (A1) — prefill from a previous application (recognized email).
+    prefill: {
+      title: "We found your previous application",
+      use: "Use this data",
+      dismiss: "Close",
+      applied: "Previous application data filled in.",
+    },
+    // NR60 (B3) — time estimate in the progress header.
+    progress: {
+      timeLeft: "min left",
     },
     summary: {
       title: "Application Summary",
@@ -1723,6 +1750,9 @@ const en: Dict = {
       consentNote:
         "Your data will only be used for the recruitment process at this studio.",
       changeOrRemove: "Replace / Remove",
+      // NR60 (C1) — soft duplicate warning in the confirm dialog.
+      duplicateWarn:
+        "Note: our records show you already applied to this position on {date}. Submitting again will create a new application.",
     },
     uploads: {
       cvLabel: "CV (PDF, max 5 MB)",
@@ -1765,7 +1795,8 @@ const en: Dict = {
       fileChoose: "Choose file",
       fileChange: "Replace",
       fileRemove: "Remove",
-      fileHint: "PDF, image, Word, audio, video — max 20 MB",
+      // NR60 (A3) — size comes from FORM_LIMITS via {max} (no hardcoded size).
+      fileHint: "PDF, image, Word, audio, video — max {max}",
       previewTitle: "Additional Answers",
       fileAnswer: "File uploaded",
     },
