@@ -45,7 +45,7 @@ export const LOAD_THRESHOLDS = {
 
 // --- State global (selamat dari HMR) ---
 type SlowEntry = { route: string; ms: number; at: number };
-type CacheEntry = { expiresAt: number; value: unknown };
+type CacheEntry = { expiresAt: number; value: unknown; storedAt: number };
 type QueueJob = { id: string; runner: () => Promise<void> };
 type SaveModeState = {
   active: boolean;
@@ -132,7 +132,7 @@ export async function memoGet<T>(
   }
   s.cacheMisses += 1;
   const value = await loader();
-  s.cache.set(key, { expiresAt: now + ttlMs, value });
+  s.cache.set(key, { expiresAt: now + ttlMs, value, storedAt: now });
   // Prune ringan agar map tidak tumbuh tak terbatas.
   if (s.cache.size > 60) {
     for (const [k, entry] of s.cache) {
@@ -231,17 +231,28 @@ export async function memoGetHeavy<T>(
   ttlMs: number,
   serveStaleMs: number,
   loader: () => Promise<T>,
-): Promise<{ value: T; cached: boolean; stale: boolean }> {
+): Promise<{
+  value: T;
+  cached: boolean;
+  stale: boolean;
+  /** Epoch ms saat nilai dalam cache dibuat (untuk header X-Data-AsOf). */
+  cachedAt: number;
+}> {
   const s = state();
   const now = Date.now();
   const hit = s.cache.get(key);
 
   if (hit && hit.expiresAt > now) {
     s.cacheHits += 1;
-    return { value: hit.value as T, cached: true, stale: false };
+    return {
+      value: hit.value as T,
+      cached: true,
+      stale: false,
+      cachedAt: hit.storedAt,
+    };
   }
 
-  const staleAge = hit ? now - (hit.expiresAt - ttlMs) : 0;
+  const staleAge = hit ? now - hit.storedAt : 0;
   const staleUsable = hit != null && staleAge <= serveStaleMs;
   const hint = getLoadHint();
   const underPressure = hint.save || hint.mode === "CRIT";
@@ -249,23 +260,33 @@ export async function memoGetHeavy<T>(
   if (staleUsable && underPressure) {
     // Server berat: jangan ganggu DB — sajikan snapshot terakhir.
     s.cacheHits += 1;
-    return { value: hit!.value as T, cached: true, stale: true };
+    return {
+      value: hit!.value as T,
+      cached: true,
+      stale: true,
+      cachedAt: hit!.storedAt,
+    };
   }
 
   s.cacheMisses += 1;
   try {
     const value = await loader();
-    s.cache.set(key, { expiresAt: now + ttlMs, value });
+    s.cache.set(key, { expiresAt: now + ttlMs, value, storedAt: now });
     if (s.cache.size > 60) {
       for (const [k, entry] of s.cache) {
         if (entry.expiresAt <= now) s.cache.delete(k);
       }
     }
-    return { value, cached: false, stale: false };
+    return { value, cached: false, stale: false, cachedAt: now };
   } catch (err) {
     if (staleUsable) {
       // Loader gagal (DB lambat/locked) — basi lebih baik daripada error.
-      return { value: hit!.value as T, cached: true, stale: true };
+      return {
+        value: hit!.value as T,
+        cached: true,
+        stale: true,
+        cachedAt: hit!.storedAt,
+      };
     }
     throw err;
   }

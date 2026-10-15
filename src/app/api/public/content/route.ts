@@ -6,17 +6,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { closeExpiredPositions, ensureSeeded, parseSiteContent, serializePosition } from "@/lib/seed";
 import { etagJson } from "@/lib/http-cache";
-import { memoGet, readMaintenanceConfig, recordSlowRequest } from "@/lib/load-metrics";
+// NR58 (A1/A2) — rate limit publik + serve-stale.
+import { memoGetHeavy, readMaintenanceConfig, recordSlowRequest } from "@/lib/load-metrics";
+import { publicRateGuard, PUBLIC_RATE_LIMITS } from "@/lib/public-guard";
 import type { PositionPublicStats, PublicContentResponse } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const t0 = Date.now();
+  // NR58 (A1) — pelindung pertama sebelum menyentuh cache/DB.
+  const limited = publicRateGuard(
+    req,
+    "content",
+    PUBLIC_RATE_LIMITS.readPerMinute,
+    60_000,
+  );
+  if (limited) return limited;
+
   try {
-    const { value: body, cached } = await memoGet<PublicContentResponse>(
+    const { value: body, cached, stale } = await memoGetHeavy<PublicContentResponse>(
       "content:main",
       45_000,
+      10 * 60_000,
       async () => {
         await ensureSeeded();
         await closeExpiredPositions();
@@ -90,7 +102,11 @@ export async function GET(req: NextRequest) {
 
     // NR-41 E2 — ETag + Cache-Control (kontrak body tidak berubah kecuali aditif).
     // NR45 — header X-Cache (dipakai panel demo "Uji Cache").
-    const res = etagJson(req, body, undefined, { "X-Cache": cached ? "HIT" : "MISS" });
+    // NR58 — X-Data-Stale saat menyajikan snapshot basi (Mode Hemat/beban kritis).
+    const res = etagJson(req, body, undefined, {
+      "X-Cache": cached ? "HIT" : "MISS",
+      ...(stale ? { "X-Data-Stale": "1" } : {}),
+    });
     recordSlowRequest("GET /api/public/content", Date.now() - t0);
     return res;
   } catch (error) {

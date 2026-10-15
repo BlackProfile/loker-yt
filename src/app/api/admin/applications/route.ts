@@ -12,6 +12,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
+// NR58 (B5) — snapshot berat + header X-Load untuk polling adaptif klien.
+import {
+  memoGetHeavy,
+  getLoadHint,
+  loadHintHeaders,
+} from "@/lib/load-metrics";
 import {
   APPLICATION_INCLUDE,
   maskApplicationForViewer,
@@ -53,6 +59,111 @@ function parseSortedOrderBy(
   return [{ createdAt: "desc" }, { id: "desc" }];
 }
 
+/**
+ * NR58 (B5) — muat badan respons daftar lamaran (logika lama dipindah utuh
+ * dari GET agar bisa dibungkus snapshot memoGetHeavy). Scope HR, pagination
+ * opt-in, mask VIEWER — semuanya persis seperti sebelumnya.
+ */
+async function loadApplicationsBody(
+  searchParams: URLSearchParams,
+  session: NonNullable<Awaited<ReturnType<typeof getSession>>>,
+  baseWhere: Prisma.ApplicationWhereInput,
+  orderBy: Prisma.ApplicationOrderByWithRelationInput[],
+): Promise<Application[] | PaginatedApplications> {
+  let where = {
+    ...baseWhere,
+    deletedAt: null, // lamaran di tong sampah tidak tampil di daftar admin
+  };
+
+  // Scope granular HR: bila daftar posisi yang ditugaskan tidak kosong,
+  // batasi hasil hanya ke posisi tersebut (kosong = semua posisi).
+  if (session.role === "HR") {
+    const admin = await db.adminUser.findUnique({
+      where: { email: session.email },
+      select: { assignedPositions: true },
+    });
+    const scope = parseAssignedPositions(admin?.assignedPositions);
+    if (scope.length > 0) {
+      where = { ...where, AND: [{ positionId: { in: scope } }] };
+    }
+  }
+
+  // NR41 E1 — pagination OPT-IN: hanya aktif bila paginate=1.
+  const paginate =
+    searchParams.get("paginate") === "1" || searchParams.get("paginate") === "true";
+  if (paginate) {
+    const page = Math.max(
+      PAGE_DEFAULT,
+      Number.parseInt(searchParams.get("page") ?? "", 10) || PAGE_DEFAULT,
+    );
+    const pageSizeRaw =
+      Number.parseInt(searchParams.get("pageSize") ?? "", 10) || PAGE_SIZE_DEFAULT;
+    const pageSize = Math.min(PAGE_SIZE_MAX, Math.max(1, pageSizeRaw));
+    const paginatedOrderBy = parseSortedOrderBy(searchParams.get("sort"));
+
+    const [total, rows] = await Promise.all([
+      db.application.count({ where }),
+      db.application.findMany({
+        where,
+        orderBy: paginatedOrderBy,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          ...APPLICATION_INCLUDE,
+          position: { select: { title: true, salaryMin: true, salaryMax: true } },
+        },
+      }),
+    ]);
+
+    const mapRow = (record: (typeof rows)[number]) => ({
+      ...serializeApplication(record),
+      adminSeenAt: record.adminSeenAt ? record.adminSeenAt.toISOString() : null,
+      snoozeUntil: record.snoozeUntil ? record.snoozeUntil.toISOString() : null,
+      positionSalaryMin: record.position?.salaryMin ?? null,
+      positionSalaryMax: record.position?.salaryMax ?? null,
+    });
+
+    const items: Application[] = rows
+      .map(mapRow)
+      .map((item) => (session.role === "VIEWER" ? maskApplicationForViewer(item) : item));
+
+    const envelope: PaginatedApplications = {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
+    return envelope;
+  }
+
+  // NR38-B — include diperluas secara aditif: posisi ikut membawa rentang
+  // gaji (salaryMin/salaryMax) untuk chip "gaji vs range" di tabel admin.
+  // serializeApplication tetap hanya memakai position.title sehingga aman.
+  const rows = await db.application.findMany({
+    where,
+    orderBy,
+    include: {
+      ...APPLICATION_INCLUDE,
+      position: { select: { title: true, salaryMin: true, salaryMax: true } },
+    },
+  });
+
+  // NR38-B — tambahan payload untuk triase cepat: adminSeenAt (dasar filter
+  // "Belum dilihat"), snoozeUntil (panel "Perlu dihubungi hari ini"), dan
+  // rentang gaji posisi. Aditif — bentuk respons lama tidak berubah.
+  const data = rows.map((record) => ({
+    ...serializeApplication(record),
+    adminSeenAt: record.adminSeenAt ? record.adminSeenAt.toISOString() : null,
+    snoozeUntil: record.snoozeUntil ? record.snoozeUntil.toISOString() : null,
+    positionSalaryMin: record.position?.salaryMin ?? null,
+    positionSalaryMax: record.position?.salaryMax ?? null,
+  }));
+
+  // VIEWER: mask PII (phone & CV) hanya pada level respons list.
+  return session.role === "VIEWER" ? data.map(maskApplicationForViewer) : data;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
@@ -67,96 +178,30 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Status tidak valid." }, { status: 400 });
     }
 
-    let where = {
-      ...baseWhere,
-      deletedAt: null, // lamaran di tong sampah tidak tampil di daftar admin
-    };
+    // NR58 (B5) — SNAPSHOT BERAT: daftar lamaran adalah query termahal panel
+    // (ribuan baris + include relasi). Kunci cache mencakup role+id sesi dan
+    // seluruh query sehingga scope HR / mask VIEWER / filter / halaman tetap
+    // terpisah sempurna. Normal: TTL 20 dtk (kolaborasi tetap segar). Mode
+    // Hemat / beban KRITIS: snapshot basi (<= 10 mnt) disajikan TANPA
+    // menyentuh DB, dengan header X-Data-AsOf agar UI memberi tahu umur data.
+    const cacheKey = `admin:apps:${session.role}:${session.id}:${searchParams.toString()}`;
+    const { value: body, stale, cachedAt } = await memoGetHeavy(
+      cacheKey,
+      20_000,
+      10 * 60_000,
+      async () => {
+        return loadApplicationsBody(searchParams, session, baseWhere, orderBy);
+      },
+    );
 
-    // Scope granular HR: bila daftar posisi yang ditugaskan tidak kosong,
-    // batasi hasil hanya ke posisi tersebut (kosong = semua posisi).
-    if (session.role === "HR") {
-      const admin = await db.adminUser.findUnique({
-        where: { email: session.email },
-        select: { assignedPositions: true },
-      });
-      const scope = parseAssignedPositions(admin?.assignedPositions);
-      if (scope.length > 0) {
-        where = { ...where, AND: [{ positionId: { in: scope } }] };
-      }
-    }
-
-    // NR41 E1 — pagination OPT-IN: hanya aktif bila paginate=1.
-    const paginate = searchParams.get("paginate") === "1" || searchParams.get("paginate") === "true";
-    if (paginate) {
-      const page = Math.max(PAGE_DEFAULT, Number.parseInt(searchParams.get("page") ?? "", 10) || PAGE_DEFAULT);
-      const pageSizeRaw =
-        Number.parseInt(searchParams.get("pageSize") ?? "", 10) || PAGE_SIZE_DEFAULT;
-      const pageSize = Math.min(PAGE_SIZE_MAX, Math.max(1, pageSizeRaw));
-      const paginatedOrderBy = parseSortedOrderBy(searchParams.get("sort"));
-
-      const [total, rows] = await Promise.all([
-        db.application.count({ where }),
-        db.application.findMany({
-          where,
-          orderBy: paginatedOrderBy,
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-          include: {
-            ...APPLICATION_INCLUDE,
-            position: { select: { title: true, salaryMin: true, salaryMax: true } },
-          },
-        }),
-      ]);
-
-      const mapRow = (record: (typeof rows)[number]) => ({
-        ...serializeApplication(record),
-        adminSeenAt: record.adminSeenAt ? record.adminSeenAt.toISOString() : null,
-        snoozeUntil: record.snoozeUntil ? record.snoozeUntil.toISOString() : null,
-        positionSalaryMin: record.position?.salaryMin ?? null,
-        positionSalaryMax: record.position?.salaryMax ?? null,
-      });
-
-      const items: Application[] = rows
-        .map(mapRow)
-        .map((item) => (session.role === "VIEWER" ? maskApplicationForViewer(item) : item));
-
-      const envelope: PaginatedApplications = {
-        items,
-        total,
-        page,
-        pageSize,
-        totalPages: Math.max(1, Math.ceil(total / pageSize)),
-      };
-      return NextResponse.json(envelope);
-    }
-
-    // NR38-B — include diperluas secara aditif: posisi ikut membawa rentang
-    // gaji (salaryMin/salaryMax) untuk chip "gaji vs range" di tabel admin.
-    // serializeApplication tetap hanya memakai position.title sehingga aman.
-    const rows = await db.application.findMany({
-      where,
-      orderBy,
-      include: {
-        ...APPLICATION_INCLUDE,
-        position: { select: { title: true, salaryMin: true, salaryMax: true } },
+    return NextResponse.json(body, {
+      headers: {
+        ...loadHintHeaders(),
+        ...(stale && cachedAt
+          ? { "X-Data-AsOf": new Date(cachedAt).toISOString() }
+          : {}),
       },
     });
-
-    // NR38-B — tambahan payload untuk triase cepat: adminSeenAt (dasar filter
-    // "Belum dilihat"), snoozeUntil (panel "Perlu dihubungi hari ini"), dan
-    // rentang gaji posisi. Aditif — bentuk respons lama tidak berubah.
-    const data = rows.map((record) => ({
-      ...serializeApplication(record),
-      adminSeenAt: record.adminSeenAt ? record.adminSeenAt.toISOString() : null,
-      snoozeUntil: record.snoozeUntil ? record.snoozeUntil.toISOString() : null,
-      positionSalaryMin: record.position?.salaryMin ?? null,
-      positionSalaryMax: record.position?.salaryMax ?? null,
-    }));
-
-    // VIEWER: mask PII (phone & CV) hanya pada level respons list.
-    return NextResponse.json(
-      session.role === "VIEWER" ? data.map(maskApplicationForViewer) : data,
-    );
   } catch (error) {
     console.error("[GET /api/admin/applications]", error);
     return NextResponse.json({ error: "Gagal memuat daftar lamaran. Coba lagi nanti." }, { status: 500 });
