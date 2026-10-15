@@ -236,6 +236,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * NR60 (B1) — waktu relatif draft tersimpan, terlokalisasi via strings
+ * ("baru saja", "x mnt lalu", "x jam lalu", "x hari lalu"). Tanggal lengkap
+ * tetap tersedia di atribut title banner.
+ */
+function relTimeDraft(
+  savedAt: number,
+  now: number,
+  s: {
+    relTimeNow: string;
+    relTimeMin: string;
+    relTimeHour: string;
+    relTimeDay: string;
+  },
+): string {
+  const minutes = Math.floor(Math.max(0, now - savedAt) / 60_000);
+  if (minutes < 1) return s.relTimeNow;
+  if (minutes < 60) return fillTemplate(s.relTimeMin, { n: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return fillTemplate(s.relTimeHour, { n: hours });
+  return fillTemplate(s.relTimeDay, { n: Math.floor(hours / 24) });
+}
+
 /** NR-24 — bersihkan input ekspektasi gaji: digit murni saja, maksimal 9 digit
  * (999.999.999 — di bawah batas server 1.000.000.000). */
 function sanitizeSalaryInput(raw: string): string {
@@ -2910,6 +2933,12 @@ export function ApplyWizard({
     toast.success(t.apply.draft.title);
   }
 
+  /** NR60 (B1) — pulihkan draft lalu langsung lompat ke langkah bagian chip. */
+  function jumpDraftPart(targetStep: number) {
+    restoreDraft();
+    goToStep(targetStep);
+  }
+
   function discardDraft() {
     draftDismissedRef.current = true;
     try {
@@ -3208,6 +3237,40 @@ export function ApplyWizard({
       ? (prefillInfo.recent.find((item) => item.positionId === positionId) ?? null)
       : null;
 
+  // NR60 (B1) — chip lompatan banner draft: bagian formulir yang SUDAH berisi
+  // isi pada draft (data diri / cerita / berkas). Bagian kosong = tanpa chip;
+  // langkah tujuan mengikuti mode (klasik 0/1/filesStep, skema langkah bagian).
+  const draftPartChips = useMemo(() => {
+    if (!draft) return [];
+    const val = (key: keyof FormValues): string => {
+      const raw = draft.values?.[key];
+      return typeof raw === "string" ? raw.trim() : "";
+    };
+    const dataStep = schema ? biodataStepIndex : 0;
+    const storyStep = schema ? experienceStepIndex : 1;
+    const fileStepChip = schema ? schemaFilesStepIndex : filesStep;
+    const parts: { key: "data" | "story" | "files"; label: string; step: number }[] = [];
+    if ((val("name") || val("email") || val("phone")) && dataStep >= 0) {
+      parts.push({ key: "data", label: t.apply.draft.chipData, step: dataStep });
+    }
+    if ((val("experience") || val("motivation")) && storyStep >= 0) {
+      parts.push({ key: "story", label: t.apply.draft.chipStory, step: storyStep });
+    }
+    if (draftFiles.length > 0 && fileStepChip >= 0) {
+      parts.push({ key: "files", label: t.apply.draft.chipFiles, step: fileStepChip });
+    }
+    return parts;
+  }, [
+    draft,
+    draftFiles,
+    schema,
+    biodataStepIndex,
+    experienceStepIndex,
+    schemaFilesStepIndex,
+    filesStep,
+    t,
+  ]);
+
   return (
     <div className="@container flex flex-col gap-6">
       <div>
@@ -3224,10 +3287,33 @@ export function ApplyWizard({
             <p className="text-sm font-semibold">{t.apply.draft.title}</p>
             <p className="line-clamp-2 text-xs text-muted-foreground">
               {t.apply.draft.body}
-              {typeof draft.savedAt === "number"
-                ? ` (${t.apply.draft.savedPrefix} ${new Date(draft.savedAt).toLocaleString("id-ID")})`
-                : ""}
+              {typeof draft.savedAt === "number" ? (
+                // NR60 (B1) — waktu relatif di teks; tanggal lengkap di title.
+                <span
+                  title={`${t.apply.draft.savedPrefix} ${new Date(draft.savedAt).toLocaleString("id-ID")}`}
+                >
+                  {" · "}
+                  {relTimeDraft(draft.savedAt, Date.now(), t.apply.draft)}
+                </span>
+              ) : null}
             </p>
+            {/* NR60 (B1) — chip lompatan ke bagian draft yang sudah berisi. */}
+            {draftPartChips.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {draftPartChips.map((part) => (
+                  <Button
+                    key={part.key}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 rounded-full border-amber-300 px-3 text-xs text-amber-800 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+                    onClick={() => jumpDraftPart(part.step)}
+                  >
+                    {part.label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button size="sm" variant="outline" onClick={discardDraft}>
