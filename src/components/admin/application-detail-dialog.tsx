@@ -1152,7 +1152,7 @@ function OfferApprovalBadge({ state }: { state: "PENDING" | "APPROVED" | "REJECT
 }
 
 export function ApplicationDetailDialog({
-  application,
+  application: applicationRow,
   onOpenChange,
   onSaved,
   onDeleted,
@@ -1172,6 +1172,33 @@ export function ApplicationDetailDialog({
   onListRefresh?: () => void;
 }) {
   const { session, canMutate, reportError } = useAdminSession();
+
+  // NR59 — baris daftar kini bisa "lite" (field teks berat dipangkas agar
+  // daftar ribuan kandidat tidak membekukan browser). Saat lite, versi utuh
+  // diambil sekali per lamaran via GET /api/admin/applications/[id].
+  const [fullApp, setFullApp] = useState<Application | null>(null);
+  const fullAppId = applicationRow?.id ?? null;
+  const needFullFetch = applicationRow?.lite === true;
+  useEffect(() => {
+    setFullApp(null);
+    if (!needFullFetch || !fullAppId) return;
+    let cancelled = false;
+    apiGet<Application>(`/api/admin/applications/${fullAppId}`)
+      .then((full) => {
+        if (!cancelled) setFullApp(full);
+      })
+      .catch(() => {
+        // Gagal memuat versi utuh: dialog tetap tampil memakai baris lite.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fullAppId, needFullFetch]);
+
+  // Selalu utamakan baris TERBARU dari parent (bukan lite → sudah utuh);
+  // versi fetch hanya dipakai selama parent masih mengirim baris lite.
+  const application =
+    applicationRow && applicationRow.lite !== true ? applicationRow : (fullApp ?? applicationRow);
   const { tagDefs, colorClassOf } = useTagDefs();
   const [editStatus, setEditStatus] = useState<StageKey>("NEW");
   const [editNotes, setEditNotes] = useState("");
@@ -1618,7 +1645,33 @@ export function ApplicationDetailDialog({
     return warnings;
   }, [offerForm.salary, application, position]);
 
-  if (!application) return null;
+  if (!applicationRow) return null;
+
+  // NR59 — versi utuh sedang diambil: tampilkan cangkang dialog ber-spinner
+  // (daripada membuka dialog dengan field kosong lama berkedip terisi).
+  if (!application) {
+    return (
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) setCelebrate(false);
+          onOpenChange(open);
+        }}
+      >
+        <DialogContent className="max-h-[92vh] overflow-hidden rounded-2xl sm:max-w-3xl">
+          <div className="flex flex-col items-center gap-3 py-16 text-center" role="status">
+            <Loader2 className="size-6 animate-spin text-rose-600" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold">Memuat detail lengkap…</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {applicationRow.name} · {applicationRow.trackingCode}
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const app = application;
   const pos = position;
