@@ -34,6 +34,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CollapsibleCard } from "./collapsible-card";
 import { apiGet, apiPost, ApiError } from "./api";
 import { formatDateTime } from "./format";
+// NR58 (B4) — polling adaptif mengikuti sinyal beban server (X-Load).
+import { getPollMs } from "./load-client";
 
 const POLL_MS = 30_000;
 const DEMO_REFRESH_TICKS = 5;
@@ -183,17 +185,20 @@ export function ServerHealthCard() {
     }
   }, []);
 
-  // Polling 30 dtk + saat fokus jendela; PAUSE total saat document.hidden.
+  // Polling adaptif (NR58): dasar 30 dtk, otomatis melambat 2-5× saat server
+  // menandai beban tinggi / Mode Hemat. PAUSE total saat document.hidden.
   useEffect(() => {
-    void refresh();
+    let timer: number | null = null;
+    let disposed = false;
     const tick = () => {
-      if (document.hidden) return;
-      void refresh(true);
+      if (disposed) return;
+      if (!document.hidden) void refresh(true);
+      timer = window.setTimeout(tick, getPollMs(POLL_MS));
     };
-    const interval = window.setInterval(tick, POLL_MS);
+    void refresh();
+    timer = window.setTimeout(tick, getPollMs(POLL_MS));
     const onFocus = () => {
-      if (document.hidden) return;
-      void refresh(true);
+      if (!document.hidden) void refresh(true);
     };
     const onVisibility = () => {
       if (!document.hidden) void refresh(true);
@@ -201,7 +206,8 @@ export function ServerHealthCard() {
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      window.clearInterval(interval);
+      disposed = true;
+      if (timer !== null) window.clearTimeout(timer);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };

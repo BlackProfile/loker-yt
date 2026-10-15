@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useTheme } from "next-themes";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -39,6 +40,7 @@ import {
   Handshake,
   Keyboard,
   LayoutDashboard,
+  Leaf,
   ListChecks,
   Loader2,
   LogOut,
@@ -93,6 +95,7 @@ import { TemplatesTab } from "./templates-tab";
 import { DataTab } from "./data-tab";
 import { FilesTab } from "./files-tab";
 import { NotificationBell } from "./notification-bell";
+import { subscribeLoad, getLoadSnapshotValue } from "./load-client";
 import { AdminAskWidget } from "./admin-ask-widget";
 import { CommandPalette } from "./command-palette";
 import { ShortcutOverlay } from "./shortcut-overlay";
@@ -284,6 +287,25 @@ function RealtimeIndicator() {
       <span className="hidden sm:inline">
         {connected ? "Live" : "Offline"}
       </span>
+    </span>
+  );
+}
+
+// NR58 (D11) — badge "Mode Hemat" di header: muncul HANYA saat server sedang
+// dalam Mode Hemat (sinyal X-Load: SAVE dari respons admin apa pun). Pengguna
+// melihat sistem mengatur dirinya sendiri — bukan "rusak". Tanpa beban: null.
+function SaveModeBadge() {
+  const info = useSyncExternalStore(subscribeLoad, getLoadSnapshotValue);
+  if (!info.saveActive) return null;
+  return (
+    <span
+      className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 text-xs font-medium text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+      role="status"
+      aria-label="Mode Hemat aktif — tugas latar belakang ditunda sementara"
+      title="Mode Hemat aktif: tugas AI latar belakang ditunda sampai kondisi pulih"
+    >
+      <Leaf className="size-3" aria-hidden="true" />
+      <span className="hidden sm:inline">Mode Hemat</span>
     </span>
   );
 }
@@ -1282,6 +1304,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 <RealtimeIndicator />
                 <ThemeToggle />
                 <NotificationBell onOpenTasks={() => setActiveTab("tasks")} />
+                <SaveModeBadge />
                 {/* NR57 — pemisah kelompok: utilitas vs aksi pratinjau & akun. */}
                 <div
                   aria-hidden="true"

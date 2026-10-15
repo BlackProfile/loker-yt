@@ -41,6 +41,8 @@ import { cn } from "@/lib/utils";
 import { apiGet, apiPatch, apiPut } from "./api";
 import { formatRelative } from "./format";
 import { useLiveRefresh } from "./use-live-refresh";
+// NR58 (B4) — polling adaptif: jeda mengikuti sinyal beban server (X-Load).
+import { getPollMs } from "./load-client";
 
 type NotificationRow = {
   id: string;
@@ -145,11 +147,24 @@ export function NotificationBell({ onOpenTasks }: { onOpenTasks?: () => void }) 
     }
   }, []);
 
-  // Muat awal + polling ringan tiap 30 detik.
+  // Muat awal + polling adaptif (NR58): dasar 30 dtk — diperlambat otomatis
+  // 2-5× saat server menandai beban tinggi / Mode Hemat (header X-Load),
+  // kembali cepat saat pulih. Rantai setTimeout agar jeda terbaca ulang tiap
+  // siklus; polling di-skip saat tab tersembunyi (hemat, pola kartu kesehatan).
   useEffect(() => {
+    let timer: number | null = null;
+    let disposed = false;
+    const tick = () => {
+      if (disposed) return;
+      if (!document.hidden) void load();
+      timer = window.setTimeout(tick, getPollMs(30_000));
+    };
     void load();
-    const interval = setInterval(() => void load(), 30_000);
-    return () => clearInterval(interval);
+    timer = window.setTimeout(tick, getPollMs(30_000));
+    return () => {
+      disposed = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [load]);
 
   // Refresh senyap saat event realtime lamaran datang.

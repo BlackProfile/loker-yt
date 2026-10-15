@@ -4,6 +4,9 @@
 // Melempar ApiError dengan status HTTP + pesan dari body { error: string },
 // fallback "Terjadi kesalahan. Coba lagi."
 // ApiError dipakai untuk membedakan 401 (sesi habis -> login) dan 403 (toast akses).
+// NR58 (B4/D10) — setiap respons GET dilaporkan ke load-client (header X-Load
+// untuk polling adaptif + badge Mode Hemat) dan diingat utk tampilan stale-first.
+import { noteLoadResponse, rememberJson } from "./load-client";
 
 const FALLBACK_MESSAGE = "Terjadi kesalahan. Coba lagi.";
 
@@ -33,6 +36,9 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
     throw new ApiError(FALLBACK_MESSAGE, 0);
   }
 
+  // NR58 (B4) — sinyal beban dibaca dari header respons (jika ada).
+  noteLoadResponse(res);
+
   let body: unknown = null;
   try {
     body = await res.json();
@@ -42,6 +48,11 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     throw new ApiError(extractError(body) ?? FALLBACK_MESSAGE, res.status);
+  }
+
+  // NR58 (D10) — ingat hasil GET terakhir per URL (cache stale-first).
+  if (!init?.method || init.method === "GET") {
+    rememberJson(url, body);
   }
 
   return body as T;
