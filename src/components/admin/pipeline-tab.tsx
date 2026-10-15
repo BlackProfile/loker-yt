@@ -862,7 +862,7 @@ export function PipelineTab({
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [hiddenCount > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hiddenCount > 0]);
 
   // NR59 — daftar dianggap sibuk saat data posisi aktif belum siap (baru
   // berganti posisi / muat pertama); refresh senyap tidak memicu skeleton.
