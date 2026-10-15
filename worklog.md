@@ -4440,3 +4440,35 @@ Stage Summary:
 - /api/public/apply-prefill kini menyediakan data peringatan duplikat (lastAppliedAt + recent 8 posisi unik 90 hari) untuk wizard, terlindungi rate limit 20/mnt/IP dengan 429 ramah tanpa-data.
 - Kontrak respons baru prefill: { name: string|null, phone: string|null, lastAppliedAt: string|null, recent: {positionId: string, title: string, appliedAt: string}[] }.
 - Berkas utama: src/app/api/applications/route.ts (A2+C2), src/app/api/public/apply-prefill/route.ts (C1).
+---
+Task ID: 2-b
+Agent: general-purpose (audit & penyempurnaan oleh orkestrator setelah deadline agent)
+Task: NR60 wizard — ekstraksi form-field-renderer + A1 autofill, A3 limit 10MB, A4 counter, B1 banner cerdas, B2 thumbnail, B3 estimasi waktu, B4 tautan lanjutkan, C1 peringatan duplikat
+
+Work Log:
+- Ekstraksi: src/components/landing/form-field-renderer.tsx dibuat ("use client") — export FormFieldRenderer, FormFieldRendererProps, DraftFileNote, LocalFileViewerDialog, CharCount (A4), ImageThumb (B2), formFieldLabel, formSectionTitle, formAnswerDisplay, FORM_OTHER_VALUE, FORM_FILE_MAX_MB, tipe FormAnswerInput/FormAnswers; apply-wizard.tsx kini mengimpor dari sana (tanpa duplikat tersisa).
+- A1: state prefillInfo + fetch debounce /api/public/apply-prefill saat email blur (AbortController + timer dibersihkan unmount); kartu "Kami menemukan lamaranmu sebelumnya" + tombol "Gunakan data ini" mengisi nama & WhatsApp + toast.
+- C1: di dialog konfirmasi, jika prefillInfo.recent memuat posisi aktif → baris peringatan amber "Catatan: kamu tercatat sudah melamar posisi ini pada {tanggal}. Mengirim lagi akan membuat lamaran baru."
+- A3: form-schema.ts fileMaxBytes 20MB → 10MB (sejajar MAX_UPLOAD_BYTES server); hint berkas memakai FORM_FILE_MAX_MB dinamis.
+- A4: CharCount (muted → amber ≥80% → rose ≥100%) pada pengalaman/motivasi/screening (x/500) + field skema text/textarea; pemotongan senyap .slice(0,500) dihapus.
+- B1: banner draft memakai waktu relatif (relTimeDraft: baru saja/mnt/jam/hari lalu) + chip lompatan per bagian terisi (Data diri/Cerita/Berkas) → restoreDraft + goToStep.
+- B2: ImageThumb 40x40 (objectURL + revoke) untuk berkas lokal bergambar di chip CV/intro/doc/field form.
+- B3: badge "±N mnt lagi" di samping stepper (estimasi per langkah tersisa; turun 5→4→2 mnt terverifikasi saat wizard maju).
+- B4: tombol "Salin tautan" (clipboard + toast) & "Bagikan" (navigator.share bila ada) membangun URL /?posisi=<slug>&draft=<token> via ensureServerDraft on-demand.
+- Strings: semua teks baru ditambahkan di blok ID + EN strings.ts.
+
+Stage Summary:
+- tsc src/ 0 error, lint exit 0 (terverifikasi ulang orkestrator). Fitur diverifikasi browser: chip autofill muncul & mengisi data, counter "134 karakter" di DOM, "±4 mnt lagi" turun sesuai langkah, "Salin tautan" tampil, peringatan duplikat tampil di dialog konfirmasi, banner draft + waktu relatif + chip "Data diri" tampil setelah reload.
+---
+Task ID: 2-c
+Agent: general-purpose (audit & penyempurnaan oleh orkestrator setelah deadline agent)
+Task: NR60 admin — D1 filter posisi drop-off, D2 pratinjau Form Builder sebagai pelamar
+
+Work Log:
+- D1 backend: /api/admin/dropoff menerima ?positionId= opsional (kosong = tanpa filter, perilaku lama utuh); agregasi terfilter per posisi.
+- D1 UI: analytics-tab mendapat Select "Filter posisi drop-off" (Semua posisi + daftar posisi); deskripsi kartu menunjukkan posisi aktif; data terfilter terverifikasi (masuk 3 · lanjut 4 · kirim 0 untuk Video Editor).
+- D2: komponen baru src/components/admin/form-builder-preview-dialog.tsx (643 baris) — tombol "Pratinjau sebagai pelamar" di form-builder-page membuka dialog yang merender SKEMA DRAF (termasuk editan belum disimpan): bagian inti + pertanyaan kustom via FormFieldRenderer bersama, visibilitas showIf dievaluasi terhadap jawaban pratinjau saat ini, dibungkus LangProvider; catatan "Pratinjau — tidak ada data yang disimpan."
+- Uji kondisional E2E: field "Tautkan konten paling viral kamu" sembunyi → pilih "Ya, pernah" → muncul (showIf hidup).
+
+Stage Summary:
+- Admin kini bisa melihat form persis seperti pelamar sebelum menerapkan skema, dan menganalisis drop-off per posisi (bukan hanya agregat global). tsc src/ 0 error, lint exit 0.
