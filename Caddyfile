@@ -1,4 +1,9 @@
 :81 {
+	# NR58 (C8) — kompresi respons di gateway: JSON besar (daftar lamaran,
+	# konten landing) dan aset teks dikirim zstd/gzip sehingga Node tidak
+	# sibuk mengirim byte yang sama berulang kali saat traffic naik.
+	encode zstd gzip
+
 	@transform_port_query {
 		query XTransformPort=*
 	}

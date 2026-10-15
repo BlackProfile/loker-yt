@@ -361,17 +361,44 @@ function DraftFileNote({
   meta,
   localName,
   uploading,
+  progress = null,
 }: {
   meta: DraftFileMeta | null;
   localName: string | null;
   uploading: boolean;
+  /** NR58 (A3) — persen unggahan nyata (0-100) bila sedang berjalan. */
+  progress?: number | null;
 }) {
   if (uploading) {
+    const pct =
+      typeof progress === "number"
+        ? Math.min(100, Math.max(0, Math.round(progress)))
+        : null;
     return (
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <CloudUpload className="h-3.5 w-3.5 shrink-0 animate-pulse" aria-hidden="true" />
-        Menyimpan berkas ke draft…
-      </p>
+      <div className="space-y-1">
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <CloudUpload className="h-3.5 w-3.5 shrink-0 animate-pulse" aria-hidden="true" />
+          Menyimpan berkas ke draft{pct != null ? ` — ${pct}%` : "…"}
+        </p>
+        {pct != null ? (
+          <div
+            className="h-1 w-full max-w-56 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full bg-rose-600 transition-[width] duration-200"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        ) : null}
+        <p className="text-[11px] text-muted-foreground/80">
+          Biarkan tab terbuka sampai selesai — draft teks sudah aman tersimpan di
+          server, berkas bisa dilampirkan ulang bila koneksi terputus.
+        </p>
+      </div>
     );
   }
   if (!meta) return null;
@@ -408,6 +435,8 @@ type FormFieldRendererProps = {
   draftFile?: DraftFileMeta | null;
   /** NR-41 J26 — true bila file field ini sedang diunggah ke draft. */
   draftUploading?: boolean;
+  /** NR58 (A3) — persen unggahan field ini (bila sedang berjalan). */
+  draftProgress?: number | null;
 };
 
 /** Jenis pratinjau yang mampu dirender browser untuk satu berkas. */
@@ -551,6 +580,7 @@ function FormFieldRenderer({
   onAnswerError,
   draftFile = null,
   draftUploading = false,
+  draftProgress = null,
 }: FormFieldRendererProps) {
   const { t, lang } = useLang();
   const anchorId = `apply-form-${field.id}`;
@@ -1012,6 +1042,7 @@ function FormFieldRenderer({
             meta={draftFile}
             localName={file?.name ?? null}
             uploading={draftUploading}
+            progress={typeof draftProgress === "number" ? draftProgress : null}
           />
           {/* NR-36 — dialog pratinjau berkas lokal (blob:) untuk field form */}
           <LocalFileViewerDialog file={file} open={viewOpen} onOpenChange={setViewOpen} />
@@ -1526,6 +1557,8 @@ export function ApplyWizard({
   const [draftFiles, setDraftFiles] = useState<DraftFileMeta[]>([]);
   // Label file yang sedang diunggah ke draft ("cv", "intro", "doc:…", "form:…").
   const [draftUploadingLabels, setDraftUploadingLabels] = useState<Record<string, boolean>>({});
+  // NR58 (A3) — progres unggahan nyata per label (0-100) untuk bar di bawah input.
+  const [draftUploadProgress, setDraftUploadProgress] = useState<Record<string, number>>({});
   // Tautan "lanjutkan draft" lintas perangkat: kirim ke email & pulihkan dari URL.
   const [linkEmail, setLinkEmail] = useState("");
   const [sendingLink, setSendingLink] = useState(false);
@@ -1547,6 +1580,20 @@ export function ApplyWizard({
   // Ref posisi terkini untuk pelacakan langkah (dipakai effect mount).
   const positionIdRef = useRef(positionId);
   positionIdRef.current = positionId;
+
+  // NR58 (A3) — peringatan tinggalkan halaman saat unggahan draft berjalan:
+  // mencegah unggahan besar (video intro 90 detik) terputus tanpa sengaja dan
+  // terlihat "macet". Draft teks tetap aman; berkas bisa dilampirkan ulang.
+  const anyDraftUploading = Object.values(draftUploadingLabels).some(Boolean);
+  useEffect(() => {
+    if (!anyDraftUploading) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [anyDraftUploading]);
 
   useEffect(() => {
     try {
@@ -1886,6 +1933,11 @@ export function ApplyWizard({
             draftUploading={
               field.type === "file"
                 ? !!draftUploadingLabels[`form:${field.id}`]
+                : undefined
+            }
+            draftProgress={
+              field.type === "file"
+                ? (draftUploadProgress[`form:${field.id}`] ?? null)
                 : undefined
             }
           />
@@ -2533,9 +2585,13 @@ export function ApplyWizard({
   /**
    * Unggah satu berkas ke draft server (fire-and-forget dari handler file).
    * Gagal = senyap: berkas tetap dikirim normal (multipart) saat submit final.
+   * NR58 (A3) — memakai XHR agar progres unggahan NYATA (event upload.onprogress)
+   * tampil di UI — saat koneksi lambat/traffic tinggi pengguna melihat persen,
+   * bukan mengira macet. Perilaku & kontrak server sama persis dengan fetch.
    */
   async function uploadDraftFile(label: string, file: File): Promise<boolean> {
     setDraftUploadingLabels((prev) => ({ ...prev, [label]: true }));
+    setDraftUploadProgress((prev) => ({ ...prev, [label]: 0 }));
     try {
       const token = draftTokenRef.current || (await ensureServerDraft());
       if (!token) return false;
@@ -2543,12 +2599,26 @@ export function ApplyWizard({
       fd.append("token", token);
       fd.append("label", label);
       fd.append("file", file);
-      const res = await fetch("/api/public/apply-draft-file", {
-        method: "POST",
-        body: fd,
+      const json: unknown = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/public/apply-draft-file");
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) {
+            const pct = Math.min(100, Math.round((ev.loaded / ev.total) * 100));
+            setDraftUploadProgress((prev) => ({ ...prev, [label]: pct }));
+          }
+        };
+        xhr.onload = () => {
+          try {
+            resolve(JSON.parse(xhr.responseText) as unknown);
+          } catch {
+            resolve(null);
+          }
+        };
+        xhr.onerror = () => reject(new Error("unggahan gagal"));
+        xhr.send(fd);
       });
-      const json: unknown = await res.json().catch(() => null);
-      if (!res.ok || !isRecord(json) || json.ok !== true || !isRecord(json.file)) {
+      if (!isRecord(json) || json.ok !== true || !isRecord(json.file)) {
         return false;
       }
       const metas = parseDraftFiles([json.file]);
@@ -2558,11 +2628,20 @@ export function ApplyWizard({
         ...prev.filter((item) => item.label !== label),
         metas[0],
       ]);
+      setDraftUploadProgress((prev) => ({ ...prev, [label]: 100 }));
       return true;
     } catch {
       return false;
     } finally {
       setDraftUploadingLabels((prev) => ({ ...prev, [label]: false }));
+      // Bersihkan bar progres setelah sesaat agar tidak menggantung di 100%.
+      window.setTimeout(() => {
+        setDraftUploadProgress((prev) => {
+          const rest = { ...prev };
+          delete rest[label];
+          return rest;
+        });
+      }, 1_500);
     }
   }
 
@@ -2749,6 +2828,7 @@ export function ApplyWizard({
           meta={draftFileForLabel("cv")}
           localName={cvFile?.name ?? null}
           uploading={!!draftUploadingLabels["cv"]}
+          progress={draftUploadProgress["cv"] ?? null}
         />
         {cvError ? <p className="text-sm text-rose-600">{cvError}</p> : null}
       </div>
@@ -2851,6 +2931,7 @@ export function ApplyWizard({
           meta={draftFileForLabel("intro")}
           localName={introFile?.name ?? null}
           uploading={!!draftUploadingLabels["intro"]}
+          progress={draftUploadProgress["intro"] ?? null}
         />
         {introError ? (
           <p className="text-sm text-rose-600">{introError}</p>
@@ -4947,6 +5028,7 @@ export function ApplyWizard({
                         meta={draftFileForLabel(extraDocLabel(index))}
                         localName={file?.name ?? null}
                         uploading={!!draftUploadingLabels[extraDocLabel(index)]}
+                        progress={draftUploadProgress[extraDocLabel(index)] ?? null}
                       />
                       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
                     </div>
