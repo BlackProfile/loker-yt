@@ -38,6 +38,7 @@ import {
   FadeIn,
 } from "@/components/landing/primitives";
 import { EmptyJobsState } from "@/components/landing/empty-jobs";
+import { PositionMatcher } from "@/components/landing/position-matcher";
 import {
   fillTemplate,
   isPastIso,
@@ -656,6 +657,14 @@ export function PositionsSection({
             {t.positions.title}
           </h2>
           <p className="mt-3 text-muted-foreground">{t.positions.desc}</p>
+          {/* NR66 — pencocok posisi: kuis singkat → rekomendasi lowongan terbuka. */}
+          {positions.length > 0 ? (
+            <PositionMatcher
+              positions={positions}
+              onOpenPosition={onOpenPosition}
+              applyBlocked={applyBlocked}
+            />
+          ) : null}
         </FadeIn>
 
         {positions.length === 0 ? (
