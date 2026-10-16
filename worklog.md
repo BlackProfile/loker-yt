@@ -4630,3 +4630,35 @@ Stage Summary:
 - Berkas: strings.ts (t.status.* saja), status-page.tsx, status/{status-journey,status-timeline,status-changes-panel,status-test-tasks,status-interviews,status-types,status-hero,status-start-date,status-final-banners,status-login}.tsx. Kontrak t.status baru: interview.{icsDownload,moreLabel,moreAria,rescheduleEntry,manualSuggest}, page.journey.detailToggle, page.{timelineRemaining,welcomeTitle,downloadData}.
 - tsc src/ 0 error, lint exit 0.
 ---
+---
+Task ID: 2-d
+Agent: frontend-styling-expert (TIMEOUT — dilanjutkan orchestrator)
+Task: NR62 admin simplification (sebagian selesai sebelum deadline Task tool)
+
+Work Log:
+- Selesai oleh subagen (terverifikasi grep/E2E): butir 1-5 shell (header 9→5 kontrol: tema pindah ke AccountMenu, Keyboard button dihapus, RealtimeIndicator+SaveModeBadge jadi satu pil status popover, banner slot tunggal prioritas Preview>2FA>Viewer, logout sidebar dihapus, AdminAskWidget FAB → ikon header MessageSquareText controlled-open); butir 2 nav regroup HARIAN/JADWAL/ANALISA/KELOLA; butir 6-9 dashboard (Brief Pagi default tertutup, kartu sekunder CollapsibleCard tertutup dengan chip status, "Metrik lainnya" lipat untuk Skor AI + Pelanggan Notifikasi); butir 10-13 applications (Filter lanjutan default tertutup + AI search di dalamnya, ekspor tunggal dropdown, Demo Simulator via menu Lainnya, segmented Tabel|Kartu|Kanban, density popover, badge baris cap 2 + "+n", aksi baris ke DropdownMenu); butir 14-16 pipeline (kartu = stage Select + Jadwalkan + menu Lainnya, info posisi + funnel satu bar slim, 4 kartu kategori → segmented control dengan count, FeatureCard tetap collapsed); butir 22 violet-600 → rose (L974).
+- Terputus mid-edit: definisi InboxSection dihapus tetapi pemakaiannya tersisa → tsc error TS2304.
+- Orchestrator melanjutkan: hapus pemakaian InboxSection (Riwayat kini StageTimeline + RelatedSection + TeamDiscussion + CandidateQuestions + CallLogSection + UnifiedInboxSection + ActivityTimeline); butir 19 panel HOLD/Tolak/Do-not-Hire dibungkus SATU Collapsible "Keputusan" default tertutup (badge ringkasan Ditolak/Ditahan/DNH di header, semua handler sama); butir 21 footer dialog: Hapus pindah ke menu "Lainnya" (AlertDialog konfirmasi sama, terverifikasi klik menu → dialog muncul).
+- Deviasi disengaji: butir 18 (strip "Data Diri Esensial") DIPERTAHANKAN — verifikasi field menunjukkan Domisili/Komuter/Shift/Mulai-kerja hanya terduplikasi di blok Info Kehadiran yang kondisional on-site/hybrid; menghapus strip dapat menghilangkan info untuk posisi remote. Butir 17 badge header dibiarkan (badge kondisional, bukan toggle — maksimal tampil 2-3). InterviewSessionDialog tetap termount dua (dialog tersembunyi, bukan kekacauan visual).
+
+Stage Summary:
+- Admin shell 5 kontrol header, nav 4 grup, dashboard scan-friendly, toolbar pelamar ringkas, pipeline satu bar, dialog detail dengan panel Keputusan lipat + footer bersih. Fungsi 100% tersedia.
+---
+Task ID: NR62 (orchestrator: audit, koordinasi 4 subagen, penyelesaian 2-d, verifikasi E2E, kebersihan data uji)
+Agent: Z.ai orchestrator
+Task: NR62 — "ubah semua tampilan yang ribet jadi user friendly tanpa mengubah fungsi"
+
+Work Log:
+- Audit 4 permukaan via 4 Explore agents paralel: landing (10 temuan), apply wizard (15), Cek Status (15), admin (22). Prinsip: progressive disclosure, gabung redundan, satu indikator progres, aksi sekunder ke menu, tanpa perubahan fungsi.
+- 4 subagen frontend-styling-expert paralel: 2-a landing, 2-b wizard, 2-c status, 2-d admin (2-d timeout, dilanjutkan — lihat entri 2-d).
+- 2-a: kartu lowongan (chip ≤2 prioritas, meta satu baris, bullet persyaratan dihapus, ticker+kuota satu baris), header detail (kicker dihapus, Urgent/Baru/Segera jadi satu chip), share menu popover (+Telegram/LinkedIn), hero deadline tenang "Ditutup {tgl} · {N hari lagi}", statistik About dihapus (termasuk "2 Jt+" hardcoded), banner tunggal prioritas, filter departemen dropdown bila >4, proses seleksi grid 3×2 + CTA tunggal, panel penutup merge (subscribe + Lamar + WA), Mode-hemat ke kiri, chat ping 3x, label sheet sr-only, footerText/tagline sekali, CHIP_ORANGE dihapus.
+- 2-b: kotak "Lanjutkan di perangkat lain" jadi 1 baris collapsible + menu "Kirim tautan" (lazy token), gradient bar dihapus, header 1 baris, draft banner 1 baris (X hapus), mikrocopy upload diringkas + DraftFileNote chip, CharCount hanya bila ada isi/≥80%, error inline-first (toast hanya jump/server/C1), dedupe+prefill satu baris, PreviewRow line-clamp-4 + toggle, gaji pindah ke biodata, agree+consent satu kartu, header pratinjau polos, file review = Lihat + Ubah, shield note sr-only, string baru i18n t.apply.*.
+- 2-c: Journey+Timeline jadi SATU kartu "Peta Perjalanan" (Detail tahap collapsible, tip hanya bila tak ada requiredActions), panel perubahan compact, RequiredActions full-row, brief tes dilebur ke Tugas Uji, kartu wawancara (kalender = menu 2 item, reschedule tunggal via slot + form manual tersembunyi, aksi utama + Lainnya, tips hanya ronde terakhir), ACCEPTED konsolidasi (banner dihapus, StartDate+Kartu satu kartu), Pengaturan data → baris tautan footer + Tarik Lamaran pindah ke footer, tahap pending collapse "+N tahap tersisa", teal→emerald orange→amber, buildGoogleCalendarUrl mati dihapus, login (error rose, tautan lowongan di footer).
+- 2-d: lihat entri 2-d di atas.
+- Verifikasi E2E agent-browser: landing (kartu rapi, filter dropdown, hero tenang saat section di-enable temporer lalu dikembalikan ke data admin, panel penutup merge, footer sekali), detail (kicker hilang, 1 chip urgensi, ShareMenu Telegram/LinkedIn), wizard (link-row collapsible buka-tutup, menu Kirim tautan muncul setelah isi, tanpa gradient bar, gaji di langkah 1, CharCount 0 tersembunyi → "83 karakter" muncul saat mengetik), Cek Status LM-5IDMTP (1 kartu perjalanan + Detail tahap expand, Tarik hanya di footer, Tugas Uji memuat brief), admin (header 5 kontrol, nav 4 grup, dashboard kartu closed + chip status, Pelamar: Filter lanjutan closed + Ekspor tunggal + segmented Tabel|Kartu|Kanban, detail dialog: Keputusan expand/collapse + menu Lainnya → AlertDialog Hapus, pipeline: info+funnel satu bar + segmented kategori + kartu Jadwalkan/Lainnya), mobile 390px tanpa overflow horizontal.
+- Quality gate: bunx tsc --noEmit → 0 error src/ (setelah fix InboxSection + footer div), bun run lint → exit 0. dev.log bersih. Data uji bersih (tidak ada submit; draft tak tersimpan; setting sections dikembalikan persis).
+- Deviasi dicatat: strip "Data Diri Esensial" dipertahankan (butir 18), badge header dialog dibiarkan (butir 17), pill "Mode hemat" kini kiri-bawah (bisa menutupi tombol saat scroll di mobile — indikator sementara saat realtime down).
+
+Stage Summary:
+- Semua permukaan (landing, wizard, Cek Status, admin) kini memakai pola yang konsisten: indikator tunggal, aksi utama terlihat + aksi sekunder di menu, info detil di collapsible, kartu collapsed dengan chip status. Fungsi 100% terjaga (semua handler/endpoint sama).
+- tsc 0 (src/), lint 0, backups/custom.db diperbarui, auto-sync push.
