@@ -69,6 +69,7 @@ import {
   Trash2,
   Users,
   XCircle,
+  Globe,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -137,11 +138,13 @@ type SlaRow = {
 type SlaResponse = { days: number; rows: SlaRow[] };
 
 // Papan pengumuman internal (GET/POST/DELETE /api/admin/announcements).
+// NR63 — isPublic: true = pengumuman juga tampil ke pelamar di halaman publik.
 type AnnouncementItem = {
   id: string;
   title: string;
   body: string;
   pinned: boolean;
+  isPublic: boolean;
   authorName: string;
   createdAt: string;
 };
@@ -292,6 +295,8 @@ export function DashboardTab() {
   const [annTitle, setAnnTitle] = useState("");
   const [annBody, setAnnBody] = useState("");
   const [annPinned, setAnnPinned] = useState(false);
+  // NR63 — publikasikan pengumuman ini juga ke pelamar (halaman publik).
+  const [annPublic, setAnnPublic] = useState(false);
   const [annPosting, setAnnPosting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AnnouncementItem | null>(null);
   // NR55-E — pengubahan pengumuman (OWNER/HR) lewat dialog kecil.
@@ -299,6 +304,8 @@ export function DashboardTab() {
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [editPinned, setEditPinned] = useState(false);
+  // NR63 — status publikasi pada dialog ubah pengumuman.
+  const [editPublic, setEditPublic] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
 
   const loadActionItems = useCallback(async () => {
@@ -485,11 +492,19 @@ export function DashboardTab() {
     }
     setAnnPosting(true);
     try {
-      await apiPost("/api/admin/announcements", { title, body, pinned: annPinned });
-      toast.success("Pengumuman diposting.");
+      await apiPost("/api/admin/announcements", {
+        title,
+        body,
+        pinned: annPinned,
+        isPublic: annPublic,
+      });
+      toast.success(
+        annPublic ? "Pengumuman diposting — tampil juga ke pelamar." : "Pengumuman diposting."
+      );
       setAnnTitle("");
       setAnnBody("");
       setAnnPinned(false);
+      setAnnPublic(false);
       await loadAnnouncements(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Gagal memposting pengumuman.");
@@ -517,6 +532,7 @@ export function DashboardTab() {
     setEditTitle(item.title);
     setEditBody(item.body);
     setEditPinned(item.pinned);
+    setEditPublic(item.isPublic);
   }
 
   // NR55-E — simpan perubahan pengumuman (PATCH) lalu segarkan daftar senyap.
@@ -539,6 +555,7 @@ export function DashboardTab() {
         title,
         body,
         pinned: editPinned,
+        isPublic: editPublic,
       });
       toast.success("Pengumuman diperbarui.");
       setEditTarget(null);
