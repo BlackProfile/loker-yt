@@ -318,6 +318,12 @@ export function StatusJourney({
   const { steps, ended, activeIndex } = deriveJourney(detail);
   const journey = p.journey;
 
+  // Tahap "posisi saat ini" bila tidak ada tahap aktif eksplisit: deriveJourney
+  // menunjuk pending pertama lewat activeIndex — tampilkan sebagai sorotan rose
+  // + badge "Tahap ini" agar pelamar NEW tahu persis di mana lamarannya berada.
+  const displayStateOf = (step: JourneyStep, i: number): JourneyState =>
+    activeIndex === i && step.state === "pending" ? "active" : step.state;
+
   return (
     <Card className="rounded-2xl p-5 md:p-6">
       <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -331,6 +337,7 @@ export function StatusJourney({
         {steps.map((step, i) => {
           const isLast = i === steps.length - 1;
           const Icon = JOURNEY_ICONS[i];
+          const display = displayStateOf(step, i);
           return (
             <li
               key={step.key}
@@ -347,7 +354,7 @@ export function StatusJourney({
                 />
               ) : null}
               <JourneyCircle
-                state={step.state}
+                state={display}
                 Icon={Icon}
                 className="size-9 md:size-10"
                 iconClassName="size-4 md:size-[18px]"
@@ -355,7 +362,7 @@ export function StatusJourney({
               <span
                 className={cn(
                   "mt-2 max-w-24 text-center text-xs leading-tight",
-                  step.state === "pending" ? "text-muted-foreground" : "font-medium",
+                  display === "pending" ? "text-muted-foreground" : "font-medium",
                 )}
               >
                 {journey.steps[i]}
@@ -363,9 +370,9 @@ export function StatusJourney({
               {/* Slot chip dengan tinggi tetap agar baris label tak bergoyang;
                   chip "Menanti" disembunyikan di desktop untuk menghemat ruang. */}
               <span className="mt-1 flex h-5 items-center">
-                {step.state !== "pending" ? (
+                {display !== "pending" ? (
                   <JourneyChip
-                    state={step.state}
+                    state={display}
                     at={step.at}
                     lang={lang}
                     nowMs={nowMs}
@@ -383,6 +390,7 @@ export function StatusJourney({
         {steps.map((step, i) => {
           const isLast = i === steps.length - 1;
           const Icon = JOURNEY_ICONS[i];
+          const display = displayStateOf(step, i);
           return (
             <li
               key={step.key}
@@ -391,7 +399,7 @@ export function StatusJourney({
             >
               <span className="flex flex-col items-center">
                 <JourneyCircle
-                  state={step.state}
+                  state={display}
                   Icon={Icon}
                   className="size-7"
                   iconClassName="size-3.5"
@@ -412,13 +420,13 @@ export function StatusJourney({
                 <span
                   className={cn(
                     "text-xs leading-tight",
-                    step.state === "pending" ? "text-muted-foreground" : "font-medium",
+                    display === "pending" ? "text-muted-foreground" : "font-medium",
                   )}
                 >
                   {journey.steps[i]}
                 </span>
                 <JourneyChip
-                  state={step.state}
+                  state={display}
                   at={step.at}
                   lang={lang}
                   nowMs={nowMs}
