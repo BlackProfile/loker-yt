@@ -4487,3 +4487,19 @@ Work Log:
 
 Stage Summary:
 - Form pendaftaran kini: mengisi dirinya sendiri (autofill pelamar lama), memperingatkan duplikat sebelum kirim, mengirim bukti berkode ke email, jujur soal limit & panjang teks, bisa dilanjutkan lintas perangkat via tautan (salin/bagikan), dan admin bisa melihat form persis seperti pelamar + menganalisis drop-off per posisi. Data uji tidak meninggalkan jejak.
+---
+Task ID: 1-a
+Agent: frontend-styling-expert
+Task: NR61 Paket A — Landing section "Proses Seleksi"
+
+Work Log:
+- Baca worklog + audit konteks: konfirmasi `t.selection` (id & en, strings.ts baris 134/1661 + type Dict) berisi badge/title/desc/6 stages{title,description,duration,tips[]}/tipsToggle/tipsHide/ctaJobs/ctaStatus; `t.howTo` memang sudah dihapus; nav `t.nav.howToApply` tetap dipakai.
+- Buka referensi pola: landing-page.tsx (HowToApplySection lama 589-626, FinalCtaSection asChild anchor, BenefitsSection kartu), status/status-timeline.tsx (tombol expandable min-h-11/sm:min-h-0 + ChevronDown rotate + aria-expanded), primitives.tsx (ROSE_BADGE, Stagger/StaggerItem/HoverLift, ICON_TILE), status-check.tsx (anchor #status = view terpisah yang disinkronkan hashchange listener di home-view.tsx, jadi `<a href="#status">` pola navigasi yang valid).
+- Buat src/components/landing/selection-process.tsx ("use client", export named SelectionProcessSection tanpa props, t dari useLang): section id="cara-lamar" scroll-mt-24 bg-muted/40 py-16 md:py-24 (identik lama); header FadeIn + Badge outline ROSE_BADGE + h2 + p; grid Stagger `grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6`; tiap kartu HoverLift + Card `h-full gap-3 rounded-2xl p-6` berisi nomor besar `text-4xl font-bold text-rose-600/20 dark:text-rose-400/20` (padStart "01"), tile ikon `flex size-10 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400` dengan urutan tetap [FileUp, FileSearch, ClipboardCheck, MessagesSquare, MailCheck, Rocket], judul font-semibold, deskripsi text-sm text-muted-foreground, chip durasi amber pill + Clock size-3, tips expandable (tombol pola status-timeline, ChevronDown rotate-180, aria-expanded, label tipsToggle/tipsHide, SATU terbuka via state openTipsIndex, panel ul ikon Check dalam kotak rounded-lg border bg-muted/40 p-2.5 text-xs, wrapper mt-auto agar tombol sejajar dasar kartu).
+- Footer CTA mt-10 flex flex-wrap gap-3 (FadeIn delay 0.15): Button asChild `<a href="#posisi">` ikon Briefcase + ctaJobs (pola FinalCtaSection); Button variant="outline" asChild `<a href="#status">` ikon Search + ctaStatus (hashchange listener HomeView menangani pindah view). Palet zinc+rose-600+amber, tanpa emoji, tanpa biru/indigo/violet, semua ikon lucide.
+- Edit landing-page.tsx: hapus fungsi HowToApplySection sepenuhnya, tambah import SelectionProcessSection (baris 68, gaya "@/components/landing/..."), ganti `{sections.steps ? <HowToApplySection /> : null}` → `<SelectionProcessSection />` (baris 1206). Audit import orphan: Card/Badge/ROSE_BADGE/Stagger/StaggerItem/HoverLift/FadeIn/MailCheck masih dipakai section lain — tidak ada import dihapus. Grep final: tidak ada lagi `t.howTo`/`HowToApplySection` di src (satu-satunya kemunculan string adalah komentar header file baru).
+- Quality gate: `bunx tsc --noEmit` → 0 error di src/ (error tersisa hanya di examples/, scripts/, skills/ — milik tooling/seed, pre-existing, di luar scope; tidak menyentuh status-page.tsx/status-journey.tsx). `bun run lint` → exit 0, tanpa error/warning. Tidak menjalankan build / restart dev server / git commit (catatan: workspace punya auto-sync commit eksternal — bukan aksi agent).
+
+Stage Summary:
+- Section "Proses Seleksi" live-ready: 6 kartu tahap (nomor + ikon + durasi amber + kiat sukses expandable satu-terbuka) menggantikan HowToApplySection lama; anchor #cara-lamar, gating sections.steps, dan label nav "Proses Seleksi" tetap utuh; CTA ganda ke #posisi dan #status; tsc src/ 0 error, lint 0.
+---
