@@ -128,17 +128,25 @@ export function deriveJourney(detail: TrackResponse): {
 
   // 3 — WAWANCARA: selesai bila ada sesi COMPLETED (tanggal = scheduledAt
   // sesi COMPLETED terbaru); aktif bila ada sesi terjadwal (SCHEDULED /
-  // CONFIRMED / RESCHEDULE_REQUESTED). NO_SHOW/CANCELLED tidak dihitung.
+  // CONFIRMED / RESCHEDULE_REQUESTED) ATAU pipeline masih di tahap INTERVIEW
+  // (mis. sesi terakhir NO_SHOW / belum dijadwalkan ulang — tanpa ini peta
+  // "mundur" menyorot Tes Seleksi padahal pelamar sedang di tahap wawancara).
+  // Tahap setelahnya yang sudah menyala (offer/hired) selalu menang.
   const ivSelesai = interviews.filter((iv) => iv.status === "COMPLETED");
   const ivDates = ivSelesai
     .map((iv) => iv.scheduledAt)
     .sort((a, b) => Date.parse(a) - Date.parse(b));
-  const ivAktif = interviews.some(
-    (iv) =>
-      iv.status === "SCHEDULED" ||
-      iv.status === "CONFIRMED" ||
-      iv.status === "RESCHEDULE_REQUESTED",
-  );
+  const hiredAt = onboarding?.hiredAt ?? null;
+  const laterStageLive = offer != null || hiredAt != null;
+  const ivAktif =
+    !laterStageLive &&
+    (detail.status === "INTERVIEW" ||
+      interviews.some(
+        (iv) =>
+          iv.status === "SCHEDULED" ||
+          iv.status === "CONFIRMED" ||
+          iv.status === "RESCHEDULE_REQUESTED",
+      ));
   const wawancara: JourneyStep = {
     key: JOURNEY_KEYS[3],
     state: ivSelesai.length > 0 ? "done" : ivAktif ? "active" : "pending",
