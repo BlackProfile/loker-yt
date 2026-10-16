@@ -4740,3 +4740,21 @@ Stage Summary:
 - Landing kini punya identitas: hero aktif (h1 + badge segar + CTA Lamar Sekarang + share) tanpa tanggal usang 2025; urutan mengalir Hero → Lowongan → Proses Seleksi → Formulir → Cek Status.
 - Peta Perjalanan tak lagi kontradiktif: kandidat yang lolos peninjauan tapi belum menerima tugas uji melihat pesan "tugas akan dikirim tim" yang koheren dengan badge tahap dan kartu Tugas Uji.
 - Perubahan data situs: sections.steps=true (NR64) + sections.hero=true + heroBadge/deadline disegarkan (NR65) — semua bisa dikembalikan via Pengaturan Situs.
+
+---
+Task ID: NR66
+Agent: orchestrator (Z.ai Code)
+Task: Fitur baru — "Cari Posisi yang Cocok" (position matcher): kuis 4 pertanyaan di landing yang merekomendasikan posisi terbuka paling sesuai, tanpa route baru / tanpa perubahan skema.
+
+Work Log:
+- Riset: PositionsSection (props positions/onOpenPosition/applyBlocked), tipe publik Position (title/department/type/description/requirements/benefits/workMode/isActive/applyOpen/closesAt/featured/urgent/order), konvensi Dialog landing (public-notice.tsx), util isPastIso + fillTemplate + WORK_MODE_LABELS, anchor dict positions→about di 3 titik strings.ts.
+- strings.ts: blok matcher baru di 3 titik (id L120, shape L1055, en L1810): trigger, title, intro, stepOf, back, q1..q4 + masing-masing 4 opsi, resultTitle, topLabel, altLabel, reasonLabel, detailCta, browseAll, retake, noMatchTitle, noMatchBody, closedNote.
+- position-matcher.tsx (BARU): Dialog kuis state machine (step 0-3 pertanyaan, 4 = hasil); KEYWORD_GROUPS 3×4 (Q1 aktivitas, Q2 gaya kerja, Q3 karya) — urutan wajib sama dengan opsi dict; haystack = title+department+type+description+requirements+benefits lowercase, contains-match per kata kunci (+1 per hit unik); Q4 = bonus mode kerja +2 (REMOTE/ONSITE/HYBRID; "apa saja" tanpa bonus); posisi eligible = isActive && applyOpen && !(closesAt lewat); hasil = skor desc → featured → urgent → order, maks 2 rekomendasi + chip alasan (maks 4); zero-match → tampilan "Belum ada yang cocok" + browseAll/retake; CTA "Lihat Detail & Lamar" → onOpenPosition(slug ?? id) dengan menutup dialog (alur sama kartu lowongan); progres titik (done emerald/current rose lebar), tombol Kembali menyimpan jawaban, Ulangi reset; applyBlocked → catatan amber; aksesibilitas (aria-pressed, role=group, heading role, min-h-11, fokus ring); palet zinc/rose/amber/emerald, ikon lucide (Compass/Sparkles/Check/ArrowLeft/SearchX), tanpa emoji.
+- positions-section.tsx: import PositionMatcher; trigger (Button outline sm, Compass rose) dirender di bawah desc header hanya bila positions.length > 0.
+- Gerbang: bunx tsc --noEmit → 0 error src/; bun run lint → exit 0; dev.log bersih.
+- E2E agent-browser (desktop 1440): trigger tampil di header posisi; dialog Q1/4 + 4 opsi; profil video (Q1 menyunting video, Q2 detail, Q3 video, Q4 apa saja) → hasil "Paling cocok" + chip video/editing, CTA → dialog tutup + detail Video Editor terbuka (?posisi=video-editor); Kembali mempertahankan jawaban terpilih; profil penulis → "Paling cocok" Penulis Naskah (chip naskah/penulis/menulis/skrip/cerita/ide), alt Video Editor; Ulangi → kembali Q1 bersih; profil strategist (posisi Content Strategist isActive=false di DB) → matcher benar mengecualikannya, tetap merekomendasikan Asisten Studio + Admin Media Sosial (posisi terbuka) tanpa crash; "Lihat semua posisi" → dialog tutup + anchor #posisi; mobile 390px: trigger terlihat, tanpa overflow, dialog 358px muat, tinggi opsi 44px.
+- Tidak ada perubahan schema/DB/API; tidak ada route baru; data uji tidak dibuat (kuis murni sisi klien).
+
+Stage Summary:
+- Fitur NR66 hidup: pengunjung landing bisa menemukan posisi yang cocok lewat 4 pertanyaan singkat; rekomendasi hanya dari posisi terbuka, disertai alasan kemiripan dan langsung bisa membuka detail + lamar; DUA bahasa (ID/EN).
+- Berkas: src/components/landing/position-matcher.tsx (baru), src/components/landing/positions-section.tsx, src/components/landing/strings.ts.
