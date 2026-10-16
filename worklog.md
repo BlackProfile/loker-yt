@@ -4721,3 +4721,22 @@ Stage Summary:
 - Seluruh fitur yang disetujui kini TERLIHAT dan terverifikasi hidup: section "Proses Seleksi" 6 tahap tampil di landing (steps=true), Peta Perjalanan Cek Status benar termasuk edge NO_SHOW, Tugas Uji brief tampil, Tab Berkas admin berfungsi, popup pengumuman publik bekerja (auto-popup + snooze + chip).
 - Perbaikan permanen: deriveJourney tak lagi "mundur" ke Tes Seleksi bagi pelamar bertatus INTERVIEW (termasuk yang sesi terakhirnya NO_SHOW atau menunggu dijadwalkan ulang) — badge tahap & tip kini konsisten dengan STATUS SAAT INI di hero.
 - Data uji dibersihkan; setting situs hanya berubah satu hal: sections.steps=false→true (dilaporkan ke user, bisa dimatikan lagi via Pengaturan Situs bila tak diinginkan).
+
+---
+Task ID: NR65
+Agent: orchestrator (Z.ai Code)
+Task: "Lanjutkan bagian yang terasa kurang pas" — polish pass: landing tanpa intro, tip Peta Perjalanan yang kontradiktif, audit pil Mode hemat.
+
+Work Log:
+- Audit tiga kandidat "kurang pas" dari verifikasi NR64: (1) landing tanpa hero → halaman TANPA h1, langsung grid lowongan (mendadak, buruk utk a11y/SEO); (2) tip Peta Perjalanan tahap Tes tanpa tugas menampilkan "Berkas sedang ditinjau" padahal badge tahap Selesai (kontradiktif); (3) pil "Mode hemat" diduga menutupi tombol mobile.
+- (3) PIL AMAN — terverifikasi sudah pointer-events-none sejak NR62, non-interaktif, hanya muncul saat realtime down, posisi bottom-3 left-4 terpisah dari chip notice (bottom-20); tidak diubah.
+- (2) FIX tip: strings.ts tiga titik (id L683, shape L1435, en L2295) tambah journey.tipNoTask = "Berkas kamu sudah lolos peninjauan awal. Tugas uji akan dikirim tim lewat halaman ini — pantau terus ya." (en: "Your application passed the initial review…"); status-journey.tsx ganti juggling tipIndex → tipContent: string | null (activeIndex===2 && noAssessments → journey.tipNoTask, selain itu tips[activeIndex], ended → null); komentar renderer diperbarui; grep konfirmasi konsumen journey.tips hanya status-journey.tsx.
+- (1) FIX landing: sections.hero false→true + refresh konten usang via setting situs — heroBadge "Rekrutmen Batch 2025 Terbuka" → "Rekrutmen Terbuka" (badge dirender tanpa syarat, string kosong = pil kosong) dan deadline "30 September 2025" (tanggal lewat) → "" (HeroDeadlineLine hanya dirender bila non-kosong, jadi baris "Ditutup {tgl}·{n hari}" hilang). h1 kembali dari heroTitle+heroHighlight.
+- Verifikasi E2E agent-browser: landing desktop — h1 "Bergabung dengan Tim Kreatif Kami", badge baru tampil, konten 2025 hilang, keempat blok (posisi/proses/formulir/cek status) lengkap; mobile 390px tanpa overflow; tip baru terbukti live dengan LM-5IDMTP diubah sementara NEW→REVIEWED (badge "Tes Seleksi" + tip "lolos peninjauan…" + brief Tes Editing tetap tampil) lalu dikembalikan ke NEW; regresi LM-U1YM0G (INTERVIEW, NO_SHOW) tetap badge Wawancara + tip wawancara.
+- Insiden kecil dicatat: saat recompile pemasangan hero, koneksi realtime drop → view "Anda sedang offline" di browser uji; pulih sendiri setelah kompilasi selesai + reload (bukan bug kode — dev.log hanya "Compiling /" lalu 200).
+- Gerbang: bunx tsc --noEmit → 0 error di src/; bun run lint → exit 0; dev.log bersih.
+
+Stage Summary:
+- Landing kini punya identitas: hero aktif (h1 + badge segar + CTA Lamar Sekarang + share) tanpa tanggal usang 2025; urutan mengalir Hero → Lowongan → Proses Seleksi → Formulir → Cek Status.
+- Peta Perjalanan tak lagi kontradiktif: kandidat yang lolos peninjauan tapi belum menerima tugas uji melihat pesan "tugas akan dikirim tim" yang koheren dengan badge tahap dan kartu Tugas Uji.
+- Perubahan data situs: sections.steps=true (NR64) + sections.hero=true + heroBadge/deadline disegarkan (NR65) — semua bisa dikembalikan via Pengaturan Situs.
