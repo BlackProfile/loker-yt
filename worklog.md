@@ -4521,3 +4521,28 @@ Stage Summary:
 - API: deriveJourney(detail) → { steps: JourneyStep[6], ended, endedAtIndex, activeIndex } — reusable & murni (tanpa state lokal); komponen menghitung sendiri sehingga status-page tidak perlu state/wiring baru.
 - Quality gate hijau: tsc src/ 0 error, lint 0. Catatan desain: (1) ikon lingkaran aktif dibuat putih di atas bg-rose-500 solid (bukan rose-600) agar kontras WCAG terpenuhi — pola ping tetap persis StatusTimeline; (2) "at" TES_SELEKSI memakai submittedAt paling awal sesuai kata "terlama"; (3) chip "Menanti" (pending) sengaja disembunyikan di desktop untuk anti-overlap, tetap tampil di mobile.
 ---
+
+---
+Task ID: NR61 (orchestrator: desain, strings, perbaikan derivasi, verifikasi E2E, kebersihan data uji)
+Agent: Z.ai orchestrator (+ 2 subagent frontend-styling-expert: 1-a landing, 1-b status)
+Task: NR61 — Tahapan Seleksi Lengkap: landing "Proses Seleksi" (6 tahap) + Cek Status "Peta Perjalanan" (macro stepper)
+
+Work Log:
+- Riset infrastruktur existing: schema (Application stageHistory/offer/onboarding, Interview, Assessment, InterviewSlot, EmailOutbox), track API, admin stage gate, status-page components. Backend seleksi ternyata sudah lengkap — gap-nya di presentasi publik.
+- Desain 6 tahap makro: Lamaran → Seleksi Berkas → Tes Seleksi → Wawancara → Penawaran → Onboarding (konsisten di landing & Cek Status).
+- Orchestrator menulis strings.ts langsung (3 titik sinkron): hapus dict `howTo`, tambah `t.selection` (6 tahap + duration + tips + CTA), tambah `t.status.page.journey` (judul/steps[6]/state/ended/tips[6]) untuk ID + EN + idDictShape; nav.howToApply -> "Proses Seleksi"/"Selection Process"; types.ts SECTION_LABELS.steps -> "Proses Seleksi".
+- Subagent 1-a: buat src/components/landing/selection-process.tsx (grid 6 kartu xl:grid-cols-6, ikon FileUp/FileSearch/ClipboardCheck/MessagesSquare/MailCheck/Rocket, chip durasi amber, tips akordeon satu-terbuka, CTA #posisi + #status) + ganti HowToApplySection di landing-page.tsx (anchor id="cara-lamar" dipertahankan).
+- Subagent 1-b: buat src/components/landing/status/status-journey.tsx (deriveJourney murni dari TrackResponse + StatusJourney: desktop horizontal md+, mobile vertikal, ended marker, tip amber) + render di status-page.tsx tepat di atas StatusTimeline.
+- Fix orchestrator #1: aturan SELEKSI BERKAS — steps bawaan menandai "NEW (Menunggu Ditinjau)" selalu done=true dan pipeline kustom menandai tahap yang SEDANG dijalani done; aturan baru: terminal | (kustom: slice(1).some(done)) | (bawaan: REVIEWED.done).
+- Fix orchestrator #2: fallback current (tidak ada tahap active eksplisit) kini ditampilkan rose + badge "Tahap ini" (displayStateOf) agar pelamar NEW melihat posisinya.
+- Fix orchestrator #3: tip TES bila posisi tanpa tugas uji -> pakai tip peninjauan (tipIndex fallback 1).
+- Aktivkan ulang section "steps" di Setting site (sebelumnya disabled oleh admin) agar deliverable terlihat.
+- E2E agent-browser: landing 6 kartu + akordeon kiat (satu terbuka) + CTA; EN toggle "The Full Selection Process, Start to Finish"; Cek Status login 3 skenario — lamaran kaya (LAMARAN/SELEKSI/TES done, WAWANCARA rose "Tahap ini", tip wawancara), lamaran REJECTED (0-1 done, pill "Berakhir" + endedNote, tip tersembunyi), lamaran NEW existing LM-5IDMTP (SELEKSI "Tahap ini" + tip benar); mobile 390px journey vertikal & kartu landing rapi; konsol & dev.log bersih.
+- Bersihkan data uji: 2 Application sementara (LM-NR61A/LM-NR61B) dihapus (cascade Interview/Assessment ikut); 0 baris nr61 tersisa.
+- Quality gate final: bunx tsc --noEmit -> 0 error di src/; bun run lint -> exit 0.
+
+Stage Summary:
+- Deliverable: selection-process.tsx (baru), status-journey.tsx (baru), landing-page.tsx + status-page.tsx (integrasi), strings.ts + types.ts (kontrak teks).
+- Semantik penting terdokumentasi: TrackResponse.steps "NEW" selalu done (bawaan) & tahap kustom aktif done — aturan deriveJourney SELEKSI BERKAS memperhitungkan keduanya.
+- Setting site.sections.steps di-enable (perubahan data, disengaja).
+- tsc 0 (src/), lint 0, dev.log bersih, data uji bersih, backups/custom.db diperbarui, auto-sync push.
