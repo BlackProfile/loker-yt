@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { motion, MotionConfig, useReducedMotion } from "framer-motion";
 import {
   BellOff,
+  Calendar,
   Instagram,
   Mail,
   MailCheck,
@@ -56,12 +57,13 @@ import {
   buildPositionUrl,
   employmentTypeOf,
   fillTemplate,
+  formatDateTimeId,
   instagramHref,
+  parseDeadlineDate,
   whatsappHref,
 } from "@/components/landing/landing-utils";
 import { LangToggle } from "@/components/landing/lang-toggle";
 import { ThemeToggle } from "@/components/landing/theme-toggle";
-import { DeadlineCountdown } from "@/components/landing/deadline-countdown";
 import { ShareMenu } from "@/components/landing/share-menu";
 import { PositionsSection } from "@/components/landing/positions-section";
 import { StatusCheckSection } from "@/components/landing/status-check";
@@ -106,6 +108,46 @@ function useScrolled(threshold = 8): boolean {
     },
     () => window.scrollY > threshold,
     () => false,
+  );
+}
+
+// NR62 — baris deadline tenang di hero: SATU baris teks muted
+// "Ditutup {tanggal} · {N hari lagi}" menggantikan 4 kotak D/H/M/S.
+// Hitung mundur penuh tetap tersedia di halaman detail posisi.
+const emptySubscribe = () => () => {};
+function useMounted(): boolean {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
+}
+
+function HeroDeadlineLine({ deadline }: { deadline: string }) {
+  const { t } = useLang();
+  const mounted = useMounted();
+  const target = useMemo(() => parseDeadlineDate(deadline), [deadline]);
+  // Suffix "N hari lagi" hanya bila deadline masih minimal besok (aman SSR:
+  // dihitung setelah mount agar tidak mismatch hidrasi).
+  const daysLeft = target
+    ? Math.ceil((target.getTime() - Date.now()) / 86_400_000)
+    : null;
+
+  return (
+    <p
+      role="timer"
+      aria-label={t.hero.countdown.aria}
+      className="mt-4 flex items-center gap-2 text-sm text-zinc-400"
+    >
+      <Calendar className="h-4 w-4 shrink-0 text-rose-400" aria-hidden="true" />
+      <span className="tabular-nums">
+        {t.positions.closesPrefix}{" "}
+        {target ? formatDateTimeId(target.toISOString()) : deadline}
+        {mounted && daysLeft !== null && daysLeft >= 1
+          ? ` · ${fillTemplate(t.detail.daysLeft, { n: daysLeft })}`
+          : ""}
+      </span>
+    </p>
   );
 }
 
@@ -265,8 +307,8 @@ function Navbar({
                     )
                   ) : null}
 
-                  <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4">
-                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <span className="sr-only">
                       {t.aria.langToggle} / {t.aria.themeToggle}
                     </span>
                     <div className="flex items-center gap-2">
@@ -404,7 +446,7 @@ function Hero({
 
           {content.deadline ? (
             <StaggerItem>
-              <DeadlineCountdown deadline={content.deadline} />
+              <HeroDeadlineLine deadline={content.deadline} />
             </StaggerItem>
           ) : null}
 

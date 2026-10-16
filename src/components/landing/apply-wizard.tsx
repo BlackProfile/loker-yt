@@ -2019,13 +2019,13 @@ export function ApplyWizard({
   function acceptCv(file: File | null) {
     if (!file) return;
     if (file.type !== "application/pdf") {
+      // NR62 (F7) — tanpa toast: teks rose inline + border merah sudah memberi
+      // sinyal; validasi tetap memblokir identik.
       setCvError(t.apply.errors.cvType);
-      toast.error(t.apply.errors.cvType);
       return;
     }
     if (file.size > CV_MAX_BYTES) {
       setCvError(t.apply.errors.cvSize);
-      toast.error(t.apply.errors.cvSize);
       return;
     }
     setCvFile(file);
@@ -2039,13 +2039,12 @@ export function ApplyWizard({
     const typeOk =
       file.type.startsWith("audio/") || /\.(mp3|wav|m4a)$/i.test(file.name);
     if (!typeOk) {
+      // NR62 (F7) — tanpa toast: pesan tampil inline di bawah unggahan.
       setIntroError(t.apply.errors.introType);
-      toast.error(t.apply.errors.introType);
       return;
     }
     if (file.size > INTRO_MAX_BYTES) {
       setIntroError(t.apply.errors.introSize);
-      toast.error(t.apply.errors.introSize);
       return;
     }
     setIntroFile(file);
@@ -2069,14 +2068,13 @@ export function ApplyWizard({
     const label = customDocs[index] ?? "dokumen";
     if (!isAllowedExtraDoc(file)) {
       const msg = fillTemplate(t.apply.uploads.extraDocType, { label });
+      // NR62 (F7) — tanpa toast: pesan tampil inline di bawah unggahan.
       setExtraErrors((prev) => ({ ...prev, [index]: msg }));
-      toast.error(msg);
       return;
     }
     if (file.size > EXTRA_DOC_MAX_BYTES) {
       const msg = fillTemplate(t.apply.uploads.extraDocSize, { label });
       setExtraErrors((prev) => ({ ...prev, [index]: msg }));
-      toast.error(msg);
       return;
     }
     setExtraFiles((prev) => ({ ...prev, [index]: file }));
@@ -2122,12 +2120,8 @@ export function ApplyWizard({
             ({required ? t.apply.uploads.required : t.apply.uploads.optional})
           </span>
         </Label>
-        {required ? (
-          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
-            <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            {t.apply.uploads.cvRequiredHint}
-          </p>
-        ) : null}
+        {/* NR62 (F5) — baris hint amber "Posisi ini mewajibkan CV" dihapus:
+            label (Wajib) + validasi sudah menutupi informasinya. */}
         <label
           htmlFor="apply-cv"
           onDragOver={(e) => {
@@ -2233,12 +2227,7 @@ export function ApplyWizard({
             ({required ? t.apply.uploads.required : t.apply.uploads.optional})
           </span>
         </Label>
-        {required ? (
-          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
-            <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            {t.apply.uploads.introRequiredHint}
-          </p>
-        ) : null}
+        {/* NR62 (F5) — baris hint amber "Posisi ini mewajibkan audio/video" dihapus. */}
         <label
           htmlFor="apply-intro"
           onDragOver={(e) => {
@@ -3465,126 +3454,131 @@ export function ApplyWizard({
         </p>
       ) : null}
 
-      {/* Kirim tautan draft ke email — lanjutkan mengisi di perangkat lain. */}
-      <div className="rounded-xl border bg-muted/30 p-4">
-        <div className="flex items-start gap-2.5">
-          <Send
-            className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">Lanjutkan mengisi di perangkat lain</p>
-            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-              Kirim tautan draft ke email kamu. Isian teks, pilihan, dan berkas yang
-              sudah tersimpan di draft ikut terbawa. Tautan berlaku 7 hari.
-            </p>
-            <form
-              onSubmit={handleSendDraftLink}
-              className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"
-            >
-              <Label htmlFor="apply-draft-link-email" className="sr-only">
-                Email tujuan tautan draft
-              </Label>
-              <Input
-                id="apply-draft-link-email"
-                name="email"
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                placeholder="nama@email.com"
-                value={linkEmail}
-                disabled={sendingLink}
-                onChange={(event) => {
-                  linkEmailTouchedRef.current = true;
-                  setLinkEmail(event.target.value);
-                  setLinkStatus(null);
-                }}
-                className="h-11 flex-1 bg-background sm:h-9"
-              />
+      {/* NR62 (F1) — kirim tautan draft ke email: SATU baris ringkas saat
+          tertutup (tombol toggle + hint posisi bila perlu). Detail (form email,
+          status kirim) ada di Collapsible default TERTUTUP. Salin & Bagikan
+          digabung jadi satu DropdownMenu "Kirim tautan" — handler sama
+          (navigator.clipboard / navigator.share). */}
+      <Collapsible open={linkBoxOpen} onOpenChange={setLinkBoxOpen}>
+        <div className="rounded-xl border bg-muted/30">
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+            <CollapsibleTrigger asChild>
               <Button
-                type="submit"
+                type="button"
+                variant="ghost"
                 size="sm"
-                variant="outline"
-                className="h-11 shrink-0 sm:h-9"
-                disabled={
-                  sendingLink || !positionId || !EMAIL_RE.test(linkEmail.trim())
-                }
+                className="-ml-2 h-8 gap-1.5 px-2 text-sm font-medium"
+                aria-expanded={linkBoxOpen}
               >
-                {sendingLink ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : null}
-                {sendingLink ? "Mengirim..." : "Kirim tautan ke email"}
+                <Send className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                {t.apply.draft.deviceToggle}
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 text-muted-foreground transition-transform",
+                    linkBoxOpen && "rotate-180",
+                  )}
+                  aria-hidden="true"
+                />
               </Button>
-            </form>
-            {/* NR60 (B4) — salin/bagikan tautan draft (tanpa email). Tombol
-                type="button" agar tidak memicu submit; token draft dijamin
-                ensureServerDraft() LAZY saat pertama diklik. */}
+            </CollapsibleTrigger>
+            {!positionId ? (
+              <p className="min-w-0 flex-1 basis-48 text-xs text-muted-foreground">
+                {t.apply.draft.needPosition}
+              </p>
+            ) : null}
+            {/* NR60 (B4) — salin/bagikan tautan draft (tanpa email); token draft
+                dijamin ensureServerDraft() LAZY saat item menu diklik. */}
             {positionId && (values.name.trim() || values.experience.trim()) ? (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs text-muted-foreground"
-                  onClick={() => void handleCopyDraftLink()}
-                >
-                  <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  {t.apply.draft.copyLink}
-                </Button>
-                {typeof navigator.share === "function" ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="h-8 gap-1.5 text-xs text-muted-foreground"
-                    onClick={() => void handleShareDraftLink()}
+                    className="ml-auto h-8 gap-1.5 px-2 text-xs text-muted-foreground"
                   >
-                    <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    {t.apply.draft.shareLink}
+                    <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t.apply.draft.sendLinkMenu}
                   </Button>
-                ) : null}
-              </div>
-            ) : null}
-            {!positionId ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Pilih posisi lamaran terlebih dahulu untuk mengirim tautan.
-              </p>
-            ) : null}
-            {linkStatus ? (
-              <p
-                role="status"
-                className={cn(
-                  "mt-2 text-xs font-medium",
-                  linkStatus.ok
-                    ? "text-emerald-700 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400",
-                )}
-              >
-                {linkStatus.message}
-              </p>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => void handleCopyDraftLink()}>
+                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t.apply.draft.copyLink}
+                  </DropdownMenuItem>
+                  {typeof navigator.share === "function" ? (
+                    <DropdownMenuItem onSelect={() => void handleShareDraftLink()}>
+                      <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      {t.apply.draft.shareLink}
+                    </DropdownMenuItem>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
           </div>
+          <CollapsibleContent>
+            <div className="flex flex-col gap-2 border-t px-3 pb-3 pt-2.5">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {t.apply.draft.linkBoxDesc}
+              </p>
+              <form
+                onSubmit={handleSendDraftLink}
+                className="flex flex-col gap-2 sm:flex-row sm:items-center"
+              >
+                <Label htmlFor="apply-draft-link-email" className="sr-only">
+                  {t.apply.draft.emailLabel}
+                </Label>
+                <Input
+                  id="apply-draft-link-email"
+                  name="email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder={t.apply.draft.emailPh}
+                  value={linkEmail}
+                  disabled={sendingLink}
+                  onChange={(event) => {
+                    linkEmailTouchedRef.current = true;
+                    setLinkEmail(event.target.value);
+                    setLinkStatus(null);
+                  }}
+                  className="h-11 flex-1 bg-background sm:h-9"
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="outline"
+                  className="h-11 shrink-0 sm:h-9"
+                  disabled={
+                    sendingLink || !positionId || !EMAIL_RE.test(linkEmail.trim())
+                  }
+                >
+                  {sendingLink ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : null}
+                  {sendingLink ? t.apply.draft.sending : t.apply.draft.sendEmail}
+                </Button>
+              </form>
+              {linkStatus ? (
+                <p
+                  role="status"
+                  className={cn(
+                    "text-xs font-medium",
+                    linkStatus.ok
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400",
+                  )}
+                >
+                  {linkStatus.message}
+                </p>
+              ) : null}
+            </div>
+          </CollapsibleContent>
         </div>
-      </div>
+      </Collapsible>
 
-      {/* NR-28-A — bar progres wizard: terisi seiring langkah diselesaikan,
-          gradasi rose→amber dengan animasi lebar halus (statis saat
-          reduce-motion). Bersifat dekoratif — status dibacakan lewat ol di bawah. */}
-      <div
-        aria-hidden="true"
-        className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
-      >
-        <motion.div
-          className="h-full rounded-full bg-gradient-to-r from-rose-600 to-amber-500"
-          initial={false}
-          animate={{
-            width: `${Math.round((step / Math.max(1, stepLabels.length)) * 100)}%`,
-          }}
-          transition={
-            reduceMotion ? { duration: 0 } : { duration: 0.5, ease: "easeOut" }
-          }
-        />
-      </div>
+      {/* NR62 (F2) — bar progres gradasi dekoratif dihapus; status langkah sudah
+          dibacakan lewat ol stepper di bawah + badge estimasi waktu (B3). */}
 
       {/* Stepper — label langkah hanya tampil bila lebar KARTU cukup
           (@container, bukan viewport): di kolom kanan desktop yang sempit
