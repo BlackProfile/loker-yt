@@ -4684,3 +4684,18 @@ Work Log:
 Stage Summary:
 - Fitur NR63 selesai: admin (OWNER/HR) bisa mencentang "Tampilkan ke pelamar" saat posting/mengubah pengumuman; pelamar melihat popup pengumuman sekali per pengumuman (localStorage) dan chip megafon mengapung selama ada yang belum dibaca; VIEWER tetap baca-saja; pengumuman internal tidak pernah bocor ke API publik; authorName tidak diekspos publik.
 - Artefak: src/components/landing/public-notice.tsx, src/app/api/public/notices/route.ts, schema Announcement.isPublic.
+
+---
+Task ID: NR61-VERIFY
+Agent: orchestrator (Z.ai Code)
+Task: Verifikasi ulang NR61 (Tahapan Seleksi Lengkap) setelah perubahan NR62/NR63 — regersi check.
+
+Work Log:
+- Audit worklog: NR61, NR62, NR54, NR55 ternyata SUDAH selesai di sesi sebelumnya (entri lengkap ada), pembangunan tidak perlu diulang.
+- Landing section "Proses Seleksi" (id=cara-lamar): kode utuh (selection-process.tsx + gate sections.steps). Section saat ini TERSEMBUNYI karena admin mematikan "steps" di Pengaturan Situs (hanya positions/applyForm/statusCheck aktif) — keputusan admin, tidak diubah balik.
+- Cek Status live (tracking LM-U1YM0G, status INTERVIEW): kartu "Peta Perjalanan Seleksi" tampil — Lamaran done (16 Okt), Seleksi Berkas done ("Selesai"), Tes Seleksi pending, Wawancara aktif rose + badge "Tahap ini", Penawaran/Onboarding pending. deriveJourney benar.
+- Popup NR63 ikut terverifikasi live: pengumuman publik baru dari admin memunculkan popup otomatis di browser baru.
+
+Stage Summary:
+- Tidak ada regresi NR61/NR62/NR63; tsc & lint tetap lulus (tidak ada perubahan kode pada sesi verifikasi ini).
+- Catatan: section landing "Proses Seleksi" hanya terlihat bila admin mengaktifkan "Proses Seleksi" di Pengaturan Situs.
