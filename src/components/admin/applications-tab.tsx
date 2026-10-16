@@ -1263,154 +1263,49 @@ export function ApplicationsTab() {
               className="h-10 rounded-xl pl-9"
             />
           </div>
+          {/* NR62 — kelompok kanan baris utama: Reset (bila ada filter aktif)
+              + trigger "Filter lanjutan" ber-badge jumlah filter aktif. */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Toggle tampilan */}
-            <div className="flex items-center gap-1 rounded-xl border p-1">
+            {hasActiveFilter ? (
               <Button
-                variant={view === "table" ? "secondary" : "ghost"}
-                size="sm"
-                className={cn("h-8", view === "table" && "shadow-xs")}
-                onClick={() => setView("table")}
-                aria-pressed={view === "table"}
+                variant="outline"
+                onClick={resetFilters}
+                className="h-10 rounded-xl"
+                aria-label="Reset filter"
               >
-                <Table2 className="size-4" aria-hidden="true" />
-                Tabel
+                <RotateCcw className="size-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Reset Filter</span>
               </Button>
-              <Button
-                variant={view === "kanban" ? "secondary" : "ghost"}
-                size="sm"
-                className={cn("h-8", view === "kanban" && "shadow-xs")}
-                onClick={() => setView("kanban")}
-                aria-pressed={view === "kanban"}
-              >
-                <LayoutGrid className="size-4" aria-hidden="true" />
-                Kanban
-              </Button>
-            </div>
-            {/* NR38-B fitur 5+9 — kepadatan tabel & mode kartu (hanya saat tampilan tabel). */}
-            {view === "table" ? (
-              <>
-                <div
-                  className="flex items-center gap-1 rounded-xl border p-1"
-                  role="group"
-                  aria-label="Kepadatan tabel"
-                >
-                  <Button
-                    variant={density === "compact" ? "secondary" : "ghost"}
-                    size="icon"
-                    className={cn("size-8", density === "compact" && "shadow-xs")}
-                    onClick={() => changeDensity("compact")}
-                    aria-pressed={density === "compact"}
-                    aria-label="Tabel padat"
-                    title="Tabel padat — padding rapat, kolom ringkas"
-                  >
-                    <Rows3 className="size-4" aria-hidden="true" />
-                  </Button>
-                  <Button
-                    variant={density === "cozy" ? "secondary" : "ghost"}
-                    size="icon"
-                    className={cn("size-8", density === "cozy" && "shadow-xs")}
-                    onClick={() => changeDensity("cozy")}
-                    aria-pressed={density === "cozy"}
-                    aria-label="Tabel nyaman"
-                    title="Tabel nyaman — padding lega, semua kolom"
-                  >
-                    <Rows4 className="size-4" aria-hidden="true" />
-                  </Button>
-                </div>
-                <div
-                  className="flex items-center gap-1 rounded-xl border p-1"
-                  role="group"
-                  aria-label="Mode daftar"
-                >
-                  <Button
-                    variant={!cardMode ? "secondary" : "ghost"}
-                    size="icon"
-                    className={cn("size-8", !cardMode && "shadow-xs")}
-                    onClick={() => changeCardMode(false)}
-                    aria-pressed={!cardMode}
-                    aria-label="Tampilan tabel"
-                    title="Tampilan tabel"
-                  >
-                    <Table2 className="size-4" aria-hidden="true" />
-                  </Button>
-                  <Button
-                    variant={cardMode ? "secondary" : "ghost"}
-                    size="icon"
-                    className={cn("size-8", cardMode && "shadow-xs")}
-                    onClick={() => changeCardMode(true)}
-                    aria-pressed={cardMode}
-                    aria-label="Tampilan kartu"
-                    title="Tampilan kartu"
-                  >
-                    <LayoutGrid className="size-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              </>
             ) : null}
-            {/* NR38-B fitur 10 — ekspor CSV klien: terpilih bila ada, selain itu filter aktif. */}
-            <Button
-              variant="outline"
-              className="h-10 rounded-xl"
-              onClick={exportCsv}
-              aria-label="Ekspor CSV (baris terpilih bila ada, selain itu hasil filter aktif)"
-              title="Ekspor CSV — baris terpilih bila ada, selain itu hasil filter aktif"
-            >
-              <Download className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Ekspor CSV</span>
-            </Button>
-            {/* Ekspor: dropdown CSV / Excel XLSX (NR-19-b) */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="h-10 rounded-xl"
-                  aria-label="Ekspor daftar lamaran"
-                >
-                  <Download className="size-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">Ekspor</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem asChild>
-                  <a
-                    href={`/api/admin/applications/export${activeQuery}`}
-                    download
-                    aria-label="Unduh CSV"
-                  >
-                    <FileText className="size-4" aria-hidden="true" />
-                    Unduh CSV
-                  </a>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <a
-                    href={`/api/admin/applications/export${activeQuery}${activeQuery ? "&" : "?"}format=xlsx`}
-                    download
-                    aria-label="Unduh Excel (XLSX)"
-                  >
-                    <FileSpreadsheet className="size-4" aria-hidden="true" />
-                    Unduh Excel (XLSX)
-                  </a>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {/* PL-2b (butir 12) — re-engagement talent pool: undang kandidat lama */}
-            {canMutate ? (
+            <CollapsibleTrigger asChild>
               <Button
                 variant="outline"
                 className="h-10 rounded-xl"
-                onClick={openTalentDialog}
-                aria-label="Cari kandidat talent pool untuk posisi target"
-                title="Cari Kandidat Talent Pool — cocokkan kandidat lama dengan posisi aktif lalu kirim undangan lamar ulang"
+                aria-expanded={advancedFiltersOpen}
+                aria-label={
+                  activeFilterCount > 0
+                    ? `Filter lanjutan — ${activeFilterCount} filter aktif`
+                    : "Filter lanjutan"
+                }
               >
-                <Users className="size-4" aria-hidden="true" />
-                <span className="hidden sm:inline">Cari Kandidat Talent Pool</span>
+                <SlidersHorizontal className="size-4" aria-hidden="true" />
+                Filter lanjutan
+                {activeFilterCount > 0 ? (
+                  <Badge
+                    className="ml-0.5 rounded-full bg-rose-600 px-1.5 py-0 text-[11px] font-semibold text-white tabular-nums hover:bg-rose-600"
+                    aria-label={`${activeFilterCount} filter aktif`}
+                  >
+                    {activeFilterCount}
+                  </Badge>
+                ) : null}
               </Button>
-            ) : null}
-            {/* Simulator Pelamar Demo: lamaran lengkap masuk otomatis tiap beberapa detik */}
-            <DemoSimulatorControl positions={positions} />
+            </CollapsibleTrigger>
           </div>
         </div>
+
+        {/* NR62 (butir 10) — isi filter lanjutan: pencarian AI semantik + grid
+            9 select + baris toggle boolean. Default tersembunyi, isi tak berubah. */}
+        <CollapsibleContent className="flex flex-col gap-3 data-[state=open]:mt-1">
 
         {/* Pencarian semantik AI (fitur Task 20-a): kueri bebas, AI memilih kandidat. */}
         <div className="flex flex-col gap-2 sm:flex-row">
