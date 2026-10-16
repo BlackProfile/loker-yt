@@ -623,6 +623,35 @@ const id = {
       lostCodeEmail: "Cek email konfirmasi lamaran — kode dikirim ke email yang kamu gunakan saat melamar.",
       lostCodeWa: "Hubungi tim kami via WhatsApp untuk bantuan verifikasi kepemilikan.",
       browseJobs: "Lihat Lowongan Terbuka",
+      // NR61 — peta perjalanan makro (6 tahap besar seleksi)
+      journey: {
+        title: "Peta Perjalanan Seleksi",
+        subtitle:
+          "Posisi lamaranmu dalam enam tahap besar — diperbarui otomatis mengikuti progres tim.",
+        steps: [
+          "Lamaran",
+          "Seleksi Berkas",
+          "Tes Seleksi",
+          "Wawancara",
+          "Penawaran",
+          "Onboarding",
+        ],
+        stateDone: "Selesai",
+        stateCurrent: "Tahap ini",
+        statePending: "Menanti",
+        endedLabel: "Berakhir",
+        endedNote:
+          "Proses seleksi berakhir di tahap ini. Terima kasih sudah melamar — jangan ragu mencoba posisi lain.",
+        tipTitle: "Kiat tahap ini",
+        tips: [
+          "Lamaran sudah masuk. Pantau email dan halaman ini — tim menghubungi bila berkasmu cocok.",
+          "Berkas sedang ditinjau. Kabar selanjutnya selalu muncul di halaman ini.",
+          "Unggah hasil tugas sebelum tenggat. Nilai tampil setelah dinilai tim.",
+          "Cek jadwal sesi di bagian bawah. Konfirmasi kehadiran atau ajukan ubah jadwal bila berhalangan.",
+          "Tinjau detail penawaran di kartu offer, lalu beri jawaban sebelum tenggatnya.",
+          "Lengkapi dokumen onboarding dan siapkan dirimu untuk hari pertama.",
+        ],
+      },
       // NR-15-c — transparansi timeline
       estimateChip: "±{n} hari di tahap ini (estimasi)",
       stageNoteHint: "Apa yang terjadi di tahap ini?",
@@ -933,11 +962,20 @@ type idDictShape = {
     statCommunity: string;
   };
   benefits: { badge: string; title: string; desc: string; empty: string };
-  howTo: {
+  selection: {
     badge: string;
     title: string;
     desc: string;
-    steps: { title: string; description: string }[];
+    stages: {
+      title: string;
+      description: string;
+      duration: string;
+      tips: string[];
+    }[];
+    tipsToggle: string;
+    tipsHide: string;
+    ctaJobs: string;
+    ctaStatus: string;
   };
   apply: {
     badge: string;
@@ -1305,6 +1343,19 @@ type idDictShape = {
       lostCodeEmail: string;
       lostCodeWa: string;
       browseJobs: string;
+      // NR61 — peta perjalanan makro
+      journey: {
+        title: string;
+        subtitle: string;
+        steps: string[];
+        stateDone: string;
+        stateCurrent: string;
+        statePending: string;
+        endedLabel: string;
+        endedNote: string;
+        tipTitle: string;
+        tips: string[];
+      };
       // NR-15-c — transparansi timeline
       estimateChip: string;
       stageNoteHint: string;
@@ -1492,7 +1543,7 @@ const en: Dict = {
   nav: {
     positions: "Positions",
     benefits: "Benefits",
-    howToApply: "How to Apply",
+    howToApply: "Selection Process",
     faq: "FAQ",
     status: "Track Status",
     applyNow: "Apply Now",
@@ -1607,32 +1658,75 @@ const en: Dict = {
     desc: "More than just a job — we help you grow into a professional creator.",
     empty: "Benefits will be announced soon.",
   },
-  howTo: {
-    badge: "Process",
-    title: "How to Apply",
-    desc: "Four simple steps from finding a position to becoming part of the team.",
-    steps: [
+  selection: {
+    badge: "Selection Flow",
+    title: "The Full Selection Process, Start to Finish",
+    desc: "Six transparent stages — you always know where you stand and what comes next.",
+    stages: [
       {
-        title: "Pick a Position",
-        description:
-          "Browse the available openings and find the one that fits your skills.",
+        title: "Apply & Upload",
+        description: "Fill in a short form, upload your CV, and add links to your best work.",
+        duration: "±3 minutes",
+        tips: [
+          "Prepare a one-page CV and your strongest portfolio link",
+          "Be honest — the team verifies every application",
+          "A short intro video makes your application more personal",
+        ],
       },
       {
-        title: "Fill the Form",
-        description:
-          "Complete your details and links to your work. It only takes 3 minutes.",
+        title: "Screening",
+        description: "The team reviews each applicant's CV, portfolio, and screening answers.",
+        duration: "±1-3 business days",
+        tips: [
+          "Make sure your CV is easy to read and relevant to the role",
+          "Write motivation specific to our studio, not a generic template",
+        ],
       },
       {
-        title: "Online Interview",
-        description:
-          "Our team will reach out via WhatsApp or email for a short Q&A session.",
+        title: "Assessment",
+        description: "Some roles get a short field-specific test task with a clear deadline.",
+        duration: "1-3 days to complete",
+        tips: [
+          "Submit before the deadline — lateness affects your score",
+          "Follow the instructions carefully; quality beats quantity",
+          "Your score appears on Track Status once the team grades it",
+        ],
       },
       {
-        title: "Join the Team",
+        title: "Interview",
         description:
-          "Follow a quick onboarding and start your first project with us.",
+          "An online or in-person conversation to get to know each other — possibly multiple rounds.",
+        duration: "±45 minutes per session",
+        tips: [
+          "Join 10 minutes early and test your camera and microphone",
+          "Prepare questions for the team — it shows genuine interest",
+          "Track Status makes confirming or rescheduling easy",
+        ],
+      },
+      {
+        title: "Offer",
+        description: "You receive an offer letter with the role, compensation, and start date.",
+        duration: "±1-2 business days",
+        tips: [
+          "Read the full offer including the response deadline",
+          "Ask first if anything is unclear before deciding",
+        ],
+      },
+      {
+        title: "Onboarding",
+        description:
+          "Welcome aboard! Complete your documents, meet the team, and start your first project.",
+        duration: "Your first day",
+        tips: [
+          "Complete onboarding documents before day one",
+          "Note down any questions — your first week is the best time to ask",
+        ],
       },
     ],
+    tipsToggle: "Success tips",
+    tipsHide: "Hide tips",
+    ctaJobs: "Browse Open Positions",
+    ctaStatus: "Already Applied? Track Status",
   },
   apply: {
     badge: "Application",
@@ -2052,6 +2146,35 @@ const en: Dict = {
       lostCodeEmail: "Check your application confirmation email — the code was sent to the address you applied with.",
       lostCodeWa: "Contact our team via WhatsApp for ownership verification help.",
       browseJobs: "Browse Open Positions",
+      // NR61 — journey map (6 macro stages)
+      journey: {
+        title: "Selection Journey Map",
+        subtitle:
+          "Your application across six major stages — updated automatically as the team progresses.",
+        steps: [
+          "Application",
+          "Screening",
+          "Assessment",
+          "Interview",
+          "Offer",
+          "Onboarding",
+        ],
+        stateDone: "Done",
+        stateCurrent: "Current",
+        statePending: "Waiting",
+        endedLabel: "Ended",
+        endedNote:
+          "The selection process ended at this stage. Thanks for applying — feel free to try other positions.",
+        tipTitle: "Tip for this stage",
+        tips: [
+          "Your application is in. Watch your email and this page — the team will reach out if your profile matches.",
+          "Your documents are being reviewed. Updates will always appear on this page.",
+          "Upload your work before the deadline. Your score appears once the team grades it.",
+          "Check your session schedule below. Confirm attendance or request a reschedule if needed.",
+          "Review the offer details on the offer card, then respond before the deadline.",
+          "Complete onboarding documents and get ready for your first day.",
+        ],
+      },
       // NR-15-c — timeline transparency
       estimateChip: "±{n} days at this stage (estimate)",
       stageNoteHint: "What happens at this stage?",

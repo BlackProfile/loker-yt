@@ -225,7 +225,7 @@ export const SECTION_LABELS: Record<SectionKey, string> = {
   positions: "Daftar Posisi",
   about: "Tentang Studio",
   benefits: "Benefit Bergabung",
-  steps: "Cara Melamar",
+  steps: "Proses Seleksi",
   applyForm: "Formulir Lamaran",
   statusCheck: "Cek Status Lamaran",
   testimonials: "Testimoni Tim",
