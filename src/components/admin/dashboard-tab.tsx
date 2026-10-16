@@ -1356,14 +1356,26 @@ export function DashboardTab() {
                 aria-label="Isi pengumuman"
               />
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <Switch
-                    checked={annPinned}
-                    onCheckedChange={setAnnPinned}
-                    aria-label="Sematkan pengumuman di atas"
-                  />
-                  <Pin className="size-3.5" aria-hidden="true" />
-                  Sematkan di atas
+                <span className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Switch
+                      checked={annPinned}
+                      onCheckedChange={setAnnPinned}
+                      aria-label="Sematkan pengumuman di atas"
+                    />
+                    <Pin className="size-3.5" aria-hidden="true" />
+                    Sematkan di atas
+                  </span>
+                  {/* NR63 — publikasikan juga ke pelamar. */}
+                  <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Switch
+                      checked={annPublic}
+                      onCheckedChange={setAnnPublic}
+                      aria-label="Tampilkan pengumuman juga ke pelamar"
+                    />
+                    <Globe className="size-3.5" aria-hidden="true" />
+                    Tampilkan ke pelamar
+                  </span>
                 </span>
                 <Button type="submit" size="sm" className="h-11 sm:h-9" disabled={annPosting}>
                   {annPosting ? "Memposting..." : "Posting"}
@@ -1406,6 +1418,16 @@ export function DashboardTab() {
                             >
                               <Pin className="size-3" aria-hidden="true" />
                               Disematkan
+                            </Badge>
+                          ) : null}
+                          {/* NR63 — penanda pengumuman yang juga tampil ke pelamar. */}
+                          {item.isPublic ? (
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400"
+                            >
+                              <Globe className="size-3" aria-hidden="true" />
+                              Publik
                             </Badge>
                           ) : null}
                         </div>
@@ -1487,7 +1509,7 @@ export function DashboardTab() {
           <DialogHeader>
             <DialogTitle>Ubah Pengumuman</DialogTitle>
             <DialogDescription>
-              Perbarui judul, isi, atau status sematan pengumuman ini.
+              Perbarui judul, isi, sematan, atau publikasi pengumuman ini.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -1512,7 +1534,7 @@ export function DashboardTab() {
               maxLength={600}
               aria-label="Isi pengumuman"
             />
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <Switch
                   checked={editPinned}
@@ -1521,6 +1543,16 @@ export function DashboardTab() {
                 />
                 <Pin className="size-3.5" aria-hidden="true" />
                 Sematkan di atas
+              </span>
+              {/* NR63 — publikasi ke pelamar juga bisa diubah dari sini. */}
+              <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Switch
+                  checked={editPublic}
+                  onCheckedChange={setEditPublic}
+                  aria-label="Tampilkan pengumuman juga ke pelamar"
+                />
+                <Globe className="size-3.5" aria-hidden="true" />
+                Tampilkan ke pelamar
               </span>
             </div>
             <DialogFooter className="gap-2 sm:gap-0">
