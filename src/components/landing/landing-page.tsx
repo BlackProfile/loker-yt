@@ -70,6 +70,7 @@ import { StatusCheckSection } from "@/components/landing/status-check";
 import { SelectionProcessSection } from "@/components/landing/selection-process";
 import { SubscribeSection } from "@/components/landing/subscribe-section";
 import { ChatWidget } from "@/components/landing/chat-widget";
+import { PublicNotice } from "@/components/landing/public-notice";
 import { BenefitIcon } from "@/components/landing/benefit-icon";
 
 type LandingPageProps = {
@@ -1160,6 +1161,8 @@ function LandingShell({
         </main>
         <Footer content={content} sections={sections} />
         {content.chatbotEnabled && sections.chatbot ? <ChatWidget /> : null}
+        {/* NR63 — popup + chip pengumuman publik untuk pelamar. */}
+        <PublicNotice />
       </div>
     </MotionConfig>
   );
