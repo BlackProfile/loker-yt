@@ -1,8 +1,9 @@
 // Papan pengumuman internal tim admin (Task 27-c).
 // GET    /api/admin/announcements          — daftar (semua role): pinned desc lalu createdAt desc, take 20.
-// POST   /api/admin/announcements          — buat (OWNER/HR): { title (3-80), body (1-600), pinned? }.
-// PATCH  /api/admin/announcements          — ubah (OWNER/HR): { id, title?, body?, pinned? } (min. satu field).
+// POST   /api/admin/announcements          — buat (OWNER/HR): { title (3-80), body (1-600), pinned?, isPublic? }.
+// PATCH  /api/admin/announcements          — ubah (OWNER/HR): { id, title?, body?, pinned?, isPublic? } (min. satu field).
 // DELETE /api/admin/announcements?id=...   — hapus (OWNER saja).
+// NR63 — isPublic: true = pengumuman juga dipublikasikan ke pelamar (halaman publik).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/server-auth";
@@ -34,6 +35,7 @@ export async function GET() {
         title: row.title,
         body: row.body,
         pinned: row.pinned,
+        isPublic: row.isPublic,
         authorName: row.authorName,
         createdAt: row.createdAt.toISOString(),
       }))
@@ -66,6 +68,8 @@ export async function POST(req: NextRequest) {
     const title = typeof data.title === "string" ? data.title.trim() : "";
     const body = typeof data.body === "string" ? data.body.trim() : "";
     const pinned = data.pinned === true;
+    // NR63 — publikasi ke pelamar hanya jika dikirim dengan nilai true.
+    const isPublic = data.isPublic === true;
 
     if (title.length < 3 || title.length > 80) {
       return NextResponse.json(
@@ -85,6 +89,7 @@ export async function POST(req: NextRequest) {
         title,
         body,
         pinned,
+        isPublic,
         authorName: session.name,
       },
     });
@@ -97,6 +102,7 @@ export async function POST(req: NextRequest) {
         title: row.title,
         body: row.body,
         pinned: row.pinned,
+        isPublic: row.isPublic,
         authorName: row.authorName,
         createdAt: row.createdAt.toISOString(),
       },
@@ -140,7 +146,9 @@ export async function PATCH(req: NextRequest) {
     const hasTitle = data.title !== undefined;
     const hasBody = data.body !== undefined;
     const hasPinned = data.pinned !== undefined;
-    if (!hasTitle && !hasBody && !hasPinned) {
+    // NR63 — isPublic ikut sebagai field yang bisa diubah (OWNER/HR).
+    const hasIsPublic = data.isPublic !== undefined;
+    if (!hasTitle && !hasBody && !hasPinned && !hasIsPublic) {
       return NextResponse.json(
         { error: "Tidak ada perubahan yang dikirim." },
         { status: 400 }
@@ -148,7 +156,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Field yang dikirim divalidasi dengan aturan yang sama seperti POST.
-    const updateData: { title?: string; body?: string; pinned?: boolean } = {};
+    const updateData: { title?: string; body?: string; pinned?: boolean; isPublic?: boolean } = {};
     if (hasTitle) {
       const title = typeof data.title === "string" ? data.title.trim() : "";
       if (title.length < 3 || title.length > 80) {
@@ -178,6 +186,15 @@ export async function PATCH(req: NextRequest) {
       }
       updateData.pinned = data.pinned;
     }
+    if (hasIsPublic) {
+      if (typeof data.isPublic !== "boolean") {
+        return NextResponse.json(
+          { error: "Nilai publikasi tidak valid." },
+          { status: 400 }
+        );
+      }
+      updateData.isPublic = data.isPublic;
+    }
 
     const existing = await db.announcement.findUnique({ where: { id } });
     if (!existing) {
@@ -196,6 +213,7 @@ export async function PATCH(req: NextRequest) {
       title: row.title,
       body: row.body,
       pinned: row.pinned,
+      isPublic: row.isPublic,
       authorName: row.authorName,
       createdAt: row.createdAt.toISOString(),
     });
