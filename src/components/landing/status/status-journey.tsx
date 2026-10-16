@@ -48,6 +48,9 @@ const JOURNEY_ICONS: LucideIcon[] = [
   Rocket,
 ];
 
+// Kunci langkah pipeline bawaan — dipakai membedakan steps bawaan vs kustom.
+const BUILT_IN_STEP_KEYS = new Set(["NEW", "REVIEWED", "INTERVIEW", "ACCEPTED", "REJECTED"]);
+
 /**
  * Turunkan peta perjalanan 6 tahap makro dari data pelamar.
  * Aturan per tahap (lihat komentar di dalam). `ended` = proses berakhir
@@ -73,13 +76,24 @@ export function deriveJourney(detail: TrackResponse): {
     at: detail.submittedAt ?? null,
   };
 
-  // 1 — SELEKSI BERKAS: selesai bila pipeline sudah maju dari tahap awal
-  // (ada langkah index >= 1 yang done), atau — untuk pipeline bawaan tanpa
-  // langkah kustom — status sudah bukan "NEW". Sebaliknya pending.
+  // 1 — SELEKSI BERKAS: selesai bila peninjauan benar-benar lewat.
+  // Hati-hati semantik TrackResponse.steps: pada pipeline bawaan langkah "NEW"
+  // (Menunggu Ditinjau) selalu done=true, jadi index>=1 tidak boleh dipakai
+  // mentah. Pipeline kustom menandai tahap yang SEDANG dijalani sebagai done
+  // juga — makanya tahap kustom pertama dilewati (slice(1)).
   const pipeSteps = detail.steps ?? [];
+  const pipe = pipeSteps.filter((s) => s.key !== "SUBMITTED");
+  const isCustomPipeline =
+    pipe.length > 0 && pipe.some((s) => !BUILT_IN_STEP_KEYS.has(s.key));
+  const isTerminalStatus =
+    detail.status === "ACCEPTED" || detail.status === "REJECTED";
   const berkasDone =
-    pipeSteps.some((s, i) => i >= 1 && s.done) ||
-    (pipeSteps.length === 0 && detail.status != null && detail.status !== "NEW");
+    isTerminalStatus ||
+    (pipe.length === 0
+      ? detail.status != null && detail.status !== "NEW"
+      : isCustomPipeline
+        ? pipe.slice(1).some((s) => s.done)
+        : (pipe.find((s) => s.key === "REVIEWED")?.done ?? false));
   const berkas: JourneyStep = {
     key: JOURNEY_KEYS[1],
     state: berkasDone ? "done" : "pending",
@@ -324,6 +338,13 @@ export function StatusJourney({
   const displayStateOf = (step: JourneyStep, i: number): JourneyState =>
     activeIndex === i && step.state === "pending" ? "active" : step.state;
 
+  // Konteks tip: bila posisi aktif adalah TES SELEKSI tetapi posisinya tidak
+  // mengirim tugas uji apa pun, pakai tip tahap peninjauan (index 1) supaya
+  // pesan tetap benar (tidak menyuruh mengunggah tugas yang tidak ada).
+  const noAssessments = (detail.assessments ?? []).length === 0;
+  const tipIndex =
+    activeIndex === 2 && noAssessments ? 1 : activeIndex;
+
   return (
     <Card className="rounded-2xl p-5 md:p-6">
       <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -451,8 +472,8 @@ export function StatusJourney({
         </>
       ) : null}
 
-      {/* Kiat tahap aktif — hilang otomatis saat proses berakhir (activeIndex null). */}
-      {activeIndex != null ? (
+      {/* Kiat tahap aktif — hilang otomatis saat proses berakhir (tipIndex null). */}
+      {tipIndex != null ? (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs dark:border-amber-500/30 dark:bg-amber-500/10">
           <Lightbulb
             className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
@@ -460,7 +481,7 @@ export function StatusJourney({
           />
           <p>
             <span className="font-medium">{journey.tipTitle}:</span>{" "}
-            {journey.tips[activeIndex]}
+            {journey.tips[tipIndex]}
           </p>
         </div>
       ) : null}
