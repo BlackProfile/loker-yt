@@ -116,6 +116,55 @@ const id = {
     tutup: "Tutup",
     coverAlt: "Sampul lowongan {title}",
   },
+  // NR66 — pencocok posisi: kuis 4 pertanyaan → rekomendasi posisi terbuka
+  matcher: {
+    trigger: "Cari Posisi yang Cocok",
+    title: "Cari Posisi yang Cocok",
+    intro:
+      "Jawab 4 pertanyaan singkat tentang minat dan gaya kerjamu — kami tunjukkan posisi terbuka yang paling sesuai.",
+    stepOf: "Pertanyaan {n} dari {total}",
+    back: "Kembali",
+    q1: "Aktivitas mana yang paling kamu nikmati?",
+    q1Options: [
+      "Menyunting video & visual",
+      "Menulis naskah & cerita",
+      "Mengelola sosial media & komunitas",
+      "Merancang strategi & produksi",
+    ],
+    q2: "Cara kerja yang paling nyaman buatmu?",
+    q2Options: [
+      "Detail & presisi sampai hasil akhir",
+      "Brainstorming ide baru tiap minggu",
+      "Bertemu & berbaur dengan banyak orang",
+      "Menyusun rencana & mengatur jadwal",
+    ],
+    q3: "Karya seperti apa yang pernah atau ingin kamu buat?",
+    q3Options: [
+      "Video pendek, vlog, atau reels",
+      "Tulisan, artikel, atau naskah",
+      "Desain grafis atau thumbnail",
+      "Rencana konten & riset tren",
+    ],
+    q4: "Lingkungan kerja seperti apa yang kamu suka?",
+    q4Options: [
+      "Remote penuh, bebas lokasi",
+      "On-site di studio, bareng tim",
+      "Hybrid — gabungan keduanya",
+      "Apa saja yang cocok",
+    ],
+    resultTitle: "Rekomendasi untukmu",
+    topLabel: "Paling cocok",
+    altLabel: "Cocok juga",
+    reasonLabel: "Kemiripan",
+    detailCta: "Lihat Detail & Lamar",
+    browseAll: "Lihat semua posisi",
+    retake: "Ulangi",
+    noMatchTitle: "Belum ada yang cocok",
+    noMatchBody:
+      "Coba jelajahi semua lowongan, atau kembali lagi nanti — posisi baru bisa buka kapan saja.",
+    closedNote:
+      "Pendaftaran sedang ditutup — kamu masih bisa melihat detail posisi.",
+  },
   about: {
     badge: "Tentang Kami",
     cardTitle: "Berkarya bersama, tumbuh bersama.",
@@ -1002,6 +1051,32 @@ type idDictShape = {
     tutup: string;
     coverAlt: string;
   };
+  // NR66 — pencocok posisi
+  matcher: {
+    trigger: string;
+    title: string;
+    intro: string;
+    stepOf: string;
+    back: string;
+    q1: string;
+    q1Options: string[];
+    q2: string;
+    q2Options: string[];
+    q3: string;
+    q3Options: string[];
+    q4: string;
+    q4Options: string[];
+    resultTitle: string;
+    topLabel: string;
+    altLabel: string;
+    reasonLabel: string;
+    detailCta: string;
+    browseAll: string;
+    retake: string;
+    noMatchTitle: string;
+    noMatchBody: string;
+    closedNote: string;
+  };
   about: {
     badge: string;
     cardTitle: string;
@@ -1731,6 +1806,54 @@ const en: Dict = {
     pendaftaranDitutup: "Applications Paused",
     tutup: "Close",
     coverAlt: "Cover for {title}",
+  },
+  matcher: {
+    trigger: "Find Your Match",
+    title: "Find Your Match",
+    intro:
+      "Answer 4 quick questions about your interests and work style — we'll show the open roles that fit you best.",
+    stepOf: "Question {n} of {total}",
+    back: "Back",
+    q1: "Which activity do you enjoy most?",
+    q1Options: [
+      "Editing videos & visuals",
+      "Writing scripts & stories",
+      "Managing social media & community",
+      "Planning strategy & production",
+    ],
+    q2: "Which way of working suits you best?",
+    q2Options: [
+      "Detail & precision until the final cut",
+      "Brainstorming fresh ideas every week",
+      "Meeting & connecting with people",
+      "Building plans & managing schedules",
+    ],
+    q3: "What kind of work have you made, or want to make?",
+    q3Options: [
+      "Short videos, vlogs, or reels",
+      "Articles, copy, or scripts",
+      "Graphic design or thumbnails",
+      "Content plans & trend research",
+    ],
+    q4: "What work environment do you prefer?",
+    q4Options: [
+      "Fully remote, work anywhere",
+      "On-site at the studio with the team",
+      "Hybrid — a mix of both",
+      "Anything that fits",
+    ],
+    resultTitle: "Your recommendations",
+    topLabel: "Best match",
+    altLabel: "Also a good fit",
+    reasonLabel: "Matches",
+    detailCta: "View Details & Apply",
+    browseAll: "Browse all positions",
+    retake: "Retake",
+    noMatchTitle: "No match yet",
+    noMatchBody:
+      "Browse all open roles, or check back later — new positions can open anytime.",
+    closedNote:
+      "Applications are paused — you can still view position details.",
   },
   about: {
     badge: "About Us",
