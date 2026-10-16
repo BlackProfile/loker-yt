@@ -12,6 +12,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Table,
   TableBody,
   TableCell,
@@ -27,7 +33,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  LayoutGrid,
   MessageCircle,
+  MoreHorizontal,
   Share2,
   Star,
   Trash2,
@@ -669,9 +677,8 @@ export function ApplicationsTable({
               <TableHead className={cn("w-10", isCompact ? "px-2 py-2" : "px-2 py-3")}>
                 <span className="sr-only">Ditandai</span>
               </TableHead>
-              <TableHead className={cn("w-10 text-center text-xs", isCompact ? "px-2 py-2" : "px-2 py-3")}>
-                Bandingkan
-              </TableHead>
+              {/* NR62 (butir 13) — kolom "Bandingkan" dihapus dari header;
+                  toggle perbandingan pindah ke menu aksi baris (handler sama). */}
               {/* NR-41 I22 — header bisa diklik untuk urutan server-side. */}
               <TableHead
                 className={padHead}
@@ -779,6 +786,30 @@ export function ApplicationsTable({
                 ? positionById.get(app.positionId) ?? null
                 : null;
               const dueDocs = expiringDocs(app);
+              // NR62 (butir 13) — badge sel nama dibatasi 2 + "+n" (tooltip
+              // berisi daftar badge yang disembunyikan). Semua badge tetap ada,
+              // hanya tidak lagi memenuhi sel nama.
+              const nameBadgeDefs: { key: string; label: string; el: ReactNode }[] = [];
+              if (!app.adminSeenAt) {
+                nameBadgeDefs.push({ key: "new", label: "Baru", el: <NewBadge /> });
+              }
+              if (app.isDuplicate === true) {
+                nameBadgeDefs.push({ key: "dup", label: "Duplikat", el: <DuplicateBadge /> });
+              }
+              if (app.archivedAt) {
+                nameBadgeDefs.push({ key: "arsip", label: "Diarsip", el: <ArchivedBadge /> });
+              }
+              if (app.doNotHire) {
+                nameBadgeDefs.push({
+                  key: "dnh",
+                  label: "Do-not-hire",
+                  el: <DoNotHireBadge app={app} />,
+                });
+              }
+              if (app.holdAt) {
+                nameBadgeDefs.push({ key: "hold", label: "Ditahan", el: <HoldBadge app={app} /> });
+              }
+              const hiddenNameBadges = nameBadgeDefs.slice(2);
               // NR-28 (item 12): hover halus + group utk reveal aksi sekunder.
               // transition-colors & hover dasar sudah ada di TableRow (ui/table).
               return (
@@ -829,15 +860,6 @@ export function ApplicationsTable({
                       ) : null}
                     </div>
                   </TableCell>
-                  <TableCell className={isCompact ? "px-2 py-1.5" : "px-2 py-3"}>
-                    <div className="flex justify-center">
-                      <Checkbox
-                        checked={isCompared}
-                        onCheckedChange={() => onToggleCompare(app)}
-                        aria-label={`Bandingkan ${app.name}`}
-                      />
-                    </div>
-                  </TableCell>
                   <TableCell className={cn("max-w-56", pad)}>
                     <div className="flex items-center gap-3">
                       {/* NR38-B fitur 8 — avatar inisial + cincin rose bila ditandai penting. */}
@@ -853,11 +875,21 @@ export function ApplicationsTable({
                           >
                             {app.name}
                           </span>
-                          {!app.adminSeenAt ? <NewBadge /> : null}
-                          {app.isDuplicate === true ? <DuplicateBadge /> : null}
-                          {app.archivedAt ? <ArchivedBadge /> : null}
-                          {app.doNotHire ? <DoNotHireBadge app={app} /> : null}
-                          {app.holdAt ? <HoldBadge app={app} /> : null}
+                          {!app.adminSeenAt || app.isDuplicate === true || app.archivedAt || app.doNotHire || app.holdAt ? (
+                            <>
+                              {nameBadgeDefs.slice(0, 2).map((b) => (
+                                <span key={b.key}>{b.el}</span>
+                              ))}
+                              {hiddenNameBadges.length > 0 ? (
+                                <span
+                                  className="inline-flex shrink-0 items-center rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-secondary-foreground"
+                                  title={`Juga: ${hiddenNameBadges.map((b) => b.label).join(", ")}`}
+                                >
+                                  +{hiddenNameBadges.length}
+                                </span>
+                              ) : null}
+                            </>
+                          ) : null}
                         </div>
                         <p className="truncate text-xs text-muted-foreground">
                           {app.email}
