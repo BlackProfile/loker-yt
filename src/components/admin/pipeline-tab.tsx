@@ -1703,8 +1703,8 @@ function ReviewCard({
         ) : null
       }
       footer={
-        <>
-          {canMutate ? (
+        canMutate ? (
+          <>
             <Select value={app.status} onValueChange={onStageChange}>
               <SelectTrigger
                 className="h-8 w-fit gap-1 rounded-lg text-xs"
@@ -1720,29 +1720,45 @@ function ReviewCard({
                 ))}
               </SelectContent>
             </Select>
-          ) : null}
-          {canMutate ? (
             <Button size="sm" className="h-8 active:scale-[0.99]" onClick={onSchedule}>
               <Video className="size-3.5" aria-hidden="true" />
-              Jadwalkan Wawancara
+              Jadwalkan
             </Button>
-          ) : null}
+            {/* NR62 (butir 14) — Detail & Tolak pindah ke menu "Lainnya";
+                handler sama persis (onDetail / onReject). */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto h-8"
+                  aria-label={`Aksi lain untuk ${app.name}`}
+                >
+                  <MoreHorizontal className="size-3.5" aria-hidden="true" />
+                  Lainnya
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem onSelect={onDetail}>
+                  <Eye className="size-4" aria-hidden="true" />
+                  Detail
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={onReject}
+                  className="text-rose-600 focus:text-rose-600 focus:bg-rose-50 dark:text-rose-400 dark:focus:text-rose-400 dark:focus:bg-rose-950/40"
+                >
+                  <XCircle className="size-4" aria-hidden="true" />
+                  Tolak
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        ) : (
           <Button variant="outline" size="sm" className="h-8" onClick={onDetail}>
             <Eye className="size-3.5" aria-hidden="true" />
             Detail
           </Button>
-          {canMutate ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto h-8 border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950/40"
-              onClick={onReject}
-            >
-              <XCircle className="size-3.5" aria-hidden="true" />
-              Tolak
-            </Button>
-          ) : null}
-        </>
+        )
       }
     >
       <div className="min-w-0 flex-1">
@@ -1832,41 +1848,57 @@ function InterviewCard({
   return (
     <CandidateCardShell
       footer={
-        <>
-          {canMutate ? (
+        canMutate ? (
+          <>
             <Button size="sm" className="h-8 active:scale-[0.99]" onClick={onSchedule}>
               <Video className="size-3.5" aria-hidden="true" />
               {nextSession ? "+ Ronde" : "Jadwalkan"}
             </Button>
-          ) : null}
-          {lastSession && canMutate ? (
-            <Button variant="outline" size="sm" className="h-8" onClick={() => onOpenSession(lastSession)}>
-              <ClipboardCheck className="size-3.5" aria-hidden="true" />
-              Skor
-            </Button>
-          ) : null}
-          {canMutate ? (
-            <Button variant="outline" size="sm" className="h-8 border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900 dark:text-emerald-400 dark:hover:bg-emerald-950/40" onClick={onOffer}>
-              <Send className="size-3.5" aria-hidden="true" />
-              Penawaran
-            </Button>
-          ) : null}
+            {/* NR62 (butir 14) — Skor / Penawaran / Detail / Tolak pindah ke
+                menu "Lainnya"; semua handler sama persis. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto h-8"
+                  aria-label={`Aksi lain untuk ${app.name}`}
+                >
+                  <MoreHorizontal className="size-3.5" aria-hidden="true" />
+                  Lainnya
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                {lastSession ? (
+                  <DropdownMenuItem onSelect={() => onOpenSession(lastSession)}>
+                    <ClipboardCheck className="size-4" aria-hidden="true" />
+                    Skor
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onSelect={onOffer}>
+                  <Send className="size-4" aria-hidden="true" />
+                  Penawaran
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onDetail}>
+                  <Eye className="size-4" aria-hidden="true" />
+                  Detail
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={onReject}
+                  className="text-rose-600 focus:text-rose-600 focus:bg-rose-50 dark:text-rose-400 dark:focus:text-rose-400 dark:focus:bg-rose-950/40"
+                >
+                  <XCircle className="size-4" aria-hidden="true" />
+                  Tolak
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        ) : (
           <Button variant="outline" size="sm" className="h-8" onClick={onDetail}>
             <Eye className="size-3.5" aria-hidden="true" />
             Detail
           </Button>
-          {canMutate ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto h-8 border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950/40"
-              onClick={onReject}
-            >
-              <XCircle className="size-3.5" aria-hidden="true" />
-              Tolak
-            </Button>
-          ) : null}
-        </>
+        )
       }
     >
       <div className="min-w-0 flex-1">
