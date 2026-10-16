@@ -571,12 +571,15 @@ model PositionTemplate {
   updatedAt DateTime @updatedAt
 }
 
-// Papan pengumuman internal tim admin (Task 27)
+// Papan pengumuman internal tim admin (Task 27).
+// NR63 — isPublic: true = pengumuman juga tampil ke pelamar di halaman publik
+// (popup + tombol megafon mengapung), false = khusus tim admin.
 model Announcement {
   id         String   @id @default(cuid())
   title      String
   body       String
   pinned     Boolean  @default(false)
+  isPublic   Boolean  @default(false)
   authorName String   @default("Admin")
   createdAt  DateTime @default(now())
 }
