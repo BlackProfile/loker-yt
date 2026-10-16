@@ -1549,17 +1549,179 @@ export function ApplicationsTab() {
             />
             Belum dilihat ({unseenCount})
           </Button>
-          {hasActiveFilter ? (
+        </div>
+        </CollapsibleContent>
+
+        {/* NR62 — baris kontrol tampilan: segmented 3 arah (Tabel | Kartu |
+            Kanban), popover kepadatan, ekspor, talent pool, "Lainnya", jumlah. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* NR62 (butir 12) — toggle tampilan digabung: SATU segmented control
+              3 arah. "Tabel" = view table + cardMode off; "Kartu" = view table +
+              cardMode on; "Kanban" = view kanban. State & penyimpanan sama. */}
+          <div
+            className="flex items-center gap-1 rounded-xl border p-1"
+            role="group"
+            aria-label="Tampilan daftar pelamar"
+          >
+            <Button
+              variant={view === "table" && !cardMode ? "secondary" : "ghost"}
+              size="sm"
+              className={cn("h-8", view === "table" && !cardMode && "shadow-xs")}
+              onClick={() => {
+                setView("table");
+                changeCardMode(false);
+              }}
+              aria-pressed={view === "table" && !cardMode}
+            >
+              <Table2 className="size-4" aria-hidden="true" />
+              Tabel
+            </Button>
+            <Button
+              variant={view === "table" && cardMode ? "secondary" : "ghost"}
+              size="sm"
+              className={cn("h-8", view === "table" && cardMode && "shadow-xs")}
+              onClick={() => {
+                setView("table");
+                changeCardMode(true);
+              }}
+              aria-pressed={view === "table" && cardMode}
+            >
+              <LayoutGrid className="size-4" aria-hidden="true" />
+              Kartu
+            </Button>
+            <Button
+              variant={view === "kanban" ? "secondary" : "ghost"}
+              size="sm"
+              className={cn("h-8", view === "kanban" && "shadow-xs")}
+              onClick={() => setView("kanban")}
+              aria-pressed={view === "kanban"}
+            >
+              <Kanban className="size-4" aria-hidden="true" />
+              Kanban
+            </Button>
+          </div>
+          {/* NR62 (butir 12) — toggle kepadatan (padat/nyaman) pindah ke popover
+              kecil ikon Settings2; kedua mode tetap tersedia (hanya relevan
+              saat tampilan tabel). */}
+          {view === "table" ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-10 rounded-xl"
+                  aria-label="Opsi kepadatan tabel"
+                  title="Kepadatan tabel"
+                >
+                  <Settings2 className="size-4" aria-hidden="true" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-56 p-3">
+                <p className="text-xs font-semibold">Kepadatan tabel</p>
+                <div className="mt-2 flex items-center gap-1">
+                  <Button
+                    variant={density === "compact" ? "secondary" : "ghost"}
+                    size="sm"
+                    className={cn("h-8 flex-1", density === "compact" && "shadow-xs")}
+                    onClick={() => changeDensity("compact")}
+                    aria-pressed={density === "compact"}
+                  >
+                    <Rows3 className="size-4" aria-hidden="true" />
+                    Padat
+                  </Button>
+                  <Button
+                    variant={density === "cozy" ? "secondary" : "ghost"}
+                    size="sm"
+                    className={cn("h-8 flex-1", density === "cozy" && "shadow-xs")}
+                    onClick={() => changeDensity("cozy")}
+                    aria-pressed={density === "cozy"}
+                  >
+                    <Rows4 className="size-4" aria-hidden="true" />
+                    Nyaman
+                  </Button>
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                  Padat menyembunyikan kolom Sumber/Tags/NIK/Gaji/Diubah.
+                </p>
+              </PopoverContent>
+            </Popover>
+          ) : null}
+          {/* NR62 (butir 11) — tombol "Ekspor CSV" mandiri dihapus; SATU menu
+              "Ekspor" berisi CSV server, XLSX, dan CSV lokal (baris terpilih). */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-10 rounded-xl"
+                aria-label="Ekspor daftar lamaran"
+              >
+                <Download className="size-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Ekspor</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem asChild>
+                <a
+                  href={`/api/admin/applications/export${activeQuery}`}
+                  download
+                  aria-label="Unduh CSV"
+                >
+                  <FileText className="size-4" aria-hidden="true" />
+                  Unduh CSV
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a
+                  href={`/api/admin/applications/export${activeQuery}${activeQuery ? "&" : "?"}format=xlsx`}
+                  download
+                  aria-label="Unduh Excel (XLSX)"
+                >
+                  <FileSpreadsheet className="size-4" aria-hidden="true" />
+                  Unduh Excel (XLSX)
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => exportCsv()}
+                aria-label="Ekspor CSV lokal (baris terpilih bila ada, selain itu hasil filter aktif)"
+              >
+                <Download className="size-4" aria-hidden="true" />
+                CSV lokal (terpilih/filter)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {/* PL-2b (butir 12) — re-engagement talent pool: undang kandidat lama */}
+          {canMutate ? (
             <Button
               variant="outline"
-              onClick={resetFilters}
-              className="h-9 rounded-xl"
-              aria-label="Reset filter"
+              className="h-10 rounded-xl"
+              onClick={openTalentDialog}
+              aria-label="Cari kandidat talent pool untuk posisi target"
+              title="Cari Kandidat Talent Pool — cocokkan kandidat lama dengan posisi aktif lalu kirim undangan lamar ulang"
             >
-              <RotateCcw className="size-4" aria-hidden="true" />
-              Reset Filter
+              <Users className="size-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Cari Kandidat Talent Pool</span>
             </Button>
           ) : null}
+          {/* NR62 (butir 11) — "Lainnya": Simulator Pelamar Demo dipindah ke sini
+              (dialog memuat DemoSimulatorControl yang sama, komponen tak diubah). */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-10 rounded-xl"
+                aria-label="Perkakas lainnya"
+              >
+                <MoreHorizontal className="size-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Lainnya</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onSelect={() => setDemoToolsOpen(true)}>
+                <FlaskConical className="size-4" aria-hidden="true" />
+                Simulator Demo
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <p className="ml-auto text-xs text-muted-foreground">
             {loading
               ? "Memuat..."
@@ -1570,7 +1732,25 @@ export function ApplicationsTab() {
                 }`}
           </p>
         </div>
-      </div>
+      </Collapsible>
+
+      {/* NR62 (butir 11) — dialog perantara Simulator Demo (komponen asli utuh) */}
+      <Dialog open={demoToolsOpen} onOpenChange={setDemoToolsOpen}>
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FlaskConical className="size-4 text-rose-600" aria-hidden="true" />
+              Perkakas Demo
+            </DialogTitle>
+            <DialogDescription>
+              Simulator membuat lamaran demo lengkap secara otomatis untuk menguji panel.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-start gap-2">
+            <DemoSimulatorControl positions={positions} />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Loading — skeleton hanya saat pemuatan pertama (belum ada data); saat
           refresh (filter/event realtime) daftar lama tetap tampil. */}
