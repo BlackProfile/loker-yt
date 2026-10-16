@@ -65,6 +65,7 @@ import { DeadlineCountdown } from "@/components/landing/deadline-countdown";
 import { ShareMenu } from "@/components/landing/share-menu";
 import { PositionsSection } from "@/components/landing/positions-section";
 import { StatusCheckSection } from "@/components/landing/status-check";
+import { SelectionProcessSection } from "@/components/landing/selection-process";
 import { SubscribeSection } from "@/components/landing/subscribe-section";
 import { ChatWidget } from "@/components/landing/chat-widget";
 import { BenefitIcon } from "@/components/landing/benefit-icon";
@@ -581,45 +582,6 @@ function BenefitsSection({ content }: { content: SiteContent }) {
             ))}
           </Stagger>
         )}
-      </Container>
-    </section>
-  );
-}
-
-function HowToApplySection() {
-  const { t } = useLang();
-
-  return (
-    <section id="cara-lamar" className="scroll-mt-24 bg-muted/40 py-16 md:py-24">
-      <Container>
-        <FadeIn className="max-w-2xl">
-          <Badge variant="outline" className={ROSE_BADGE}>
-            {t.howTo.badge}
-          </Badge>
-          <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
-            {t.howTo.title}
-          </h2>
-          <p className="mt-3 text-muted-foreground">{t.howTo.desc}</p>
-        </FadeIn>
-
-        <Stagger className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {t.howTo.steps.map((step, index) => (
-            <StaggerItem key={step.title} className="h-full">
-              <HoverLift className="h-full">
-                <Card className="h-full gap-3 rounded-2xl p-6 transition-shadow hover:shadow-md">
-                  <span
-                    aria-hidden="true"
-                    className="text-4xl font-bold text-rose-600/20 dark:text-rose-400/20"
-                  >
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <h3 className="font-semibold">{step.title}</h3>
-                  <p className="text-sm text-muted-foreground">{step.description}</p>
-                </Card>
-              </HoverLift>
-            </StaggerItem>
-          ))}
-        </Stagger>
       </Container>
     </section>
   );
@@ -1241,7 +1203,7 @@ function LandingShell({
           ) : null}
           {sections.about ? <AboutSection content={content} stats={stats} /> : null}
           {sections.benefits ? <BenefitsSection content={content} /> : null}
-          {sections.steps ? <HowToApplySection /> : null}
+          {sections.steps ? <SelectionProcessSection /> : null}
           {sections.statusCheck ? <StatusCheckSection /> : null}
           {sections.testimonials ? <VoicesSection content={content} /> : null}
           {sections.faq ? <FaqSection content={content} /> : null}
