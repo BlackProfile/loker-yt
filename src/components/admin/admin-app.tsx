@@ -26,6 +26,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   BarChart3,
   Briefcase,
   CalendarClock,
@@ -45,6 +50,7 @@ import {
   Loader2,
   LogOut,
   Menu,
+  MessageSquareText,
   Monitor,
   Moon,
   PanelLeftClose,
@@ -119,14 +125,21 @@ type NavItemDef = {
 
 type NavGroupDef = { title: string; items: NavItemDef[] };
 
+// NR62 — regroup navigasi: hanya pengelompokan ulang; `value` & pintasan
+// keyboard (g+letter) TIDAK berubah agar semua tab lama tetap berfungsi.
 const NAV_GROUPS: NavGroupDef[] = [
   {
-    title: "Utama",
+    title: "Harian",
     items: [
       { value: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { value: "tasks", label: "Tugas", icon: ListChecks },
-      { value: "pipeline", label: "Pipeline", icon: Workflow },
       { value: "applications", label: "Pelamar", icon: Users },
+      { value: "pipeline", label: "Pipeline", icon: Workflow },
+    ],
+  },
+  {
+    title: "Jadwal",
+    items: [
       { value: "interview", label: "Wawancara", icon: CalendarClock },
       { value: "calendar", label: "Kalender", icon: CalendarDays },
     ],
@@ -211,102 +224,100 @@ function isTypingTargetElement(target: EventTarget | null): boolean {
 // sebelumnya (kondisional per tab), sehingga state/dialog tidak berubah cara
 // hidupnya. TabReveal lama digantikan pendekatan ini.
 
-// NR-41 I21 — toggle tema SIKLUS: light → dark → system (→ light kembali).
-// Ikon mengikuti mode terpilih: Sun (terang), Moon (gelap), Monitor (sistem).
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  const THEME_CYCLE = ["light", "dark", "system"] as const;
-  type ThemeChoice = (typeof THEME_CYCLE)[number];
-  const current: ThemeChoice =
-    theme === "light" || theme === "dark" ? theme : "system";
-  const next =
-    THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
-  const THEME_LABEL: Record<ThemeChoice, string> = {
-    light: "Tema: terang",
-    dark: "Tema: gelap",
-    system: "Tema: ikuti sistem",
-  };
-  const THEME_NEXT_HINT: Record<ThemeChoice, string> = {
-    light: "Klik untuk mode gelap",
-    dark: "Klik untuk ikuti sistem",
-    system: "Klik untuk mode terang",
-  };
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="size-11 sm:size-9"
-      onClick={() => setTheme(next)}
-      aria-label={`${THEME_LABEL[current]} — ${THEME_NEXT_HINT[current]}`}
-      title={`${THEME_LABEL[current]} — ${THEME_NEXT_HINT[current]}`}
-    >
-      {current === "light" ? (
-        <Sun className="size-4" aria-hidden="true" />
-      ) : current === "dark" ? (
-        <Moon className="size-4" aria-hidden="true" />
-      ) : (
-        <Monitor className="size-4" aria-hidden="true" />
-      )}
-    </Button>
-  );
-}
-
-// Indikator kecil status koneksi realtime di header: titik hijau + "Live"
-// saat socket tersambung, abu-abu + "Offline" saat tidak.
-function RealtimeIndicator() {
+// NR62 — SATU pil status ringkas menggantikan RealtimeIndicator + SaveModeBadge:
+// koneksi realtime (Live/Offline) + Mode Hemat bila aktif. Klik membuka popover
+// kecil berisi rincian kedua status (handler & sumber data tidak berubah).
+function StatusPill() {
   const connected = useRealtimeConnected();
-  return (
-    <span
-      className={cn(
-        "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium",
-        connected
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400"
-          : "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
-      )}
-      role="status"
-      aria-label={
-        connected
-          ? "Koneksi realtime aktif"
-          : "Koneksi realtime terputus"
-      }
-    >
-      {connected ? (
-        <Wifi className="size-3" aria-hidden="true" />
-      ) : (
-        <WifiOff className="size-3" aria-hidden="true" />
-      )}
-      <span
-        className={cn(
-          "size-1.5 shrink-0 rounded-full",
-          connected
-            ? "animate-pulse bg-emerald-500"
-            : "bg-zinc-400 dark:bg-zinc-600"
-        )}
-        aria-hidden="true"
-      />
-      <span className="hidden sm:inline">
-        {connected ? "Live" : "Offline"}
-      </span>
-    </span>
-  );
-}
-
-// NR58 (D11) — badge "Mode Hemat" di header: muncul HANYA saat server sedang
-// dalam Mode Hemat (sinyal X-Load: SAVE dari respons admin apa pun). Pengguna
-// melihat sistem mengatur dirinya sendiri — bukan "rusak". Tanpa beban: null.
-function SaveModeBadge() {
   const info = useSyncExternalStore(subscribeLoad, getLoadSnapshotValue);
-  if (!info.saveActive) return null;
+  const [open, setOpen] = useState(false);
+  const saveActive = info.saveActive;
   return (
-    <span
-      className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 text-xs font-medium text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
-      role="status"
-      aria-label="Mode Hemat aktif — tugas latar belakang ditunda sementara"
-      title="Mode Hemat aktif: tugas AI latar belakang ditunda sampai kondisi pulih"
-    >
-      <Leaf className="size-3" aria-hidden="true" />
-      <span className="hidden sm:inline">Mode Hemat</span>
-    </span>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+            !connected
+              ? "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+              : saveActive
+                ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400"
+          )}
+          role="status"
+          aria-label={`Status sistem: koneksi realtime ${connected ? "aktif" : "terputus"}${saveActive ? ", Mode Hemat aktif" : ""}`}
+        >
+          {connected ? (
+            <Wifi className="size-3" aria-hidden="true" />
+          ) : (
+            <WifiOff className="size-3" aria-hidden="true" />
+          )}
+          <span
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              connected ? "animate-pulse bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-600"
+            )}
+            aria-hidden="true"
+          />
+          <span className="hidden sm:inline">
+            {connected ? "Live" : "Offline"}
+          </span>
+          {saveActive ? (
+            <>
+              <Leaf className="size-3" aria-hidden="true" />
+              <span className="hidden sm:inline">Hemat</span>
+            </>
+          ) : null}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-3">
+        <p className="text-xs font-semibold">Status Sistem</p>
+        <div className="mt-2 flex flex-col gap-2 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              {connected ? (
+                <Wifi className="size-3.5" aria-hidden="true" />
+              ) : (
+                <WifiOff className="size-3.5" aria-hidden="true" />
+              )}
+              Koneksi realtime
+            </span>
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5 font-medium",
+                connected
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400"
+                  : "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+              )}
+            >
+              {connected ? "Aktif (Live)" : "Terputus (Offline)"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <Leaf className="size-3.5" aria-hidden="true" />
+              Mode Hemat
+            </span>
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5 font-medium",
+                saveActive
+                  ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+                  : "border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+              )}
+            >
+              {saveActive ? "Aktif" : "Tidak aktif"}
+            </span>
+          </div>
+          {saveActive ? (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Tugas AI latar belakang ditunda sampai kondisi server pulih.
+            </p>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -389,6 +400,19 @@ function AccountMenu({
   onOpenShortcuts: () => void;
   onLogout: () => void;
 }) {
+  // NR62 — toggle tema pindah ke menu akun (siklus light → dark → system).
+  const { theme, setTheme } = useTheme();
+  const THEME_CYCLE = ["light", "dark", "system"] as const;
+  type ThemeChoice = (typeof THEME_CYCLE)[number];
+  const themeCurrent: ThemeChoice =
+    theme === "light" || theme === "dark" ? theme : "system";
+  const themeNext =
+    THEME_CYCLE[(THEME_CYCLE.indexOf(themeCurrent) + 1) % THEME_CYCLE.length];
+  const THEME_LABEL: Record<ThemeChoice, string> = {
+    light: "Tema terang",
+    dark: "Tema gelap",
+    system: "Tema ikuti sistem",
+  };
   const initials =
     (name ?? "?")
       .split(/\s+/)
@@ -422,6 +446,18 @@ function AccountMenu({
         <DropdownMenuItem onSelect={onOpenShortcuts}>
           <Keyboard className="size-4" aria-hidden="true" />
           Pintasan keyboard
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {/* NR62 — tema dipindah dari ikon header ke menu akun (siklus sama). */}
+        <DropdownMenuItem onSelect={() => setTheme(themeNext)}>
+          {themeCurrent === "light" ? (
+            <Sun className="size-4" aria-hidden="true" />
+          ) : themeCurrent === "dark" ? (
+            <Moon className="size-4" aria-hidden="true" />
+          ) : (
+            <Monitor className="size-4" aria-hidden="true" />
+          )}
+          Tema: {THEME_LABEL[themeCurrent]}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -708,15 +744,8 @@ function SidebarShell({
               roleBadge
             )}
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-9 shrink-0 text-muted-foreground"
-            onClick={onLogout}
-            aria-label="Keluar dari panel admin"
-          >
-            <LogOut className="size-4" aria-hidden="true" />
-          </Button>
+          {/* NR62 — ikon keluar duplikat dihapus; Keluar tetap tersedia di
+              menu akun (avatar header) sehingga tidak ada fungsi yang hilang. */}
         </div>
       </div>
     </>

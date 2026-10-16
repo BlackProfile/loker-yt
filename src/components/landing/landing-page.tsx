@@ -520,20 +520,17 @@ function Hero({
   );
 }
 
-function AboutSection({
-  content,
-  stats,
-}: {
-  content: SiteContent;
-  stats: LandingPageProps["stats"];
-}) {
+function AboutSection({ content }: { content: SiteContent }) {
   const { t } = useLang();
 
   return (
     <section className="bg-muted/40 py-16 md:py-24">
       <Container>
-        <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
-          <FadeIn>
+        {/* NR62 — 3 kartu statistik mini dihapus (duplikat statistik hero;
+            kartu ke-3 berisi angka hardcode "2 Jt+"). Kartu gradasi diperlebar
+            (3/5) dan diisi tagline situs agar tidak terasa kosong. */}
+        <div className="grid items-center gap-10 lg:grid-cols-5 lg:gap-16">
+          <FadeIn className="lg:col-span-3">
             <Badge variant="outline" className={ROSE_BADGE}>
               {t.about.badge}
             </Badge>
@@ -545,40 +542,14 @@ function AboutSection({
             </p>
           </FadeIn>
 
-          <FadeIn delay={0.1}>
+          <FadeIn delay={0.1} className="lg:col-span-2">
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-rose-600 to-amber-500 p-8 text-white shadow-sm">
               <Sparkles className="h-10 w-10" aria-hidden="true" />
               <p className="mt-4 text-xl font-semibold">{t.about.cardTitle}</p>
               <p className="mt-2 text-sm text-white/80">{t.about.cardBody}</p>
-            </div>
-            {/* Padding/gap mengecil di layar sangat kecil agar 3 kolom tidak sesak */}
-            <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-4">
-              <HoverLift className="h-full">
-                <Card className="h-full gap-1 rounded-2xl p-3 text-center transition-shadow hover:shadow-md sm:p-4">
-                  <p className="text-lg font-bold tabular-nums sm:text-xl md:text-2xl">
-                    <AnimatedNumber value={stats.openRoles} />
-                  </p>
-                  <p className="text-xs text-muted-foreground">{t.about.statActive}</p>
-                </Card>
-              </HoverLift>
-              <HoverLift className="h-full">
-                <Card className="h-full gap-1 rounded-2xl p-3 text-center transition-shadow hover:shadow-md sm:p-4">
-                  <p className="text-lg font-bold tabular-nums sm:text-xl md:text-2xl">
-                    <AnimatedNumber value={stats.totalApplications} suffix="+" />
-                  </p>
-                  <p className="text-xs text-muted-foreground">{t.about.statApps}</p>
-                </Card>
-              </HoverLift>
-              <HoverLift className="h-full">
-                <Card className="h-full gap-1 rounded-2xl p-3 text-center transition-shadow hover:shadow-md sm:p-4">
-                  <p className="text-lg font-bold tabular-nums sm:text-xl md:text-2xl">
-                    2 Jt+
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t.about.statCommunity}
-                  </p>
-                </Card>
-              </HoverLift>
+              <p className="mt-6 border-t border-white/20 pt-4 text-sm font-medium text-white/90">
+                {content.tagline}
+              </p>
             </div>
           </FadeIn>
         </div>
@@ -753,73 +724,6 @@ function FaqSection({ content }: { content: SiteContent }) {
   );
 }
 
-function FinalCtaSection({
-  content,
-  sections,
-  recruitmentClosed,
-}: {
-  content: SiteContent;
-  sections: SectionVisibility;
-  recruitmentClosed: boolean;
-}) {
-  const { t } = useLang();
-
-  return (
-    <section className="bg-background py-16 md:py-24">
-      <Container>
-        <FadeIn>
-          <div className="relative overflow-hidden rounded-3xl bg-zinc-950 px-6 py-16 text-center text-zinc-50 md:px-12 md:py-20">
-            <div aria-hidden="true" className="bg-grid-pattern absolute inset-0" />
-            <div
-              aria-hidden="true"
-              className="absolute -top-24 left-1/2 h-72 w-[36rem] max-w-full -translate-x-1/2"
-            >
-              <motion.div
-                className="h-full w-full rounded-full bg-rose-600/20 blur-3xl"
-                animate={{ y: [0, 18, 0], opacity: [0.7, 1, 0.7] }}
-                transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-              />
-            </div>
-            <div className="relative mx-auto max-w-2xl">
-              <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-                {t.cta.title}
-              </h2>
-              <p className="mt-4 text-zinc-400">{t.cta.desc}</p>
-              <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-                {sections.positions ? (
-                  recruitmentClosed ? (
-                    <Button size="lg" className="h-11" disabled>
-                      {t.cta.apply}
-                    </Button>
-                  ) : (
-                    <Button size="lg" className="h-11" asChild>
-                      <a href="#posisi">{t.cta.apply}</a>
-                    </Button>
-                  )
-                ) : null}
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="h-11 border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
-                  asChild
-                >
-                  <a
-                    href={whatsappHref(content.contactWhatsapp)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {t.cta.whatsapp}
-                  </a>
-                </Button>
-              </div>
-            </div>
-          </div>
-        </FadeIn>
-      </Container>
-    </section>
-  );
-}
-
 function Footer({
   content,
   sections,
@@ -842,9 +746,6 @@ function Footer({
                 <p className="text-xs text-muted-foreground">{content.tagline}</p>
               </div>
             </div>
-            <p className="mt-4 max-w-sm text-sm text-muted-foreground">
-              {content.footerText}
-            </p>
           </div>
 
           {navLinks.length > 0 ? (
@@ -914,12 +815,10 @@ function Footer({
           </div>
         </div>
 
-        {/* Garis bawah footer: hak cipta + catatan kecil. */}
-        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t pt-6 text-center sm:flex-row sm:text-left">
+        {/* NR62 — footerText tampil SEKALI di bar bawah; tagline cukup sekali
+            di kolom brand (penghapusan duplikasi). */}
+        <div className="mt-12 border-t pt-6 text-center sm:text-left">
           <p className="text-xs text-muted-foreground">{content.footerText}</p>
-          <p className="text-xs text-muted-foreground/70">
-            {content.siteName} — {content.tagline}
-          </p>
         </div>
       </Container>
     </footer>
@@ -1175,25 +1074,8 @@ function LandingShell({
           sections={sections}
           recruitmentClosed={applyBlocked}
         />
-        {recruitment.recruitmentClosed ? (
-          <div
-            role="alert"
-            className="border-b border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
-          >
-            <Container className="flex items-start gap-3 py-3 sm:items-center">
-              <PauseCircle
-                className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400 sm:mt-0"
-                aria-hidden="true"
-              />
-              <p className="text-sm font-medium leading-relaxed">
-                {recruitment.message.trim() ||
-                  "Rekrutmen sedang ditutup. Pendaftaran sementara tidak dapat dikirim."}
-              </p>
-            </Container>
-          </div>
-        ) : null}
-        {/* NR45 — banner mode perawatan level APPLY_ONLY (pola banner rekrutmen):
-            pendaftaran ditutup sementara, situs masih bisa dijelajahi. */}
+        {/* NR62 — MAKS SATU strip status (styling amber & sumber copy persis
+            sama): prioritas mode perawatan APPLY_ONLY > rekrutmen ditutup. */}
         {maintenance?.enabled && maintenance.level === "APPLY_ONLY" ? (
           <div
             role="alert"
@@ -1207,6 +1089,22 @@ function LandingShell({
               <p className="text-sm font-medium leading-relaxed">
                 {maintenance.message.trim() ||
                   "Pendaftaran sementara ditutup — situs masih bisa dijelajahi."}
+              </p>
+            </Container>
+          </div>
+        ) : recruitment.recruitmentClosed ? (
+          <div
+            role="alert"
+            className="border-b border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            <Container className="flex items-start gap-3 py-3 sm:items-center">
+              <PauseCircle
+                className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400 sm:mt-0"
+                aria-hidden="true"
+              />
+              <p className="text-sm font-medium leading-relaxed">
+                {recruitment.message.trim() ||
+                  "Rekrutmen sedang ditutup. Pendaftaran sementara tidak dapat dikirim."}
               </p>
             </Container>
           </div>
@@ -1243,20 +1141,22 @@ function LandingShell({
               applyBlocked={applyBlocked}
             />
           ) : null}
-          {sections.about ? <AboutSection content={content} stats={stats} /> : null}
+          {sections.about ? <AboutSection content={content} /> : null}
           {sections.benefits ? <BenefitsSection content={content} /> : null}
           {sections.steps ? <SelectionProcessSection /> : null}
           {sections.statusCheck ? <StatusCheckSection /> : null}
           {sections.testimonials ? <VoicesSection content={content} /> : null}
           {sections.faq ? <FaqSection content={content} /> : null}
-          {sections.finalCta ? (
-            <FinalCtaSection
-              content={content}
-              sections={sections}
-              recruitmentClosed={applyBlocked}
+          {/* NR62 — panel penutup TUNGGAL: FinalCtaSection dilebur ke
+              SubscribeSection (baris aksi ringkas Lamar + WhatsApp di atas
+              formulir email); render FinalCtaSection dihapus. */}
+          {sections.subscribe ? (
+            <SubscribeSection
+              applyBlocked={applyBlocked}
+              showApply={sections.positions}
+              whatsappNumber={content.contactWhatsapp}
             />
           ) : null}
-          {sections.subscribe ? <SubscribeSection /> : null}
         </main>
         <Footer content={content} sections={sections} />
         {content.chatbotEnabled && sections.chatbot ? <ChatWidget /> : null}

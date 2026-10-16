@@ -1660,29 +1660,36 @@ export function ApplyWizard({
 
   /**
    * Sorot galat PERTAMA satu langkah bagian (urutan DOM: CV → intro →
-   * portofolio → pertanyaan kustom) dengan toast + scroll. `jump` = langkah
-   * baru saja diganti (tunggu transisi sebelum scroll).
+   * portofolio → pertanyaan kustom) dengan scroll (+ toast opsional).
+   * `jump` = langkah baru saja diganti (tunggu transisi sebelum scroll).
+   * NR62 (F7) — `withToast` false untuk validasi langkah yang sama (goNext):
+   * teks rose inline + border merah sudah memberi sinyal. validateAllAndJump
+   * (lompat antar-langkah) tetap menampilkan toast.
    */
-  function toastStepCheckFirstError(check: SchemaStepCheck, jump: boolean): void {
+  function toastStepCheckFirstError(
+    check: SchemaStepCheck,
+    jump: boolean,
+    withToast = true,
+  ): void {
     if (check.cvMissing) {
       setCvError(t.apply.errors.cvRequired);
-      toast.error(t.apply.errors.cvRequired);
+      if (withToast) toast.error(t.apply.errors.cvRequired);
       return;
     }
     if (check.introMissing) {
       setIntroError(t.apply.errors.introRequired);
-      toast.error(t.apply.errors.introRequired);
+      if (withToast) toast.error(t.apply.errors.introRequired);
       return;
     }
     if (check.valueErrors.portfolioUrl) {
-      toast.error(check.valueErrors.portfolioUrl);
+      if (withToast) toast.error(check.valueErrors.portfolioUrl);
       return;
     }
     const formError = firstFormErrorOf(check.fieldErrors);
     if (formError) {
       if (jump) window.setTimeout(() => scrollToFormField(formError.id), 400);
       else scrollToFormField(formError.id);
-      toast.error(formError.message);
+      if (withToast) toast.error(formError.message);
     }
   }
 
@@ -1716,7 +1723,8 @@ export function ApplyWizard({
       setErrors((prev) => ({ ...prev, ...check.valueErrors }));
       setFormErrors((prev) => ({ ...prev, ...check.fieldErrors }));
       if (stepCheckHasError(check)) {
-        toastStepCheckFirstError(check, false);
+        // NR62 (F7) — validasi langkah yang sama: tanpa toast (inline-first).
+        toastStepCheckFirstError(check, false, false);
         return;
       }
       goToStep(step + 1);
@@ -1739,18 +1747,17 @@ export function ApplyWizard({
     setFormErrors((prev) => ({ ...prev, ...formNext }));
     if (Object.values(next).some(Boolean) || Object.values(formNext).some(Boolean)) {
       if (step === 1) {
-        // Screening wajib kosong: sorot + scroll + toast (pola error wizard).
+        // Screening wajib kosong: sorot + scroll (NR62 F7 — tanpa toast;
+        // pesan rose inline di bawah pertanyaan sudah tampil).
         const screeningError = firstScreeningErrorOf(next);
         if (screeningError) {
           scrollToScreening(screeningError.id);
-          toast.error(screeningError.message);
         }
       }
-      // Jawaban form bermasalah: sorot + scroll + toast ke field pertama.
+      // Jawaban form bermasalah: sorot + scroll ke field pertama.
       const formError = firstFormErrorOf(formNext);
       if (formError) {
         scrollToFormField(formError.id);
-        toast.error(formError.message);
       }
       return;
     }
@@ -1843,16 +1850,15 @@ export function ApplyWizard({
     return true;
   }
 
-  /** Berkas wajib per posisi (CV/audio intro + dokumen tambahan) — dipakai sebelum masuk pratinjau. */
+  /** Berkas wajib per posisi (CV/audio intro + dokumen tambahan) — dipakai sebelum masuk pratinjau.
+   * NR62 (F7) — tanpa toast: pesan rose inline di blok unggahan terkait. */
   function validateRequiredFiles(): boolean {
     if (selectedPosition?.requireCv && !cvFile && !draftFileForLabel("cv")) {
       setCvError(t.apply.errors.cvRequired);
-      toast.error(t.apply.errors.cvRequired);
       return false;
     }
     if (selectedPosition?.requireIntro && !introFile && !draftFileForLabel("intro")) {
       setIntroError(t.apply.errors.introRequired);
-      toast.error(t.apply.errors.introRequired);
       return false;
     }
     // customDocs hanya mode klasik — skema aktif memakai field file milik skema.
@@ -1863,7 +1869,6 @@ export function ApplyWizard({
             label: customDocs[i],
           });
           setExtraErrors((prev) => ({ ...prev, [i]: msg }));
-          toast.error(msg);
           return false;
         }
       }
@@ -3700,36 +3705,33 @@ export function ApplyWizard({
               </p>
             ) : null}
             {/* NR-32 — peringatan lamaran duplikat (email/WA sama pernah dipakai):
-                informatif saja — pelamar tetap bisa melanjutkan. */}
+                informatif saja — pelamar tetap bisa melanjutkan.
+                NR62 (F8) — jadi catatan amber SATU baris + tombol teks inline. */}
             {dedupe ? (
-              <div
+              <p
                 role="status"
-                className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200"
+                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200"
               >
-                <p className="flex items-start gap-2 text-xs leading-relaxed">
-                  <Info
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
-                    aria-hidden="true"
-                  />
-                  <span>
-                    {fillTemplate(t.apply.dataDiri.dedupeWarning, {
-                      title: dedupe.title,
-                      date: dedupe.date,
-                    })}
-                  </span>
-                </p>
-                <div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 border-amber-300 text-amber-800 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
-                    onClick={dismissDedupe}
-                  >
-                    {t.apply.dataDiri.dedupeContinue}
-                  </Button>
-                </div>
-              </div>
+                <Info
+                  className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 basis-56 leading-relaxed">
+                  {fillTemplate(t.apply.dataDiri.dedupeWarning, {
+                    title: dedupe.title,
+                    date: dedupe.date,
+                  })}
+                </span>
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto shrink-0 p-0 text-xs font-semibold text-amber-800 underline-offset-2 hover:text-amber-900 dark:text-amber-200 dark:hover:text-amber-100"
+                  onClick={dismissDedupe}
+                >
+                  {t.apply.dataDiri.dedupeContinue}
+                </Button>
+              </p>
             ) : null}
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
@@ -3808,32 +3810,32 @@ export function ApplyWizard({
                     {errors.email}
                   </p>
                 ) : null}
-                {/* NR60 (A1) — kartu prefill: email tercatat pernah melamar →
-                    tawarkan isi nama & WA dari lamaran terakhir (bisa ditutup). */}
+                {/* NR60 (A1) — tawaran prefill dari lamaran terakhir.
+                    NR62 (F8) — kartu jadi chip SATU baris: teks + tombol
+                    "Gunakan" + ikon X (handler applyPrefill/dismiss sama). */}
                 {prefillInfo &&
                 prefillCardOpen &&
                 prefillInfo.name &&
                 values.email.trim().toLowerCase() === prefillEmailRef.current ? (
-                  <div className="flex items-start justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
-                    <div className="min-w-0">
-                      <p className="flex items-center gap-1.5 text-sm font-medium text-amber-900 dark:text-amber-200">
-                        <History
-                          className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
-                          aria-hidden="true"
-                        />
-                        {t.apply.prefill.title}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-amber-800/90 dark:text-amber-200/80">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-1.5 dark:border-amber-500/30 dark:bg-amber-500/10">
+                    <span className="flex min-w-0 flex-1 basis-56 items-center gap-1.5 text-xs font-medium text-amber-900 dark:text-amber-200">
+                      <History
+                        className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+                        aria-hidden="true"
+                      />
+                      <span className="truncate">
+                        {t.apply.prefill.chipText}
+                        {" — "}
                         {prefillInfo.name}
                         {prefillInfo.phone ? ` · ${prefillInfo.phone}` : ""}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
+                      </span>
+                    </span>
+                    <span className="ml-auto flex shrink-0 items-center gap-0.5">
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="link"
                         size="sm"
-                        className="h-8 border-amber-300 text-xs text-amber-800 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+                        className="h-auto p-0 text-xs font-semibold text-amber-800 underline-offset-2 hover:text-amber-900 dark:text-amber-200 dark:hover:text-amber-100"
                         onClick={applyPrefill}
                       >
                         {t.apply.prefill.use}
@@ -3842,13 +3844,13 @@ export function ApplyWizard({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 shrink-0 text-amber-700 dark:text-amber-300"
+                        className="h-7 w-7 shrink-0 text-amber-700 dark:text-amber-300"
                         aria-label={t.apply.prefill.dismiss}
                         onClick={() => setPrefillCardOpen(false)}
                       >
-                        <X className="h-4 w-4" aria-hidden="true" />
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </Button>
-                    </div>
+                    </span>
                   </div>
                 ) : null}
               </div>
