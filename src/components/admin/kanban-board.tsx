@@ -71,6 +71,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -87,8 +88,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { apiGet, apiPatch, apiPost } from "./api";
 import { avatarToneOf, formatRelative, initialsOf, localInputToIso } from "./format";
 import { useAdminSession } from "./admin-context";
-import { AiScoreBadge, DomisiliChip } from "./status-badge";
-import { RatingStars } from "./rating-stars";
+import { AiScoreBadge } from "./status-badge";
 import { useLiveRefresh } from "./use-live-refresh";
 import { cn } from "@/lib/utils";
 
@@ -412,30 +412,22 @@ function KanbanCard({
           {initialsOf(app.name)}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{app.name}</p>
+          <p className="truncate text-sm font-medium">
+            {/* NR62 — indikator bintang pasif (toggle pindah ke menu kartu). */}
+            {starred ? (
+              <span title="Ditandai penting" className="mr-1 inline-flex align-[-1px]">
+                <Star
+                  className="size-3.5 fill-amber-400 text-amber-400"
+                  aria-label="Ditandai penting"
+                />
+              </span>
+            ) : null}
+            {app.name}
+          </p>
           <p className="truncate text-xs text-muted-foreground">
             {app.positionTitle ?? "Tanpa posisi"}
           </p>
         </div>
-        {canMutate && session ? (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleToggleStar();
-            }}
-            aria-pressed={starred}
-            aria-label={starred ? `Hapus tanda bintang dari ${app.name}` : `Tandai ${app.name} penting`}
-            title={starred ? "Hapus tanda bintang" : "Tandai penting"}
-            className={cn(
-              "inline-flex size-7 shrink-0 items-center justify-center rounded-md outline-none transition-colors hover:bg-amber-50 focus-visible:ring-2 focus-visible:ring-ring/50 dark:hover:bg-amber-950/40",
-              starred ? "text-amber-500" : "text-muted-foreground/50 hover:text-amber-500"
-            )}
-          >
-            <Star className={cn("size-4", starred && "fill-amber-400 text-amber-400")} aria-hidden="true" />
-          </button>
-        ) : null}
         {canMutate ? (
           <span
             className="mt-0.5 shrink-0"
@@ -481,6 +473,57 @@ function KanbanCard({
                     </DropdownMenuItem>
                   );
                 })}
+                {/* NR62 (butir 15) — aksi sekunder kartu (bintang, undo-auto,
+                    ringkasan AI) dipindah ke menu ini; handler tidak berubah. */}
+                {canMutate && session ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        void handleToggleStar();
+                      }}
+                    >
+                      <Star
+                        className={cn(
+                          "size-4",
+                          starred && "fill-amber-400 text-amber-400"
+                        )}
+                        aria-hidden="true"
+                      />
+                      {starred ? "Hapus tanda bintang" : "Tandai penting"}
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+                {canMutate && app.autoShortlistedAt ? (
+                  <DropdownMenuItem
+                    disabled={undoingAuto}
+                    onSelect={() => {
+                      void handleUndoAuto();
+                    }}
+                  >
+                    {undoingAuto ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <RotateCcw className="size-4" aria-hidden="true" />
+                    )}
+                    Batalkan auto-shortlist
+                  </DropdownMenuItem>
+                ) : null}
+                {canMutate && !app.aiSummary ? (
+                  <DropdownMenuItem
+                    disabled={aiWorking}
+                    onSelect={() => {
+                      void handleSummarize();
+                    }}
+                  >
+                    {aiWorking ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Sparkles className="size-4" aria-hidden="true" />
+                    )}
+                    Buat ringkasan AI
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           </span>
@@ -488,44 +531,22 @@ function KanbanCard({
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <AiScoreBadge score={app.aiScore} />
-        <DomisiliChip domisili={app.domisili} komuterPlan={app.komuterPlan} />
-        {/* NR-40 — tag "Auto" untuk lamaran hasil auto-shortlist AI + tombol undo. */}
+        {/* NR-40 — tag "Auto" untuk lamaran hasil auto-shortlist AI (undo
+            dipindah ke menu kartu — NR62 butir 15). */}
         {app.autoShortlistedAt ? (
-          <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge
-                  variant="outline"
-                  title="Dipindah otomatis oleh auto-shortlist AI"
-                  className="cursor-help border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] font-medium text-amber-700 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-400"
-                >
-                  <Sparkles className="size-3" aria-hidden="true" />
-                  Auto
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>Dipindah otomatis oleh auto-shortlist AI</TooltipContent>
-            </Tooltip>
-            {canMutate ? (
-              <button
-                type="button"
-                disabled={undoingAuto}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleUndoAuto();
-                }}
-                title="Batalkan auto"
-                aria-label={`Batalkan auto-shortlist untuk ${app.name}`}
-                className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-amber-50 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-amber-950/40 dark:hover:text-amber-400"
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                title="Dipindah otomatis oleh auto-shortlist AI"
+                className="cursor-help border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] font-medium text-amber-700 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-400"
               >
-                {undoingAuto ? (
-                  <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-                ) : (
-                  <RotateCcw className="size-3" aria-hidden="true" />
-                )}
-              </button>
-            ) : null}
-          </>
+                <Sparkles className="size-3" aria-hidden="true" />
+                Auto
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>Dipindah otomatis oleh auto-shortlist AI — batalkan dari menu kartu</TooltipContent>
+          </Tooltip>
         ) : null}
         {app.holdAt ? (
           <Tooltip>
@@ -555,7 +576,6 @@ function KanbanCard({
             <TooltipContent>Kemungkinan lamaran ganda</TooltipContent>
           </Tooltip>
         ) : null}
-        <RatingStars value={app.rating} size="size-3" disabled />
         {/* NR-40 — umur di tahap: dot warna + "n h". */}
         <AgingChip app={app} warnDays={warnDays} nowMs={nowMs} />
       </div>
@@ -563,27 +583,7 @@ function KanbanCard({
         <p className="mt-2 line-clamp-2 rounded-md bg-zinc-50 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground dark:bg-zinc-900/60">
           {app.aiSummary}
         </p>
-      ) : (
-        <button
-          type="button"
-          disabled={aiWorking || !canMutate}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            void handleSummarize();
-          }}
-          title={canMutate ? "Buat ringkasan AI" : "Hanya OWNER/HR dapat membuat ringkasan AI"}
-          aria-label={`Buat ringkasan AI untuk ${app.name}`}
-          className="mt-2 inline-flex h-7 items-center gap-1 rounded-md border border-dashed px-2 text-[11px] font-medium text-muted-foreground outline-none transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"
-        >
-          {aiWorking ? (
-            <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-          ) : (
-            <Sparkles className="size-3" aria-hidden="true" />
-          )}
-          {aiWorking ? "Menganalisis..." : "Buat ringkasan AI"}
-        </button>
-      )}
+      ) : null}
       <p className="mt-1.5 text-[11px] text-muted-foreground">
         {formatRelative(app.createdAt)}
       </p>

@@ -31,8 +31,19 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -78,6 +89,7 @@ import {
   Megaphone,
   MessageCircle,
   MessageSquareText,
+  MoreHorizontal,
   Pencil,
   PauseCircle,
   Phone,
@@ -171,7 +183,6 @@ import {
   AssessmentSection,
   CallLogSection,
   DocExpirySection,
-  InboxSection,
   InternalDocsSection,
   RelatedSection,
 } from "./detail-nr24-sections";
@@ -971,7 +982,7 @@ function UnifiedInboxSection({
   return (
     <div className="flex flex-col gap-2 rounded-lg border p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Inbox className="size-4 text-violet-600 dark:text-violet-400" aria-hidden="true" />
+        <Inbox className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
         <p className="text-sm font-semibold">Kotak Masuk Terpadu</p>
         <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-secondary-foreground">
           {items.length}
