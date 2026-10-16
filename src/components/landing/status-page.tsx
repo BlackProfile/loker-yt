@@ -23,13 +23,11 @@ import type { ChangeEvent, FormEvent } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
-  ArrowDown,
-  ArrowLeft,
   CalendarCheck,
   CalendarClock,
+  ChevronRight,
   ClipboardList,
   Download,
-  ExternalLink,
   Hourglass,
   IdCard,
   ListChecks,
@@ -37,6 +35,7 @@ import {
   LogOut,
   Reply,
   Upload,
+  XCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -62,6 +61,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -89,7 +101,7 @@ import { CvUpdatePanel } from "./status/status-cv-panel";
 import { TestTasksPanel, TEST_FILE_EXTENSIONS } from "./status/status-test-tasks";
 import { QaPanel } from "./status/status-qa-panel";
 import { OnboardingPanel } from "./status/status-onboarding";
-import { AcceptedNotice, RejectedNotice } from "./status/status-final-banners";
+import { RejectedNotice } from "./status/status-final-banners";
 import { SurveyCard } from "./status/status-survey-card";
 import { FadeInSlide } from "./status/status-shared";
 import {
@@ -1176,6 +1188,19 @@ function StatusPageInner({
   const assignmentUrl = detail?.assignment?.url
     ? safeExternalUrl(detail.assignment.url)
     : null;
+  // NR62 — brief tes (judul/catatan/URL) dilipat ke TestTasksPanel sebagai blok
+  // ringkas; kartu amber "Info Tes Seleksi" yang terpisah dihapus.
+  const testBrief =
+    detail?.assignment &&
+    (detail.assignment.title || detail.assignment.note || assignmentUrl)
+      ? {
+          label: t.status.assignmentTitle,
+          title: detail.assignment.title ?? null,
+          note: detail.assignment.note ?? null,
+          url: assignmentUrl,
+          urlLabel: t.status.openBrief,
+        }
+      : null;
   // Sesi wawancara terurut ronde: terbaru paling menonjol (paling atas).
   const interviews = detail?.interviews
     ? [...detail.interviews].sort((a, b) => b.round - a.round)
@@ -1394,7 +1419,8 @@ function StatusPageInner({
                   className="flex flex-col gap-5"
                   role="status"
                 >
-                  {/* HERO status berwarna (+ confetti perayaan diterima, NR-15 idea 16) */}
+                  {/* HERO status berwarna (+ confetti perayaan diterima, NR-15 idea 16);
+                      NR62: aksi "Tarik Lamaran" pindah ke baris tautan footer */}
                   <StatusHero
                     detail={detail}
                     selectedCode={selectedCode}
@@ -1404,13 +1430,6 @@ function StatusPageInner({
                     t={t}
                     onCopyCode={() => void copyCode()}
                     onCopyStatusLink={() => void copyStatusLink()}
-                    canWithdraw={canWithdraw}
-                    withdrawOpen={withdrawOpen}
-                    setWithdrawOpen={setWithdrawOpen}
-                    withdrawReason={withdrawReason}
-                    setWithdrawReason={setWithdrawReason}
-                    withdrawBusy={withdrawBusy}
-                    onWithdraw={() => void withdrawApplication()}
                   />
 
                   {/* PL-2b (butir 14): ringkasan aksi yang diminta dari pelamar —
@@ -1422,66 +1441,36 @@ function StatusPageInner({
                     />
                   ) : null}
 
-                  {/* NR61 — peta perjalanan makro (ringkasan 6 tahap besar) */}
-                  <StatusJourney detail={detail} lang={lang} nowMs={nowMs} p={p} />
-
-                  {/* Timeline progres (stepper vertikal penuh) */}
-                  <StatusTimeline
-                    steps={steps}
-                    currentKey={currentKey}
-                    stageHistoryAt={stageHistoryAt}
-                    stageNote={detail.stageNote}
-                    openNoteKey={openNoteKey}
-                    setOpenNoteKey={setOpenNoteKey}
-                    currentEstimateDays={currentEstimateDays}
-                    nowMs={nowMs}
+                  {/* NR62 — kartu tunggal "Peta Perjalanan": strip 6 tahap makro
+                      (tip hanya tampil bila panel aksi wajib kosong) + timeline
+                      per-tahap utuh di dalam Collapsible "Detail tahap". */}
+                  <StatusJourney
+                    detail={detail}
                     lang={lang}
+                    nowMs={nowMs}
                     p={p}
-                  />
+                    showTip={requiredActions.length === 0}
+                  >
+                    {/* Timeline progres per tahap — tanggal/catatan/estimasi tetap utuh */}
+                    <StatusTimeline
+                      steps={steps}
+                      currentKey={currentKey}
+                      stageHistoryAt={stageHistoryAt}
+                      stageNote={detail.stageNote}
+                      openNoteKey={openNoteKey}
+                      setOpenNoteKey={setOpenNoteKey}
+                      currentEstimateDays={currentEstimateDays}
+                      nowMs={nowMs}
+                      lang={lang}
+                      p={p}
+                    />
+                  </StatusJourney>
 
-                  {/* Info tes seleksi posisi (bila posisi punya assignment) */}
-                  {detail.assignment &&
-                  (detail.assignment.title || detail.assignment.note || detail.assignment.url) ? (
-                    <div id="bagian-tes-seleksi" className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
-                      <div className="flex items-start gap-2.5">
-                        <ClipboardList
-                          className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
-                          aria-hidden="true"
-                        />
-                        <div className="min-w-0 text-sm">
-                          <p className="font-medium text-amber-800 dark:text-amber-300">
-                            {t.status.assignmentTitle}
-                            {detail.assignment.title ? `: ${detail.assignment.title}` : ""}
-                          </p>
-                          {detail.assignment.note ? (
-                            <p className="mt-1 whitespace-pre-line leading-relaxed text-amber-700/90 dark:text-amber-200/80">
-                              {detail.assignment.note}
-                            </p>
-                          ) : null}
-                          {assignmentUrl ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="mt-2 h-11 border-amber-300 bg-transparent text-amber-800 hover:bg-amber-100 hover:text-amber-900 sm:h-9 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
-                              asChild
-                            >
-                              <a
-                                href={assignmentUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                                {t.status.openBrief}
-                              </a>
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {/* NR-54: tugas uji dari tim + pengumpulan hasil langsung di sini */}
-                  {detail && assessments.length > 0 && finalStatus !== "REJECTED" ? (
+                  {/* NR-54: tugas uji dari tim + pengumpulan hasil langsung di sini;
+                      NR62: brief tes posisi kini blok ringkas di dalam panel ini */}
+                  {detail &&
+                  (testBrief ||
+                    (assessments.length > 0 && finalStatus !== "REJECTED")) ? (
                     <div id="bagian-tugas-uji">
                       <TestTasksPanel
                         assessments={assessments}
@@ -1490,6 +1479,7 @@ function StatusPageInner({
                         onSelectTestFile={selectTestFile}
                         onSubmitTest={submitTestWork}
                         ts={t.status.test}
+                        brief={testBrief}
                       />
                     </div>
                   ) : null}

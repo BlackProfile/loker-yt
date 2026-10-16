@@ -817,7 +817,8 @@ export function DashboardTab() {
             </div>
           </CardContent>
         </Card>
-      ) : null}
+        ) : null}
+      </SectionGroup>
 
       {/* Kartu statistik: 6 status + rata-rata skor AI + pelanggan */}
       <motion.div
@@ -866,7 +867,7 @@ export function DashboardTab() {
         })}
       </motion.div>
 
-      {/* NR62 (butir 8)) — dua metrik sekunder (Rata-rata Skor AI + Pelanggan
+      {/* NR62 (butir 8) — dua metrik sekunder (Rata-rata Skor AI + Pelanggan
           Notifikasi) dipindah ke kartu lipat default TERTUTUP tepat di bawah
           grid statistik. Data + CountUp + ikon tetap sama; grid utama kini
           hanya 6 kartu status agar lebih mudah dipindai. */}
@@ -1031,16 +1032,16 @@ export function DashboardTab() {
       </Card>
       </div>
 
-      {/* Perbandingan Lowongan */}
-      <Card className="rounded-2xl p-6">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <BarChart3 className="size-4 text-rose-500" aria-hidden="true" />
-          Perbandingan Lowongan
-        </CardTitle>
-        <CardDescription className="mt-1">
-          Jumlah lamaran masuk dibanding tampilan halaman (views) per posisi.
-        </CardDescription>
-        <CardContent className="mt-4 px-0">
+      {/* NR62 (butir 9) — Perbandingan Lowongan menjadi CollapsibleCard default
+          TERTUTUP dalam SectionGroup "Analisa Lowongan". Data & grafik tetap sama. */}
+      <SectionGroup label="Analisa Lowongan">
+        <CollapsibleCard
+          id="dash-compare"
+          icon={BarChart3}
+          title="Perbandingan Lowongan"
+          description="Jumlah lamaran masuk dibanding tampilan halaman (views) per posisi."
+        >
+          <div>
           {posStatsLoading ? (
             <Skeleton className="h-[280px] w-full rounded-xl" />
           ) : compareData.length === 0 ? (
@@ -1098,8 +1099,9 @@ export function DashboardTab() {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+          </div>
+        </CollapsibleCard>
+      </SectionGroup>
 
       {/* Wawancara mendatang + perlu ditindaklanjuti */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -1155,61 +1157,62 @@ export function DashboardTab() {
           </CardContent>
         </Card>
 
-        <Card className="gap-0 rounded-2xl border-amber-200 bg-amber-50/60 py-6 dark:border-amber-900 dark:bg-amber-950/20">
-          <CardHeader className="px-6">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-              Perlu Ditindaklanjuti
-            </CardTitle>
-            <CardDescription className="mt-1">
-              Lamaran tanpa perubahan lebih dari 7 hari — ubah status atau arsipkan.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="px-6">
-            {loading ? (
-              <div className="flex flex-col gap-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full rounded-lg" />
-                ))}
-              </div>
-            ) : (overview?.stale?.length ?? 0) === 0 ? (
-              <div className="flex flex-col items-center gap-2 py-8 text-center">
-                <CheckCircle2 className="size-8 text-emerald-500/70" aria-hidden="true" />
-                <p className="text-sm text-muted-foreground">
-                  Semua lamaran tertangani. Kerja bagus!
-                </p>
-              </div>
-            ) : (
-              <div className="max-h-72 overflow-y-auto nice-scrollbar">
-                {overview?.stale.map((app) => (
-                  <div
-                    key={app.id}
-                    className="flex items-center gap-3 border-b py-3 last:border-b-0"
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-400">
-                      {initialsOf(app.name)}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{app.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {app.positionTitle ?? "-"} · masuk {formatDate(app.createdAt)} ({formatRelative(app.createdAt)})
-                      </p>
-                    </div>
-                    <StatusBadge status={app.status} className="hidden shrink-0 sm:inline-flex" />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-11 shrink-0 sm:h-8"
-                      onClick={() => setDetail(app)}
-                    >
-                      Detail
-                    </Button>
+        {/* NR62 (butir 9) — kartu "Perlu Ditindaklanjuti" (stale) menjadi
+            CollapsibleCard default TERTUTUP; jumlah item tetap terlihat di header. */}
+        <CollapsibleCard
+          id="dash-stale"
+          icon={AlertTriangle}
+          title="Perlu Ditindaklanjuti"
+          description="Lamaran tanpa perubahan lebih dari 7 hari — ubah status atau arsipkan."
+          status={
+            (overview?.stale?.length ?? 0) > 0
+              ? { label: `${overview?.stale.length} item`, tone: "warn" }
+              : undefined
+          }
+        >
+          {loading ? (
+            <div className="flex flex-col gap-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : (overview?.stale?.length ?? 0) === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <CheckCircle2 className="size-8 text-emerald-500/70" aria-hidden="true" />
+              <p className="text-sm text-muted-foreground">
+                Semua lamaran tertangani. Kerja bagus!
+              </p>
+            </div>
+          ) : (
+            <div className="max-h-72 overflow-y-auto nice-scrollbar">
+              {overview?.stale.map((app) => (
+                <div
+                  key={app.id}
+                  className="flex items-center gap-3 border-b py-3 last:border-b-0"
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+                    {initialsOf(app.name)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{app.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {app.positionTitle ?? "-"} · masuk {formatDate(app.createdAt)} ({formatRelative(app.createdAt)})
+                    </p>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <StatusBadge status={app.status} className="hidden shrink-0 sm:inline-flex" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-11 shrink-0 sm:h-8"
+                    onClick={() => setDetail(app)}
+                  >
+                    Detail
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CollapsibleCard>
       </div>
 
       {/* Lamaran terbaru */}
@@ -1290,18 +1293,20 @@ export function DashboardTab() {
         </CardContent>
       </Card>
 
-      {/* Papan Pengumuman — info internal tim (OWNER/HR memposting, OWNER menghapus) */}
-      <Card className="gap-0 rounded-2xl py-6">
-        <CardHeader className="px-6">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Megaphone className="size-4 text-rose-500" aria-hidden="true" />
-            Papan Pengumuman
-          </CardTitle>
-          <CardDescription className="mt-1">
-            Informasi penting untuk seluruh tim rekrutmen.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-6">
+      {/* NR62 (butir 9) — Papan Pengumuman menjadi CollapsibleCard default
+          TERTUTUP dalam SectionGroup "Tim". Form posting & daftar tetap sama. */}
+      <SectionGroup label="Tim">
+      <CollapsibleCard
+        id="dash-announcements"
+        icon={Megaphone}
+        title="Papan Pengumuman"
+        description="Informasi penting untuk seluruh tim rekrutmen."
+        status={
+          announcements.length > 0
+            ? { label: `${announcements.length} pengumuman`, tone: "neutral" }
+            : undefined
+        }
+      >
           {canPostAnnouncement ? (
             <form
               className="flex flex-col gap-2 rounded-xl border bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/60"
