@@ -25,6 +25,7 @@ import {
   Lightbulb,
   Loader2,
   MapPin,
+  MoreHorizontal,
   RotateCcw,
   Search,
   Send,
@@ -36,6 +37,12 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -944,116 +951,122 @@ export function PipelineTab({
 
       {position ? (
         <>
-          {/* Info posisi ringkas */}
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-bold">{position.title}</h3>
-            <Badge variant="outline" className="rounded-full">
+          {/* NR62 (butir 16) — info posisi + strip funnel digabung menjadi SATU
+              bar slim: badge inline + funnel ringkas. Semua elemen & aksi tetap
+              ada (Daftar Tunggu, badge duplikat, Shortlist AI, Terisi). */}
+          <div
+            className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-2xl border bg-card px-3 py-2 text-xs"
+            aria-label={`Info pipeline ${position.title}`}
+          >
+            <h3 className="text-sm font-bold">{position.title}</h3>
+            <Badge variant="outline" className="rounded-full px-2 text-[11px]">
               {position.department}
             </Badge>
-            <Badge variant="outline" className="rounded-full">
+            <Badge variant="outline" className="rounded-full px-2 text-[11px]">
               {position.type}
             </Badge>
             {position.isActive ? (
-              <Badge className="rounded-full border-transparent bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+              <Badge className="rounded-full border-transparent bg-emerald-100 px-2 text-[11px] text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
                 Aktif
               </Badge>
             ) : (
-              <Badge variant="secondary" className="rounded-full">
+              <Badge variant="secondary" className="rounded-full px-2 text-[11px]">
                 Nonaktif
               </Badge>
             )}
             {position.maxApplicants != null ? (
-              <Badge variant="outline" className="rounded-full">
+              <Badge variant="outline" className="rounded-full px-2 text-[11px] tabular-nums">
                 Kuota {positionApps.length}/{position.maxApplicants}
               </Badge>
             ) : null}
 
-            {/* Badge peringatan duplikat + tombol Daftar Tunggu + Shortlist AI (NR-40 / Task 20-a) */}
-            <div className="ml-auto flex items-center gap-2">
+            {/* Badge peringatan duplikat (NR-40 / Task 20-a) */}
+            {duplicateCount > 0 ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className="cursor-help rounded-full border-amber-200 bg-amber-100 px-2 text-[11px] text-amber-700 tabular-nums dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
+                  >
+                    <Copy className="size-3" aria-hidden="true" />
+                    {duplicateCount} duplikat
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>Kemungkinan lamaran ganda — perlu dicek di Pusat Tugas</TooltipContent>
+              </Tooltip>
+            ) : null}
+
+            {/* NR-40 — funnel ringkas: "tahap: n" per kolom. */}
+            {funnel.length > 0 ? (
+              <span
+                className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground"
+                aria-label={`Funnel pipeline ${position.title}`}
+              >
+                <Filter className="size-3 shrink-0" aria-hidden="true" />
+                {funnel.map((f, i) => (
+                  <span key={f.stage} className="flex items-center gap-1">
+                    {i > 0 ? (
+                      <ChevronRight className="size-3 text-muted-foreground/50" aria-hidden="true" />
+                    ) : null}
+                    <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                      {stageLabel(f.stage)}:
+                    </span>
+                    <span className="font-semibold tabular-nums text-foreground">{f.count}</span>
+                  </span>
+                ))}
+              </span>
+            ) : null}
+            {position.maxApplicants != null ? (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "rounded-full px-2 text-[11px] tabular-nums",
+                  buckets.ACCEPTED.length >= position.maxApplicants
+                    ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-400"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-400"
+                )}
+              >
+                Terisi {buckets.ACCEPTED.length}/{position.maxApplicants}
+              </Badge>
+            ) : null}
+
+            <span className="ml-auto flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                className="h-9"
+                className="h-8"
                 onClick={() => setWaitlistOpen(true)}
                 aria-label={`Buka daftar tunggu posisi ini (${waitlistCount} pendaftar)`}
               >
-                <Users className="size-4" aria-hidden="true" />
+                <Users className="size-3.5" aria-hidden="true" />
                 Daftar Tunggu ({waitlistCount})
               </Button>
-              {duplicateCount > 0 ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge
-                      variant="outline"
-                      className="cursor-help rounded-full border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400"
-                    >
-                      <Copy className="size-3" aria-hidden="true" />
-                      {duplicateCount} duplikat
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>Kemungkinan lamaran ganda — perlu dicek di Pusat Tugas</TooltipContent>
-                </Tooltip>
-              ) : null}
               <Button
                 variant="outline"
                 size="sm"
-                className="h-9"
+                className="h-8"
                 disabled={!canMutate || shortlistLoading}
                 onClick={() => void runShortlist()}
                 aria-label="Jalankan Shortlist AI untuk posisi ini"
               >
                 {shortlistLoading ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                 ) : (
-                  <Sparkles className="size-4" aria-hidden="true" />
+                  <Sparkles className="size-3.5" aria-hidden="true" />
                 )}
                 Shortlist AI
               </Button>
-            </div>
+            </span>
           </div>
 
-          {/* NR-40 — strip funnel ringkas: "tahap: n" per kolom + kuota terisi. */}
-          {funnel.length > 0 ? (
-            <div
-              className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl border bg-card px-4 py-3 text-xs"
-              aria-label={`Funnel pipeline ${position.title}`}
-            >
-              <span className="mr-1 flex items-center gap-1 font-semibold text-muted-foreground">
-                <Filter className="size-3.5" aria-hidden="true" />
-                Funnel
-              </span>
-              {funnel.map((f, i) => (
-                <span key={f.stage} className="flex items-center gap-2">
-                  {i > 0 ? (
-                    <ChevronRight
-                      className="size-3.5 text-muted-foreground/50"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                  <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                    {stageLabel(f.stage)}:
-                  </span>
-                  <span className="font-semibold tabular-nums">{f.count}</span>
-                </span>
-              ))}
-              {position.maxApplicants != null ? (
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "ml-auto rounded-full",
-                    buckets.ACCEPTED.length >= position.maxApplicants
-                      ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-400"
-                      : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-400"
-                  )}
-                >
-                  Terisi {buckets.ACCEPTED.length}/{position.maxApplicants}
-                </Badge>
-              ) : null}
-            </div>
-          ) : null}
-
-          {/* Tab kategori */}
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4" role="tablist" aria-label="Kategori tahap">
+          {/* NR62 (butir 16) — 4 kartu kategori besar menjadi segmented control
+              ringkas dengan hitungan; perilaku filter (setCategory + reset
+              seleksi massal) tidak berubah. */}
+          <div
+            className="nice-scrollbar flex w-full items-center gap-1 overflow-x-auto rounded-xl border bg-muted/60 p-1"
+            role="tablist"
+            aria-label="Kategori tahap"
+          >
             {STAGE_CATEGORY_ORDER.map((cat) => {
               const meta = CATEGORY_META[cat];
               const Icon = meta.icon;
@@ -1070,27 +1083,21 @@ export function PipelineTab({
                     setSelectedIds(new Set());
                   }}
                   className={cn(
-                    "flex items-center gap-3 rounded-2xl border p-3 text-left transition-all active:scale-[0.99] sm:p-4",
-                    active
-                      ? cn(meta.activeBorder, meta.activeBg, "shadow-sm")
-                      : "border-zinc-200 bg-background hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700"
+                    "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+                    active ? cn("bg-background shadow-xs", meta.activeText) : "text-muted-foreground hover:text-foreground"
                   )}
                 >
+                  <Icon className="size-3.5" aria-hidden="true" />
+                  {meta.label}
                   <span
                     className={cn(
-                      "flex size-9 shrink-0 items-center justify-center rounded-xl sm:size-10",
-                      active ? meta.chip : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                      "rounded-full px-1.5 text-[11px] font-semibold tabular-nums",
+                      active
+                        ? meta.chip
+                        : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
                     )}
                   >
-                    <Icon className="size-5" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className={cn("block text-sm font-semibold", active ? meta.activeText : "")}>
-                      {meta.label}
-                    </span>
-                    <span className="block text-xs text-muted-foreground tabular-nums">
-                      {count} kandidat
-                    </span>
+                    {count}
                   </span>
                 </button>
               );
