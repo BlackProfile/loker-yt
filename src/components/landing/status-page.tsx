@@ -1544,7 +1544,9 @@ function StatusPageInner({
                     </div>
                   ) : null}
 
-                  {/* NR-15 (idea 13): kartu Tanggal Mulai — hanya bila status diterima */}
+                  {/* NR62 — kartu emerald "Selamat bergabung": konfirmasi tanggal
+                      mulai + Kartu Karyawanku dalam SATU kartu (menggantikan
+                      banner "Diterima" + kartu kartu terpisah). Handler sama. */}
                   {candidateStart ? (
                     <div id="bagian-tanggal-mulai">
                       <StartDateCard
@@ -1560,8 +1562,16 @@ function StatusPageInner({
                         lang={lang}
                         p={p}
                         t={t}
+                        cardSlot={
+                          finalStatus === "ACCEPTED" && selectedCode ? (
+                            <MyCardSection trackingCode={selectedCode} />
+                          ) : null
+                        }
                       />
                     </div>
+                  ) : finalStatus === "ACCEPTED" && selectedCode ? (
+                    /* Edge: diterima tanpa candidateStart — kartu karyawan tetap tampil */
+                    <MyCardSection trackingCode={selectedCode} />
                   ) : null}
 
                   {/* NR-15 (idea 11): panel Perbarui CV — collapsible, default tertutup */}
@@ -1604,11 +1614,6 @@ function StatusPageInner({
                     </div>
                   ) : null}
 
-                  {finalStatus === "ACCEPTED" ? <AcceptedNotice t={t} /> : null}
-                  {/* NR-39: kartu karyawan milik pelamar — bila status diterima */}
-                  {finalStatus === "ACCEPTED" && selectedCode ? (
-                    <MyCardSection trackingCode={selectedCode} />
-                  ) : null}
                   {finalStatus === "REJECTED" ? (
                     <RejectedNotice
                       detail={detail}
@@ -1623,35 +1628,88 @@ function StatusPageInner({
                     <SurveyCard surveyToken={detail.surveyToken} p={p} />
                   ) : null}
 
-                  {/* NR-41 H17 — portabilitas data: unduh salinan data milik pelamar */}
-                  <section
+                  {/* NR62 — pengaturan data & sesi: baris tautan senyap di footer
+                      (kartu "Pengaturan data" + tombol Tarik Lamaran di hero
+                      digabung di sini; AlertDialog tarik lamaran tetap sama). */}
+                  <footer
                     aria-label="Pengaturan data"
-                    className="rounded-xl border border-zinc-200 bg-card p-4 dark:border-zinc-800"
+                    className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm text-muted-foreground"
                   >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold">Pengaturan data</p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          Unduh salinan data lamaran Anda dalam format JSON
-                          (portabilitas data).
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-11 shrink-0 gap-2 sm:h-9"
-                        onClick={() => void downloadMyData()}
-                        disabled={exportBusy}
-                      >
-                        {exportBusy ? (
-                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <Download className="h-4 w-4" aria-hidden="true" />
-                        )}
-                        Unduh data saya
-                      </Button>
-                    </div>
-                  </section>
+                    <button
+                      type="button"
+                      className="min-h-11 rounded px-0.5 text-left underline-offset-2 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-60 disabled:no-underline sm:min-h-0"
+                      onClick={() => void downloadMyData()}
+                      disabled={exportBusy}
+                    >
+                      {p.downloadData}
+                    </button>
+                    {canWithdraw ? (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <AlertDialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+                          <AlertDialogTrigger asChild>
+                            <button
+                              type="button"
+                              className="min-h-11 rounded px-0.5 text-left underline-offset-2 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 sm:min-h-0"
+                            >
+                              {p.withdraw}
+                            </button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>{p.withdrawTitle}</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {fillTemplate(p.withdrawDesc, {
+                                  position: detail.positionTitle ?? "—",
+                                })}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <div className="grid gap-2">
+                              <Label htmlFor="withdraw-reason" className="text-sm font-medium">
+                                {p.withdrawReasonLabel}
+                              </Label>
+                              <Textarea
+                                id="withdraw-reason"
+                                rows={2}
+                                value={withdrawReason}
+                                onChange={(e) => setWithdrawReason(e.target.value)}
+                                placeholder={p.withdrawReasonPh}
+                                maxLength={500}
+                              />
+                            </div>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel disabled={withdrawBusy}>
+                                {t.status.formCancel}
+                              </AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-rose-600 text-white hover:bg-rose-700"
+                                disabled={withdrawBusy}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  void withdrawApplication();
+                                }}
+                              >
+                                {withdrawBusy ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                                ) : (
+                                  <XCircle className="h-4 w-4" aria-hidden="true" />
+                                )}
+                                {p.withdrawConfirm}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </>
+                    ) : null}
+                    <span aria-hidden="true">·</span>
+                    <button
+                      type="button"
+                      className="min-h-11 rounded px-0.5 text-left underline-offset-2 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 sm:min-h-0"
+                      onClick={logout}
+                    >
+                      {p.logout}
+                    </button>
+                  </footer>
                 </motion.div>
               ) : detail && !detail.found ? (
                 /* Pasangan sesi tidak valid lagi (lamaran dihapus dsb.) — minta login ulang */
@@ -1702,15 +1760,15 @@ type RequiredActionItem = {
 
 const ACTION_TONE_STYLES: Record<RequiredActionItem["tone"], { row: string; icon: string }> = {
   rose: {
-    row: "border-rose-200 bg-rose-50 dark:border-rose-500/30 dark:bg-rose-500/10",
+    row: "border-rose-200 bg-rose-50 hover:bg-rose-100/70 dark:border-rose-500/30 dark:bg-rose-500/10 dark:hover:bg-rose-500/15",
     icon: "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400",
   },
   amber: {
-    row: "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10",
+    row: "border-amber-200 bg-amber-50 hover:bg-amber-100/70 dark:border-amber-500/30 dark:bg-amber-500/10 dark:hover:bg-amber-500/15",
     icon: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
   },
   zinc: {
-    row: "border-zinc-200 bg-zinc-50 dark:border-zinc-500/30 dark:bg-zinc-500/5",
+    row: "border-zinc-200 bg-zinc-50 hover:bg-zinc-100/70 dark:border-zinc-500/30 dark:bg-zinc-500/5 dark:hover:bg-zinc-500/10",
     icon: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
   },
 };
@@ -1742,29 +1800,36 @@ function RequiredActionsPanel({
         {actions.map((action) => {
           const tone = ACTION_TONE_STYLES[action.tone];
           const Icon = action.icon;
+          // NR62 — satu baris = satu tombol full-width (label + chevron kanan);
+          // handler lompat & aria-label sama seperti tombol "Ke bagian ini" lama.
+          const rowClass = `flex w-full items-center gap-2.5 rounded-xl border p-3 text-left transition-colors ${tone.row}`;
           return (
-            <li
-              key={action.key}
-              className={`flex flex-wrap items-center gap-2.5 rounded-xl border p-3 ${tone.row}`}
-            >
-              <span
-                className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${tone.icon}`}
-              >
-                <Icon className="size-4" aria-hidden="true" />
-              </span>
-              <p className="min-w-0 flex-1 text-sm font-medium">{action.text}</p>
+            <li key={action.key}>
               {action.targetId ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-11 shrink-0 sm:h-9"
+                <button
+                  type="button"
+                  className={`${rowClass} min-h-11 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:min-h-0`}
                   onClick={() => onGoTo(action.targetId as string)}
                   aria-label={`Ke bagian terkait: ${action.text}`}
                 >
-                  Ke bagian ini
-                  <ArrowDown className="size-3.5" aria-hidden="true" />
-                </Button>
-              ) : null}
+                  <span
+                    className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${tone.icon}`}
+                  >
+                    <Icon className="size-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1 text-sm font-medium">{action.text}</span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                </button>
+              ) : (
+                <div className={rowClass}>
+                  <span
+                    className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${tone.icon}`}
+                  >
+                    <Icon className="size-4" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1 text-sm font-medium">{action.text}</span>
+                </div>
+              )}
             </li>
           );
         })}
@@ -1875,7 +1940,9 @@ function MyCardSection({ trackingCode }: { trackingCode: string }) {
     : "";
 
   return (
-    <div className="rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50/70 to-transparent p-5 dark:border-emerald-500/20 dark:from-emerald-500/5 dark:to-transparent">
+    /* NR62 — kartu karyawan kini di dalam kartu emerald "Selamat bergabung",
+       jadi wadahnya polos tanpa kotak/border sendiri. */
+    <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">

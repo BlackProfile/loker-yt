@@ -1429,8 +1429,8 @@ export function DashboardTab() {
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleCard>
+      </SectionGroup>
 
       <AlertDialog
         open={deleteTarget !== null}

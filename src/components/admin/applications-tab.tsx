@@ -50,6 +50,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Archive,
   ArchiveRestore,
   Download,
@@ -57,15 +67,20 @@ import {
   EyeOff,
   FileSpreadsheet,
   FileText,
+  FlaskConical,
   Inbox,
+  Kanban,
   LayoutGrid,
   Loader2,
   MapPin,
+  MoreHorizontal,
   RotateCcw,
   Rows3,
   Rows4,
   Search,
   Send,
+  Settings2,
+  SlidersHorizontal,
   Sparkles,
   Star,
   Table2,
@@ -322,6 +337,12 @@ export function ApplicationsTab() {
   const [semanticLoading, setSemanticLoading] = useState(false);
   const [semanticOpen, setSemanticOpen] = useState(false);
   const [semanticResults, setSemanticResults] = useState<SemanticSearchEntryUI[]>([]);
+
+  // NR62 (butir 10) — panel "Filter lanjutan" default TERTUTUP.
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  // NR62 (butir 11) — Simulator Demo dipindah ke menu "Lainnya"; dialog
+  // perantara memuat DemoSimulatorControl yang sama (komponen tak diubah).
+  const [demoToolsOpen, setDemoToolsOpen] = useState(false);
 
   // PL-2b (butir 12) — re-engagement talent pool: cocokkan kandidat lama dengan
   // posisi target lalu kirim undangan lamar ulang.
