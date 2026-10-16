@@ -1021,7 +1021,9 @@ export function ApplicationsTable({
                   </TableCell>
                   <TableCell className={pad}>
                     <div className="flex items-center justify-end gap-1">
-                      {candidateButton(app, "md:opacity-0 md:transition-opacity md:duration-150 md:group-hover:opacity-100 md:group-focus-within:opacity-100 focus-visible:opacity-100")}
+                      {/* NR62 (butir 13) — aksi baris dirapikan: "Detail" primer +
+                          SATU menu Lainnya (WhatsApp, profil kandidat, toggle
+                          perbandingan dengan handler yang sama, hapus). */}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1032,29 +1034,49 @@ export function ApplicationsTable({
                         <Eye className="size-4" aria-hidden="true" />
                         Detail
                       </Button>
-                      {app.phone?.trim() ? (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-9 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 md:opacity-0 md:transition-opacity md:duration-150 md:group-hover:opacity-100 md:group-focus-within:opacity-100 focus-visible:opacity-100 dark:text-emerald-400 dark:hover:bg-emerald-950"
-                          onClick={() => void handleWhatsApp(app)}
-                          aria-label={`Kirim WhatsApp ke ${app.name}`}
-                          title="Kirim WhatsApp"
-                        >
-                          <MessageCircle className="size-4" aria-hidden="true" />
-                        </Button>
-                      ) : null}
-                      {canMutate ? (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-9 text-rose-600 hover:bg-rose-50 hover:text-rose-700 md:opacity-0 md:transition-opacity md:duration-150 md:group-hover:opacity-100 md:group-focus-within:opacity-100 focus-visible:opacity-100 dark:hover:bg-rose-950"
-                          onClick={() => onDeleteRequest(app)}
-                          aria-label={`Hapus lamaran ${app.name}`}
-                        >
-                          <Trash2 className="size-4" aria-hidden="true" />
-                        </Button>
-                      ) : null}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-9 text-muted-foreground"
+                            aria-label={`Aksi lain untuk ${app.name}`}
+                          >
+                            <MoreHorizontal className="size-4" aria-hidden="true" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-60">
+                          {canMutate ? (
+                            <DropdownMenuItem
+                              onSelect={() => openCandidateDialog(app.candidateId ?? null)}
+                            >
+                              <UserRound className="size-4" aria-hidden="true" />
+                              Profil Kandidat
+                            </DropdownMenuItem>
+                          ) : null}
+                          {app.phone?.trim() ? (
+                            <DropdownMenuItem onSelect={() => void handleWhatsApp(app)}>
+                              <MessageCircle className="size-4" aria-hidden="true" />
+                              WhatsApp
+                            </DropdownMenuItem>
+                          ) : null}
+                          <DropdownMenuItem onSelect={() => onToggleCompare(app)}>
+                            <LayoutGrid className="size-4" aria-hidden="true" />
+                            {isCompared
+                              ? "Keluarkan dari Perbandingan"
+                              : "Tambahkan ke Perbandingan"}
+                          </DropdownMenuItem>
+                          {canMutate ? (
+                            <DropdownMenuItem
+                              onSelect={() => onDeleteRequest(app)}
+                              className="text-rose-600 focus:text-rose-600 focus:bg-rose-50 dark:text-rose-400 dark:focus:text-rose-400 dark:focus:bg-rose-950/40"
+                            >
+                              <Trash2 className="size-4" aria-hidden="true" />
+                              Hapus
+                            </DropdownMenuItem>
+                          ) : null}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </TableCell>
                 </TableRow>

@@ -311,7 +311,13 @@ export function InterviewsSection({
                               setRescheduleFor(null);
                               setCancelOpenFor(null);
                               setCancelError(null);
-                              void openSlotPanel(interview.id);
+                              // Toggle: klik ulang menutup panel (paritas dengan
+                              // tombol "Pindahkan jadwal" lama).
+                              if (slotPanelOpen) {
+                                closeSlotPanel();
+                              } else {
+                                void openSlotPanel(interview.id);
+                              }
                             }}
                           >
                             <CalendarClock className="h-4 w-4" aria-hidden="true" />
