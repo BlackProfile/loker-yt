@@ -156,8 +156,7 @@ export function deriveJourney(detail: TrackResponse): {
   // 4 — PENAWARAN: selesai bila offer ACCEPTED atau sudah ada hiredAt
   // (tanggal = respondedAt offer, fallback hiredAt); aktif bila offer masih
   // PENDING. DECLINED/EXPIRED tanpa hiredAt → pending (marker ended yang
-  // menandai akhir proses).
-  const hiredAt = onboarding?.hiredAt ?? null;
+  // menandai akhir proses). hiredAt sudah dihitung di tahap WAWANCARA.
   const offerDone = offer?.status === "ACCEPTED" || hiredAt != null;
   const penawaran: JourneyStep = {
     key: JOURNEY_KEYS[4],
