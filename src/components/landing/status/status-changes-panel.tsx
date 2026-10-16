@@ -2,8 +2,10 @@
 
 // Panel "Apa yang Berubah" sejak kunjungan terakhir (NR-15 idea 4 — dipindah
 // verbatim dari status-page.tsx pada NR-18-a). Selalu tampak bila ada isi.
+// NR62: baris ringkasan jadi daftar polos (titik + teks, tanpa kotak per baris);
+// tombol "Tandai dibaca" jadi tombol ikon X di header kartu (semantik sama).
 
-import { CheckCircle2, Sparkles } from "lucide-react";
+import { Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Dict } from "@/components/landing/strings";
 import type { TrackChangeInfo } from "@/lib/types";
@@ -22,28 +24,30 @@ export function RecentChangesPanel({
 }) {
   return (
     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-950/40">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <p className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
           <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
           {p.changesTitle}
         </p>
         <Button
-          variant="outline"
-          size="sm"
-          className="h-11 border-amber-300 bg-transparent text-amber-800 hover:bg-amber-100 hover:text-amber-900 sm:h-9 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+          variant="ghost"
+          size="icon"
+          className="size-8 shrink-0 text-amber-700 hover:bg-amber-100 hover:text-amber-900 dark:text-amber-300 dark:hover:bg-amber-500/15 dark:hover:text-amber-200"
           onClick={onDismiss}
+          aria-label={p.changesMarkRead}
+          title={p.changesMarkRead}
         >
-          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-          {p.changesMarkRead}
+          <X className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
-      <ul className="mt-3 flex flex-col gap-2">
+      <ul className="mt-2.5 flex flex-col gap-1.5">
         {changes.slice(0, 10).map((change, index) => (
-          <li
-            key={`${change.at}-${index}`}
-            className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-lg border border-amber-200/70 bg-background/60 px-3 py-2 dark:border-amber-500/20"
-          >
-            <span className="text-sm text-amber-900 dark:text-amber-100">
+          <li key={`${change.at}-${index}`} className="flex items-start gap-2">
+            <span
+              aria-hidden="true"
+              className="mt-[7px] size-1.5 shrink-0 rounded-full bg-amber-500/80 dark:bg-amber-400/80"
+            />
+            <span className="min-w-0 flex-1 text-sm text-amber-900 dark:text-amber-100">
               {change.text}
             </span>
             <span className="shrink-0 text-xs text-amber-700/80 dark:text-amber-300/70">

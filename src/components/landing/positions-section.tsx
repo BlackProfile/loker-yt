@@ -294,56 +294,82 @@ function PositionCard({
           {displayDescription}
         </p>
 
-        {position.closesAt && !closed ? (
-          <DeadlineCountdownCompact deadline={position.closesAt} />
+        {position.benefits.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {position.benefits.slice(0, MAX_BENEFIT_PREVIEW).map((benefit, index) => (
+              <Badge
+                key={`${position.id}-benefit-${index}`}
+                variant="secondary"
+                className="rounded-full font-normal"
+              >
+                {benefit}
+              </Badge>
+            ))}
+            {position.benefits.length > MAX_BENEFIT_PREVIEW ? (
+              <span className="text-xs text-muted-foreground">
+                {fillTemplate(t.positions.benefitLainnya, {
+                  n: position.benefits.length - MAX_BENEFIT_PREVIEW,
+                })}
+              </span>
+            ) : null}
+          </div>
         ) : null}
 
-        {/* NR-28-A — meter kuota posisi: bar terisi (gradasi rose→amber) + chip
-            "Sisa X kuota" (zinc) / "Kuota penuh" (rose). Hanya tampil bila
-            posisi memiliki batas kuota (total kuota efektif > 0). Animasi lebar
-            bar dimatikan saat reduce-motion. */}
-        {quotaTotal !== null && quotaTotal > 0 ? (
-          <div
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={quotaFilledPct}
-            aria-label={
-              quotaFull
-                ? t.positions.kuotaPenuh
-                : fillTemplate(t.positions.sisaKuota, { n: remaining ?? 0 })
-            }
-            className="space-y-1.5"
-          >
-            {quotaFull ? (
-              <Badge variant="outline" className={cn("gap-1", ROSE_BADGE)}>
-                <Users className="h-3 w-3" aria-hidden="true" />
-                {t.positions.kuotaPenuh}
-              </Badge>
-            ) : (
-              <Badge variant="outline" className={cn("gap-1", CHIP_ZINC)}>
-                <Users className="h-3 w-3" aria-hidden="true" />
-                {fillTemplate(t.positions.sisaKuota, { n: remaining ?? 0 })}
-              </Badge>
-            )}
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-              <motion.div
-                className="h-full rounded-full bg-gradient-to-r from-rose-600 to-amber-500"
-                initial={false}
-                animate={{ width: `${quotaFilledPct}%` }}
-                transition={
-                  reduceMotion ? { duration: 0 } : { duration: 0.5, ease: "easeOut" }
+        {/* NR62 — ticker deadline (kiri) + meter kuota (kanan) dalam SATU baris. */}
+        {(position.closesAt && !closed) || (quotaTotal !== null && quotaTotal > 0) ? (
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            {position.closesAt && !closed ? (
+              <DeadlineCountdownCompact deadline={position.closesAt} />
+            ) : null}
+            {quotaTotal !== null && quotaTotal > 0 ? (
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={quotaFilledPct}
+                aria-label={
+                  quotaFull
+                    ? t.positions.kuotaPenuh
+                    : fillTemplate(t.positions.sisaKuota, { n: remaining ?? 0 })
                 }
-              />
-            </div>
+                className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none"
+              >
+                {quotaFull ? (
+                  <Badge variant="outline" className={cn("shrink-0 gap-1", ROSE_BADGE)}>
+                    <Users className="h-3 w-3" aria-hidden="true" />
+                    {t.positions.kuotaPenuh}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className={cn("shrink-0 gap-1", CHIP_ZINC)}>
+                    <Users className="h-3 w-3" aria-hidden="true" />
+                    {fillTemplate(t.positions.sisaKuota, { n: remaining ?? 0 })}
+                  </Badge>
+                )}
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800 sm:w-28"
+                >
+                  <motion.div
+                    className="h-full rounded-full bg-gradient-to-r from-rose-600 to-amber-500"
+                    initial={false}
+                    animate={{ width: `${quotaFilledPct}%` }}
+                    transition={
+                      reduceMotion ? { duration: 0 } : { duration: 0.5, ease: "easeOut" }
+                    }
+                  />
+                </span>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
         <div className="mt-auto flex items-center justify-between gap-3 border-t pt-4">
+          {/* NR62 — bullet persyaratan dihapus dari kartu; hitungan/fallback tetap di sini,
+              detail lengkap ada di halaman (?posisi=slug). */}
           <span className="text-xs text-muted-foreground">
             {displayRequirements.length > 0
               ? `${displayRequirements.length} ${t.positions.requirementsCount}`
-              : ""}
+              : t.positions.reqFallback}
           </span>
           <div className="flex items-center gap-2">
             {/* Selalu tampil: detail kini halaman penuh (?posisi=slug) tempat
@@ -589,6 +615,18 @@ export function PositionsSection({
       })),
     [cities, sortedPositions],
   );
+  // NR62 — departemen > 4: baris chip berganti dropdown "Departemen" agar
+  // panel filter tetap satu baris ringkas.
+  const deptDropdown = departments.length > 4;
+  const deptOptions = useMemo(
+    () =>
+      departments.map((dept) => ({
+        value: dept,
+        label: dept,
+        count: sortedPositions.filter((p) => p.department === dept).length,
+      })),
+    [departments, sortedPositions],
+  );
 
   const hasActiveFilters =
     department !== null || jobType !== null || workMode !== null || city !== null;
@@ -639,33 +677,51 @@ export function PositionsSection({
         ) : (
           <>
             <FadeIn className="mt-8">
-              {/* Panel filter dua lapis: baris 1 kategori (chip), baris 2 toolbar
-                  ringkas (dropdown Jenis/Mode/Kota + hitungan hasil + reset). */}
+              {/* Panel filter dua lapis: baris 1 kategori (chip, hanya bila
+                  departemen <= 4 — NR62: jika lebih, jadi dropdown), baris 2
+                  toolbar ringkas (dropdown Departemen/Jenis/Mode/Kota + hitungan
+                  hasil + reset). */}
               <div className="space-y-3 rounded-2xl border bg-muted/40 p-3 md:p-4">
-                <div
-                  role="group"
-                  aria-label={t.positions.deptLabel}
-                  className="flex flex-wrap items-center gap-2"
-                >
-                  <FilterChip
-                    active={department === null}
-                    onClick={() => setDepartment(null)}
-                    ariaLabel={`${t.positions.deptLabel}: ${t.positions.all}`}
+                {deptDropdown ? null : (
+                  <div
+                    role="group"
+                    aria-label={t.positions.deptLabel}
+                    className="flex flex-wrap items-center gap-2"
                   >
-                    {t.positions.all}
-                  </FilterChip>
-                  {departments.map((dept) => (
                     <FilterChip
-                      key={dept}
-                      active={department === dept}
-                      onClick={() => setDepartment(department === dept ? null : dept)}
-                      ariaLabel={`${t.positions.deptLabel}: ${dept}`}
+                      active={department === null}
+                      onClick={() => setDepartment(null)}
+                      ariaLabel={`${t.positions.deptLabel}: ${t.positions.all}`}
                     >
-                      {dept}
+                      {t.positions.all}
                     </FilterChip>
-                  ))}
-                </div>
+                    {departments.map((dept) => (
+                      <FilterChip
+                        key={dept}
+                        active={department === dept}
+                        onClick={() => setDepartment(department === dept ? null : dept)}
+                        ariaLabel={`${t.positions.deptLabel}: ${dept}`}
+                      >
+                        {dept}
+                      </FilterChip>
+                    ))}
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-2">
+                  {deptDropdown ? (
+                    /* Label "Departemen" hardcode — tidak ada kunci dict yang
+                       pas & strings.ts sedang diedit agen paralel (NR62). */
+                    <FilterDropdown
+                      icon={Building2}
+                      placeholder="Departemen"
+                      allLabel={t.positions.all}
+                      options={deptOptions}
+                      activeValue={department}
+                      onClear={() => setDepartment(null)}
+                      onSelect={setDepartment}
+                      triggerAria={t.positions.deptLabel}
+                    />
+                  ) : null}
                   <FilterDropdown
                     icon={Briefcase}
                     placeholder={t.positions.filterTypeLabel}
