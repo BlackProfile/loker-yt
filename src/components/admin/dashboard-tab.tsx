@@ -706,25 +706,22 @@ export function DashboardTab() {
         </Card>
       ) : null}
 
-      {/* Kartu Perlu Perhatian (SLA Tahap) — alert lamaran lama diam di satu tahap */}
-      <Card className="gap-0 rounded-2xl py-6">
-        <CardHeader className="flex-row items-start justify-between gap-3 px-6">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <AlarmClock className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-              Perlu Perhatian (SLA Tahap)
-            </CardTitle>
-            <CardDescription className="mt-1">
-              Lamaran aktif yang diam di satu tahap lebih dari {sla?.days ?? 7} hari.
-            </CardDescription>
-          </div>
-          {sla !== null && sla.rows.length > 0 ? (
-            <Badge className="shrink-0 border-amber-200 bg-amber-100 text-amber-700 tabular-nums dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
-              {sla.rows.length}
-            </Badge>
-          ) : null}
-        </CardHeader>
-        <CardContent className="px-6">
+      {/* NR62 (butir 9) — SLA Tahap + Kesehatan Halaman Status dikelompokkan
+          dalam SectionGroup "Perhatian"; SLA menjadi CollapsibleCard default
+          TERTUTUP (chip jumlah temuan tetap terlihat di header). Data & aksi
+          tidak berubah. */}
+      <SectionGroup label="Perhatian">
+        <CollapsibleCard
+          id="dash-sla"
+          icon={AlarmClock}
+          title="Perlu Perhatian (SLA Tahap)"
+          description={`Lamaran aktif yang diam di satu tahap lebih dari ${sla?.days ?? 7} hari.`}
+          status={
+            sla !== null && sla.rows.length > 0
+              ? { label: `${sla.rows.length} item`, tone: "warn" }
+              : undefined
+          }
+        >
           {sla === null ? (
             <div className="flex flex-col gap-3">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -776,12 +773,11 @@ export function DashboardTab() {
               })}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </CollapsibleCard>
 
-      {/* Kartu Kesehatan Halaman Status (NR-15, idea 14) — sembunyi otomatis bila
-          backend belum menyediakan statusHealth (kompatibilitas mundur) */}
-      {overview?.statusHealth ? (
+        {/* Kartu Kesehatan Halaman Status (NR-15, idea 14) — sembunyi otomatis bila
+            backend belum menyediakan statusHealth (kompatibilitas mundur) */}
+        {overview?.statusHealth ? (
         <Card className="gap-0 rounded-2xl py-6">
           <CardHeader className="px-6">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -868,10 +864,20 @@ export function DashboardTab() {
             </motion.div>
           );
         })}
+      </motion.div>
 
-        {/* Rata-rata Skor AI */}
-        <motion.div variants={STAGGER_ITEM}>
-          <Card className="gap-0 overflow-hidden rounded-2xl border-t-2 border-t-rose-600 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md">
+      {/* NR62 (butir 8)) — dua metrik sekunder (Rata-rata Skor AI + Pelanggan
+          Notifikasi) dipindah ke kartu lipat default TERTUTUP tepat di bawah
+          grid statistik. Data + CountUp + ikon tetap sama; grid utama kini
+          hanya 6 kartu status agar lebih mudah dipindai. */}
+      <CollapsibleCard
+        id="dash-metrics-extra"
+        icon={Sparkles}
+        title="Metrik lainnya"
+        description="Rata-rata Skor AI dan jumlah Pelanggan Notifikasi."
+      >
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+          <Card className="gap-0 overflow-hidden rounded-2xl border-t-2 border-t-rose-600 py-4">
             <CardContent className="px-4">
               <div className="flex items-center justify-between gap-2">
                 <span
@@ -895,11 +901,8 @@ export function DashboardTab() {
               </p>
             </CardContent>
           </Card>
-        </motion.div>
 
-        {/* Pelanggan Notifikasi */}
-        <motion.div variants={STAGGER_ITEM}>
-          <Card className="gap-0 overflow-hidden rounded-2xl border-t-2 border-t-amber-500 py-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md">
+          <Card className="gap-0 overflow-hidden rounded-2xl border-t-2 border-t-amber-500 py-4">
             <CardContent className="px-4">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-2xl font-bold tabular-nums">
@@ -914,8 +917,8 @@ export function DashboardTab() {
               </p>
             </CardContent>
           </Card>
-        </motion.div>
-      </motion.div>
+        </div>
+      </CollapsibleCard>
 
       {/* Bento dasbor (NR-28 item 11) — grid 3 kolom di lg: grafik utama
           lg:col-span-2 disusul Corong Rekrutmen, lalu Aktivitas Terbaru
