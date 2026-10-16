@@ -884,6 +884,14 @@ const id = {
     title: "Mode Pratinjau — Anda melihat halaman seperti yang dilihat pelamar",
     close: "Tutup Pratinjau",
   },
+  notice: {
+    title: "Pengumuman",
+    desc: "Info terbaru dari tim rekrutmen untukmu.",
+    gotIt: "Mengerti",
+    pinned: "Penting",
+    chipAria: "Buka pengumuman",
+    empty: "Belum ada pengumuman.",
+  },
 };
 
 export type Dict = idDictShape;
@@ -1602,6 +1610,14 @@ type idDictShape = {
   previewBanner: {
     title: string;
     close: string;
+  };
+  notice: {
+    title: string;
+    desc: string;
+    gotIt: string;
+    pinned: string;
+    chipAria: string;
+    empty: string;
   };
 };
 
@@ -2476,6 +2492,14 @@ const en: Dict = {
   previewBanner: {
     title: "Preview Mode — You are viewing the page as applicants see it",
     close: "Close Preview",
+  },
+  notice: {
+    title: "Announcement",
+    desc: "Latest updates from the recruitment team.",
+    gotIt: "Got it",
+    pinned: "Pinned",
+    chipAria: "Open announcements",
+    empty: "No announcements yet.",
   },
 };
 
