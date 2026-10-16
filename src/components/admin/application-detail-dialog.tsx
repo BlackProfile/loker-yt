@@ -5440,10 +5440,9 @@ export function ApplicationDetailDialog({
               onGotoQuestions={scrollToCandidateQuestions}
             />
 
-            {/* NR-24 fitur 9 + 10 — kotak masuk per jenis (email/panggilan/pertanyaan).
-                NR-34: duplikat CallLogSection/Assessment/InternalDocs yang sebelumnya
-                dirender dua kali sudah digabung ke tab masing-masing. */}
-            <InboxSection key={`inbox2-${app.id}`} applicationId={app.id} />
+            {/* NR-34: InboxSection per-jenis (duplikat UnifiedInboxSection) dihapus
+                pada NR62 — email/panggilan/pertanyaan kini cukup lewat
+                UnifiedInboxSection + CallLogSection di atas. */}
 
             {/* Timeline */}
             <div>
