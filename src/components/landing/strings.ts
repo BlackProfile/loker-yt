@@ -15,7 +15,7 @@ const id = {
   nav: {
     positions: "Posisi",
     benefits: "Benefit",
-    howToApply: "Cara Lamar",
+    howToApply: "Proses Seleksi",
     faq: "FAQ",
     status: "Cek Status",
     applyNow: "Lamar Sekarang",
@@ -131,32 +131,79 @@ const id = {
     desc: "Lebih dari sekadar pekerjaan — kami bantu kamu bertumbuh jadi kreator profesional.",
     empty: "Benefit akan segera diumumkan.",
   },
-  howTo: {
-    badge: "Alur",
-    title: "Cara Melamar",
-    desc: "Empat langkah sederhana dari menemukan posisi hingga menjadi bagian dari tim.",
-    steps: [
+  selection: {
+    badge: "Alur Seleksi",
+    title: "Proses Seleksi dari Awal sampai Gabung",
+    desc: "Enam tahap transparan — kamu selalu tahu sedang di mana dan apa langkah berikutnya.",
+    stages: [
       {
-        title: "Pilih Posisi",
+        title: "Lamar & Unggah Berkas",
         description:
-          "Telusuri lowongan yang tersedia dan temukan yang paling cocok dengan keahlianmu.",
+          "Isi formulir singkat, unggah CV, dan tambahkan tautan karya terbaikmu.",
+        duration: "±3 menit",
+        tips: [
+          "Siapkan CV satu halaman dan tautan portofolio terbaikmu",
+          "Isi data dengan jujur — tim memverifikasi setiap lamaran",
+          "Video perkenalan singkat membuat lamaranmu lebih personal",
+        ],
       },
       {
-        title: "Isi Formulir",
+        title: "Seleksi Berkas",
         description:
-          "Lengkapi data diri dan tautan karyamu. Hanya butuh 3 menit.",
+          "Tim meninjau CV, portofolio, dan jawaban screening setiap pelamar.",
+        duration: "±1-3 hari kerja",
+        tips: [
+          "Pastikan CV mudah dibaca dan relevan dengan posisi",
+          "Tulis motivasi yang spesifik untuk studio, bukan template umum",
+        ],
       },
       {
-        title: "Wawancara Online",
+        title: "Tes Seleksi",
         description:
-          "Tim kami akan menghubungimu via WhatsApp atau email untuk sesi tanya jawab.",
+          "Posisi tertentu mendapat tugas uji singkat sesuai bidangnya, lengkap dengan tenggat.",
+        duration: "1-3 hari pengerjaan",
+        tips: [
+          "Kumpulkan sebelum tenggat — keterlambatan memengaruhi penilaian",
+          "Ikuti instruksi tugas dengan saksama; kualitas lebih penting dari kuantitas",
+          "Nilai tes muncul di Cek Status setelah tim menilai",
+        ],
       },
       {
-        title: "Gabung Tim",
+        title: "Wawancara",
         description:
-          "Ikuti onboarding singkat dan mulai proyek pertamamu bersama kami.",
+          "Sesi ngobrol online atau tatap muka untuk saling mengenal — bisa lebih dari satu ronde.",
+        duration: "±45 menit per sesi",
+        tips: [
+          "Hadir 10 menit lebih awal dan uji kamera serta mikrofon",
+          "Siapkan pertanyaan untuk tim — tanda ketertarikan yang baik",
+          "Cek Status memudahkan konfirmasi kehadiran dan ubah jadwal",
+        ],
+      },
+      {
+        title: "Penawaran",
+        description:
+          "Kamu menerima surat penawaran berisi posisi, kompensasi, dan tanggal mulai.",
+        duration: "±1-2 hari kerja",
+        tips: [
+          "Baca detail offer sampai selesai, termasuk batas jawaban",
+          "Tanyakan dulu bila ada yang belum jelas sebelum memutuskan",
+        ],
+      },
+      {
+        title: "Onboarding",
+        description:
+          "Selamat bergabung! Lengkapi dokumen, kenali tim, dan mulai proyek pertamamu.",
+        duration: "Hari pertamamu",
+        tips: [
+          "Lengkapi dokumen onboarding sebelum hari pertama",
+          "Catat pertanyaan apa saja — minggu pertama adalah waktu terbaik untuk bertanya",
+        ],
       },
     ],
+    tipsToggle: "Kiat sukses",
+    tipsHide: "Sembunyikan kiat",
+    ctaJobs: "Lihat Lowongan Terbuka",
+    ctaStatus: "Sudah Melamar? Cek Status",
   },
   apply: {
     badge: "Formulir",
