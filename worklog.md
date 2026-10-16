@@ -4699,3 +4699,25 @@ Work Log:
 Stage Summary:
 - Tidak ada regresi NR61/NR62/NR63; tsc & lint tetap lulus (tidak ada perubahan kode pada sesi verifikasi ini).
 - Catatan: section landing "Proses Seleksi" hanya terlihat bila admin mengaktifkan "Proses Seleksi" di Pengaturan Situs.
+
+---
+Task ID: NR64
+Agent: orchestrator (Z.ai Code)
+Task: "Semuanya" — verifikasi menyeluruh seluruh fitur yang disetujui (NR61 seleksi, NR54 tugas uji, NR55 Berkas, NR62, NR63) + perbaikan derivasi journey NO_SHOW + visibilitas section Proses Seleksi.
+
+Work Log:
+- Audit worklog: NR61 (Proses Seleksi + Peta Perjalanan), NR54 (brief + unggah tugas uji), NR55 (Tab Berkas), NR62 (simplifikasi 4 permukaan), NR63 (popup pengumuman publik) ternyata SUDAH selesai di sesi-sesi sebelumnya — tidak ada pembangunan ulang; fokus beralih ke verifikasi hidup + perbaikan temuan.
+- Riset data: setting situs sections.step mati (hanya positions/applyForm/statusCheck aktif) → section landing "Proses Seleksi" (deliverable NR61) tak terlihat; DB berisi tracking code nyata (LM-U1YM0G INTERVIEW/Penulis Naskah, LM-5IDMTP NEW/Video Editor), 3.681 FileAsset, 3 pengumuman.
+- Aktifkan sections.steps=true (surgical via DB) → landing kini menampilkan "Proses Seleksi dari Awal sampai Gabung" (6 kartu tahap + chip durasi + tips expandable) — terverifikasi desktop & 390px mobile tanpa overflow horizontal.
+- E2E Cek Status: login LM-5IDMTP (NEW) → kartu Peta Perjalanan benar (badge "Tahap ini" di Seleksi Berkas), panel Tugas Uji menampilkan brief posisi "Tes Editing: Potong 1 video pendek 60 detik" (NR54 by design: UI unggah hanya muncul per tugas yang dikirim admin); login LM-U1YM0G (INTERVIEW) → seluruh struktur NR62 utuh (Detail tahap collapsible, Tugas Uji, Wawancara Ronde 1, footer Unduh data/Tarik Lamaran/Keluar).
+- BUG DITEMUKAN & DIPERBAIKI: LM-U1YM0G punya sesi wawancara berstatus NO_SHOW — deriveJourney lama hanya menghitung SCHEDULED/CONFIRMED/RESCHEDULE_REQUESTED sebagai aktif, sehingga peta "mundur" menyorot Tes Seleksi + tip "Berkas sedang ditinjau" (menyesatkan). Fix status-journey.tsx: ivAktif juga true bila detail.status === "INTERVIEW" (kecuali tahap setelahnya sudah hidup: offer != null || hiredAt != null); hiredAt dipindah ke atas blok WAWANCARA. Re-verify live: badge "Tahap ini" kini di Wawancara + tip wawancara yang relevan.
+- E2E admin (admin@lumina.id): login OK; nav KELOLA → Tab "Berkas" (NR55) hidup — deskripsi kelola media, Total Berkas 1000, Ukuran Total 838, tombol "Bersihkan Yatim (1)"; Dashboard → Papan Pengumuman expand → switch "Tampilkan ke pelamar" + badge "Disematkan"/"Publik" pada pengumuman publik, pengumuman internal tanpa badge (NR63).
+- NR63 end-to-end ulang: /api/public/notices mengembalikan pengumuman publik; popup mobile 390px auto-appear dengan badge "Penting" (pinned); Escape → dialog tutup, chip mengapung muncul, sessionStorage snoozed=1.
+- Kebersihan data uji: hapus pengumuman "tes 1" (publik, artefak uji) → sisa 2 pengumuman internal non-publik; /api/public/notices kembali []; viewport browser dikembalikan 1440x900.
+- Gerbang: bunx tsc --noEmit → 0 error di src/; bun run lint → exit 0; dev.log bersih (tanpa error runtime).
+- Catatan deviasi: error overlay "Ecmascript file had an error" sesaat muncul di browser karena state antar-edit (deklarasi hiredAt ganda sempat ada di antara dua Edit) — hilang sendiri setelah file utuh; tidak ada perubahan fungsi lain.
+
+Stage Summary:
+- Seluruh fitur yang disetujui kini TERLIHAT dan terverifikasi hidup: section "Proses Seleksi" 6 tahap tampil di landing (steps=true), Peta Perjalanan Cek Status benar termasuk edge NO_SHOW, Tugas Uji brief tampil, Tab Berkas admin berfungsi, popup pengumuman publik bekerja (auto-popup + snooze + chip).
+- Perbaikan permanen: deriveJourney tak lagi "mundur" ke Tes Seleksi bagi pelamar bertatus INTERVIEW (termasuk yang sesi terakhirnya NO_SHOW atau menunggu dijadwalkan ulang) — badge tahap & tip kini konsisten dengan STATUS SAAT INI di hero.
+- Data uji dibersihkan; setting situs hanya berubah satu hal: sections.steps=false→true (dilaporkan ke user, bisa dimatikan lagi via Pengaturan Situs bila tak diinginkan).
