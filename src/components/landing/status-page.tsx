@@ -80,6 +80,7 @@ import { RecentChangesPanel } from "./status/status-changes-panel";
 import { AppsSwitcher, type StatusChipInfo } from "./status/status-apps-switcher";
 import { StatusHero } from "./status/status-hero";
 import { StatusTimeline } from "./status/status-timeline";
+import { StatusJourney } from "./status/status-journey";
 import { InterviewsSection } from "./status/status-interviews";
 import { OfferCard } from "./status/status-offer";
 import { OfferLetterOverlay } from "./status/status-offer-letter";
@@ -1420,6 +1421,9 @@ function StatusPageInner({
                       onGoTo={(targetId) => scrollToSection(targetId)}
                     />
                   ) : null}
+
+                  {/* NR61 — peta perjalanan makro (ringkasan 6 tahap besar) */}
+                  <StatusJourney detail={detail} lang={lang} nowMs={nowMs} p={p} />
 
                   {/* Timeline progres (stepper vertikal penuh) */}
                   <StatusTimeline
