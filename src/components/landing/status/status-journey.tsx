@@ -361,12 +361,17 @@ export function StatusJourney({
   const displayStateOf = (step: JourneyStep, i: number): JourneyState =>
     activeIndex === i && step.state === "pending" ? "active" : step.state;
 
-  // Konteks tip: bila posisi aktif adalah TES SELEKSI tetapi posisinya tidak
-  // mengirim tugas uji apa pun, pakai tip tahap peninjauan (index 1) supaya
-  // pesan tetap benar (tidak menyuruh mengunggah tugas yang tidak ada).
+  // Konteks tip: bila tahap aktif TES SELEKSI tetapi belum ada tugas uji yang
+  // dikirim ke pelamar, tampilkan tip khusus "menunggu tugas dikirim" — bukan
+  // tip tahap peninjauan (berkas sudah selesai) dan bukan menyuruh mengunggah
+  // tugas yang belum ada.
   const noAssessments = (detail.assessments ?? []).length === 0;
-  const tipIndex =
-    activeIndex === 2 && noAssessments ? 1 : activeIndex;
+  const tipContent: string | null =
+    activeIndex == null
+      ? null
+      : activeIndex === 2 && noAssessments
+        ? journey.tipNoTask
+        : journey.tips[activeIndex];
 
   return (
     <Card className="rounded-2xl p-5 md:p-6">
@@ -495,17 +500,17 @@ export function StatusJourney({
         </>
       ) : null}
 
-      {/* Kiat tahap aktif — hilang otomatis saat proses berakhir (tipIndex null);
-          NR62: disembunyikan juga bila panel aksi wajib sudah memuat panduan. */}
-      {showTip && tipIndex != null ? (
+      {/* Kiat tahap aktif — hilang otomatis saat proses berakhir (tipContent
+          null); NR62: disembunyikan juga bila panel aksi wajib sudah memuat
+          panduan. */}
+      {showTip && tipContent ? (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs dark:border-amber-500/30 dark:bg-amber-500/10">
           <Lightbulb
             className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
             aria-hidden="true"
           />
           <p>
-            <span className="font-medium">{journey.tipTitle}:</span>{" "}
-            {journey.tips[tipIndex]}
+            <span className="font-medium">{journey.tipTitle}:</span> {tipContent}
           </p>
         </div>
       ) : null}

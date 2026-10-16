@@ -681,6 +681,8 @@ const id = {
         endedNote:
           "Proses seleksi berakhir di tahap ini. Terima kasih sudah melamar — jangan ragu mencoba posisi lain.",
         tipTitle: "Kiat tahap ini",
+        tipNoTask:
+          "Berkas kamu sudah lolos peninjauan awal. Tugas uji akan dikirim tim lewat halaman ini — pantau terus ya.",
         detailToggle: "Detail tahap",
         tips: [
           "Lamaran sudah masuk. Pantau email dan halaman ini — tim menghubungi bila berkasmu cocok.",
@@ -1431,6 +1433,7 @@ type idDictShape = {
         endedLabel: string;
         endedNote: string;
         tipTitle: string;
+        tipNoTask: string;
         detailToggle: string;
         tips: string[];
       };
@@ -2290,6 +2293,8 @@ const en: Dict = {
         endedNote:
           "The selection process ended at this stage. Thanks for applying — feel free to try other positions.",
         tipTitle: "Tip for this stage",
+        tipNoTask:
+          "Your application passed the initial review. The team will send the test task through this page — stay tuned.",
         detailToggle: "Stage details",
         tips: [
           "Your application is in. Watch your email and this page — the team will reach out if your profile matches.",
