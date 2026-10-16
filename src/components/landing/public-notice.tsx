@@ -3,13 +3,13 @@
 // NR63 — Pengumuman publik untuk pelamar di halaman utama.
 // Sumber data: GET /api/public/notices (tanpa login, hanya pengumuman isPublic).
 // Perilaku:
-//  1) Popup dialog otomatis saat ada pengumuman yang belum pernah dilihat
+//  1) Popup dialog otomatis saat ada pengumuman yang belum pernah dibaca
 //     pengunjung (status "sudah dibaca" disimpan di localStorage per browser).
-//  2) Chip megafon mengapung (kiri-bawah) dengan titik rose sebagai penanda
-//     ada pengumuman belum dibaca — klik untuk membuka ulang dialog.
-//  3) Menutup dialog dengan cara apa pun (tombol Mengerti, X, luar dialog)
-//     menandai semua pengumuman yang tampil sebagai sudah dibaca — popup
-//     tidak mengganggu berulang untuk pengumuman yang sama.
+//  2) Menutup dengan tombol "Mengerti" = semua pengumuman tampilan ditandai
+//     sudah dibaca — popup & chip tidak muncul lagi untuk pengumuman itu.
+//  3) Menutup dengan X / klik luar / Esc = menunda (snooze per sesi tab via
+//     sessionStorage): popup tidak auto-muncul berulang di sesi tab yang sama,
+//     tetapi chip megafon mengapung (kiri-bawah) tetap ada untuk dibuka ulang.
 // Halaman mode perawatan penuh tidak merender komponen ini (dipasang di
 // LandingShell setelah early-return perawatan).
 
@@ -39,6 +39,9 @@ type PublicNotice = {
 
 // Kunci localStorage daftar id pengumuman yang sudah dibaca pengunjung.
 const SEEN_KEY = "lumina-notice-seen-v1";
+// Kunci sessionStorage penanda "snooze": pengguna menutup popup tanpa
+// "Mengerti" — jangan auto-muncul lagi dalam sesi tab ini (chip tetap ada).
+const SNOOZE_KEY = "lumina-notice-snoozed-v1";
 // Jeda sebelum fetch agar konten utama halaman selesai dimuat dulu.
 const FETCH_DELAY_MS = 1500;
 // Batas daftar id yang disimpan agar localStorage tidak membengkak.
@@ -61,6 +64,23 @@ function writeSeenIds(ids: string[]) {
     window.localStorage.setItem(SEEN_KEY, JSON.stringify(ids.slice(-SEEN_CAP)));
   } catch {
     // Penyimpanan penuh/diblokir — abaikan; popup boleh muncul lagi nanti.
+  }
+}
+
+function readSnoozed(): boolean {
+  try {
+    return window.sessionStorage.getItem(SNOOZE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeSnoozed(value: boolean) {
+  try {
+    if (value) window.sessionStorage.setItem(SNOOZE_KEY, "1");
+    else window.sessionStorage.removeItem(SNOOZE_KEY);
+  } catch {
+    // Abaikan — fallback perilaku: popup boleh muncul lagi.
   }
 }
 
@@ -98,8 +118,9 @@ export function PublicNotice() {
         setSeenIds(awal);
         setNotices(rows);
         setLoaded(true);
-        // Popup otomatis hanya untuk pengumuman yang belum dibaca.
-        if (rows.length > 0 && rows.some((n) => !awal.has(n.id))) {
+        // Popup otomatis hanya untuk pengumuman yang belum dibaca — dan
+        // dilewati bila pengguna sudah menunda di sesi tab ini (chip tetap ada).
+        if (rows.length > 0 && rows.some((n) => !awal.has(n.id)) && !readSnoozed()) {
           setOpen(true);
         }
       } catch {
@@ -112,20 +133,26 @@ export function PublicNotice() {
     };
   }, []);
 
-  // Menutup dialog dengan cara apa pun menandai seluruh pengumuman tampilan
-  // ini sudah dibaca (anti-berulang untuk pengumuman yang sama).
-  const handleOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      setOpen(nextOpen);
-      if (!nextOpen && notices.length > 0) {
-        const next = new Set(seenIds);
-        for (const n of notices) next.add(n.id);
-        setSeenIds(next);
-        writeSeenIds([...next]);
-      }
-    },
-    [notices, seenIds]
-  );
+  // Tutup/buka dialog biasa (X, klik luar, Esc, chip) — TIDAK menandai
+  // sudah dibaca; hanya menandai snooze agar tidak auto-muncul berulang
+  // dalam sesi tab yang sama. Penandaan dibaca lewat tombol "Mengerti".
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) writeSnoozed(true);
+  }, []);
+
+  // "Mengerti" — tandai seluruh pengumuman tampilan sudah dibaca (localStorage)
+  // lalu tutup dialog; chip mengapung ikut hilang.
+  const markAllSeen = useCallback(() => {
+    if (notices.length > 0) {
+      const next = new Set(seenIds);
+      for (const n of notices) next.add(n.id);
+      setSeenIds(next);
+      writeSeenIds([...next]);
+    }
+    writeSnoozed(false);
+    setOpen(false);
+  }, [notices, seenIds]);
 
   return (
     <>
@@ -197,7 +224,7 @@ export function PublicNotice() {
           )}
 
           <DialogFooter>
-            <Button className="w-full sm:w-auto" onClick={() => handleOpenChange(false)}>
+            <Button className="w-full sm:w-auto" onClick={markAllSeen}>
               {t.notice.gotIt}
             </Button>
           </DialogFooter>
