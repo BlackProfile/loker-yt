@@ -537,6 +537,11 @@ const id = {
       cancelRequestToast: "Usulan ubah jadwal dibatalkan",
       moveSlot: "Pindahkan jadwal",
       cannotAttend: "Tidak bisa hadir",
+      icsDownload: "Unduh berkas .ics",
+      moreLabel: "Lainnya",
+      moreAria: "Aksi lainnya untuk sesi ini",
+      rescheduleEntry: "Ubah jadwal",
+      manualSuggest: "Tidak ada slot yang cocok? Usulkan tanggal lain",
       slotPanelTitle: "Pindah ke slot terbuka berikut",
       reload: "Muat ulang",
       loadingSlots: "Memuat slot tersedia...",
@@ -652,6 +657,10 @@ const id = {
       lostCodeEmail: "Cek email konfirmasi lamaran — kode dikirim ke email yang kamu gunakan saat melamar.",
       lostCodeWa: "Hubungi tim kami via WhatsApp untuk bantuan verifikasi kepemilikan.",
       browseJobs: "Lihat Lowongan Terbuka",
+      // NR62 — penyederhanaan UI Cek Status
+      timelineRemaining: "…+{n} tahap tersisa",
+      welcomeTitle: "Selamat bergabung!",
+      downloadData: "Unduh data saya",
       // NR61 — peta perjalanan makro (6 tahap besar seleksi)
       journey: {
         title: "Peta Perjalanan Seleksi",
@@ -672,6 +681,7 @@ const id = {
         endedNote:
           "Proses seleksi berakhir di tahap ini. Terima kasih sudah melamar — jangan ragu mencoba posisi lain.",
         tipTitle: "Kiat tahap ini",
+        detailToggle: "Detail tahap",
         tips: [
           "Lamaran sudah masuk. Pantau email dan halaman ini — tim menghubungi bila berkasmu cocok.",
           "Berkas sedang ditinjau. Kabar selanjutnya selalu muncul di halaman ini.",
@@ -1014,6 +1024,7 @@ type idDictShape = {
     contactTitle: string;
     contactWhatsapp: string;
     formTitle: string;
+    requiredShort: string;
     requiredBefore: string;
     requiredAfter: string;
     stepOf: string;
@@ -1097,9 +1108,26 @@ type idDictShape = {
       copied: string;
       linkFailed: string;
       shareTitle: string;
+      deviceToggle: string;
+      linkBoxDesc: string;
+      sendEmail: string;
+      sending: string;
+      emailLabel: string;
+      emailPh: string;
+      sendLinkMenu: string;
+      needPosition: string;
+      linkSentOk: string;
+      linkSentFail: string;
+      linkRestored: string;
+      linkInvalid: string;
+      discardAria: string;
+      saving: string;
+      savedNote: string;
+      existing: string;
     };
     prefill: {
       title: string;
+      chipText: string;
       use: string;
       dismiss: string;
       applied: string;
@@ -1119,6 +1147,7 @@ type idDictShape = {
       badge: string;
       title: string;
       desc: string;
+      descShort: string;
       sectionPersonal: string;
       sectionAnswers: string;
       sectionFiles: string;
@@ -1138,6 +1167,8 @@ type idDictShape = {
       consentRequired: string;
       consentNote: string;
       changeOrRemove: string;
+      showAll: string;
+      hideAll: string;
       duplicateWarn: string;
     };
     uploads: {
@@ -1270,6 +1301,11 @@ type idDictShape = {
       cancelRequestToast: string;
       moveSlot: string;
       cannotAttend: string;
+      icsDownload: string;
+      moreLabel: string;
+      moreAria: string;
+      rescheduleEntry: string;
+      manualSuggest: string;
       slotPanelTitle: string;
       reload: string;
       loadingSlots: string;
@@ -1372,6 +1408,10 @@ type idDictShape = {
       lostCodeEmail: string;
       lostCodeWa: string;
       browseJobs: string;
+      // NR62 — penyederhanaan UI Cek Status
+      timelineRemaining: string;
+      welcomeTitle: string;
+      downloadData: string;
       // NR61 — peta perjalanan makro
       journey: {
         title: string;
@@ -1383,6 +1423,7 @@ type idDictShape = {
         endedLabel: string;
         endedNote: string;
         tipTitle: string;
+        detailToggle: string;
         tips: string[];
       };
       // NR-15-c — transparansi timeline
@@ -1769,6 +1810,8 @@ const en: Dict = {
     contactTitle: "Contact",
     contactWhatsapp: "WhatsApp",
     formTitle: "Application Form",
+    // NR62 (F3) — compact required marker on the right of the title.
+    requiredShort: "* = required",
     requiredBefore: "Fields marked with",
     requiredAfter: "are required.",
     stepOf: "Step",
@@ -1870,11 +1913,33 @@ const en: Dict = {
       copied: "Link copied",
       linkFailed: "Could not prepare the link. Please try again.",
       shareTitle: "Continue your application — Lumina Studio",
+      // NR62 (F1) — draft link box condensed to one row + Collapsible.
+      deviceToggle: "Continue on another device",
+      linkBoxDesc:
+        "Email yourself a link to this draft. Text, choices, and files already saved in the draft come along. The link is valid for 7 days.",
+      sendEmail: "Send link to email",
+      sending: "Sending...",
+      emailLabel: "Email address for the draft link",
+      emailPh: "name@email.com",
+      sendLinkMenu: "Send link",
+      needPosition: "Choose a position first to send the link.",
+      linkSentOk: "Link sent. Check your email (valid for 7 days).",
+      linkSentFail: "Failed to send the link. Please try again.",
+      linkRestored: "Draft loaded from the link.",
+      linkInvalid: "The draft link is invalid or has already been used.",
+      // NR62 (F4) — accessible label for the X button on the draft banner.
+      discardAria: "Delete draft",
+      // NR62 (F5) — DraftFileNote texts moved from form-field-renderer.
+      saving: "Saving file to draft",
+      savedNote: "Saved to draft — safe to continue on another device.",
+      existing: "Already saved: {name} ({size}) — replace it if needed.",
     },
     // NR60 (A1) — prefill from a previous application (recognized email).
     prefill: {
       title: "We found your previous application",
-      use: "Use this data",
+      // NR62 (F8) — prefill card condensed to a one-line chip.
+      chipText: "Use your previous application data",
+      use: "Use",
       dismiss: "Close",
       applied: "Previous application data filled in.",
     },
@@ -1894,6 +1959,8 @@ const en: Dict = {
       badge: "Final Step",
       title: "Review Your Application",
       desc: "Check all the details below before sending. Make sure everything is correct and typo-free.",
+      // NR62 (F12) — short line replacing the colored box in the review header.
+      descShort: "One last check before you submit.",
       sectionPersonal: "Personal Data",
       sectionAnswers: "Experience & Answers",
       sectionFiles: "Attached Files",
@@ -1920,6 +1987,9 @@ const en: Dict = {
       consentNote:
         "Your data will only be used for the recruitment process at this studio.",
       changeOrRemove: "Replace / Remove",
+      // NR62 (F9) — toggle for long answers in the review.
+      showAll: "Show all",
+      hideAll: "Hide",
       // NR60 (C1) — soft duplicate warning in the confirm dialog.
       duplicateWarn:
         "Note: our records show you already applied to this position on {date}. Submitting again will create a new application.",
@@ -2060,6 +2130,11 @@ const en: Dict = {
       cancelRequestToast: "Reschedule request withdrawn",
       moveSlot: "Reschedule via open slots",
       cannotAttend: "Can't attend",
+      icsDownload: "Download .ics file",
+      moreLabel: "More",
+      moreAria: "More actions for this session",
+      rescheduleEntry: "Reschedule",
+      manualSuggest: "No slot that works? Propose another date",
       slotPanelTitle: "Move to the next open slot",
       reload: "Reload",
       loadingSlots: "Loading available slots...",
@@ -2175,6 +2250,10 @@ const en: Dict = {
       lostCodeEmail: "Check your application confirmation email — the code was sent to the address you applied with.",
       lostCodeWa: "Contact our team via WhatsApp for ownership verification help.",
       browseJobs: "Browse Open Positions",
+      // NR62 — status page simplification
+      timelineRemaining: "…+{n} stages left",
+      welcomeTitle: "Welcome aboard!",
+      downloadData: "Download my data",
       // NR61 — journey map (6 macro stages)
       journey: {
         title: "Selection Journey Map",
@@ -2195,6 +2274,7 @@ const en: Dict = {
         endedNote:
           "The selection process ended at this stage. Thanks for applying — feel free to try other positions.",
         tipTitle: "Tip for this stage",
+        detailToggle: "Stage details",
         tips: [
           "Your application is in. Watch your email and this page — the team will reach out if your profile matches.",
           "Your documents are being reviewed. Updates will always appear on this page.",
