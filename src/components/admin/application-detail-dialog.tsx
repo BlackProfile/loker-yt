@@ -4656,6 +4656,44 @@ export function ApplicationDetailDialog({
                 </Select>
               </div>
 
+            {/* NR62 butir 19 — panel keputusan (HOLD / Tolak / Do-not-Hire)
+                dikumpulkan dalam SATU Collapsible default TERTUTUP agar tab
+                Proses tidak didominasi panel destruktif; ringkasan state
+                keputusan tampil sebagai badge di header. Semua handler sama. */}
+            {app.holdAt || canMutate || app.doNotHire ? (
+              <Collapsible className="group flex flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ShieldAlert className="size-4 text-muted-foreground" aria-hidden="true" />
+                    <p className="text-sm font-semibold">Keputusan</p>
+                    {app.status === "REJECTED" ? (
+                      <Badge variant="outline" className="border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400">
+                        Ditolak
+                      </Badge>
+                    ) : null}
+                    {app.holdAt ? (
+                      <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
+                        Ditahan
+                      </Badge>
+                    ) : null}
+                    {app.doNotHire ? (
+                      <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400">
+                        DNH
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 sm:size-9"
+                      aria-label="Buka atau tutup panel keputusan"
+                    >
+                      <ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" aria-hidden="true" />
+                    </Button>
+                  </CollapsibleTrigger>
+                </div>
+                <CollapsibleContent className="flex flex-col gap-3">
             {/* NR-24 fitur 8 — tahan proses (HOLD) */}
             {app.holdAt || canMutate ? (
               <div className="flex flex-col gap-3 rounded-lg border p-3">
@@ -5081,6 +5119,9 @@ export function ApplicationDetailDialog({
                 </p>
               </div>
             ) : null}
+                </CollapsibleContent>
+              </Collapsible>
+            ) : null}
 
             {/* Penawaran (offer) */}
             {canMutate && app.status !== "REJECTED" ? (
@@ -5459,16 +5500,31 @@ export function ApplicationDetailDialog({
 
         <DialogFooter className="gap-2 border-t pt-4 sm:justify-between">
           {canMutate ? (
-            <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-              <Button
-                variant="destructive"
-                className="h-11 sm:h-9"
-                onClick={() => setConfirmOpen(true)}
-                disabled={deleting || saving}
-              >
-                <Trash2 className="size-4" aria-hidden="true" />
-                Hapus
-              </Button>
+            <div className="flex items-center gap-2">
+              {/* NR62 butir 21 — aksi destruktif dipindah ke menu "Lainnya"
+                  agar footer hanya menampilkan aksi utama; konfirmasi AlertDialog sama. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="h-11 text-muted-foreground sm:h-9"
+                    disabled={deleting || saving}
+                  >
+                    <MoreHorizontal className="size-4" aria-hidden="true" />
+                    Lainnya
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem
+                    className="text-rose-600 focus:text-rose-700 dark:text-rose-400"
+                    onSelect={() => setConfirmOpen(true)}
+                  >
+                    <Trash2 className="size-4" aria-hidden="true" />
+                    Hapus lamaran…
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Hapus lamaran ini?</AlertDialogTitle>
@@ -5497,7 +5553,8 @@ export function ApplicationDetailDialog({
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
-            </AlertDialog>
+              </AlertDialog>
+            </div>
           ) : (
             <span />
           )}
