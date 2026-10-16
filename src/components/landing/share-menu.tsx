@@ -9,6 +9,8 @@ import {
   Share2,
   Twitter,
   MessageCircle,
+  Send,
+  Linkedin,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,7 +27,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useLang } from "@/components/landing/lang-context";
-import { twitterShareHref, waShareHref } from "@/components/landing/landing-utils";
+import {
+  linkedinShareHref,
+  telegramShareHref,
+  twitterShareHref,
+  waShareHref,
+} from "@/components/landing/landing-utils";
 import { cn } from "@/lib/utils";
 
 type ShareMenuProps = {
@@ -33,6 +40,12 @@ type ShareMenuProps = {
   tagline: string;
   /** true bila trigger dipakai di atas hero gelap. */
   dark?: boolean;
+  /** NR62 — override URL yang dibagikan (mis. deep-link posisi).
+   * Default: URL halaman aktif. */
+  shareUrl?: string;
+  /** NR62 — override teks utama bagikan (mis. judul posisi).
+   * Default: teks generik situs. */
+  shareTitle?: string;
 };
 
 // URL halaman dibaca via useSyncExternalStore (aman SSR, tanpa setState di effect).
@@ -45,9 +58,16 @@ function usePageUrl(): string {
   );
 }
 
-export function ShareMenu({ siteName, tagline, dark = false }: ShareMenuProps) {
+export function ShareMenu({
+  siteName,
+  tagline,
+  dark = false,
+  shareUrl,
+  shareTitle,
+}: ShareMenuProps) {
   const { t } = useLang();
-  const url = usePageUrl();
+  const pageUrl = usePageUrl();
+  const url = shareUrl || pageUrl;
   const [qrOpen, setQrOpen] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
@@ -63,7 +83,7 @@ export function ShareMenu({ siteName, tagline, dark = false }: ShareMenuProps) {
   useEffect(() => {
     if (!qrOpen) return;
     let cancelled = false;
-    QRCode.toDataURL(window.location.href, { width: 320, margin: 2 })
+    QRCode.toDataURL(url || window.location.href, { width: 320, margin: 2 })
       .then((dataUrl) => {
         if (!cancelled) {
           setQrDataUrl(dataUrl);
@@ -79,7 +99,7 @@ export function ShareMenu({ siteName, tagline, dark = false }: ShareMenuProps) {
     return () => {
       cancelled = true;
     };
-  }, [qrOpen]);
+  }, [qrOpen, url]);
 
   async function copyLink() {
     try {
@@ -90,7 +110,13 @@ export function ShareMenu({ siteName, tagline, dark = false }: ShareMenuProps) {
     }
   }
 
-  const shareText = `${t.hero.share.shareText} — ${siteName}. ${tagline}`;
+  // NR62 — bila shareTitle diberikan (halaman detail posisi), teks & URL
+  // bagikan mengikuti posisi tersebut (persis perilaku tombol sosial lama);
+  // tanpa itu perilaku generik situs tidak berubah.
+  const shareText = shareTitle
+    ? `${shareTitle} — ${url}`
+    : `${t.hero.share.shareText} — ${siteName}. ${tagline}`;
+  const shareStatus = shareTitle ?? t.hero.share.shareText;
 
   const items = [
     {
@@ -108,11 +134,27 @@ export function ShareMenu({ siteName, tagline, dark = false }: ShareMenuProps) {
       href: waShareHref(shareText),
     },
     {
+      key: "telegram",
+      // Nama jejaring — hardcode (sama seperti tombol lama di halaman detail).
+      label: "Telegram",
+      icon: Send,
+      onSelect: undefined,
+      href: telegramShareHref(shareStatus, url),
+    },
+    {
       key: "tw",
       label: t.hero.share.twitter,
       icon: Twitter,
       onSelect: undefined,
-      href: twitterShareHref(t.hero.share.shareText, url),
+      href: twitterShareHref(shareStatus, url),
+    },
+    {
+      key: "linkedin",
+      // Nama jejaring — hardcode (sama seperti tombol lama di halaman detail).
+      label: "LinkedIn",
+      icon: Linkedin,
+      onSelect: undefined,
+      href: linkedinShareHref(url),
     },
     {
       key: "qr",

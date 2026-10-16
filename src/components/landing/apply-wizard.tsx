@@ -3383,54 +3383,64 @@ export function ApplyWizard({
 
   return (
     <div className="@container flex flex-col gap-6">
-      <div>
+      {/* NR62 (F3) — header satu baris: judul kiri, penanda wajib kanan. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h3 className="text-lg font-semibold">{t.apply.formTitle}</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t.apply.requiredBefore} <span className="text-rose-600">*</span>{" "}
-          {t.apply.requiredAfter}
-        </p>
+        <p className="text-xs text-muted-foreground">{t.apply.requiredShort}</p>
       </div>
 
       {draft ? (
-        <Card className="flex-row items-center justify-between gap-3 rounded-xl border-amber-200 bg-amber-50/60 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">{t.apply.draft.title}</p>
-            <p className="line-clamp-2 text-xs text-muted-foreground">
-              {t.apply.draft.body}
-              {typeof draft.savedAt === "number" ? (
-                // NR60 (B1) — waktu relatif di teks; tanggal lengkap di title.
-                <span
-                  title={`${t.apply.draft.savedPrefix} ${new Date(draft.savedAt).toLocaleString("id-ID")}`}
-                >
-                  {" · "}
-                  {relTimeDraft(draft.savedAt, Date.now(), t.apply.draft)}
-                </span>
-              ) : null}
-            </p>
-            {/* NR60 (B1) — chip lompatan ke bagian draft yang sudah berisi. */}
-            {draftPartChips.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {draftPartChips.map((part) => (
-                  <Button
-                    key={part.key}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 rounded-full border-amber-300 px-3 text-xs text-amber-800 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
-                    onClick={() => jumpDraftPart(part.step)}
-                  >
-                    {part.label}
-                  </Button>
-                ))}
-              </div>
+        // NR62 (F4) — banner draft ringkas (≤2 baris): ikon + judul + waktu
+        // relatif (tanggal lengkap di title), chip lompatan inline, SATU tombol
+        // Pulihkan + ikon X (hapus draft, handler discardDraft sama).
+        <Card className="flex-row flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border-amber-200 bg-amber-50/60 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <History
+            className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
+            aria-hidden="true"
+          />
+          <p className="min-w-0 text-sm font-semibold">
+            {t.apply.draft.title}
+            {typeof draft.savedAt === "number" ? (
+              // NR60 (B1) — waktu relatif di teks; tanggal lengkap di title.
+              <span
+                title={`${t.apply.draft.savedPrefix} ${new Date(draft.savedAt).toLocaleString("id-ID")}`}
+                className="font-normal text-muted-foreground"
+              >
+                {" · "}
+                {relTimeDraft(draft.savedAt, Date.now(), t.apply.draft)}
+              </span>
             ) : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button size="sm" variant="outline" onClick={discardDraft}>
-              {t.apply.draft.discard}
-            </Button>
+          </p>
+          {/* NR60 (B1) — chip lompatan ke bagian draft yang sudah berisi. */}
+          {draftPartChips.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {draftPartChips.map((part) => (
+                <Button
+                  key={part.key}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 rounded-full border-amber-300 px-3 text-xs text-amber-800 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+                  onClick={() => jumpDraftPart(part.step)}
+                >
+                  {part.label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <Button size="sm" onClick={restoreDraft}>
               {t.apply.draft.restore}
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 text-amber-700 dark:text-amber-300"
+              aria-label={t.apply.draft.discardAria}
+              onClick={discardDraft}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
         </Card>

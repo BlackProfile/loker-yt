@@ -35,17 +35,14 @@ import {
   Heart,
   Laptop,
   Link2,
-  Linkedin,
   ListChecks,
   Loader2,
   Lock,
   Mail,
   MapPin,
-  MessageCircle,
   PenLine,
   Phone,
   Pin,
-  Send,
   Sparkles,
   TrendingUp,
   Users,
@@ -82,16 +79,13 @@ import {
   instagramHref,
   isWithinDaysAhead,
   isWithinDaysBack,
-  linkedinShareHref,
   safeExternalUrl,
-  telegramShareHref,
-  twitterShareHref,
-  waShareHref,
   whatsappHref,
   youtubeEmbedId,
 } from "@/components/landing/landing-utils";
 import { DeadlineCountdown } from "@/components/landing/deadline-countdown";
 import { WorkModeBadge } from "@/components/landing/positions-section";
+import { ShareMenu } from "@/components/landing/share-menu";
 import { ApplyWizard } from "@/components/landing/apply-wizard";
 import {
   isCvEnabled,
@@ -1147,12 +1141,11 @@ function PositionDetailViewInner({
         </FadeIn>
 
         <Container className="w-full max-w-5xl">
-          {/* Header posisi */}
+          {/* Header posisi — NR62: kicker "Detail Lowongan" dihapus; urgensi
+              Urgent/Baru/Segera dilebur jadi SATU chip (prioritas
+              Urgent > Segera Ditutup > Baru). WorkMode + Unggulan tetap. */}
           <FadeIn className="mt-8">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className={ROSE_BADGE}>
-                {t.detail.badge}
-              </Badge>
               {/* Mode kerja + kota (fitur non-remote) — selalu tampil di header. */}
               <WorkModeBadge position={position} />
               {position.featured ? (
@@ -1166,17 +1159,15 @@ function PositionDetailViewInner({
                   <Flame className="size-3" aria-hidden="true" />
                   {t.detail.badgeUrgent}
                 </Badge>
-              ) : null}
-              {isNew ? (
-                <Badge variant="outline" className="border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400">
-                  <Sparkles className="size-3" aria-hidden="true" />
-                  {t.detail.badgeNew}
-                </Badge>
-              ) : null}
-              {isSoon ? (
+              ) : isSoon ? (
                 <Badge variant="outline" className="border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">
                   <CalendarClock className="size-3" aria-hidden="true" />
                   {t.detail.badgeSoon}
+                </Badge>
+              ) : isNew ? (
+                <Badge variant="outline" className="border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400">
+                  <Sparkles className="size-3" aria-hidden="true" />
+                  {t.detail.badgeNew}
                 </Badge>
               ) : null}
             </div>
@@ -1237,7 +1228,9 @@ function PositionDetailViewInner({
               </div>
             ) : null}
 
-            {/* Aksi: lamar (scroll ke formulir) + bagikan + salin tautan */}
+            {/* Aksi: lamar (scroll ke formulir) + salin tautan + menu bagikan
+                (popover — WA/Telegram/X/LinkedIn/QR, NR62: pengganti 4 tombol
+                sosial yang membuat baris aksi penuh). */}
             <div className="mt-5 flex flex-wrap items-center gap-2">
               <Button size="sm" className="h-11 sm:h-9" onClick={() => jumpToSection("form-card")}>
                 <PenLine className="size-4" aria-hidden="true" />
@@ -1251,30 +1244,12 @@ function PositionDetailViewInner({
                 )}
                 {t.detail.shareCopy}
               </Button>
-              <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
-                <a href={waShareHref(`${display.title} — ${shareUrl}`)} target="_blank" rel="noopener noreferrer">
-                  <MessageCircle className="size-4" aria-hidden="true" />
-                  WhatsApp
-                </a>
-              </Button>
-              <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
-                <a href={telegramShareHref(display.title, shareUrl)} target="_blank" rel="noopener noreferrer">
-                  <Send className="size-4" aria-hidden="true" />
-                  Telegram
-                </a>
-              </Button>
-              <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
-                <a href={twitterShareHref(display.title, shareUrl)} target="_blank" rel="noopener noreferrer">
-                  <Link2 className="size-4" aria-hidden="true" />
-                  X
-                </a>
-              </Button>
-              <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
-                <a href={linkedinShareHref(shareUrl)} target="_blank" rel="noopener noreferrer">
-                  <Linkedin className="size-4" aria-hidden="true" />
-                  LinkedIn
-                </a>
-              </Button>
+              <ShareMenu
+                siteName={content.siteName}
+                tagline={content.tagline}
+                shareTitle={display.title}
+                shareUrl={shareUrl}
+              />
             </div>
 
             {position.closesAt ? (
