@@ -8,7 +8,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { toast } from "sonner";
 import {
   CloudUpload,
   Download,
@@ -138,6 +137,9 @@ export function CharCount({
   lang: Lang;
 }) {
   const len = value.length;
+  // NR62 (F6) — tanpa isi tidak ada hitungan (mengurangi kebisingan visual);
+  // begitu ada isi (atau mendekati batas) hitungan selalu tampil.
+  if (len === 0) return null;
   if (max == null) {
     return (
       <p className="text-right text-xs tabular-nums text-muted-foreground">
@@ -218,6 +220,8 @@ export function ImageThumb({
  * Catatan kecil di bawah input berkas: chip "sudah ada di draft" (pemulihan
  * lintas perangkat) atau konfirmasi "tersimpan di draft" (unggahan baru).
  * Dipakai blok CV/intro/dokumen tambahan DAN field berkas Form Builder.
+ * NR62 (F5) — teks dipindah ke strings.ts (t.apply.draft.*) dan paragraf
+ * peringatan 2 baris dihapus (beforeunload guard sudah melindungi unggahan).
  */
 export function DraftFileNote({
   meta,
@@ -231,6 +235,7 @@ export function DraftFileNote({
   /** NR58 (A3) — persen unggahan nyata (0-100) bila sedang berjalan. */
   progress?: number | null;
 }) {
+  const { t } = useLang();
   if (uploading) {
     const pct =
       typeof progress === "number"
@@ -240,7 +245,8 @@ export function DraftFileNote({
       <div className="space-y-1">
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <CloudUpload className="h-3.5 w-3.5 shrink-0 animate-pulse" aria-hidden="true" />
-          Menyimpan berkas ke draft{pct != null ? ` — ${pct}%` : "…"}
+          {t.apply.draft.saving}
+          {pct != null ? ` — ${pct}%` : "…"}
         </p>
         {pct != null ? (
           <div
@@ -256,10 +262,6 @@ export function DraftFileNote({
             />
           </div>
         ) : null}
-        <p className="text-[11px] text-muted-foreground/80">
-          Biarkan tab terbuka sampai selesai — draft teks sudah aman tersimpan di
-          server, berkas bisa dilampirkan ulang bila koneksi terputus.
-        </p>
       </div>
     );
   }
@@ -268,16 +270,19 @@ export function DraftFileNote({
     return (
       <p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
         <CloudUpload className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        Tersimpan di draft — aman bila lanjut di perangkat lain.
+        {t.apply.draft.savedNote}
       </p>
     );
   }
   if (!localName) {
     return (
-      <p className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-1.5 text-xs text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+      <p className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-1 text-xs text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
         <CloudUpload className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 truncate">
-          Sudah ada: {meta.filename} ({formatMb(meta.size)}) — ganti bila perlu.
+          {fillTemplate(t.apply.draft.existing, {
+            name: meta.filename,
+            size: formatMb(meta.size),
+          })}
         </span>
       </p>
     );
@@ -481,13 +486,13 @@ export function FormFieldRenderer({
           )
         : null;
 
-  /** Terima berkas field form: validasi tipe + ukuran sebelum disimpan. */
+  /** Terima berkas field form: validasi tipe + ukuran sebelum disimpan.
+   * NR62 (F7) — tanpa toast: pesan error tampil inline di bawah field. */
   function acceptFormFile(candidate: File | null) {
     if (!candidate) return;
     if (!isAllowedFormFile({ type: candidate.type, name: candidate.name })) {
       const msg = fillTemplate(t.apply.errors.formFileType, { label });
       onAnswerError(field.id, msg);
-      toast.error(msg);
       return;
     }
     if (candidate.size > FORM_LIMITS.fileMaxBytes) {
@@ -497,7 +502,6 @@ export function FormFieldRenderer({
         max: `${FORM_FILE_MAX_MB} MB`,
       });
       onAnswerError(field.id, msg);
-      toast.error(msg);
       return;
     }
     onAnswer(field.id, candidate);

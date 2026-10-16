@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Briefcase,
+  Building2,
   Check,
   ChevronDown,
   Eye,
@@ -15,7 +16,6 @@ import {
   Sparkles,
   Timer,
   Users,
-  Wallet,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -47,18 +47,19 @@ import {
 import { DeadlineCountdownCompact } from "@/components/landing/deadline-countdown";
 import { cn } from "@/lib/utils";
 
-// Chip status (palet zinc/rose/amber/orange — tanpa biru/indigo/violet).
+// Chip status (palet zinc/rose/amber — tanpa biru/indigo/violet).
+// NR62 — CHIP_ORANGE dihapus: semua nuansa oranye dilebur ke CHIP_AMBER.
 const CHIP_URGENT = "border-transparent bg-rose-600 text-white";
 const CHIP_AMBER =
   "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400";
-const CHIP_ORANGE =
-  "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-400";
 const CHIP_ZINC =
   "border-zinc-200 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
 const CHIP_FEATURED = "border-transparent bg-amber-500 text-zinc-950";
 const CHIP_MUTED = "border-transparent bg-muted text-muted-foreground";
 
-const MAX_STATUS_CHIPS = 3;
+// NR62 — maks 2 chip urgensi (Urgent > Segera Ditutup > Baru) + "Unggulan";
+// sisanya tampil sebagai chip muted "+n" ber-tooltip.
+const MAX_STATUS_CHIPS = 2;
 const MAX_BENEFIT_PREVIEW = 2;
 
 type StatusChip = {
@@ -80,6 +81,7 @@ function PositionBadges({
 }) {
   const { t } = useLang();
 
+  // Urutan prioritas: Urgent > Segera Ditutup > Baru (NR62).
   const chips: StatusChip[] = [
     ...(position.urgent
       ? [
@@ -88,6 +90,16 @@ function PositionBadges({
             label: t.positions.urgent,
             className: CHIP_URGENT,
             Icon: Flame,
+          },
+        ]
+      : []),
+    ...(position.closesAt && isWithinDaysAhead(position.closesAt, 3)
+      ? [
+          {
+            key: "closing-soon",
+            label: t.positions.segeraDitutup,
+            className: CHIP_AMBER,
+            Icon: Timer,
           },
         ]
       : []),
@@ -101,22 +113,13 @@ function PositionBadges({
           },
         ]
       : []),
-    ...(position.closesAt && isWithinDaysAhead(position.closesAt, 3)
-      ? [
-          {
-            key: "closing-soon",
-            label: t.positions.segeraDitutup,
-            className: CHIP_ORANGE,
-            Icon: Timer,
-          },
-        ]
-      : []),
   ];
 
   if (!position.featured && chips.length === 0) return null;
 
   const visibleChips = chips.slice(0, MAX_STATUS_CHIPS);
-  const hiddenCount = chips.length - visibleChips.length;
+  const hiddenChips = chips.slice(MAX_STATUS_CHIPS);
+  const hiddenCount = hiddenChips.length;
 
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
@@ -133,28 +136,15 @@ function PositionBadges({
         </Badge>
       ))}
       {hiddenCount > 0 ? (
-        <Badge className={CHIP_MUTED} variant="outline">
+        <Badge
+          className={CHIP_MUTED}
+          variant="outline"
+          title={hiddenChips.map((chip) => chip.label).join(" · ")}
+        >
           {fillTemplate(t.positions.chipMore, { n: hiddenCount })}
         </Badge>
       ) : null}
     </div>
-  );
-}
-
-/** Chip gaji (bila gaji ditampilkan): ikon Wallet + teks gaji. */
-function SalaryBadge({ position }: { position: Position }) {
-  const { t } = useLang();
-  if (!position.salaryVisible || !position.salaryText) return null;
-  return (
-    <Badge
-      variant="secondary"
-      className="rounded-full"
-      title={t.positions.gaji}
-      aria-label={t.positions.gaji}
-    >
-      <Wallet className="h-3 w-3" aria-hidden="true" />
-      {position.salaryText}
-    </Badge>
   );
 }
 
@@ -246,6 +236,26 @@ function PositionCard({
         : t.positions.apply;
   const hasCover = Boolean(position.coverFileId);
 
+  // NR62 — baris meta ringkas SATU baris teks muted dengan pemisah titik:
+  // mode kerja+kota · jenis · gaji · N pelamar (maks satu ikon MapPin).
+  const activeMode =
+    position.workMode && position.workMode in WORK_MODE_LABELS
+      ? position.workMode
+      : null;
+  const city = position.city?.trim() || null;
+  const metaParts = [
+    activeMode
+      ? city && position.workMode !== "REMOTE"
+        ? `${WORK_MODE_LABELS[activeMode]} · ${city}`
+        : WORK_MODE_LABELS[activeMode]
+      : null,
+    position.type,
+    position.salaryVisible && position.salaryText ? position.salaryText : null,
+    stats && stats.applications > 0
+      ? fillTemplate(t.positions.applicants, { n: stats.applications })
+      : null,
+  ].filter((part): part is string => part !== null);
+
   return (
     <Card
       className={cn(
@@ -271,69 +281,18 @@ function PositionCard({
           </Badge>
           <h3 className="mt-3 text-lg font-semibold">{displayTitle}</h3>
           <PositionBadges position={position} className="mt-2" />
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <WorkModeBadge position={position} />
-            <Badge variant="secondary">{position.type}</Badge>
-            <Badge variant="secondary" className="gap-1">
-              <MapPin className="h-3 w-3" aria-hidden="true" />
-              {position.location}
-            </Badge>
-            <SalaryBadge position={position} />
-            {/* Social proof (Task 27): jumlah pelamar — hanya bila > 0. */}
-            {stats && stats.applications > 0 ? (
-              <Badge variant="outline" className={cn("gap-1", CHIP_ZINC)}>
-                <Users className="h-3 w-3" aria-hidden="true" />
-                {fillTemplate(t.positions.applicants, { n: stats.applications })}
-              </Badge>
-            ) : null}
-          </div>
+          {/* NR62 — meta jadi satu baris teks muted (pengganti 4-5 badge). */}
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate" title={metaParts.join(" · ")}>
+              {metaParts.join(" · ")}
+            </span>
+          </p>
         </div>
 
         <p className="line-clamp-3 text-sm text-muted-foreground">
           {displayDescription}
         </p>
-
-        {position.benefits.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {position.benefits.slice(0, MAX_BENEFIT_PREVIEW).map((benefit, index) => (
-              <Badge
-                key={`${position.id}-benefit-${index}`}
-                variant="secondary"
-                className="rounded-full font-normal"
-              >
-                {benefit}
-              </Badge>
-            ))}
-            {position.benefits.length > MAX_BENEFIT_PREVIEW ? (
-              <span className="text-xs text-muted-foreground">
-                {fillTemplate(t.positions.benefitLainnya, {
-                  n: position.benefits.length - MAX_BENEFIT_PREVIEW,
-                })}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-
-        {displayRequirements.length > 0 ? (
-          <ul className="space-y-2">
-            {displayRequirements.slice(0, 3).map((requirement, index) => (
-              <li
-                key={`${position.id}-req-${index}`}
-                className="flex items-start gap-2 text-sm text-muted-foreground"
-              >
-                <Check
-                  className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
-                  aria-hidden="true"
-                />
-                <span>{requirement}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm italic text-muted-foreground">
-            {t.positions.reqFallback}
-          </p>
-        )}
 
         {position.closesAt && !closed ? (
           <DeadlineCountdownCompact deadline={position.closesAt} />

@@ -8,6 +8,7 @@
 
 import {
   Check,
+  ChevronDown,
   CircleX,
   ClipboardCheck,
   FileSearch,
@@ -20,6 +21,12 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { TrackResponse } from "@/lib/types";
 import type { Dict, Lang } from "@/components/landing/strings";
@@ -317,17 +324,26 @@ function connectorClass(state: JourneyState): string {
  * Kartu "Peta Perjalanan Seleksi" — 6 tahap makro.
  * Desktop: baris horizontal dengan garis penghubung antar lingkaran.
  * Mobile: daftar vertikal ringkas dengan garis penghubung vertikal.
+ * NR62: `children` (opsional) dirender di dalam Collapsible "Detail tahap"
+ * (default TERTUTUP) pada kartu yang sama — dipakai untuk menampung timeline
+ * per-tahap agar info progres tidak duplikat sebagai kartu terpisah.
+ * NR62: `showTip` (default true) — kotak kiat disembunyikan bila panel
+ * "Aksi yang Diminta" tampil (tipnya duplikat panduan aksi).
  */
 export function StatusJourney({
   detail,
   lang,
   nowMs,
   p,
+  children,
+  showTip = true,
 }: {
   detail: TrackResponse;
   lang: Lang;
   nowMs: number;
   p: Dict["status"]["page"];
+  children?: ReactNode;
+  showTip?: boolean;
 }) {
   const { steps, ended, activeIndex } = deriveJourney(detail);
   const journey = p.journey;
@@ -472,8 +488,9 @@ export function StatusJourney({
         </>
       ) : null}
 
-      {/* Kiat tahap aktif — hilang otomatis saat proses berakhir (tipIndex null). */}
-      {tipIndex != null ? (
+      {/* Kiat tahap aktif — hilang otomatis saat proses berakhir (tipIndex null);
+          NR62: disembunyikan juga bila panel aksi wajib sudah memuat panduan. */}
+      {showTip && tipIndex != null ? (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs dark:border-amber-500/30 dark:bg-amber-500/10">
           <Lightbulb
             className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
@@ -484,6 +501,23 @@ export function StatusJourney({
             {journey.tips[tipIndex]}
           </p>
         </div>
+      ) : null}
+
+      {/* NR62 — detail per tahap (timeline lengkap) di kartu yang sama,
+          terlipat default agar halaman lebih pendek. */}
+      {children ? (
+        <Collapsible className="mt-4">
+          <CollapsibleTrigger
+            className="group flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 text-left text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 sm:min-h-0 sm:py-2"
+          >
+            {journey.detailToggle}
+            <ChevronDown
+              className="h-3.5 w-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180"
+              aria-hidden="true"
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-3">{children}</CollapsibleContent>
+        </Collapsible>
       ) : null}
     </Card>
   );

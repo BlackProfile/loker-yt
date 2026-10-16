@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Copy,
   ExternalLink,
@@ -102,6 +103,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+// NR62 (F1) — kotak tautan draft jadi satu baris ringkas: Collapsible (detail)
+// + DropdownMenu (salin/bagikan digabung satu tombol "Kirim tautan").
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -828,6 +842,8 @@ export function ApplyWizard({
   // Tautan "lanjutkan draft" lintas perangkat: kirim ke email & pulihkan dari URL.
   const [linkEmail, setLinkEmail] = useState("");
   const [sendingLink, setSendingLink] = useState(false);
+  // NR62 (F1) — detail kirim tautan (form email) tersembunyi di Collapsible.
+  const [linkBoxOpen, setLinkBoxOpen] = useState(false);
   const [linkStatus, setLinkStatus] = useState<{
     ok: boolean;
     message: string;
@@ -962,7 +978,8 @@ export function ApplyWizard({
         if (!isRecord(json) || json.ok !== true || !isRecord(json.data)) {
           setLinkRestoreNote({
             ok: false,
-            message: "Tautan draft tidak valid atau sudah dipakai.",
+            // NR62 (F15) — teks catatan pulihkan dipindah ke strings.
+            message: t.apply.draft.linkInvalid,
           });
           return;
         }
@@ -990,13 +1007,13 @@ export function ApplyWizard({
               ? data.expectedSalaryInput
               : undefined,
         });
-        setLinkRestoreNote({ ok: true, message: "Draft dari tautan dimuat." });
+        setLinkRestoreNote({ ok: true, message: t.apply.draft.linkRestored });
       })
       .catch(() => {
         clearUrlParam();
         setLinkRestoreNote({
           ok: false,
-          message: "Tautan draft tidak valid atau sudah dipakai.",
+          message: t.apply.draft.linkInvalid,
         });
       });
   }, []);
@@ -3006,17 +3023,17 @@ export function ApplyWizard({
         }
         setLinkStatus({
           ok: true,
-          message: "Tautan dikirim. Cek email kamu (berlaku 7 hari).",
+          message: t.apply.draft.linkSentOk,
         });
       } else {
         const serverMessage =
           isRecord(json) && typeof json.error === "string" && json.error.trim()
             ? json.error
-            : "Gagal mengirim tautan. Coba lagi.";
+            : t.apply.draft.linkSentFail;
         setLinkStatus({ ok: false, message: serverMessage });
       }
     } catch {
-      setLinkStatus({ ok: false, message: "Gagal mengirim tautan. Coba lagi." });
+      setLinkStatus({ ok: false, message: t.apply.draft.linkSentFail });
     } finally {
       setSendingLink(false);
     }
