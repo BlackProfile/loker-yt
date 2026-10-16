@@ -84,6 +84,8 @@ export function ChatWidget() {
           <span
             aria-hidden="true"
             className="absolute -inset-1 rounded-full border-2 border-rose-400/40 motion-safe:animate-ping"
+            // NR62 — denyut dibatasi 3 iterasi agar tidak mengganggu terus-menerus.
+            style={{ animationIterationCount: 3 }}
           />
         ) : null}
         {open ? (

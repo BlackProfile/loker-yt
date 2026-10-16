@@ -1,14 +1,10 @@
 "use client";
 
-// Widget floating "Copilot Admin" (NR49 Paket B — upgrade dari "Tanya Data").
-// Tombol bulat kanan-bawah + dialog chat. Copilot menjawab pertanyaan statistik
-// rekrutmen DAN (bila relevan) mengusulkan aksi panel sebagai chip berlabel
-// risiko. Eksekusi aksi memakai KONFIRMASI 2 LANGKAH (klik pertama meminta
-// kepastian, reset otomatis 6 detik; klik kedua menjalankan). Server tetap
-// memverifikasi ulang tipe, izin, dan parameter (UI tidak dipercaya).
-// Hanya dirender di panel admin. PENTING: dimount di level atas admin-app (di
-// luar <header>) — backdrop-blur header menciptakan containing block yang
-// membuat position:fixed tombol salah anchor bila diletakkan di dalamnya.
+// Widget Copilot Admin (NR49 Paket B — upgrade dari "Tanya Data").
+// NR62 — tombol bulat FAB kanan-bawah DIHAPUS: pemicu kini ikon header
+// (MessageSquareText) di admin-app yang mengontrol `open` lewat prop.
+// Dialog chat + seluruh logika panel (riwayat, chip aksi, konfirmasi 2 langkah)
+// TIDAK berubah. Tetap dimount di level atas admin-app (di luar <header>).
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -164,11 +160,17 @@ function CopilotActionChip({
   );
 }
 
-// Widget Copilot Admin: tombol bulat floating kanan-bawah (z-50).
-export function AdminAskWidget() {
+// Widget Copilot Admin: dialog chat dikontrol induk (admin-app header button).
+export function AdminAskWidget({
+  open,
+  onOpenChange,
+}: {
+  /** NR62 — dibuka dari tombol header di admin-app. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const { role, reportError } = useAdminSession();
   const viewer = role === "VIEWER";
-  const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<AskMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -264,15 +266,7 @@ export function AdminAskWidget() {
 
   return (
     <>
-      <Button
-        className="fixed bottom-5 right-5 z-50 size-14 rounded-full shadow-lg active:scale-95"
-        onClick={() => setOpen(true)}
-        aria-label="Buka Copilot Admin"
-      >
-        <Bot className="size-6" aria-hidden="true" />
-      </Button>
-
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="rounded-2xl sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

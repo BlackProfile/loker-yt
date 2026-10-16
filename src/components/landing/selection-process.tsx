@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import {
-  Briefcase,
+  ArrowRight,
   Check,
   ChevronDown,
   ClipboardCheck,
@@ -16,7 +16,6 @@ import {
   MailCheck,
   MessagesSquare,
   Rocket,
-  Search,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,7 +59,9 @@ export function SelectionProcessSection() {
           <p className="mt-3 text-muted-foreground">{t.selection.desc}</p>
         </FadeIn>
 
-        <Stagger className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {/* NR62 — grid 3×2 (xl:grid-cols-6 dihapus: kartu terlalu sempit); nomor
+            besar "ghost" diganti nomor kecil di samping tile ikon. */}
+        <Stagger className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {t.selection.stages.map((stage, index) => {
             const Icon = STAGE_ICONS[index % STAGE_ICONS.length];
             const tipsOpen = openTipsIndex === index;
@@ -68,18 +69,18 @@ export function SelectionProcessSection() {
               <StaggerItem key={stage.title} className="h-full">
                 <HoverLift className="h-full">
                   <Card className="h-full gap-3 rounded-2xl p-6 transition-shadow hover:shadow-md">
-                    <div className="flex items-start justify-between">
-                      <span
-                        aria-hidden="true"
-                        className="text-4xl font-bold text-rose-600/20 dark:text-rose-400/20"
-                      >
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
+                    <div className="flex items-center justify-between">
                       <span
                         aria-hidden="true"
                         className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400"
                       >
                         <Icon className="size-5" />
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="text-xs font-semibold tabular-nums text-muted-foreground/70"
+                      >
+                        {String(index + 1).padStart(2, "0")}
                       </span>
                     </div>
                     <h3 className="font-semibold">{stage.title}</h3>
@@ -131,17 +132,18 @@ export function SelectionProcessSection() {
           })}
         </Stagger>
 
-        <FadeIn delay={0.15} className="mt-10 flex flex-wrap gap-3">
-          <Button asChild>
+        {/* NR62 — SATU tombol ghost tenang (pengganti 2 CTA besar); entri #status
+            sudah tersedia sebagai section tersendiri tepat setelah section ini. */}
+        <FadeIn delay={0.15} className="mt-10">
+          <Button
+            variant="ghost"
+            size="sm"
+            asChild
+            className="-ml-2 gap-1.5 text-muted-foreground hover:text-foreground"
+          >
             <a href="#posisi">
-              <Briefcase className="size-4" aria-hidden="true" />
+              <ArrowRight className="size-4" aria-hidden="true" />
               {t.selection.ctaJobs}
-            </a>
-          </Button>
-          <Button variant="outline" asChild>
-            <a href="#status">
-              <Search className="size-4" aria-hidden="true" />
-              {t.selection.ctaStatus}
             </a>
           </Button>
         </FadeIn>

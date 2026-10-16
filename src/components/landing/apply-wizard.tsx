@@ -2378,7 +2378,7 @@ export function ApplyWizard({
               onClick={() => goToStep(backStep)}
             >
               <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
-              {t.apply.preview.changeOrRemove}
+              {t.apply.preview.edit}
             </Button>
           </span>
         ) : (
@@ -2553,7 +2553,7 @@ export function ApplyWizard({
                           onClick={() => goToStep(entry.stepIndex)}
                         >
                           <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
-                          {t.apply.preview.changeOrRemove}
+                          {t.apply.preview.edit}
                         </Button>
                       </span>
                     </dd>
@@ -4734,52 +4734,17 @@ export function ApplyWizard({
         {/* LANGKAH PRATINJAU: Pratinjau & Konfirmasi — lamaran tidak terkirim otomatis */}
         {step === previewStep && (
           <div className="flex flex-col gap-4">
-            <div className="rounded-xl border border-primary/30 bg-rose-50/70 p-4 dark:border-primary/40 dark:bg-primary/10">
-              <p className="flex items-center gap-2 text-sm font-semibold">
-                <Eye
-                  className="h-4 w-4 text-rose-600 dark:text-rose-400"
-                  aria-hidden="true"
-                />
-                {t.apply.preview.title}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t.apply.preview.desc}
+            {/* NR62 (F12) — header pratinjau polos: judul + satu baris pendek
+                (nama langkah sudah disebut stepper). */}
+            <div className="flex flex-col gap-1">
+              <h3 className="text-base font-semibold">{t.apply.preview.title}</h3>
+              <p className="text-xs text-muted-foreground">
+                {t.apply.preview.descShort}
               </p>
             </div>
 
-            {/* NR-24 — ekspektasi gaji (opsional) — di atas kartu pratinjau;
-                hanya tampil bila posisi tidak menyembunyikannya. Selalu
-                opsional: tidak masuk validasi langkah apa pun. */}
-            {showExpectedSalaryField ? (
-              <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-4">
-                <Label htmlFor="apply-expected-salary">
-                  {t.apply.salary.label}
-                </Label>
-                <div className="relative">
-                  <span
-                    className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground"
-                    aria-hidden="true"
-                  >
-                    Rp
-                  </span>
-                  <Input
-                    id="apply-expected-salary"
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    value={expectedSalaryInput}
-                    onChange={(event) =>
-                      setExpectedSalaryInput(sanitizeSalaryInput(event.target.value))
-                    }
-                    placeholder="3.500.000"
-                    className="h-11 pl-10"
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t.apply.salary.help}
-                </p>
-              </div>
-            ) : null}
+            {/* NR62 (F10) — input ekspektasi gaji dipindah ke langkah Data Diri;
+                di pratinjau nilainya tampil sebagai baris read-only di bawah. */}
 
             {/* Mode klasik: kartu Data Diri (mode skema memakai kartu per bagian) */}
             {!schema ? (
@@ -4987,7 +4952,7 @@ export function ApplyWizard({
                           onClick={() => goToStep(filesStep)}
                         >
                           <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
-                          {t.apply.preview.changeOrRemove}
+                          {t.apply.preview.edit}
                         </Button>
                       </div>
                     ) : null}
@@ -4997,39 +4962,32 @@ export function ApplyWizard({
             </PreviewSection>
             ) : null}
 
-            {/* Pernyataan kebenaran data — wajib dicentang sebelum konfirmasi */}
+            {/* NR62 (F11) — pernyataan kebenaran data + persetujuan pemrosesan
+                data digabung SATU kartu berbingkai (dua gate terpisah, state
+                agreed/consented & validasi handleSubmit tidak berubah). */}
             <div
               className={cn(
-                "flex items-start gap-3 rounded-xl border p-4 transition-colors",
-                agreed
-                  ? "border-emerald-300 bg-emerald-50/60 dark:border-emerald-500/40 dark:bg-emerald-500/10"
-                  : "border-border",
-              )}
-            >
-              <Checkbox
-                id="apply-agree"
-                checked={agreed}
-                onCheckedChange={(checked) => setAgreed(checked === true)}
-                className="mt-0.5"
-              />
-              <Label
-                htmlFor="apply-agree"
-                className="cursor-pointer text-sm font-normal leading-relaxed"
-              >
-                {t.apply.preview.agreeLabel}
-              </Label>
-            </div>
-
-            {/* Persetujuan pemrosesan data pribadi (Task 27) — wajib sebelum kirim */}
-            <div
-              className={cn(
-                "flex flex-col gap-1 rounded-xl border p-4 transition-colors",
-                consented
-                  ? "border-emerald-300 bg-emerald-50/60 dark:border-emerald-500/40 dark:bg-emerald-500/10"
+                "flex flex-col gap-3 rounded-xl border p-4 transition-colors",
+                agreed && consented
+                  ? "border-emerald-300 dark:border-emerald-500/40"
                   : "border-border",
               )}
             >
               <div className="flex items-start gap-3">
+                <Checkbox
+                  id="apply-agree"
+                  checked={agreed}
+                  onCheckedChange={(checked) => setAgreed(checked === true)}
+                  className="mt-0.5"
+                />
+                <Label
+                  htmlFor="apply-agree"
+                  className="cursor-pointer text-sm font-normal leading-relaxed"
+                >
+                  {t.apply.preview.agreeLabel}
+                </Label>
+              </div>
+              <div className="flex items-start gap-3 border-t pt-3">
                 <Checkbox
                   id="apply-consent"
                   checked={consented}
@@ -5043,9 +5001,6 @@ export function ApplyWizard({
                   {t.apply.preview.consentLabel}
                 </Label>
               </div>
-              <p className="pl-7 text-xs text-muted-foreground">
-                {t.apply.preview.consentNote}
-              </p>
             </div>
 
             <p className="flex items-start gap-2 text-xs text-muted-foreground">

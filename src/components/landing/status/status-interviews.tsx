@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Clock,
   Download,
+  Ellipsis,
   Loader2,
   MapPin,
   RefreshCw,
@@ -21,6 +22,15 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -115,6 +125,8 @@ export function InterviewsSection({
   cancelAttendance: (interviewId: string) => Promise<void>;
   bookSlot: (slotId: string) => Promise<void>;
 }) {
+  // NR62 — sesi dengan ronde terbaru saja yang menampilkan tips (anti-ribet).
+  const latestRound = interviews.reduce((max, iv) => Math.max(max, iv.round), 0);
   return (
     <>
       {/* Jadwal wawancara — sesi aktif + riwayat, ronde terbaru paling menonjol */}
@@ -156,6 +168,7 @@ export function InterviewsSection({
                   interview.status === "RESCHEDULE_REQUESTED");
               const slotPanelOpen = slotPanelFor === interview.id;
               const cancelConfirmOpen = cancelOpenFor === interview.id;
+              const isLatestRound = interview.round === latestRound;
               const moveBusy = isInterviewBusy(interview.id, "RESLOT");
               return (
                 <div
@@ -217,25 +230,11 @@ export function InterviewsSection({
                     ) : null}
                   </div>
 
-                  {/* NR-41 K27 — tambahkan sesi ke Google Calendar (semua mode). */}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-11 sm:h-9"
-                      onClick={() =>
-                        window.open(gcalUrl, "_blank", "noopener,noreferrer")
-                      }
-                      aria-label={t.status.interview.gcalAria}
-                    >
-                      <CalendarPlus className="h-4 w-4" aria-hidden="true" />
-                      {t.status.interview.gcal}
-                    </Button>
-                  </div>
-
-                  {/* Link meeting & kalender (hanya ONLINE dengan link valid) */}
-                  {isOnline && meetingUrl ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
+                  {/* NR62 — aksi utama + menu "Lainnya": kalender/ubah jadwal/tidak
+                      hadir terkumpul dalam satu dropdown (gcal + .ics digabung
+                      jadi submenu "Simpan ke kalender"). */}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {isOnline && meetingUrl ? (
                       <Button size="sm" className="h-11 sm:h-9" asChild>
                         <a
                           href={meetingUrl}
@@ -247,189 +246,139 @@ export function InterviewsSection({
                           {t.status.interview.join}
                         </a>
                       </Button>
-                      <Button variant="outline" size="sm" className="h-11 sm:h-9" asChild>
-                        <a href={icsUrl} download>
-                          <Download className="h-4 w-4" aria-hidden="true" />
-                          {t.status.interview.saveCalendar}
-                        </a>
+                    ) : null}
+                    {canRespond ? (
+                      <Button
+                        size="sm"
+                        className="h-11 sm:h-9"
+                        disabled={cardBusy}
+                        onClick={() =>
+                          void respondInterview(interview.id, "CONFIRM")
+                        }
+                      >
+                        {isInterviewBusy(interview.id, "CONFIRM") ? (
+                          <Loader2
+                            className="h-4 w-4 animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <BadgeCheck className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {t.status.interview.confirm}
+                      </Button>
+                    ) : null}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-11 gap-1.5 sm:h-9"
+                          aria-label={t.status.interview.moreAria}
+                        >
+                          <Ellipsis className="h-4 w-4" aria-hidden="true" />
+                          {t.status.interview.moreLabel}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-56">
+                        {/* Kalender: dua pintu lama (gcal + .ics) jadi satu submenu */}
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+                            {t.status.interview.saveCalendar}
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                window.open(gcalUrl, "_blank", "noopener,noreferrer")
+                              }
+                            >
+                              <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+                              {t.status.interview.gcal}
+                            </DropdownMenuItem>
+                            {isOnline && meetingUrl ? (
+                              <DropdownMenuItem asChild>
+                                <a href={icsUrl} download>
+                                  <Download className="h-4 w-4" aria-hidden="true" />
+                                  {t.status.interview.icsDownload}
+                                </a>
+                              </DropdownMenuItem>
+                            ) : null}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                        {canRespond || selfServiceUpcoming ? (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setRescheduleFor(null);
+                              setCancelOpenFor(null);
+                              setCancelError(null);
+                              void openSlotPanel(interview.id);
+                            }}
+                          >
+                            <CalendarClock className="h-4 w-4" aria-hidden="true" />
+                            {t.status.interview.rescheduleEntry}
+                          </DropdownMenuItem>
+                        ) : null}
+                        {selfServiceUpcoming ? (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              closeSlotPanel();
+                              setCancelOpenFor(cancelConfirmOpen ? null : interview.id);
+                              setCancelError(null);
+                            }}
+                          >
+                            <XCircle className="h-4 w-4" aria-hidden="true" />
+                            {t.status.interview.cannotAttend}
+                          </DropdownMenuItem>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  {/* Usulan ubah jadwal menunggu konfirmasi admin (NR62: konfirmasi &
+                      ubah jadwal pindah ke baris aksi utama di atas). */}
+                  {interview.status === "RESCHEDULE_REQUESTED" &&
+                  interview.rescheduleProposedAt ? (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                      <p>
+                        {fillTemplate(t.status.interview.proposedPending, {
+                          time: formatDateTimeId(interview.rescheduleProposedAt),
+                        })}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2 h-11 border-amber-300 bg-transparent text-amber-800 hover:bg-amber-100 hover:text-amber-900 sm:h-9 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 dark:hover:text-amber-200"
+                        disabled={cardBusy}
+                        onClick={() =>
+                          void respondInterview(interview.id, "CANCEL_REQUEST")
+                        }
+                      >
+                        {isInterviewBusy(interview.id, "CANCEL_REQUEST") ? (
+                          <Loader2
+                            className="h-4 w-4 animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <X className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {t.status.interview.cancelRequest}
                       </Button>
                     </div>
                   ) : null}
 
-                  {/* Aksi pelamar untuk sesi SCHEDULED / RESCHEDULE_REQUESTED */}
-                  {canRespond ? (
-                    <div className="mt-3 flex flex-col gap-2">
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          className="h-11 sm:h-9"
-                          disabled={cardBusy}
-                          onClick={() =>
-                            void respondInterview(interview.id, "CONFIRM")
-                          }
-                        >
-                          {isInterviewBusy(interview.id, "CONFIRM") ? (
-                            <Loader2
-                              className="h-4 w-4 animate-spin"
-                              aria-hidden="true"
-                            />
-                          ) : (
-                            <BadgeCheck className="h-4 w-4" aria-hidden="true" />
-                          )}
-                          {t.status.interview.confirm}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-11 sm:h-9"
-                          disabled={cardBusy}
-                          onClick={() => {
-                            setRescheduleFor(rescheduleOpen ? null : interview.id);
-                            closeSlotPanel();
-                            setCancelOpenFor(null);
-                          }}
-                          aria-expanded={rescheduleOpen}
-                        >
-                          <Clock className="h-4 w-4" aria-hidden="true" />
-                          {t.status.interview.requestChange}
-                        </Button>
-                      </div>
-
-                      {interview.status === "RESCHEDULE_REQUESTED" &&
-                      interview.rescheduleProposedAt ? (
-                        <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300">
-                          <p>
-                            {fillTemplate(t.status.interview.proposedPending, {
-                              time: formatDateTimeId(interview.rescheduleProposedAt),
-                            })}
-                          </p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="mt-2 h-11 border-orange-300 bg-transparent text-orange-800 hover:bg-orange-100 hover:text-orange-900 sm:h-9 dark:border-orange-500/40 dark:text-orange-300 dark:hover:bg-orange-500/10 dark:hover:text-orange-200"
-                            disabled={cardBusy}
-                            onClick={() =>
-                              void respondInterview(interview.id, "CANCEL_REQUEST")
-                            }
-                          >
-                            {isInterviewBusy(interview.id, "CANCEL_REQUEST") ? (
-                              <Loader2
-                                className="h-4 w-4 animate-spin"
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <X className="h-4 w-4" aria-hidden="true" />
-                            )}
-                            {t.status.interview.cancelRequest}
-                          </Button>
-                        </div>
-                      ) : null}
-
-                      {rescheduleOpen ? (
-                        <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-500/30 dark:bg-orange-500/10">
-                          <Label
-                            htmlFor={`reschedule-at-${interview.id}`}
-                            className="text-xs font-medium text-orange-800 dark:text-orange-300"
-                          >
-                            {t.status.interview.proposedLabel}
-                          </Label>
-                          <Input
-                            id={`reschedule-at-${interview.id}`}
-                            type="datetime-local"
-                            value={proposedAt}
-                            onChange={(e) => setProposedAt(e.target.value)}
-                            className="mt-1 h-11 bg-background sm:h-9"
-                          />
-                          <Label
-                            htmlFor={`reschedule-reason-${interview.id}`}
-                            className="mt-2 text-xs font-medium text-orange-800 dark:text-orange-300"
-                          >
-                            {t.status.interview.reasonLabel}
-                          </Label>
-                          <Textarea
-                            id={`reschedule-reason-${interview.id}`}
-                            rows={2}
-                            value={rescheduleReason}
-                            onChange={(e) => setRescheduleReason(e.target.value)}
-                            placeholder={t.status.interview.reasonPh}
-                            maxLength={500}
-                            className="mt-1 bg-background text-sm"
-                          />
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <Button
-                              size="sm"
-                              className="h-11 sm:h-9"
-                              disabled={cardBusy || !proposedAt}
-                              onClick={() => void submitReschedule(interview.id)}
-                            >
-                              {isInterviewBusy(interview.id, "RESCHEDULE") ? (
-                                <Loader2
-                                  className="h-4 w-4 animate-spin"
-                                  aria-hidden="true"
-                                />
-                              ) : (
-                                <CalendarPlus className="h-4 w-4" aria-hidden="true" />
-                              )}
-                              {t.status.interview.sendRequest}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-11 sm:h-9"
-                              disabled={cardBusy}
-                              onClick={() => setRescheduleFor(null)}
-                            >
-                              {t.status.formCancel}
-                            </Button>
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : interview.status === "CONFIRMED" ? (
+                  {/* NR62 — status terkonfirmasi ditandai teks ringkas tanpa tombol besar */}
+                  {interview.status === "CONFIRMED" ? (
                     <p className="mt-3 flex items-center gap-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-400">
                       <BadgeCheck className="h-4 w-4" aria-hidden="true" />
                       {t.status.interview.confirmDone}
                     </p>
                   ) : null}
 
-                  {/* Aksi mandiri tambahan: pindah jadwal via slot terbuka & tidak bisa hadir */}
-                  {selfServiceUpcoming ? (
-                    <div className="mt-3 flex flex-col gap-2">
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-11 sm:h-9"
-                          disabled={cardBusy}
-                          onClick={() =>
-                            slotPanelOpen
-                              ? closeSlotPanel()
-                              : void openSlotPanel(interview.id)
-                          }
-                          aria-expanded={slotPanelOpen}
-                        >
-                          <CalendarClock className="h-4 w-4" aria-hidden="true" />
-                          {t.status.interview.moveSlot}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-11 border-rose-200 bg-transparent text-rose-700 hover:bg-rose-50 hover:text-rose-800 sm:h-9 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
-                          disabled={cardBusy}
-                          onClick={() => {
-                            closeSlotPanel();
-                            setCancelOpenFor(cancelConfirmOpen ? null : interview.id);
-                            setCancelError(null);
-                          }}
-                          aria-expanded={cancelConfirmOpen}
-                        >
-                          <XCircle className="h-4 w-4" aria-hidden="true" />
-                          {t.status.interview.cannotAttend}
-                        </Button>
-                      </div>
-
-                      {slotPanelOpen ? (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+                  {/* NR62 — panel pindah jadwal (slot self-service), dibuka lewat menu
+                      "Lainnya" → "Ubah jadwal" (satu pintu: slot dulu, form manual
+                      tersedia lewat tautan di bawah panel). */}
+                  {slotPanelOpen ? (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
                               {t.status.interview.slotPanelTitle}

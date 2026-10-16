@@ -1176,7 +1176,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
         canSearchCandidates={isOwnerOrHr}
       />
       {/* NR-28 (item 14): overlay pintasan keyboard — dibuka via "?" atau
-          tombol ikon Keyboard di header. */}
+          item "Pintasan keyboard" pada menu akun (ikon header dihapus NR62). */}
       <ShortcutOverlay open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       {/* NR-41 G9 — dialog profil kandidat global (dibuka via event global). */}
       <CandidateDetailDialog
@@ -1330,11 +1330,12 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                   </p>
                 </div>
               </div>
-              {/* NR57 — kanan header ditata ulang: kelompok ikon utilitas
-                  (pencarian, pintasan, live, tema, notifikasi) → pemisah
-                  tipis → tombol "Pratinjau" (menu gabungan) → menu akun
-                  (avatar). Dari 9 kontrol menjadi 6; Keluar pindah ke menu
-                  akun agar tidak bersebelahan dengan aksi lain. */}
+              {/* NR62 — kanan header kini 5 kontrol: pencarian (Ctrl+K) →
+                  notifikasi → pil status sistem (Live/Hemat) → pemisah →
+                  menu Pratinjau → menu akun. Tombol Keyboard dihapus (akses
+                  tetap via "?" dan menu akun); toggle tema pindah ke menu
+                  akun; RealtimeIndicator+SaveModeBadge digabung jadi satu
+                  pil status ber-popover. */}
               <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
                 <Button
                   variant="ghost"
@@ -1345,22 +1346,17 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 >
                   <Search className="size-4" aria-hidden="true" />
                 </Button>
-                {/* NR-28 (item 14): tombol bantuan pintasan keyboard.
-                    Disembunyikan di layar sentuh kecil (tanpa keyboard fisik);
-                    akses alternatif tersedia di menu akun (NR57). */}
+                <NotificationBell onOpenTasks={() => setActiveTab("tasks")} />
+                <StatusPill />
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="hidden sm:inline-flex size-9"
-                  onClick={() => setShortcutsOpen(true)}
-                  aria-label="Pintasan keyboard (tekan ?)"
+                  className="size-11 sm:size-9"
+                  onClick={() => setAskOpen(true)}
+                  aria-label="Buka Copilot Admin (tanya data)"
                 >
-                  <Keyboard className="size-4" aria-hidden="true" />
+                  <MessageSquareText className="size-4" aria-hidden="true" />
                 </Button>
-                <RealtimeIndicator />
-                <ThemeToggle />
-                <NotificationBell onOpenTasks={() => setActiveTab("tasks")} />
-                <SaveModeBadge />
                 {/* NR57 — pemisah kelompok: utilitas vs aksi pratinjau & akun. */}
                 <div
                   aria-hidden="true"
@@ -1384,13 +1380,8 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
             </div>
           </header>
 
-          {role === "VIEWER" ? (
-            <div className="border-b border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40">
-              <p className="mx-auto w-full max-w-6xl px-4 py-2 text-xs font-medium text-amber-700 dark:text-amber-400 sm:px-6">
-                Mode Pengamat — hanya lihat. Semua tombol perubahan dinonaktifkan.
-              </p>
-            </div>
-          ) : null}
+          {/* NR62 — strip "Mode Pengamat" lama di bawah header dipindah ke slot
+              banner sticky tunggal di atas (lihat bannerSlot === "viewer"). */}
 
           <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-10 sm:px-6">
             {/* NR-28 (item 5): transisi antar-tab — mode="wait" membuat tab lama

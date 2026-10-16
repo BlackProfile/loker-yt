@@ -381,9 +381,11 @@ export function HomeView({
           maintenance={data.maintenance ?? initialMaintenance}
         />
       )}
-      {/* Indikator kecil status realtime saat offline (anti-bingung tanpa mengganggu). */}
+      {/* Indikator kecil status realtime saat offline (anti-bingung tanpa mengganggu).
+          NR62 — dipindah ke kiri-bawah agar tidak menabrak GateProgressPill (detail)
+          maupun FAB chat di kanan-bawah pada layar sempit. */}
       {!realtimeUp && view !== "admin" ? (
-        <div className="pointer-events-none fixed bottom-3 left-1/2 z-40 -translate-x-1/2">
+        <div className="pointer-events-none fixed bottom-3 left-4 z-40">
           <span className="rounded-full border bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur">
             Mode hemat — pembaruan otomatis terbatas
           </span>

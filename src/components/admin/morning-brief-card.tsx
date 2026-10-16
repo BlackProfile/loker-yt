@@ -74,7 +74,8 @@ export function MorningBriefCard() {
       icon={Sunrise}
       title="Brief Pagi AI"
       description="Ringkasan otomatis: lamaran kemarin, agenda wawancara hari ini, dan yang perlu ditindak."
-      defaultOpen
+      // NR62 — kartu ringkas: default TERTUTUP (muat data tetap jalan saat mount,
+      // status chip "Hari ini · jam" tetap terlihat di header kartu).
       status={status}
     >
       {gateMessage ? (
