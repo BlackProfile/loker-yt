@@ -776,8 +776,11 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   // Command palette (Ctrl+K / Cmd+K) — juga dibuka dari tombol pencarian header.
   const [paletteOpen, setPaletteOpen] = useState(false);
-  // Overlay pintasan keyboard (tombol "?" / ikon Keyboard di header).
+  // Overlay pintasan keyboard (tombol "?" / item menu akun).
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // NR62 — Copilot Admin dibuka dari ikon header (FAB kanan-bawah dihapus);
+  // state panel tetap milik AdminAskWidget (komponen jadi controlled-open).
+  const [askOpen, setAskOpen] = useState(false);
   // NR-28 (item 5): hormati preferensi reduced motion pada transisi tab.
   const reducedMotion = useReducedMotion();
 
@@ -1144,6 +1147,16 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
     ALL_NAV_ITEMS.find((item) => item.value === effectiveTab)?.label ??
     "Panel Admin";
 
+  // NR62 — SATU slot banner sticky: prioritas Pratinjau > 2FA > Mode Pengamat.
+  // Semantik dismissal tidak berubah (tombol aksi / tutup per banner masing-masing).
+  const bannerSlot: "preview" | "totp" | "viewer" | null = previewRole
+    ? "preview"
+    : totpBannerVisible
+      ? "totp"
+      : role === "VIEWER"
+        ? "viewer"
+        : null;
+
   return (
     <AdminSessionProvider value={sessionContextValue}>
       <NewApplicationToaster />
@@ -1174,8 +1187,10 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
       {/* FAB "Tanya Data" — WAJIB di luar <header>: backdrop-blur pada header
           menciptakan containing block sehingga position:fixed tombol salah
           anchor (menempel di header, menutupi tombol paling kanan). Di samping
-          root layout, fixed bottom-right kembali akurat terhadap viewport. */}
-      <AdminAskWidget />
+          root layout, fixed bottom-right kembali akurat terhadap viewport.
+          NR62 — FAB dihapus; pemicu kini ikon header (MessageSquareText) yang
+          mengontrol state open lewat prop. Panel & logika chat tidak berubah. */}
+      <AdminAskWidget open={askOpen} onOpenChange={setAskOpen} />
       <div className="flex min-h-screen bg-zinc-50 dark:bg-background">
         {/* Overlay drawer seluler */}
         {mobileOpen ? (
@@ -1226,15 +1241,15 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
 
         {/* Kolom konten */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* NR46 Paket A — banner Mode Pratinjau: sticky di atas header agar
-              tidak menutupi konten penting; header bergeser ke bawahnya. */}
-          {previewRole ? (
+          {/* NR62 — maksimal SATU banner sticky (prioritas Pratinjau > 2FA >
+              Mode Pengamat). Konten & aksi tiap banner tetap sama persis. */}
+          {bannerSlot === "preview" ? (
             <div className="sticky top-0 z-40 border-b border-amber-200 bg-amber-50 text-zinc-900 dark:border-amber-900 dark:bg-amber-950/90 dark:text-amber-100">
               <div className="flex h-10 items-center justify-between gap-3 px-4 sm:px-6">
                 <p className="flex min-w-0 items-center gap-2 text-xs font-medium">
                   <Eye className="size-3.5 shrink-0" aria-hidden="true" />
                   <span className="truncate">
-                    Mode Pratinjau: {ROLE_LABELS[previewRole]} — UI tampil seperti role ini; server
+                    Mode Pratinjau: {ROLE_LABELS[previewRole!]} — UI tampil seperti role ini; server
                     tetap menegakkan role asli Anda.
                   </span>
                 </p>
@@ -1248,10 +1263,7 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 </Button>
               </div>
             </div>
-          ) : null}
-          {/* NR50-HOTFIX — pengingat 2FA Pemilik nonaktif: sticky di atas header
-              (pola banner Mode Pratinjau); header bergeser ke bawahnya. */}
-          {totpBannerVisible ? (
+          ) : bannerSlot === "totp" ? (
             <div className="sticky top-0 z-40 border-b border-amber-200 bg-amber-50 text-zinc-900 dark:border-amber-900 dark:bg-amber-950/90 dark:text-amber-100">
               <div className="flex h-10 items-center justify-between gap-3 px-4 sm:px-6">
                 <p className="flex min-w-0 items-center gap-2 text-xs font-medium">
@@ -1282,11 +1294,20 @@ export function AdminApp({ onExit }: { onExit: () => void }) {
                 </div>
               </div>
             </div>
+          ) : bannerSlot === "viewer" ? (
+            <div className="sticky top-0 z-40 border-b border-amber-200 bg-amber-50 text-zinc-900 dark:border-amber-900 dark:bg-amber-950/90 dark:text-amber-100">
+              <div className="flex h-10 items-center gap-2 px-4 sm:px-6">
+                <Eye className="size-3.5 shrink-0" aria-hidden="true" />
+                <p className="min-w-0 flex-1 truncate text-xs font-medium">
+                  Mode Pengamat — hanya lihat. Semua tombol perubahan dinonaktifkan.
+                </p>
+              </div>
+            </div>
           ) : null}
           <header
             className={cn(
               "sticky z-30 border-b bg-background/80 backdrop-blur",
-              previewRole || totpBannerVisible ? "top-10" : "top-0",
+              bannerSlot ? "top-10" : "top-0",
             )}
           >
             <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">

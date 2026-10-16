@@ -4044,12 +4044,46 @@ export function ApplyWizard({
                 ) : null}
               </div>
             ) : null}
+
+            {/* NR62 (F10) — ekspektasi gaji pindah ke langkah Data Diri (dari
+                langkah pratinjau): state & draft autosave (expectedSalaryInput)
+                tidak berubah — markup sama persis. */}
+            {showExpectedSalaryField ? (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="apply-expected-salary">
+                  {t.apply.salary.label}
+                </Label>
+                <div className="relative">
+                  <span
+                    className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground"
+                    aria-hidden="true"
+                  >
+                    Rp
+                  </span>
+                  <Input
+                    id="apply-expected-salary"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={expectedSalaryInput}
+                    onChange={(event) =>
+                      setExpectedSalaryInput(sanitizeSalaryInput(event.target.value))
+                    }
+                    placeholder="3.500.000"
+                    className="h-11 pl-10"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t.apply.salary.help}
+                </p>
+              </div>
+            ) : null}
+
+            {/* NR62 (F14) — catatan privasi jadi sr-only (konten tetap untuk
+                pembaca layar; garis terlihat cukup di langkah pratinjau). */}
             {nikActive || birthDateActive ? (
-              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                <ShieldCheck
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
-                  aria-hidden="true"
-                />
+              <p className="sr-only">
+                <ShieldCheck aria-hidden="true" />
                 {t.apply.dataDiri.privacyNote}
               </p>
             ) : null}
@@ -4542,8 +4576,9 @@ export function ApplyWizard({
             {filesEntry.fields.length > 0
               ? renderSectionFields(filesEntry.fields)
               : null}
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+            {/* NR62 (F14) — garis kepercayaan jadi sr-only (tetap dibaca screen reader). */}
+            <p className="sr-only">
+              <ShieldCheck aria-hidden="true" />
               {t.apply.trust[0]}
             </p>
           </div>
@@ -4688,8 +4723,9 @@ export function ApplyWizard({
               </div>
             ) : null}
 
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+            {/* NR62 (F14) — garis kepercayaan jadi sr-only (tetap dibaca screen reader). */}
+            <p className="sr-only">
+              <ShieldCheck aria-hidden="true" />
               {t.apply.trust[0]}
             </p>
           </div>

@@ -8,11 +8,23 @@ import { BellRing, Loader2, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLang } from "@/components/landing/lang-context";
+import { whatsappHref } from "@/components/landing/landing-utils";
 import { Container, FadeIn } from "@/components/landing/primitives";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function SubscribeSection() {
+export function SubscribeSection({
+  applyBlocked = false,
+  showApply = true,
+  whatsappNumber,
+}: {
+  /** NR45/NR62 — pendaftaran ditutup (rekrutmen/ APPLY_ONLY): tombol Lamar nonaktif. */
+  applyBlocked?: boolean;
+  /** NR62 — sembunyikan tombol Lamar bila section posisi dimatikan admin. */
+  showApply?: boolean;
+  /** NR62 — nomor WhatsApp situs untuk tombol "Chat via WhatsApp" (eks FinalCta). */
+  whatsappNumber: string;
+}) {
   const { t } = useLang();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,6 +72,36 @@ export function SubscribeSection() {
       setLoading(false);
     }
   }
+
+  // NR62 — baris aksi ringkas hasil peleburan FinalCtaSection: headline kecil
+  // + tombol outline "Lamar Sekarang" (#posisi) & "Chat via WhatsApp" (eksternal).
+  const ctaRow = (
+    <div className="mt-6 flex w-full flex-col items-center gap-3 border-t pt-6 sm:flex-row sm:justify-between">
+      <p className="text-sm font-semibold">{t.cta.title}</p>
+      <div className="flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row">
+        {showApply ? (
+          applyBlocked ? (
+            <Button variant="outline" className="h-11 w-full sm:w-auto" disabled>
+              {t.cta.apply}
+            </Button>
+          ) : (
+            <Button variant="outline" className="h-11 w-full sm:w-auto" asChild>
+              <a href="#posisi">{t.cta.apply}</a>
+            </Button>
+          )
+        ) : null}
+        <Button variant="outline" className="h-11 w-full sm:w-auto" asChild>
+          <a
+            href={whatsappHref(whatsappNumber)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t.cta.whatsapp}
+          </a>
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <section className="bg-background py-16 md:py-24">
@@ -121,34 +163,41 @@ export function SubscribeSection() {
                   <p className="mt-2 text-sm text-muted-foreground md:text-base">
                     {t.subscribe.body}
                   </p>
-                  <form
-                    onSubmit={handleSubmit}
-                    noValidate
-                    className="mt-6 flex w-full flex-col gap-2 sm:flex-row"
-                  >
-                    <Input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder={t.subscribe.emailPh}
-                      aria-label={t.subscribe.emailPh}
-                      autoComplete="email"
-                      className="h-11 flex-1"
-                      disabled={loading}
-                    />
-                    <Button type="submit" className="h-11" disabled={loading}>
-                      {loading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                          {t.subscribe.loading}
-                        </>
-                      ) : (
-                        t.subscribe.button
-                      )}
-                    </Button>
-                  </form>
                 </>
               )}
+
+              {/* NR62 — baris aksi penutup selalu tersedia (termasuk saat status
+                  double opt-in tampil) — di atas formulir email. */}
+              {ctaRow}
+
+              {!pendingConfirm ? (
+                <form
+                  onSubmit={handleSubmit}
+                  noValidate
+                  className="mt-4 flex w-full flex-col gap-2 sm:flex-row"
+                >
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder={t.subscribe.emailPh}
+                    aria-label={t.subscribe.emailPh}
+                    autoComplete="email"
+                    className="h-11 flex-1"
+                    disabled={loading}
+                  />
+                  <Button type="submit" className="h-11" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        {t.subscribe.loading}
+                      </>
+                    ) : (
+                      t.subscribe.button
+                    )}
+                  </Button>
+                </form>
+              ) : null}
             </div>
           </div>
         </FadeIn>
