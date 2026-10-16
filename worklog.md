@@ -4662,3 +4662,25 @@ Work Log:
 Stage Summary:
 - Semua permukaan (landing, wizard, Cek Status, admin) kini memakai pola yang konsisten: indikator tunggal, aksi utama terlihat + aksi sekunder di menu, info detil di collapsible, kartu collapsed dengan chip status. Fungsi 100% terjaga (semua handler/endpoint sama).
 - tsc 0 (src/), lint 0, backups/custom.db diperbarui, auto-sync push.
+
+---
+Task ID: NR63
+Agent: orchestrator (Z.ai Code)
+Task: Popup pengumuman publik untuk pelamar — pengumuman dari Papan Pengumuman bisa ditampilkan ke halaman utama (popup otomatis + chip mengapung), tanpa mengubah izin/fitur admin yang ada.
+
+Work Log:
+- prisma/schema.prisma: model Announcement + field isPublic Boolean @default(false); bun run db:push sukses.
+- src/app/api/admin/announcements/route.ts: GET/POST/PATCH mendukung isPublic (validasi boolean, min. satu field PATCH tetap berlaku); DELETE tidak berubah (OWNER).
+- src/app/api/public/notices/route.ts (BARU): GET publik tanpa login — hanya isPublic, take 5 (pinned desc, createdAt desc), authorName tidak diekspos; etagJson + fallback [] saat gagal.
+- src/components/admin/dashboard-tab.tsx: AnnouncementItem + isPublic; state annPublic/editPublic; POST & PATCH mengirim isPublic; switch "Tampilkan ke pelamar" di form posting & dialog ubah; badge outline-rose "Publik" (Globe) pada daftar.
+- src/components/landing/strings.ts: seksi notice baru (title, desc, gotIt, pinned, chipAria, empty) untuk ID & EN + idDictShape.
+- src/components/landing/public-notice.tsx (BARU): fetch /api/public/notices delay 1,5 dtk; popup Dialog otomatis utk pengumuman belum dibaca; localStorage lumina-notice-seen-v1 (cap 50); X/Esc/klik-luar = snooze per sesi tab (sessionStorage lumina-notice-snoozed-v1) sehingga chip tetap tampil tanpa auto-popup berulang; tombol "Mengerti" = tandai semua dibaca permanen; chip megafon mengapung bottom-20 left-4 (menghindari tabrakan Next DevTools) dengan dot rose.
+- src/components/landing/landing-page.tsx: PublicNotice dipasang di LandingShell setelah ChatWidget (tidak dirender saat mode perawatan FULL karena early-return).
+- Perbaikan lint: seenRef (access refs during render) diganti state seenIds.
+- E2E agent-browser: popup auto-appear (desktop & 390px mobile), badge "Penting" utk pinned, multi-item list; Escape→chip tampil & reload tidak auto-popup (snooze); klik chip→dialog; "Mengerti"→chip hilang permanen & reload bersih; API publik tidak membocorkan pengumuman internal; admin: switch + badge Publik + dialog ubah prefill benar.
+- Data uji (4 pengumuman publik) dihapus setelah verifikasi; /api/public/notices kembali [].
+- Gerbang: bunx tsc --noEmit src/ = 0 error; bun run lint exit 0; dev.log bersih.
+
+Stage Summary:
+- Fitur NR63 selesai: admin (OWNER/HR) bisa mencentang "Tampilkan ke pelamar" saat posting/mengubah pengumuman; pelamar melihat popup pengumuman sekali per pengumuman (localStorage) dan chip megafon mengapung selama ada yang belum dibaca; VIEWER tetap baca-saja; pengumuman internal tidak pernah bocor ke API publik; authorName tidak diekspos publik.
+- Artefak: src/components/landing/public-notice.tsx, src/app/api/public/notices/route.ts, schema Announcement.isPublic.
