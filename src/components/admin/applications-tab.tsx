@@ -717,6 +717,17 @@ export function ApplicationsTab() {
     ]
   );
 
+  // NR62 (butir 10) — jumlah filter non-default aktif (dari snapshot tampilan
+  // tersimpan yang sudah memodelkan semua filter). Dipakai badge tombol
+  // "Filter lanjutan" agar filter tersembunyi tetap kelihatan.
+  const activeFilterCount = useMemo(
+    () =>
+      Object.values(currentSnapshot).filter(
+        (v) => v !== undefined && v !== false && v !== "",
+      ).length,
+    [currentSnapshot],
+  );
+
   // Terapkan snapshot tampilan tersimpan ke seluruh state filter.
   function applySnapshot(filters: AdminFilterSnapshot) {
     setSearchInput(filters.q ?? "");
@@ -1222,8 +1233,15 @@ export function ApplicationsTab() {
   return (
     <div className="flex flex-col gap-4">
       <StaleDataNote />
-      {/* Toolbar filter */}
-      <div className="flex flex-col gap-3">
+      {/* NR62 (butir 10) — toolbar difilter ulang: baris utama (pencarian +
+          trigger "Filter lanjutan") selalu terlihat; 9 select + toggle boolean +
+          pencarian AI berada dalam Collapsible default TERTUTUP; tampilan,
+          ekspor, talent pool & "Lainnya" berada di baris kontrol di bawahnya. */}
+      <Collapsible
+        open={advancedFiltersOpen}
+        onOpenChange={setAdvancedFiltersOpen}
+        className="flex flex-col gap-3"
+      >
         {/* NR38-B fitur 2 — baris chip tampilan tersimpan, di atas bar filter. */}
         <SavedViewsBar currentSnapshot={currentSnapshot} onApply={applySnapshot} />
 
