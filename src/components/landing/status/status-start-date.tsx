@@ -2,10 +2,12 @@
 
 // Kartu Tanggal Mulai kerja (NR-15 idea 13 — dipindah verbatim dari
 // status-page.tsx pada NR-18-a): konfirmasi tanggal / usul tanggal lain.
-// Selalu tampak (tidak dilipat) — hanya render bila status diterima.
+// NR62: kartu jadi kartu emerald "Selamat bergabung" — menampung juga slot
+// `cardSlot` (Kartu Karyawanku) di dalam kartu yang sama, menggantikan
+// banner AcceptedNotice + kartu MyCardSection terpisah.
 
-import type { Dispatch, SetStateAction } from "react";
-import { CalendarCheck, CalendarClock, CheckCircle2, Clock, Loader2, Send } from "lucide-react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { BadgeCheck, CalendarCheck, CalendarClock, CheckCircle2, Clock, Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,6 +33,7 @@ export function StartDateCard({
   lang,
   p,
   t,
+  cardSlot,
 }: {
   candidateStart: CandidateStart;
   startBusy: "confirm" | "propose" | null;
@@ -44,10 +47,16 @@ export function StartDateCard({
   lang: Lang;
   p: Dict["status"]["page"];
   t: Dict;
+  /** NR62 — konten tambahan (Kartu Karyawanku) di dalam kartu yang sama. */
+  cardSlot?: ReactNode;
 }) {
   return (
-    <Card className="rounded-2xl p-5 md:p-6">
-      <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+    <Card className="rounded-2xl border-emerald-200/70 bg-gradient-to-br from-emerald-50/70 to-transparent p-5 md:p-6 dark:border-emerald-500/20 dark:from-emerald-500/5 dark:to-transparent">
+      <p className="flex items-center gap-2 text-sm font-bold text-emerald-800 dark:text-emerald-300">
+        <BadgeCheck className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+        {p.welcomeTitle}
+      </p>
+      <p className="mt-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         <CalendarCheck className="h-4 w-4" aria-hidden="true" />
         {p.startDateTitle}
       </p>
@@ -168,6 +177,13 @@ export function StartDateCard({
           ) : null}
         </>
       )}
+
+      {/* NR62 — kartu karyawan (Kartu Karyawanku) digabung ke kartu ini */}
+      {cardSlot ? (
+        <div className="mt-4 border-t border-emerald-200/70 pt-4 dark:border-emerald-500/20">
+          {cardSlot}
+        </div>
+      ) : null}
     </Card>
   );
 }

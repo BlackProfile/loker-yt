@@ -1,24 +1,13 @@
 "use client";
 
 // Spanduk status final (dipindah verbatim dari status-page.tsx pada NR-18-a):
-// Diterima & Ditolak/Ditarik. Selalu tampak (tidak dilipat).
+// Ditolak/Ditarik. NR62: banner "Diterima" (AcceptedNotice) dihapus — status
+// diterima kini dirangkum kartu emerald "Selamat bergabung" (status-start-date).
 
-import { BadgeCheck, BadgeX, ExternalLink } from "lucide-react";
+import { BadgeX, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Dict } from "@/components/landing/strings";
 import type { TrackResponse } from "@/lib/types";
-
-export function AcceptedNotice({ t }: { t: Dict }) {
-  return (
-    <div
-      role="status"
-      className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
-    >
-      <BadgeCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
-      {t.status.accepted}
-    </div>
-  );
-}
 
 export function RejectedNotice({
   detail,

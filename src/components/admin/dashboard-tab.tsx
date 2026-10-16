@@ -108,6 +108,7 @@ import { MorningBriefCard } from "./morning-brief-card";
 import { RiskScoresCard } from "./risk-scores-card";
 import { RejectionAnalysisCard } from "./rejection-analysis-card";
 import { SectionGroup } from "./section-group";
+import { CollapsibleCard } from "./collapsible-card";
 import { AnnouncementAiDraft } from "./announcement-ai-draft";
 import { cn } from "@/lib/utils";
 
