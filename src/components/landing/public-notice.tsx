@@ -13,7 +13,7 @@
 // Halaman mode perawatan penuh tidak merender komponen ini (dipasang di
 // LandingShell setelah early-return perawatan).
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Megaphone, Pin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,10 +69,11 @@ export function PublicNotice() {
   const [notices, setNotices] = useState<PublicNotice[]>([]);
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const seenRef = useRef<Set<string>>(new Set());
+  // NR63 — set id yang sudah dibaca; state (bukan ref) karena dipakai saat render
+  // untuk menentukan visibilitas chip mengapung.
+  const [seenIds, setSeenIds] = useState<Set<string>>(() => new Set());
 
-  const hasUnseen =
-    loaded && notices.length > 0 && notices.some((n) => !seenRef.current.has(n.id));
+  const hasUnseen = loaded && notices.length > 0 && notices.some((n) => !seenIds.has(n.id));
 
   // Muat pengumuman publik sekali per kunjungan, setelah halaman tenang.
   useEffect(() => {
@@ -93,11 +94,12 @@ export function PublicNotice() {
               typeof (v as PublicNotice).body === "string"
           )
           .slice(0, 5);
-        seenRef.current = new Set(readSeenIds());
+        const awal = new Set(readSeenIds());
+        setSeenIds(awal);
         setNotices(rows);
         setLoaded(true);
         // Popup otomatis hanya untuk pengumuman yang belum dibaca.
-        if (rows.length > 0 && rows.some((n) => !seenRef.current.has(n.id))) {
+        if (rows.length > 0 && rows.some((n) => !awal.has(n.id))) {
           setOpen(true);
         }
       } catch {
@@ -116,13 +118,13 @@ export function PublicNotice() {
     (nextOpen: boolean) => {
       setOpen(nextOpen);
       if (!nextOpen && notices.length > 0) {
-        const next = new Set(readSeenIds());
+        const next = new Set(seenIds);
         for (const n of notices) next.add(n.id);
-        seenRef.current = next;
+        setSeenIds(next);
         writeSeenIds([...next]);
       }
     },
-    [notices]
+    [notices, seenIds]
   );
 
   return (
