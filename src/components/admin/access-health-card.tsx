@@ -225,7 +225,7 @@ export function AccessHealthCard() {
       icon={ShieldCheck}
       title="Kesehatan Akses"
       description="Audit rutin akun, sesi, dan sandi: temuan risiko akses beserta tindakan cepatnya."
-      defaultOpen
+      // NR62 — kartu dashboard ringkas: default TERTUTUP (butir 7).
       actions={
         levelMeta ? (
           <Badge variant="outline" className={`shrink-0 ${levelMeta.className}`}>

@@ -361,7 +361,12 @@ function PreviewRow({
   value: string;
   fallback: string;
 }) {
+  const { t } = useLang();
   const empty = value.trim().length === 0;
+  // NR62 (F9) — jawaban panjang (>200 karakter) dijepit 4 baris dengan toggle
+  // teks "Tampilkan semua"/"Sembunyikan" (state lokal komponen baris).
+  const long = value.length > 200;
+  const [expanded, setExpanded] = useState(false);
   return (
     <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
       <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:w-40">
@@ -373,7 +378,21 @@ function PreviewRow({
           empty ? "italic text-muted-foreground/70" : "font-medium",
         )}
       >
-        {empty ? fallback : value}
+        {empty ? (
+          fallback
+        ) : (
+          <span className={cn(long && !expanded && "line-clamp-4")}>{value}</span>
+        )}
+        {long ? (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((prev) => !prev)}
+            className="mt-1 block text-xs font-medium text-primary underline-offset-4 hover:underline"
+          >
+            {expanded ? t.apply.preview.hideAll : t.apply.preview.showAll}
+          </button>
+        ) : null}
       </dd>
     </div>
   );

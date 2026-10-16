@@ -146,7 +146,7 @@ export function StatusLoginPanel({
           {loginError ? (
             <div
               role="alert"
-              className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+              className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300"
             >
               {loginError}
             </div>
@@ -170,6 +170,16 @@ export function StatusLoginPanel({
             )}
           </Button>
         </form>
+
+        {/* NR62 — tautan senyap ke lowongan (pindahan dari collapsible bantuan) */}
+        <button
+          type="button"
+          onClick={onBrowseJobs}
+          className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded text-sm text-muted-foreground underline-offset-2 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 sm:min-h-0 sm:py-1"
+        >
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          {p.browseJobs}
+        </button>
       </Card>
 
       {/* Bantuan: kehilangan kode pelacakan */}
@@ -236,14 +246,6 @@ export function StatusLoginPanel({
                 </div>
               ) : null}
             </form>
-            <Button
-              variant="outline"
-              className="mt-3 h-11 w-full gap-2"
-              onClick={onBrowseJobs}
-            >
-              <ExternalLink className="h-4 w-4" aria-hidden="true" />
-              {p.browseJobs}
-            </Button>
           </CollapsibleContent>
         </Card>
       </Collapsible>

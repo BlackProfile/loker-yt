@@ -121,7 +121,7 @@ export const INTERVIEW_BADGE_CLASS: Record<InterviewStatus, string> = {
   CONFIRMED:
     "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
   RESCHEDULE_REQUESTED:
-    "border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300",
+    "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
   COMPLETED:
     "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-500/30 dark:bg-zinc-500/10 dark:text-zinc-300",
   NO_SHOW:
@@ -129,35 +129,6 @@ export const INTERVIEW_BADGE_CLASS: Record<InterviewStatus, string> = {
   CANCELLED:
     "border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-500/30 dark:bg-zinc-500/10 dark:text-zinc-400",
 };
-
-/** Stempel UTC format Google Calendar: YYYYMMDDTHHMMSSZ. */
-function toGcalStamp(date: Date): string {
-  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-}
-
-/**
- * URL "Tambahkan ke Google Calendar" (action=TEMPLATE).
- * `dates` memakai UTC dari scheduledAt sampai +durationMin; semua parameter di-encode.
- */
-export function buildGoogleCalendarUrl(opts: {
-  title: string;
-  startIso: string;
-  durationMin: number;
-  details: string;
-  location: string;
-}): string {
-  const start = new Date(opts.startIso);
-  if (Number.isNaN(start.getTime())) return "";
-  const end = new Date(start.getTime() + opts.durationMin * 60_000);
-  const params = new URLSearchParams({
-    action: "TEMPLATE",
-    text: opts.title,
-    dates: `${toGcalStamp(start)}/${toGcalStamp(end)}`,
-    details: opts.details,
-    location: opts.location,
-  });
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
-}
 
 /** Tahap terminal bawaan (label tahap kustom bisa apa saja — tak dianggap final). */
 export function isFinalStatus(status?: StageKey): boolean {

@@ -252,7 +252,7 @@ export function ApprovalsCard() {
       icon={UserCheck}
       title="Persetujuan Ganda (Empat Mata)"
       description="Aksi berisiko tinggi (hapus data, hapus akun) menunggu persetujuan OWNER lain."
-      defaultOpen
+      // NR62 — kartu dashboard ringkas: default TERTUTUP (butir 7).
       actions={
         pendingCount > 0 ? (
           <Badge variant="outline" className="shrink-0 border-amber-200 bg-amber-100 text-amber-700 tabular-nums dark:border-amber-900 dark:bg-amber-950 dark:text-amber-400">

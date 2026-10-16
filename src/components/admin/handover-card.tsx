@@ -172,7 +172,7 @@ export function HandoverCard() {
       icon={ClipboardList}
       title="Serah Terima Harian"
       description="Catatan pergantian jaga: hal yang perlu ditindak besok, risiko, dan catatan umum tim."
-      defaultOpen
+      // NR62 — kartu dashboard ringkas: default TERTUTUP (butir 7).
     >
       {canWrite ? (
         <div className="flex flex-col gap-3 rounded-lg border p-4">

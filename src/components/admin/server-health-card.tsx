@@ -321,7 +321,7 @@ export function ServerHealthCard() {
       icon={Activity}
       title="Kesehatan Server"
       description="Beban server saat ini: latensi DB, memori, antrean AI, cache, dan Mode Hemat."
-      defaultOpen
+      // NR62 — kartu dashboard ringkas: default TERTUTUP (butir 7).
       actions={
         levelMeta ? (
           <Badge variant="outline" className={`shrink-0 ${levelMeta.className}`}>

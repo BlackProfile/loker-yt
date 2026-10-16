@@ -531,11 +531,85 @@ export function InterviewsSection({
                               {t.status.interview.slotsNote}
                             </p>
                           ) : null}
+
+                          {/* NR62 — form usulan manual disembunyikan di balik tautan
+                              senyap; tetap memakai submitReschedule yang sama. */}
+                          <div className="mt-3 border-t border-amber-200/70 pt-2.5 dark:border-amber-500/20">
+                            {rescheduleOpen ? (
+                              <div>
+                                <Label
+                                  htmlFor={`reschedule-at-${interview.id}`}
+                                  className="text-xs font-medium text-amber-800 dark:text-amber-300"
+                                >
+                                  {t.status.interview.proposedLabel}
+                                </Label>
+                                <Input
+                                  id={`reschedule-at-${interview.id}`}
+                                  type="datetime-local"
+                                  value={proposedAt}
+                                  onChange={(e) => setProposedAt(e.target.value)}
+                                  className="mt-1 h-11 bg-background sm:h-9"
+                                />
+                                <Label
+                                  htmlFor={`reschedule-reason-${interview.id}`}
+                                  className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-300"
+                                >
+                                  {t.status.interview.reasonLabel}
+                                </Label>
+                                <Textarea
+                                  id={`reschedule-reason-${interview.id}`}
+                                  rows={2}
+                                  value={rescheduleReason}
+                                  onChange={(e) => setRescheduleReason(e.target.value)}
+                                  placeholder={t.status.interview.reasonPh}
+                                  maxLength={500}
+                                  className="mt-1 bg-background text-sm"
+                                />
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <Button
+                                    size="sm"
+                                    className="h-11 sm:h-9"
+                                    disabled={cardBusy || !proposedAt}
+                                    onClick={() => void submitReschedule(interview.id)}
+                                  >
+                                    {isInterviewBusy(interview.id, "RESCHEDULE") ? (
+                                      <Loader2
+                                        className="h-4 w-4 animate-spin"
+                                        aria-hidden="true"
+                                      />
+                                    ) : (
+                                      <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+                                    )}
+                                    {t.status.interview.sendRequest}
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-11 sm:h-9"
+                                    disabled={cardBusy}
+                                    onClick={() => setRescheduleFor(null)}
+                                  >
+                                    {t.status.formCancel}
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setRescheduleFor(interview.id)}
+                                aria-expanded={false}
+                                className="inline-flex min-h-11 items-center gap-1 rounded text-xs font-medium text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 sm:min-h-0"
+                              >
+                                {t.status.interview.manualSuggest}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ) : null}
 
-                      {cancelConfirmOpen ? (
-                        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-500/30 dark:bg-rose-500/10">
+                      {/* Konfirmasi "Tidak bisa hadir" (dibuka dari menu "Lainnya") */}
+                      {selfServiceUpcoming && cancelConfirmOpen ? (
+                        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-500/30 dark:bg-rose-500/10">
                           <p className="text-xs font-semibold text-rose-800 dark:text-rose-300">
                             {t.status.interview.cancelConfirmTitle}
                           </p>
@@ -585,31 +659,32 @@ export function InterviewsSection({
                           </div>
                         </div>
                       ) : null}
-                    </div>
-                  ) : null}
 
-                  <Collapsible className="mt-3">
-                    <CollapsibleTrigger className="group flex w-fit items-center gap-1 rounded text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
-                      <ChevronDown
-                        className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180"
-                        aria-hidden="true"
-                      />
-                      {isOnline
-                        ? t.status.interview.tipsTitleOnline
-                        : t.status.interview.tipsTitleOnsite}
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-muted-foreground">
-                        {(isOnline
-                          ? t.status.interview.tipsOnline
-                          : t.status.interview.tipsOnsite
-                        ).map((tip) => (
-                          <li key={tip}>{tip}</li>
-                        ))}
-                      </ul>
-                    </CollapsibleContent>
-                  </Collapsible>
-                </div>
+                      {/* NR62 — tips hanya pada sesi ronde terbaru */}
+                      {isLatestRound ? (
+                      <Collapsible className="mt-3">
+                        <CollapsibleTrigger className="group flex w-fit items-center gap-1 rounded text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
+                          <ChevronDown
+                            className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180"
+                            aria-hidden="true"
+                          />
+                          {isOnline
+                            ? t.status.interview.tipsTitleOnline
+                            : t.status.interview.tipsTitleOnsite}
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-muted-foreground">
+                            {(isOnline
+                              ? t.status.interview.tipsOnline
+                              : t.status.interview.tipsOnsite
+                            ).map((tip) => (
+                              <li key={tip}>{tip}</li>
+                            ))}
+                          </ul>
+                        </CollapsibleContent>
+                      </Collapsible>
+                      ) : null}
+                    </div>
               );
             })}
           </div>
