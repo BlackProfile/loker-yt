@@ -217,6 +217,8 @@ const id = {
     contactTitle: "Kontak",
     contactWhatsapp: "WhatsApp",
     formTitle: "Formulir Lamaran",
+    // NR62 (F3) — penanda wajib ringkas satu baris di kanan judul.
+    requiredShort: "* = wajib diisi",
     requiredBefore: "Kolom bertanda",
     requiredAfter: "wajib diisi.",
     stepOf: "Langkah",
@@ -318,11 +320,33 @@ const id = {
       copied: "Tautan disalin",
       linkFailed: "Gagal menyiapkan tautan. Coba lagi.",
       shareTitle: "Lanjutkan lamaran — Lumina Studio",
+      // NR62 (F1) — kotak tautan draft jadi satu baris ringkas + Collapsible.
+      deviceToggle: "Lanjutkan di perangkat lain",
+      linkBoxDesc:
+        "Kirim tautan draft ke email kamu. Isian teks, pilihan, dan berkas yang sudah tersimpan di draft ikut terbawa. Tautan berlaku 7 hari.",
+      sendEmail: "Kirim tautan ke email",
+      sending: "Mengirim...",
+      emailLabel: "Email tujuan tautan draft",
+      emailPh: "nama@email.com",
+      sendLinkMenu: "Kirim tautan",
+      needPosition: "Pilih posisi lamaran terlebih dahulu untuk mengirim tautan.",
+      linkSentOk: "Tautan dikirim. Cek email kamu (berlaku 7 hari).",
+      linkSentFail: "Gagal mengirim tautan. Coba lagi.",
+      linkRestored: "Draft dari tautan dimuat.",
+      linkInvalid: "Tautan draft tidak valid atau sudah dipakai.",
+      // NR62 (F4) — label aksesibel tombol X pada banner draft.
+      discardAria: "Hapus draft",
+      // NR62 (F5) — teks DraftFileNote dipindah dari form-field-renderer.
+      saving: "Menyimpan berkas ke draft",
+      savedNote: "Tersimpan di draft — aman bila lanjut di perangkat lain.",
+      existing: "Sudah ada: {name} ({size}) — ganti bila perlu.",
     },
     // NR60 (A1) — prefill dari lamaran terakhir (email dikenali).
     prefill: {
       title: "Kami menemukan lamaranmu sebelumnya",
-      use: "Gunakan data ini",
+      // NR62 (F8) — kartu prefill jadi chip satu baris.
+      chipText: "Gunakan data lamaran sebelumnya",
+      use: "Gunakan",
       dismiss: "Tutup",
       applied: "Data lamaran sebelumnya diisi.",
     },
@@ -342,6 +366,8 @@ const id = {
       badge: "Langkah Terakhir",
       title: "Pratinjau Lamaran",
       desc: "Periksa kembali seluruh data di bawah ini sebelum dikirim. Pastikan semuanya sudah benar dan tidak ada salah ketik.",
+      // NR62 (F12) — baris pendek pengganti kotak berwarna di header pratinjau.
+      descShort: "Periksa sekali lagi sebelum mengirim.",
       sectionPersonal: "Data Diri",
       sectionAnswers: "Pengalaman & Jawaban",
       sectionFiles: "Berkas Terlampir",
@@ -368,6 +394,9 @@ const id = {
       consentNote:
         "Data kamu hanya dipakai untuk proses rekrutmen di studio ini.",
       changeOrRemove: "Ganti / Hapus",
+      // NR62 (F9) — toggle pratinjau utk jawaban panjang.
+      showAll: "Tampilkan semua",
+      hideAll: "Sembunyikan",
       // NR60 (C1) — peringatan lunak lamaran duplikat di dialog konfirmasi.
       duplicateWarn:
         "Catatan: kamu tercatat sudah melamar posisi ini pada {date}. Mengirim lagi akan membuat lamaran baru.",
