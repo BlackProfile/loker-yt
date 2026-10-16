@@ -163,7 +163,9 @@ export function PublicNotice() {
           onClick={() => setOpen(true)}
           aria-label={t.notice.chipAria}
           className={cn(
-            "fixed bottom-4 left-4 z-40 flex size-12 items-center justify-center",
+            // bottom-20 (80px) agar tidak menabrak indikator Next.js DevTools
+            // (kiri-bawah, mode dev) maupun elemen lain di sudut layar.
+            "fixed bottom-20 left-4 z-40 flex size-12 items-center justify-center",
             "rounded-full border bg-background/95 shadow-lg backdrop-blur",
             "transition-transform hover:scale-105 focus-visible:outline-none",
             "focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
