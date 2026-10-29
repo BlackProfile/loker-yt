@@ -77,6 +77,7 @@ import {
   type DocExpiry,
   type HoldReason,
   type OfferSignature,
+  type PortfolioQualitySummary,
   HOLD_REASONS,
 } from "@/lib/types";
 
