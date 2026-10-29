@@ -111,6 +111,7 @@ import {
   newFormId,
   normalizeFormSchema,
   sectionHasStep,
+  showIfConditions,
   type CoreItemKey,
   type CoreItemOverride,
   type CoreOverrides,
@@ -119,6 +120,8 @@ import {
   type FormFieldType,
   type FormSchema,
   type FormSection,
+  type ShowIfCondition,
+  type ShowIfSpec,
 } from "@/lib/form-schema";
 import { FORM_TEMPLATES, expandTemplateFields, type FormTemplate } from "@/lib/form-templates";
 import { FormBuilderPreviewDialog } from "./form-builder-preview-dialog";
@@ -992,24 +995,95 @@ function FieldEditorCard({
         .filter((f) => f.id !== field.id && isChoiceType(f.type)),
     [sectionFields, fieldIndex, field.id],
   );
+
+  // NR69 (Fitur #7) — kondisi tampil (array). Bila field.showIf masih bentuk lama
+  // {fieldId, values}, showIfConditions mengembalikan array satu elemen (kompatibel).
+  const showIfConditionList: ShowIfCondition[] = useMemo(
+    () => showIfConditions(field),
+    [field],
+  );
+
+  // Sumber kondisi yang dipakai tiap entri kondisi (indeks -> sumber field).
+  const sourceForCondition = (cond: ShowIfCondition) =>
+    showIfSources.find((f) => f.id === cond.fieldId);
+
+  // Sumber showIf lama (kondisi pertama) untuk kompatibilitas render.
   const showIfSource = field.showIf
-    ? showIfSources.find((f) => f.id === field.showIf?.fieldId)
+    ? showIfConditionList.length > 0
+      ? sourceForCondition(showIfConditionList[0])
+      : undefined
     : undefined;
 
-  // Sumber showIf hilang (dihapus/diubah tipe/dipindah ke bawah field ini) —
+  // Sumber showIf hilang SEMUA (dihapus/diubah tipe/dipindah ke bawah field ini) —
   // bersihkan draf agar UI tidak menampilkan syarat mati; sanitasi server
   // (normalizeShowIf) tetap jaring pengaman saat "Simpan & Terapkan".
   useEffect(() => {
-    if (field.showIf && !showIfSource) onChange({ showIf: undefined });
-  }, [field.showIf, showIfSource, onChange]);
+    if (field.showIf && showIfConditionList.length > 0 && !showIfSource) {
+      onChange({ showIf: undefined });
+    }
+  }, [field.showIf, showIfConditionList, showIfSource, onChange]);
 
-  /** NR-32 — centang/hapus satu nilai syarat tampil (checkbox = cocok salah satu). */
-  function toggleShowIfValue(option: string, checked: boolean) {
-    if (!field.showIf) return;
+  /** NR69 (Fitur #7) — bungkus kondisi menjadi showIf baru ({conditions: [...]}). */
+  function writeShowIfConditions(conditions: ShowIfCondition[]): void {
+    if (conditions.length === 0) {
+      onChange({ showIf: undefined });
+      return;
+    }
+    onChange({ showIf: { conditions } });
+  }
+
+  /** NR69 (Fitur #7) — tambah satu kondisi baru (field pilihan pertama yang belum dipakai). */
+  function addShowIfCondition(): void {
+    if (!canMutate) return;
+    if (showIfSources.length === 0) return;
+    if (showIfConditionList.length >= 5) {
+      toast.error("Maksimal 5 kondisi tampil per pertanyaan.");
+      return;
+    }
+    const usedSources = new Set(showIfConditionList.map((c) => c.fieldId));
+    const nextSource = showIfSources.find((s) => !usedSources.has(s.id)) ?? showIfSources[0];
+    const next: ShowIfCondition = { fieldId: nextSource.id, values: [] };
+    writeShowIfConditions([...showIfConditionList, next]);
+  }
+
+  /** NR69 (Fitur #7) — ganti sumber field dari satu kondisi (reset values). */
+  function setConditionSource(index: number, sourceId: string): void {
+    const next = [...showIfConditionList];
+    next[index] = { fieldId: sourceId, values: [] };
+    writeShowIfConditions(next);
+  }
+
+  /** NR69 (Fitur #7) — centang/hapus satu nilai opsi pada satu kondisi. */
+  function toggleConditionValue(index: number, option: string, checked: boolean): void {
+    const cond = showIfConditionList[index];
+    if (!cond) return;
     const values = checked
-      ? Array.from(new Set([...field.showIf.values, option]))
-      : field.showIf.values.filter((v) => v !== option);
-    onChange({ showIf: { ...field.showIf, values } });
+      ? Array.from(new Set([...cond.values, option]))
+      : cond.values.filter((v) => v !== option);
+    const next = [...showIfConditionList];
+    next[index] = { ...cond, values };
+    writeShowIfConditions(next);
+  }
+
+  /** NR69 (Fitur #7) — hapus satu kondisi dari daftar. */
+  function removeCondition(index: number): void {
+    writeShowIfConditions(showIfConditionList.filter((_, i) => i !== index));
+  }
+
+  /** NR-32 — centang/hapus satu nilai syarat tampil kondisi pertama (kompat lama). */
+  function toggleShowIfValue(option: string, checked: boolean) {
+    if (showIfConditionList.length === 0) return;
+    toggleConditionValue(0, option, checked);
+  }
+
+  /** NR69 (Fitur #7) — setel showIf ke sumber tunggal (pilihan dropdown utama). */
+  function setSingleShowIfSource(sourceId: string) {
+    if (sourceId === SHOWIF_ALWAYS) {
+      onChange({ showIf: undefined });
+      return;
+    }
+    // Ganti sumber: reset nilai agar opsi field lain tidak ikut tersimpan.
+    writeShowIfConditions([{ fieldId: sourceId, values: [] }]);
   }
 
   function setOption(index: number, value: string) {
