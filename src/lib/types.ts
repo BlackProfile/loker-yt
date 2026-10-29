@@ -150,6 +150,24 @@ export type FaqItem = { question: string; answer: string };
 
 export type TeamMember = { name: string; role: string; quote: string };
 
+// Satu kartu tahap pada section "Proses Seleksi" halaman publik.
+export type SelectionStage = {
+  title: string;
+  description: string;
+  duration: string; // teks bebas, mis. "±1-3 hari kerja"; boleh kosong
+  tips: string[]; // daftar kiat sukses; boleh kosong
+};
+
+// Konten section "Proses Seleksi" versi admin.
+// null = pakai teks bawaan kamus (ID/EN); terisi = teks kustom dipakai apa adanya
+// di kedua bahasa (konsisten dengan aturan konten admin tidak diterjemahkan).
+export type SelectionContent = {
+  badge: string;
+  title: string;
+  desc: string;
+  stages: SelectionStage[];
+};
+
 // Konten situs yang bisa diatur lewat panel admin
 export type SiteContent = {
   siteName: string;
@@ -185,6 +203,8 @@ export type SiteContent = {
   // pengumuman dan formulir lamaran tidak bisa dikirim.
   recruitmentClosed: boolean;
   recruitmentClosedMessage: string;
+  // Konten section "Proses Seleksi" kustom (null = teks bawaan kamus ID/EN)
+  selection: SelectionContent | null;
   // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin)
   sections: SectionVisibility;
 };
