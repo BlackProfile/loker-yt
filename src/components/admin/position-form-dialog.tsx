@@ -57,6 +57,8 @@ import {
   INTERVIEW_PLATFORM_LABELS,
   INTERVIEW_PLATFORMS,
   POSITION_TYPES,
+  REJECTION_REASON_LABELS,
+  REJECTION_REASONS,
   type AiCoverResponse,
   type AdminUploadResponse,
   type InterviewMode,
@@ -98,6 +100,10 @@ type FormState = {
   aiCriteria: string;
   autoShortlistScore: string;
   autoShortlistStage: string; // "" = nonaktif
+  // NR68 — auto-reject berbasis AI (opt-in per posisi).
+  autoRejectEnabled: boolean;
+  autoRejectScore: string; // "" = pakai rekomendasi TIDAK_COCCOK
+  autoRejectReason: string; // "" = KUALIFIKASI (default)
   applyTemplate: string;
   acceptTemplate: string;
   rejectTemplate: string;
@@ -147,6 +153,9 @@ const EMPTY_FORM: FormState = {
   aiCriteria: "",
   autoShortlistScore: "",
   autoShortlistStage: "",
+  autoRejectEnabled: false,
+  autoRejectScore: "",
+  autoRejectReason: "",
   applyTemplate: "",
   acceptTemplate: "",
   rejectTemplate: "",
@@ -199,6 +208,9 @@ function buildFormState(p: Position): FormState {
     aiCriteria: p.aiCriteria ?? "",
     autoShortlistScore: p.autoShortlistScore == null ? "" : String(p.autoShortlistScore),
     autoShortlistStage: p.autoShortlistStage ?? "",
+    autoRejectEnabled: p.autoRejectEnabled ?? false,
+    autoRejectScore: p.autoRejectScore == null ? "" : String(p.autoRejectScore),
+    autoRejectReason: p.autoRejectReason ?? "",
     applyTemplate: p.replyTemplates.apply ?? "",
     acceptTemplate: p.replyTemplates.accept ?? "",
     rejectTemplate: p.replyTemplates.reject ?? "",
@@ -410,6 +422,10 @@ export function PositionFormDialog({
       if (!isInt(form.autoShortlistScore) || Number(form.autoShortlistScore) < 0 || Number(form.autoShortlistScore) > 100)
         errors.push("Skor auto-shortlist harus angka bulat 0-100, atau dikosongkan.");
     }
+    if (form.autoRejectEnabled && form.autoRejectScore.trim() !== "") {
+      if (!isInt(form.autoRejectScore) || Number(form.autoRejectScore) < 0 || Number(form.autoRejectScore) > 100)
+        errors.push("Skor auto-reject harus angka bulat 0-100, atau dikosongkan.");
+    }
     if (form.order.trim() !== "" && !isInt(form.order))
       errors.push("Urutan harus berupa bilangan bulat.");
     if (form.interviewDuration.trim() !== "") {
@@ -483,6 +499,11 @@ export function PositionFormDialog({
           : Number(form.autoShortlistScore),
       autoShortlistStage:
         cleanedStages.length === 0 ? null : form.autoShortlistStage || null,
+      // NR68 — auto-reject (opt-in per posisi)
+      autoRejectEnabled: form.autoRejectEnabled,
+      autoRejectScore:
+        form.autoRejectScore.trim() === "" ? null : Number(form.autoRejectScore),
+      autoRejectReason: form.autoRejectReason.trim() || null,
       applyTemplate: form.applyTemplate.trim() || null,
       acceptTemplate: form.acceptTemplate.trim() || null,
       rejectTemplate: form.rejectTemplate.trim() || null,
@@ -1145,6 +1166,68 @@ export function PositionFormDialog({
                           : "Lamaran dipindah ke tahap ini saat ambang skor tercapai."}
                       </p>
                     </div>
+                  </div>
+
+                  {/* NR68 — Auto-reject berbasis AI (opt-in per posisi) */}
+                  <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">Auto-reject berbasis AI</p>
+                        <p className="text-xs text-muted-foreground">
+                          Lamaran baru dengan skor AI rendah / rekomendasi “Kurang Cocok” ditolak otomatis + email sopan.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={form.autoRejectEnabled}
+                        onCheckedChange={(v) => set("autoRejectEnabled", v)}
+                        aria-label="Aktifkan auto-reject berbasis AI"
+                      />
+                    </div>
+                    {form.autoRejectEnabled ? (
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="pos-rejectScore">Ambang Skor Auto-Reject (opsional)</Label>
+                          <Input
+                            id="pos-rejectScore"
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={form.autoRejectScore}
+                            onChange={(e) => set("autoRejectScore", e.target.value)}
+                            placeholder="mis. 30"
+                            className="h-10"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Lamaran dengan skor di bawah angka ini ditolak. Kosong = pakai rekomendasi AI “Kurang Cocok”.
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <Label>Alasan Penolakan</Label>
+                          <Select
+                            value={form.autoRejectReason || SHORTLIST_NONE}
+                            onValueChange={(v) =>
+                              set("autoRejectReason", v === SHORTLIST_NONE ? "" : v)
+                            }
+                          >
+                            <SelectTrigger className="h-10 w-full" aria-label="Alasan auto-reject">
+                              <SelectValue placeholder="KUALIFIKASI (default)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={SHORTLIST_NONE}>KUALIFIKASI (default)</SelectItem>
+                              {REJECTION_REASONS.map((r) => (
+                                <SelectItem key={r} value={r}>
+                                  {REJECTION_REASON_LABELS[r]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Alasan terstruktur yang tercatat di lamaran &amp; ditampilkan ke pelamar.
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
