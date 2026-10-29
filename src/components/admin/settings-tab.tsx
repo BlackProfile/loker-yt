@@ -114,6 +114,7 @@ import {
   type FaqItem,
   type ReferralSourceDto,
   type ReferralSourceKind,
+  type SelectionContent,
   type TelegramAlertKey,
   type Role,
   type SectionKey,
@@ -126,6 +127,7 @@ import { ApiError, apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api";
 import { copyText, formatDateTime, formatRelative, formatShortDateTime } from "./format";
 import { useAdminSession } from "./admin-context";
 import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
+import { SelectionContentCard } from "./selection-content-card";
 import { CollapsibleCard, type CardStatus } from "./collapsible-card";
 import { SectionGroup } from "./section-group";
 import { PermissionMatrixCard } from "./permission-matrix-card";
@@ -4120,6 +4122,11 @@ export function SettingsTab() {
     );
   }
 
+  // NR67 — konten kustom section "Proses Seleksi" (null = teks bawaan kamus).
+  function updateSelection(next: SelectionContent | null) {
+    setSite((prev) => (prev ? { ...prev, selection: next } : prev));
+  }
+
   function updateBenefit(index: number, patch: Partial<SiteContent["benefits"][number]>) {
     setSite((prev) =>
       prev
@@ -4386,6 +4393,9 @@ export function SettingsTab() {
           </div>
         </div>
       </CollapsibleCard>
+
+      {/* Proses Seleksi (NR67) */}
+      <SelectionContentCard selection={site.selection} onChange={updateSelection} />
 
       {/* Kontak */}
       <CollapsibleCard
