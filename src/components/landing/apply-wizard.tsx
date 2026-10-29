@@ -904,7 +904,7 @@ export function ApplyWizard({
     setSelectedSlotId("");
     setSlotList([]);
     setSlotError(null);
-    setSlotFetchedFor("");
+    slotFetchedForRef.current = ""; // NR69-FIX — guard jadi ref
     setErrors((prev) =>
       prev.nik || prev.birthDate ? { ...prev, nik: undefined, birthDate: undefined } : prev,
     );
@@ -3146,7 +3146,7 @@ export function ApplyWizard({
     // NR70 — slot & referral ikut direset untuk pengisi berikutnya.
     setSelectedSlotId("");
     setSlotList([]);
-    setSlotFetchedFor("");
+    slotFetchedForRef.current = ""; // NR69-FIX — guard jadi ref
     setSlotError(null);
     setReferralCode("");
     setReferralStatus({ state: "idle" });
