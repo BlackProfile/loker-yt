@@ -744,13 +744,12 @@ model ReferralCode {
   id            String    @id @default(cuid())
   code          String    @unique // format "REF-XXXXXX" 6 alphanumeric upper
   referrerName  String?
-  referrerEmail String
+  referrerEmail String    @unique // satu kode per email (upsert idempoten)
   applicationId String? // id lamaran yang MEMPAKAI kode ini (bukan lamaran perujuk)
   usedAt        DateTime?
   rewardedAt    DateTime?
   createdAt     DateTime  @default(now())
 
-  @@index([referrerEmail])
   @@index([usedAt])
 }
 

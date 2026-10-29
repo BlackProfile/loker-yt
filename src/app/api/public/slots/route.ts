@@ -60,10 +60,10 @@ export async function GET(req: NextRequest) {
       }
       targetPositionId = application.positionId;
     } else {
-      // Jalur 2 — positionId (apply wizard): cukup validasi posisi ada & terbuka.
+      // Jalur 2 — positionId (apply wizard): cukup validasi posisi ada.
       const position = await db.position.findUnique({
         where: { id: positionId },
-        select: { id: true, status: true },
+        select: { id: true },
       });
       if (!position) {
         return NextResponse.json({ error: "Posisi tidak ditemukan." }, { status: 404 });
