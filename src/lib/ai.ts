@@ -5,7 +5,9 @@ import { db } from "@/lib/db";
 import { parseRequirements, parseScreeningQuestions, parseStringRecord } from "@/lib/seed";
 import { formatAnswerValue, parseFormAnswers, parseFormSchema } from "@/lib/form-schema";
 import { stagesForPosition } from "@/lib/stages";
-import { AI_RECOMMENDATION_LABELS, type AiRecommendation } from "@/lib/types";
+import { AI_RECOMMENDATION_LABELS, REJECTION_REASON_LABELS, REJECTION_REASONS, type AiRecommendation, type RejectionReason } from "@/lib/types";
+import { appendStageHistory } from "@/lib/stage-history";
+import { queueEmail } from "@/lib/notify";
 
 const AI_TIMEOUT_MS = 60_000; // 60 detik
 
@@ -326,6 +328,7 @@ export async function analyzeApplication(applicationId: string): Promise<Screeni
     // dan tahap tujuan valid pada pipeline posisi.
     const position = application.position;
     const targetStage = position?.autoShortlistStage ?? null;
+    let autoShortlisted = false;
     if (
       position &&
       targetStage &&
@@ -348,8 +351,72 @@ export async function analyzeApplication(applicationId: string): Promise<Screeni
             detail: `Skor AI ${result.score} >= ambang ${position.autoShortlistScore} — dipindah otomatis ke tahap '${targetStage}'`,
           },
         });
+        autoShortlisted = true;
       } catch (error) {
         console.error("[ai] auto-shortlist gagal:", errorMessage(error));
+      }
+    }
+
+    // NR68 — Auto-reject: kebalikan auto-shortlist. Opt-in per posisi. Hanya jalan
+    // bila lamaran BARU dan TIDAK ikut auto-shortlist (tidak saling membatalkan).
+    // Pemicu: autoRejectScore terisi & skor < ambang, ATAU autoRejectScore null &
+    // rekomendasi TIDAK_COCCOK. Reason default KUALIFIKASI (bisa override per posisi).
+    if (position && position.autoRejectEnabled && !autoShortlisted && application.status.trim() === "NEW") {
+      const shouldReject =
+        position.autoRejectScore != null
+          ? result.score < position.autoRejectScore
+          : result.recommendation === "TIDAK_COCCOK";
+      if (shouldReject) {
+        const reason: RejectionReason = (REJECTION_REASONS as string[]).includes(position.autoRejectReason ?? "")
+          ? (position.autoRejectReason as RejectionReason)
+          : "KUALIFIKASI";
+        const reasonLabel = REJECTION_REASON_LABELS[reason];
+        try {
+          const now2 = new Date();
+          await db.application.update({
+            where: { id: applicationId },
+            data: {
+              status: "REJECTED",
+              rejectionReason: reason,
+              rejectedAt: now2,
+              stageHistory: appendStageHistory(application.stageHistory, "REJECTED", "NEW"),
+            },
+          });
+          await db.activityLog.createMany({
+            data: [
+              {
+                applicationId,
+                actor: "Sistem",
+                action: "STATUS_CHANGE",
+                detail: `Auto-reject AI — alasan: ${reasonLabel} (skor ${result.score})`,
+              },
+              {
+                applicationId,
+                actor: "Sistem",
+                action: "REJECT_NOTIFIED",
+                detail: "Penolakan otomatis berbasis AI — pesan disiapkan untuk pelamar",
+              },
+            ],
+          });
+          // Email penolakan sopan dari template posisi (sama dengan alur manual).
+          const baseTemplate =
+            position.rejectTemplate ??
+            "Halo {nama},\n\nTerima kasih sudah melamar posisi {posisi} di Lumina Studio. Setelah menimbang banyak kandidat, kami memutuskan untuk belum melanjutkan lamaranmu kali ini.\n\nJangan berkecil hati — kami menyimpan datamu dan akan menghubungimu bila ada kesempatan lain yang cocok. Tetap semangat berkarya!\n\nSalam,\nTim Lumina Studio";
+          const message = baseTemplate
+            .split("{nama}").join(application.name)
+            .split("{posisi}").join(position.title)
+            .split("{kode}").join(application.trackingCode ?? "-")
+            .split("{alasan}").join(reasonLabel);
+          void queueEmail({
+            toEmail: application.email,
+            subject: `Update lamaranmu — ${position.title}`,
+            body: message,
+            kind: "REJECT",
+            applicationId,
+          });
+        } catch (error) {
+          console.error("[ai] auto-reject gagal:", errorMessage(error));
+        }
       }
     }
 
