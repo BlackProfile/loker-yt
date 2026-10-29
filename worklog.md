@@ -4807,3 +4807,20 @@ Stage Summary:
 - Berkas: prisma/schema.prisma, src/lib/ai.ts, src/lib/talent-notify.ts (baru), src/lib/position-input.ts, src/lib/types.ts, src/lib/seed.ts, src/app/api/admin/positions/route.ts, src/app/api/admin/positions/[id]/route.ts, src/components/admin/position-settings-pages.tsx. (position-form-dialog.tsx & position-form-page.tsx diedit harmles.)
 - Backup DB: backups/custom.db.nr68.bak.
 - Sisa gelombang: NR69 (#5,#6,#7), NR70 (#1,#3), NR71 (#11,#12), NR72 (#13,#14), NR73 (#15,#16,#4).
+
+Task ID: NR69
+Agent: orchestrator (Z.ai Code) + subagent full-stack-developer
+Task: Gelombang 2 dari "tambahkan semuanya" — Penilaian kolaboratif & AI: #5 multi-reviewer scorecard + #6 VLM skor kualitas portofolio + #7 screening adaptif multi-condition (AND).
+
+Work Log:
+- Subagent full-stack-developer mengerjakan ketiga fitur end-to-end (schema + backend + serialisasi + UI); tsc 0 error src/, lint exit 0, db:push sinkron. Auto-sync sudah commit.
+- #5 Multi-reviewer scorecard: schema Interview +2 field (assignedReviewerIds JSON AdminUser id[], reviewerScorecards JSON [{reviewerId,reviewerName,scores,summary,updatedAt}]); route baru /api/admin/interviews/[id]/scorecards (GET daftar reviewer+scorecard, POST upsert scorecard individual cap 6 reviewer, recompute merged scores via rata-rata, simpan ke Interview.scores, ActivityLog, realtime); serializeInterview expose field baru; UI interview-session-dialog.tsx tambah assignment reviewer (multi-select AdminUser) + input scorecard individual per reviewer + tombol Simpan Penilaian + tampil skor merged.
+- #6 VLM skor kualitas portofolio: schema Application +2 field (portfolioQualityScore Int?, portfolioQualitySummary String? JSON {score,summary,strengths[],weaknesses[]}); route baru /api/admin/applications/[id]/portfolio-quality (POST OWNER/HR) — VLM createVision menilai kualitas konten; URL gambar langsung dikirim sebagai image_url, URL YouTube -> thumbnail hqdefault, URL video lain/non-media -> 400 ramah; daftar di ai-features.ts (key portfolio_quality) untuk gating ai-control; serializeApplication expose; UI ai-panel.tsx tombol "Analisis Kualitas Portofolio" + tampil skor/summary/kekuatan/kelemahan.
+- #7 Screening adaptif multi-condition: src/lib/form-schema.ts ShowIfSpec diperluas mendukung {conditions:[{fieldId,values[]}[]]} (AND semua kondisi), showIfConditions() + isFieldVisible() backward-compat (data lama single-condition tetap valid); form-builder-page.tsx editor showIf tambah "Tambah kondisi" (multi-condition AND editor); apply-wizard filter visible tetap pakai isFieldVisible (otomatis dukung bentuk baru). Tidak ada schema change.
+- Gerbang: bunx tsc --noEmit -> 0 error src/; bun run lint -> exit 0; dev.log bersih (0 malformed).
+- E2E: endpoint /api/admin/applications/[id]/portfolio-quality & /api/admin/interviews/[id]/scorecards merespons 401 tanpa sesi (gate aman); UI kode hadir (grep confirm: ai-panel 20 ref portfolioQuality, interview-session 85 ref reviewer/scorecard, form-builder 59 ref conditions/showIf/kondisi). Landing 200.
+
+Stage Summary:
+- NR69 hidup: tim bisa menugaskan beberapa reviewer per sesi wawancara + masing-masing isi scorecard individual (skor merged otomatis); admin bisa minta VLM menilai kualitas konten portofolio kandidat (skor 0-100 + kekuatan/kelemahan); form builder dukung pertanyaan kondisional multi-condition (AND) di samping single-condition lama.
+- Berkas: prisma/schema.prisma, src/lib/seed.ts, src/lib/types.ts, src/lib/form-schema.ts, src/lib/ai-features.ts, src/app/api/admin/interviews/[id]/scorecards/route.ts (baru), src/app/api/admin/applications/[id]/portfolio-quality/route.ts (baru), src/components/admin/ai-panel.tsx, src/components/admin/interview-session-dialog.tsx, src/components/admin/form-builder-page.tsx.
+- Sisa gelombang: NR70 (#1,#3), NR71 (#11,#12), NR72 (#13,#14), NR73 (#15,#16,#4).
