@@ -904,6 +904,31 @@ async function handlePost(req: NextRequest) {
       }
     }
 
+    // NR70 (Fitur #3) — kode referral opsional: bila pelamar mengirim kode yang
+    // valid & belum terpakai, tandai dipakai (applicationId + usedAt). Tidak
+    // menggagalkan submit bila kode invalid/sudah terpakai — cukup diabaikan.
+    if (referralCodeRaw && /^REF-[A-Z0-9]{4,12}$/.test(referralCodeRaw)) {
+      try {
+        const claimed = await db.referralCode.updateMany({
+          where: { code: referralCodeRaw, usedAt: null },
+          data: { applicationId: created.id, usedAt: now },
+        });
+        if (claimed.count > 0) {
+          await db.activityLog.create({
+            data: {
+              applicationId: created.id,
+              actor: "Sistem",
+              action: "REFERRAL_APPLIED",
+              detail: `Lamaran ini memakai kode referral ${referralCodeRaw}.`,
+            },
+          });
+        }
+      } catch (referralError) {
+        // Bukan blokade: referral hanya bonus pelacakan, bukan syarat submit.
+        console.error("[POST /api/applications] penandaan referral gagal:", referralError);
+      }
+    }
+
     // NR60 (A2) — email konfirmasi otomatis ke pelamar (fire-and-forget): masuk
     // antrean EmailOutbox lalu terkirim via SMTP bila terkonfigurasi. Submit TIDAK
     // menunggu email dan kegagalannya tidak boleh menggagalkan submit — queueEmail

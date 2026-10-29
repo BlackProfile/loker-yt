@@ -450,6 +450,38 @@ const id = {
       duplicateWarn:
         "Catatan: kamu tercatat sudah melamar posisi ini pada {date}. Mengirim lagi akan membuat lamaran baru.",
     },
+    // NR70 — slot wawancara opsional saat apply (Calendly-style sederhana).
+    slot: {
+      sectionTitle: "Pilih Slot Wawancara (opsional)",
+      sectionDesc:
+        "Bila posisi ini punya jadwal wawancara terbuka, kamu boleh memilih sekarang. Tidak wajib — biarkan admin menjadwalkan bila kamu lewat.",
+      skip: "Biarkan admin menjadwalkan",
+      skipHint: "Tidak memilih slot — tim akan menghubungimu lalu.",
+      loading: "Memuat slot terbuka...",
+      empty: "Belum ada slot terbuka untuk posisi ini. Tim akan menjadwalkan wawancara setelah lamaran masuk.",
+      error: "Gagal memuat slot. Kamu tetap bisa lanjut mengirim lamaran.",
+      todayLabel: "Hari ini",
+      tomorrowLabel: "Besok",
+      bookedToast: "Slot wawancara berhasil dipilih.",
+      bookFailedToast: "Slot tidak berhasil dipilih — lamaran tetap terkirim. Tim akan menjadwalkan ulang.",
+      bookRaceToast: "Slot baru saja dipilih pelamar lain. Tim akan menjadwalkan ulang wawancaramu.",
+      selectedLabel: "Slot dipilih",
+      clear: "Batal pilih",
+      durationMin: "{n} menit",
+    },
+    // NR70 — kode referral opsional (program perujuk).
+    referral: {
+      label: "Kode Referral (opsional)",
+      placeholder: "cth. REF-AB12CD",
+      hint: "Punya kode dari teman yang bekerja di sini? Masukkan untuk menandai referral.",
+      checking: "Memeriksa kode...",
+      validOk: "Kode valid — referral oleh {name}.",
+      validOkNoName: "Kode valid.",
+      invalid: "Kode referral tidak ditemukan. Periksa kembali atau biarkan kosong.",
+      learnMore: "Pelajari program referral",
+      programNote:
+        "Program referral: ajak temanmu melamar dengan kodenya — tim akan meninjau hadiah untuk perujuk setelah kandidat diterima.",
+    },
     uploads: {
       cvLabel: "CV (PDF, maks 5 MB)",
       introLabel:
@@ -1255,6 +1287,36 @@ type idDictShape = {
       showAll: string;
       hideAll: string;
       duplicateWarn: string;
+    };
+    // NR70 — slot wawancara opsional saat apply (Calendly-style sederhana).
+    slot: {
+      sectionTitle: string;
+      sectionDesc: string;
+      skip: string;
+      skipHint: string;
+      loading: string;
+      empty: string;
+      error: string;
+      todayLabel: string;
+      tomorrowLabel: string;
+      bookedToast: string;
+      bookFailedToast: string;
+      bookRaceToast: string;
+      selectedLabel: string;
+      clear: string;
+      durationMin: string;
+    };
+    // NR70 — kode referral opsional (program perujuk).
+    referral: {
+      label: string;
+      placeholder: string;
+      hint: string;
+      checking: string;
+      validOk: string;
+      validOkNoName: string;
+      invalid: string;
+      learnMore: string;
+      programNote: string;
     };
     uploads: {
       cvLabel: string;
@@ -2135,6 +2197,38 @@ const en: Dict = {
       // NR60 (C1) — soft duplicate warning in the confirm dialog.
       duplicateWarn:
         "Note: our records show you already applied to this position on {date}. Submitting again will create a new application.",
+    },
+    // NR70 — optional interview slot at apply time (simple Calendly-style).
+    slot: {
+      sectionTitle: "Pick an Interview Slot (optional)",
+      sectionDesc:
+        "If this position has open interview slots, you can pick one now. Not required — leave it to the admin if you can't find a time.",
+      skip: "Let the admin schedule",
+      skipHint: "No slot picked — the team will reach out to arrange.",
+      loading: "Loading open slots...",
+      empty: "No open slots yet for this position. The team will schedule an interview once your application is in.",
+      error: "Failed to load slots. You can still submit your application.",
+      todayLabel: "Today",
+      tomorrowLabel: "Tomorrow",
+      bookedToast: "Interview slot booked.",
+      bookFailedToast: "Slot not booked — your application was still submitted. The team will reschedule.",
+      bookRaceToast: "Slot was just taken by another applicant. The team will reschedule your interview.",
+      selectedLabel: "Slot picked",
+      clear: "Clear selection",
+      durationMin: "{n} minutes",
+    },
+    // NR70 — optional referral code (referrer program).
+    referral: {
+      label: "Referral Code (optional)",
+      placeholder: "e.g. REF-AB12CD",
+      hint: "Got a code from a friend who works here? Enter it to mark your referral.",
+      checking: "Checking code...",
+      validOk: "Valid code — referred by {name}.",
+      validOkNoName: "Valid code.",
+      invalid: "Referral code not found. Double-check it or leave it blank.",
+      learnMore: "Learn about the referral program",
+      programNote:
+        "Referral program: invite a friend to apply with your code — the team will review a reward for the referrer once the candidate is hired.",
     },
     uploads: {
       cvLabel: "CV (PDF, max 5 MB)",
