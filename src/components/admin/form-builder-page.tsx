@@ -1429,8 +1429,9 @@ function FieldEditorCard({
         </div>
       </div>
 
-      {/* NR-32 — tampil bersyarat: hanya pertanyaan pilihan yang bisa bergantung
-          pada pertanyaan pilihan lain DI ATASNYA (bagian sama — kontrak server). */}
+      {/* NR-32 + NR69 (Fitur #7) — tampil bersyarat: hanya pertanyaan pilihan
+          yang bisa bergantung pada pertanyaan pilihan lain DI ATASNYA (bagian
+          sama — kontrak server). Mendukung banyak kondisi AND. */}
       {isChoiceType(field.type) ? (
         <div className="flex flex-col gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
           <Label htmlFor={`showif-${field.id}`} className="text-xs text-muted-foreground">
@@ -1443,15 +1444,8 @@ function FieldEditorCard({
           ) : (
             <>
               <Select
-                value={field.showIf?.fieldId ?? SHOWIF_ALWAYS}
-                onValueChange={(v) => {
-                  if (v === SHOWIF_ALWAYS) {
-                    onChange({ showIf: undefined });
-                    return;
-                  }
-                  // Ganti sumber: reset nilai agar opsi field lain tidak ikut tersimpan.
-                  onChange({ showIf: { fieldId: v, values: [] } });
-                }}
+                value={showIfConditionList.length > 0 ? showIfConditionList[0].fieldId : SHOWIF_ALWAYS}
+                onValueChange={(v) => setSingleShowIfSource(v)}
                 disabled={!canMutate}
               >
                 <SelectTrigger id={`showif-${field.id}`} className="h-9">
@@ -1468,31 +1462,96 @@ function FieldEditorCard({
                   ))}
                 </SelectContent>
               </Select>
-              {field.showIf && showIfSource ? (
-                <div className="flex flex-col gap-1.5 rounded-md border bg-background p-2.5">
-                  <p className="text-xs text-muted-foreground">
-                    Tampilkan bila jawaban &quot;
-                    {showIfSource.label.trim() || "pertanyaan sumber"}&quot; adalah:
-                  </p>
-                  {showIfSource.options.map((option) => (
-                    <label
-                      key={option}
-                      className="flex min-h-8 cursor-pointer items-center gap-2 text-sm"
+              {showIfConditionList.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {showIfConditionList.map((cond, idx) => {
+                    const source = sourceForCondition(cond);
+                    if (!source) return null;
+                    return (
+                      <div
+                        key={`${cond.fieldId}-${idx}`}
+                        className="flex flex-col gap-1.5 rounded-md border bg-background p-2.5"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-xs text-muted-foreground">
+                            {idx === 0 ? "Tampilkan bila jawaban" : "DAN jawaban"}
+                            &quot;
+                            <span className="font-medium text-foreground">
+                              {source.label.trim() || "pertanyaan sumber"}
+                            </span>
+                            &quot; adalah:
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="ml-auto h-7 px-2 text-xs"
+                            onClick={() => removeCondition(idx)}
+                            disabled={!canMutate || showIfConditionList.length <= 1}
+                            aria-label="Hapus kondisi ini"
+                          >
+                            <X className="size-3" aria-hidden="true" />
+                            Hapus
+                          </Button>
+                        </div>
+                        <Select
+                          value={cond.fieldId}
+                          onValueChange={(v) => setConditionSource(idx, v)}
+                          disabled={!canMutate}
+                        >
+                          <SelectTrigger className="h-9" aria-label="Sumber pertanyaan kondisi">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {showIfSources.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                <span className="block max-w-56 truncate">
+                                  {s.label.trim() || "(tanpa judul)"}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {source.options.map((option) => (
+                          <label
+                            key={option}
+                            className="flex min-h-8 cursor-pointer items-center gap-2 text-sm"
+                          >
+                            <Checkbox
+                              checked={cond.values.includes(option)}
+                              onCheckedChange={(checked) =>
+                                toggleConditionValue(idx, option, checked === true)
+                              }
+                              disabled={!canMutate}
+                              aria-label={`Tampilkan bila jawaban ${option}`}
+                            />
+                            <span className="truncate">{option}</span>
+                          </label>
+                        ))}
+                        {cond.values.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            Pilih minimal satu nilai — tanpa itu kondisi ini tidak akan terpenuhi.
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  {canMutate && showIfConditionList.length < 5 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 w-fit"
+                      onClick={addShowIfCondition}
+                      disabled={showIfSources.length === 0}
                     >
-                      <Checkbox
-                        checked={field.showIf?.values.includes(option) ?? false}
-                        onCheckedChange={(checked) => toggleShowIfValue(option, checked === true)}
-                        disabled={!canMutate}
-                        aria-label={`Tampilkan bila jawaban ${option}`}
-                      />
-                      <span className="truncate">{option}</span>
-                    </label>
-                  ))}
-                  {field.showIf.values.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      Pilih minimal satu nilai — tanpa itu pertanyaan tidak akan tampil.
-                    </p>
+                      <Plus className="size-3.5" aria-hidden="true" />
+                      Tambah Kondisi (AND)
+                    </Button>
                   ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    Semua kondisi harus terpenuhi agar pertanyaan ini tampil.
+                  </p>
                 </div>
               ) : null}
             </>
