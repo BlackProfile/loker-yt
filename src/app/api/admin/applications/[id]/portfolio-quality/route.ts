@@ -154,7 +154,7 @@ export async function POST(
 
     const application = await db.application.findUnique({
       where: { id },
-      // sertakan relasi standar agar serializeApplication lengkap.
+      include: { position: { select: { title: true } } },
     });
     if (!application) {
       return NextResponse.json(NOT_FOUND, { status: 404 });
@@ -206,6 +206,7 @@ export async function POST(
         portfolioQualityScore: result.score,
         portfolioQualitySummary: JSON.stringify(result),
       },
+      include: { position: { select: { title: true } } },
     });
 
     await db.activityLog.create({
