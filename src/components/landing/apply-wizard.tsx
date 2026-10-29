@@ -2945,6 +2945,32 @@ export function ApplyWizard({
           ? (data as ApplySuccessResponse)
           : null;
       const trackingCode = successData?.trackingCode ?? "";
+      const newApplicationId = successData?.id ?? "";
+
+      // NR70 (Fitur #1) — bila pelamar memilih slot wawancara saat apply, klaim
+      // slot SETELAH lamaran tersimpan (pakai applicationId dari respons). Kegagalan
+      // klaim (race condition / slot hilang) tidak membatalkan lamaran — pelamar
+      // tetap mendapat trackingCode & tim akan menjadwalkan ulang.
+      if (selectedSlotId && newApplicationId) {
+        try {
+          const bookRes = await fetch("/api/public/slots/book", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ slotId: selectedSlotId, applicationId: newApplicationId }),
+          });
+          const bookData: unknown = await bookRes.json().catch(() => null);
+          if (bookRes.ok && isRecord(bookData) && bookData.ok === true) {
+            toast.success(t.apply.slot.bookedToast);
+          } else if (bookRes.status === 409) {
+            // Slot diperebutkan — slot hilang antara muat & submit. Lamaran tetap.
+            toast.warning(t.apply.slot.bookRaceToast);
+          } else {
+            toast.warning(t.apply.slot.bookFailedToast);
+          }
+        } catch {
+          toast.warning(t.apply.slot.bookFailedToast);
+        }
+      }
 
       submittedRef.current = true;
       // Pelacakan (Task 27): lamaran terkirim — event "submit" pada langkah terakhir.
@@ -3052,6 +3078,18 @@ export function ApplyWizard({
     setBirthDate("");
     setDedupe(null);
     dedupeDismissedRef.current = false;
+    // NR70 — slot & referral ikut direset untuk pengisi berikutnya.
+    setSelectedSlotId("");
+    setSlotList([]);
+    setSlotFetchedFor("");
+    setSlotError(null);
+    setReferralCode("");
+    setReferralStatus({ state: "idle" });
+    referralAbortRef.current?.abort();
+    if (referralTimerRef.current !== null) {
+      window.clearTimeout(referralTimerRef.current);
+      referralTimerRef.current = null;
+    }
     // NR60 (A1) — prefill & kartunya ikut direset untuk pengisi berikutnya.
     setPrefillInfo(null);
     setPrefillCardOpen(false);
