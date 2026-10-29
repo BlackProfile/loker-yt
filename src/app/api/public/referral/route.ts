@@ -157,14 +157,24 @@ export async function POST(req: NextRequest) {
     } else if (name && row.referrerName !== name) {
       // Perbarui nama bila perujuk memberi nama baru (mis. kosong sebelumnya).
       try {
-        row = await db.referralCode.update({
+        const updated = await db.referralCode.update({
           where: { id: row.id },
           data: { referrerName: name },
           select: { id: true, code: true, referrerName: true },
         });
+        row = updated;
       } catch {
         // non-kritis: biarkan nama lama dipakai
       }
+    }
+
+    // Pengaman statis: row harus selalu terisi di sini (initial fetch / create /
+    // retry). Tetap periksa ekplisit bila seluruh cabang di atas somehow gagal.
+    if (!row) {
+      return NextResponse.json(
+        { error: "Gagal membuat kode referral. Coba lagi nanti." },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({ code: row.code, referrerName: row.referrerName });

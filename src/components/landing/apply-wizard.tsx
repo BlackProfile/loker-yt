@@ -611,6 +611,25 @@ export function ApplyWizard({
   // Dokumen wajib tambahan per posisi: {index urutan customDocs: file}
   const [extraFiles, setExtraFiles] = useState<Record<number, File>>({});
   const [extraErrors, setExtraErrors] = useState<Record<number, string | undefined>>({});
+  // NR70 (Fitur #1) — slot wawancara opsional saat apply. Hanya dimuat bila
+  // posisi dipilih & pengguna mencapai langkah Pratinjau. Slot milik posisi
+  // (perlu direset saat ganti posisi).
+  const [slotList, setSlotList] = useState<TrackSlotInfo[]>([]);
+  const [slotLoading, setSlotLoading] = useState(false);
+  const [slotError, setSlotError] = useState<string | null>(null);
+  const [slotFetchedFor, setSlotFetchedFor] = useState<string>("");
+  const [selectedSlotId, setSelectedSlotId] = useState<string>("");
+  const slotAbortRef = useRef<AbortController | null>(null);
+  // NR70 (Fitur #3) — kode referral opsional: input + status validasi async.
+  const [referralCode, setReferralCode] = useState("");
+  const [referralStatus, setReferralStatus] = useState<
+    | { state: "idle" }
+    | { state: "checking" }
+    | { state: "valid"; referrerName: string | null }
+    | { state: "invalid" }
+  >({ state: "idle" });
+  const referralAbortRef = useRef<AbortController | null>(null);
+  const referralTimerRef = useRef<number | null>(null);
   // Jawaban Form Builder per posisi (skema aktif): {fieldId: nilai} — berkas
   // disimpan sebagai File hingga dikirim sebagai part formFile_<fieldId>.
   const [formAnswers, setFormAnswers] = useState<FormAnswers>({});
