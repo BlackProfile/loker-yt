@@ -911,6 +911,7 @@ const id = {
     sectionDesc: "Deskripsi Posisi",
     sectionReq: "Persyaratan",
     sectionTerms: "Ketentuan Lamaran",
+    sectionTips: "Kiat Lamar Posisi Ini",
     sectionLocation: "Lokasi & Operasional",
     sectionBenefit: "Benefit",
     sectionWorks: "Contoh Karya",
@@ -1695,6 +1696,7 @@ type idDictShape = {
     sectionDesc: string;
     sectionReq: string;
     sectionTerms: string;
+    sectionTips: string;
     sectionLocation: string;
     sectionBenefit: string;
     sectionWorks: string;
@@ -2659,6 +2661,7 @@ const en: Dict = {
     sectionDesc: "About the Role",
     sectionReq: "Requirements",
     sectionTerms: "Terms & Conditions",
+    sectionTips: "Tips for This Role",
     sectionLocation: "Location & Operations",
     sectionBenefit: "Benefits",
     sectionWorks: "Sample Works",

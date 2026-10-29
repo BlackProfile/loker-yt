@@ -65,6 +65,7 @@ import {
   Image as ImageIcon,
   Languages,
   LayoutTemplate,
+  Lightbulb,
   Loader2,
   MapPin,
   Pin,
@@ -1797,6 +1798,28 @@ export function PositionFormPage({
                       addLabel="Tambah contoh karya"
                       placeholder="https://youtube.com/..."
                       urlOnly
+                    />
+                  </div>
+                </FormSection>
+
+              {/* NR68 (#15) — Kiat Lamar per posisi */}
+              <FormSection
+                id="kiat-lamar"
+                icon={Lightbulb}
+                title="Kiat Lamar"
+                hint="Tips sukses khusus posisi ini — tampil di detail lowongan (mis. showreel < 3 menit, sertakan link YouTube publik)."
+                hasError={sectionError("kiat lamar")}
+              >
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Kiat Lamar</Label>
+                    <StringListEditor
+                      name="Kiat lamar"
+                      items={form.selectionTips}
+                      onChange={(items) => set("selectionTips", items)}
+                      maxItems={8}
+                      maxLength={200}
+                      addLabel="Tambah kiat"
+                      placeholder="mis. Pastikan showreel pendek dan relevant"
                     />
                   </div>
                 </FormSection>

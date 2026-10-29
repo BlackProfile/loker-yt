@@ -34,6 +34,7 @@ import {
   GraduationCap,
   Heart,
   Laptop,
+  Lightbulb,
   Link2,
   ListChecks,
   Loader2,
@@ -1282,6 +1283,21 @@ function PositionDetailViewInner({
                       <li key={req} className="flex items-start gap-2.5 text-sm">
                         <BadgeCheck className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                         <span>{req}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </FadeIn>
+              ) : null}
+
+              {/* NR68 (#15) — Kiat lamar per posisi (opsional; tampil bila diisi admin) */}
+              {display.selectionTips.length > 0 ? (
+                <FadeIn id="sec-kiat" className="scroll-mt-24">
+                  <SectionTitle icon={Lightbulb}>{t.detail.sectionTips}</SectionTitle>
+                  <ul className="mt-3 space-y-2.5">
+                    {display.selectionTips.map((tip) => (
+                      <li key={tip} className="flex items-start gap-2.5 text-sm">
+                        <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                        <span>{tip}</span>
                       </li>
                     ))}
                   </ul>
