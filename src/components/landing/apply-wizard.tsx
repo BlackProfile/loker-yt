@@ -321,6 +321,69 @@ function serializableFormAnswers(
   return out;
 }
 
+/* ---------------- NR70 — slot wawancara opsional saat apply ---------------- */
+
+/** Grup slot berdasarkan tanggal lokal: ambil YYYY-MM-DD + label ramah (Hari ini/
+ *  Besok/13 Okt 2026). Urutan tanggal mengikuti urutan slot masuk (server sudah asc). */
+function groupSlotsByDate(slots: TrackSlotInfo[]): {
+  key: string;
+  label: string;
+  slots: TrackSlotInfo[];
+}[] {
+  const out: { key: string; label: string; slots: TrackSlotInfo[] }[] = [];
+  const todayStr = new Date().toDateString();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toDateString();
+  for (const slot of slots) {
+    const d = new Date(slot.scheduledAt);
+    if (Number.isNaN(d.getTime())) continue;
+    const key = d.toDateString();
+    let label: string;
+    if (key === todayStr) label = "Hari ini";
+    else if (key === tomorrowStr) label = "Besok";
+    else {
+      label = d.toLocaleDateString("id-ID", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    }
+    let group = out.find((g) => g.key === key);
+    if (!group) {
+      group = { key, label, slots: [] };
+      out.push(group);
+    }
+    group.slots.push(slot);
+  }
+  return out;
+}
+
+/** Format waktu slot: "HH.mm" — dipakai chip slot agar singkat. */
+function formatSlotTime(slot: TrackSlotInfo): string {
+  const d = new Date(slot.scheduledAt);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Format tanggal+ waktu slot penuh + durasi — dipakai baris konfirmasi slot. */
+function formatSlotLong(slot: TrackSlotInfo, s: { durationMin: string }): string {
+  const d = new Date(slot.scheduledAt);
+  if (Number.isNaN(d.getTime())) return "-";
+  const when = d.toLocaleString("id-ID", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${when} · ${fillTemplate(s.durationMin, { n: slot.durationMin })}`;
+}
+
 /* --------------------- NR-41 J26 — draft lintas perangkat --------------------- */
 
 /** Baca token draft server dari localStorage (kosong bila tidak ada/rusak). */
@@ -5169,6 +5232,148 @@ export function ApplyWizard({
               })}
             </PreviewSection>
             ) : null}
+
+            {/* NR70 (Fitur #1) — slot wawancara opsional saat apply. Hanya tampil
+                bila posisi punya slot terbuka & sudah berhasil dimuat (tidak ada
+                di awal, hanya muncul di langkah Pratinjau). */}
+            {positionId && (slotLoading || slotList.length > 0 || slotError) ? (
+              <div className="flex flex-col gap-3 rounded-xl border border-border p-4">
+                <div className="flex items-start gap-2.5">
+                  <CalendarClock
+                    className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-500"
+                    aria-hidden="true"
+                  />
+                  <div className="flex flex-col gap-0.5">
+                    <p className="text-sm font-semibold">{t.apply.slot.sectionTitle}</p>
+                    <p className="text-xs text-muted-foreground">{t.apply.slot.sectionDesc}</p>
+                  </div>
+                </div>
+
+                {slotLoading ? (
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    {t.apply.slot.loading}
+                  </p>
+                ) : slotError && slotList.length === 0 ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-300">{t.apply.slot.error}</p>
+                ) : slotList.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t.apply.slot.empty}</p>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-3">
+                      {groupSlotsByDate(slotList).map((group) => (
+                        <div key={group.key} className="flex flex-col gap-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">{group.label}</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {group.slots.map((slot) => {
+                              const isSel = selectedSlotId === slot.id;
+                              return (
+                                <button
+                                  key={slot.id}
+                                  type="button"
+                                  onClick={() => setSelectedSlotId(isSel ? "" : slot.id)}
+                                  className={cn(
+                                    "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                                    isSel
+                                      ? "border-rose-600 bg-rose-600 text-white"
+                                      : "border-border bg-background hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40",
+                                  )}
+                                  aria-pressed={isSel}
+                                  aria-label={`${group.label} ${formatSlotTime(slot)}`}
+                                >
+                                  {formatSlotTime(slot)}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {selectedSlotId ? (
+                      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-rose-50/70 px-3 py-2 dark:border-rose-500/30 dark:bg-rose-950/30">
+                        <CheckCircle2
+                          className="h-3.5 w-3.5 shrink-0 text-rose-600 dark:text-rose-400"
+                          aria-hidden="true"
+                        />
+                        <span className="text-xs font-medium text-rose-700 dark:text-rose-200">
+                          {t.apply.slot.selectedLabel}:{" "}
+                          {(() => {
+                            const s = slotList.find((item) => item.id === selectedSlotId);
+                            return s ? formatSlotLong(s, t.apply.slot) : "-";
+                          })()}
+                        </span>
+                        <button
+                          type="button"
+                          className="ml-auto text-xs text-rose-700 underline-offset-2 hover:underline dark:text-rose-200"
+                          onClick={() => setSelectedSlotId("")}
+                        >
+                          {t.apply.slot.clear}
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">{t.apply.slot.skip}.</span>{" "}
+                        {t.apply.slot.skipHint}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            {/* NR70 (Fitur #3) — kode referral opsional. Validasi async tampil
+                inline (centang hijau bila valid, hint amber bila tidak). */}
+            <div className="flex flex-col gap-2 rounded-xl border border-border p-4">
+              <div className="flex items-start gap-2.5">
+                <Gift
+                  className="mt-0.5 h-4 w-4 shrink-0 text-amber-500"
+                  aria-hidden="true"
+                />
+                <div className="flex flex-col gap-0.5">
+                  <Label htmlFor="apply-referral" className="text-sm font-semibold cursor-pointer">
+                    {t.apply.referral.label}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">{t.apply.referral.hint}</p>
+                </div>
+              </div>
+              <Input
+                id="apply-referral"
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value)}
+                onBlur={() => setReferralCode((prev) => prev.trim())}
+                placeholder={t.apply.referral.placeholder}
+                className="uppercase"
+                autoComplete="off"
+                spellCheck={false}
+                inputMode="text"
+                aria-invalid={referralStatus.state === "invalid"}
+                aria-describedby="apply-referral-status"
+              />
+              <div id="apply-referral-status" className="min-h-3 text-xs">
+                {referralStatus.state === "checking" ? (
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                    {t.apply.referral.checking}
+                  </span>
+                ) : referralStatus.state === "valid" ? (
+                  <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
+                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    {referralStatus.referrerName
+                      ? fillTemplate(t.apply.referral.validOk, {
+                          name: referralStatus.referrerName,
+                        })
+                      : t.apply.referral.validOkNoName}
+                  </span>
+                ) : referralStatus.state === "invalid" ? (
+                  <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
+                    <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                    {t.apply.referral.invalid}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">{t.apply.referral.programNote}</span>
+                )}
+              </div>
+            </div>
 
             {/* NR62 (F11) — pernyataan kebenaran data + persetujuan pemrosesan
                 data digabung SATU kartu berbingkai (dua gate terpisah, state
