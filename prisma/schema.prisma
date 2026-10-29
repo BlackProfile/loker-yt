@@ -339,6 +339,10 @@ model Application {
   // NR50 — uraian pengalaman terstruktur hasil AI (JSON {items:{company,position,period}[], generatedAt})
   experienceStructured String?
 
+  // NR69 (Fitur #6) — skor kualitas konten portofolio (VLM) — 0-100 & ringkasan JSON
+  portfolioQualityScore   Int?
+  portfolioQualitySummary String?
+
   // NR-39 — kartu karyawan digital untuk verifikasi (versi aktif: isCurrent)
   employeeCards EmployeeCard[]
 
@@ -390,12 +394,16 @@ model Interview {
   status        String      @default("SCHEDULED") // SCHEDULED | CONFIRMED | RESCHEDULE_REQUESTED | COMPLETED | NO_SHOW | CANCELLED
 
   // Hasil wawancara (scorecard)
-  scores         String? // JSON {kriteria: 1-5}
+  scores         String? // JSON {kriteria: 1-5} — gabungan seluruh reviewer (rata-rata)
   recommendation String? // LANJUT | CADANGAN | TOLAK
   notes          String?
   recordingUrl   String? // link rekaman Zoom/Meet (opsional)
   completedAt    DateTime?
   checkedInAt    DateTime? // saat kandidat ditandai hadir datang ke kantor (wawancara on-site)
+
+  // NR69 (Fitur #5) — Multi-reviewer scorecard
+  assignedReviewerIds String  @default("[]") // JSON string[] AdminUser id — penugasan reviewer
+  reviewerScorecards  String  @default("[]") // JSON [{reviewerId, reviewerName, scores:{kriteria:1-5}, summary, updatedAt}]
 
   // Permintaan ubah jadwal dari pelamar
   rescheduleReason     String?
