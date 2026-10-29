@@ -1,5 +1,9 @@
 // GET /api/public/slots?code=LM-XXX — daftar slot wawancara yang masih bisa dipilih
 // pelamar pemilik kode tracking (belum dibooking, jadwalnya di masa depan, maks 8).
+//
+// NR70 (Fitur #1) — ?positionId=... — varian untuk apply wizard: kandidat yang
+// belum punya trackingCode bisa melihat slot terbuka posisi tujuan untuk diambil
+// saat pengiriman. Tanpa auth; tanpa data sensitif (hanya jadwal & platform).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
@@ -11,7 +15,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// Rate limit sederhana per kode: 1 permintaan / detik (mirip endpoint track).
+// Rate limit sederhana per kunci: 1 permintaan / detik (mirip endpoint track).
 const rateMap = new Map<string, number>();
 const RATE_MS = 1000;
 const MAX_SLOTS = 8;
@@ -19,39 +23,57 @@ const MAX_SLOTS = 8;
 export async function GET(req: NextRequest) {
   try {
     const code = (req.nextUrl.searchParams.get("code") ?? "").trim().toUpperCase();
-    if (!code) {
-      return NextResponse.json({ error: "Kode pelacakan wajib diisi." }, { status: 400 });
+    const positionId = (req.nextUrl.searchParams.get("positionId") ?? "").trim();
+    if (!code && !positionId) {
+      return NextResponse.json({ error: "Kode pelacakan atau posisi wajib diisi." }, { status: 400 });
     }
 
+    // Kunci rate-limit = code bila ada, kalau tidak positionId (varian apply wizard).
+    const rateKey = code || `pos:${positionId}`;
     const now = Date.now();
-    const last = rateMap.get(code) ?? 0;
+    const last = rateMap.get(rateKey) ?? 0;
     if (now - last < RATE_MS) {
       return NextResponse.json({ error: "Terlalu sering. Coba beberapa detik lagi." }, { status: 429 });
     }
-    rateMap.set(code, now);
+    rateMap.set(rateKey, now);
     if (rateMap.size > 500) {
       for (const [key, ts] of rateMap) {
         if (now - ts > 60_000) rateMap.delete(key);
       }
     }
 
-    const application = await db.application.findUnique({
-      where: { trackingCode: code },
-      select: { id: true, status: true, positionId: true },
-    });
-    if (!application) {
-      return NextResponse.json({ error: "Kode pelacakan tidak ditemukan." }, { status: 404 });
-    }
+    // Jalur 1 — trackingCode (status page lama): ambil slot untuk posisi lamaran.
+    let targetPositionId: string | null = null;
+    if (code) {
+      const application = await db.application.findUnique({
+        where: { trackingCode: code },
+        select: { id: true, status: true, positionId: true },
+      });
+      if (!application) {
+        return NextResponse.json({ error: "Kode pelacakan tidak ditemukan." }, { status: 404 });
+      }
 
-    const status = (application.status || "NEW").trim();
-    const isTerminal = status === "ACCEPTED" || status === "REJECTED";
-    if (isTerminal || !application.positionId) {
-      return NextResponse.json({ ok: true, slots: [] });
+      const status = (application.status || "NEW").trim();
+      const isTerminal = status === "ACCEPTED" || status === "REJECTED";
+      if (isTerminal || !application.positionId) {
+        return NextResponse.json({ ok: true, slots: [] });
+      }
+      targetPositionId = application.positionId;
+    } else {
+      // Jalur 2 — positionId (apply wizard): cukup validasi posisi ada & terbuka.
+      const position = await db.position.findUnique({
+        where: { id: positionId },
+        select: { id: true, status: true },
+      });
+      if (!position) {
+        return NextResponse.json({ error: "Posisi tidak ditemukan." }, { status: 404 });
+      }
+      targetPositionId = position.id;
     }
 
     const rows = await db.interviewSlot.findMany({
       where: {
-        positionId: application.positionId,
+        positionId: targetPositionId,
         bookedByApplicationId: null,
         scheduledAt: { gt: new Date() },
       },

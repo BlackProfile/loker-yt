@@ -23,16 +23,22 @@ export async function POST(req: NextRequest) {
 
     const code = typeof data.code === "string" ? data.code.trim().toUpperCase() : "";
     const slotId = typeof data.slotId === "string" ? data.slotId.trim() : "";
-    if (!code || !slotId) {
+    // NR70 (Fitur #1) — varian apply wizard: pelamar mengirim slotId + applicationId
+    // (bukan trackingCode). Kode pelacakan ditarik dari lamaran yang sudah dibuat.
+    const applicationId =
+      typeof data.applicationId === "string" ? data.applicationId.trim() : "";
+    if ((!code && !applicationId) || !slotId) {
       return NextResponse.json({ error: "Kode pelacakan dan slot wajib dipilih." }, { status: 400 });
     }
 
+    // Kunci rate-limit = code bila ada, kalau tidak applicationId.
+    const rateKey = code || `app:${applicationId}`;
     const now = Date.now();
-    const last = rateMap.get(code) ?? 0;
+    const last = rateMap.get(rateKey) ?? 0;
     if (now - last < RATE_MS) {
       return NextResponse.json({ error: "Terlalu sering. Coba beberapa detik lagi." }, { status: 429 });
     }
-    rateMap.set(code, now);
+    rateMap.set(rateKey, now);
     if (rateMap.size > 500) {
       for (const [key, ts] of rateMap) {
         if (now - ts > 60_000) rateMap.delete(key);
@@ -40,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     const application = await db.application.findUnique({
-      where: { trackingCode: code },
+      where: code ? { trackingCode: code } : { id: applicationId },
       select: { id: true, name: true, status: true, positionId: true, trackingCode: true, position: { select: { title: true } } },
     });
     if (!application) {
