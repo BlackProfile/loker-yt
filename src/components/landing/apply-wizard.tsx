@@ -617,7 +617,11 @@ export function ApplyWizard({
   const [slotList, setSlotList] = useState<TrackSlotInfo[]>([]);
   const [slotLoading, setSlotLoading] = useState(false);
   const [slotError, setSlotError] = useState<string | null>(null);
-  const [slotFetchedFor, setSlotFetchedFor] = useState<string>("");
+  // NR69-FIX — guard "sudah fetch untuk posisi ini" pakai REF (bukan state):
+  // state di sini memicu re-run efek yang sama -> cleanup meng-abort fetch
+  // yang sedang berjalan -> run berikutnya early-return tanpa membersihkan
+  // slotLoading -> UI macet "Memuat slot terbuka..." selamanya.
+  const slotFetchedForRef = useRef<string>("");
   const [selectedSlotId, setSelectedSlotId] = useState<string>("");
   const slotAbortRef = useRef<AbortController | null>(null);
   // NR70 (Fitur #3) — kode referral opsional: input + status validasi async.
@@ -1141,8 +1145,8 @@ export function ApplyWizard({
   useEffect(() => {
     if (step !== previewStep) return;
     if (!positionId) return;
-    if (slotFetchedFor === positionId) return;
-    setSlotFetchedFor(positionId);
+    if (slotFetchedForRef.current === positionId) return;
+    slotFetchedForRef.current = positionId;
     setSlotLoading(true);
     setSlotError(null);
     slotAbortRef.current?.abort();
@@ -1186,7 +1190,7 @@ export function ApplyWizard({
     return () => {
       ac.abort();
     };
-  }, [step, previewStep, positionId, slotFetchedFor, t.apply.slot.error]);
+  }, [step, previewStep, positionId, t.apply.slot.error]);
 
   // NR70 (Fitur #3) — validasi kode referral debounced saat input berubah.
   // Format invalid = state invalid (warna amber, pesan hint); format valid &
