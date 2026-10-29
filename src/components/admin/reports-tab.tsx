@@ -17,6 +17,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   Filter,
+  Gift,
   Inbox,
   Link2,
   Loader2,
@@ -77,6 +78,7 @@ import { apiGet, apiPost, buildQuery } from "./api";
 import { useAdminSession } from "./admin-context";
 import { useLiveRefresh } from "./use-live-refresh";
 import { ProfilePrintDialog } from "./profile-print-dialog";
+import { ReferralCard } from "./referral-card";
 
 /* ------------------------------ Bentuk data API ------------------------------ */
 
@@ -1651,6 +1653,9 @@ export function ReportsTab() {
 
       {/* 8. Agregasi scorecard wawancara (NR-19-c) — section paling bawah */}
       <ScorecardSection />
+
+      {/* 9. NR70 (Fitur #3) — program referral (kartu mandiri, OWNER/HR only) */}
+      <ReferralCard icon={Gift} />
 
       <ProfilePrintDialog
         key={selectedAppId || "none"}
