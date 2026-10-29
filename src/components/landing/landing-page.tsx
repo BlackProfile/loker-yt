@@ -68,6 +68,7 @@ import { ShareMenu } from "@/components/landing/share-menu";
 import { PositionsSection } from "@/components/landing/positions-section";
 import { StatusCheckSection } from "@/components/landing/status-check";
 import { SelectionProcessSection } from "@/components/landing/selection-process";
+import { WorkCultureSection } from "@/components/landing/work-culture-section";
 import { SubscribeSection } from "@/components/landing/subscribe-section";
 import { ChatWidget } from "@/components/landing/chat-widget";
 import { PublicNotice } from "@/components/landing/public-notice";
@@ -95,6 +96,7 @@ function useNavLinks(sections: SectionVisibility) {
     { key: "positions" as const, href: "#posisi", label: t.nav.positions },
     { key: "benefits" as const, href: "#benefit", label: t.nav.benefits },
     { key: "steps" as const, href: "#cara-lamar", label: t.nav.howToApply },
+    { key: "workCulture" as const, href: "#bekerja", label: t.nav.workCulture },
     { key: "statusCheck" as const, href: "#status", label: t.nav.status },
     { key: "faq" as const, href: "#faq", label: t.nav.faq },
   ].filter((link) => sections[link.key]);
@@ -1147,6 +1149,7 @@ function LandingShell({
           {sections.steps ? <SelectionProcessSection content={content} /> : null}
           {sections.statusCheck ? <StatusCheckSection /> : null}
           {sections.testimonials ? <VoicesSection content={content} /> : null}
+          {sections.workCulture ? <WorkCultureSection content={content} /> : null}
           {sections.faq ? <FaqSection content={content} /> : null}
           {/* NR62 — panel penutup TUNGGAL: FinalCtaSection dilebur ke
               SubscribeSection (baris aksi ringkas Lamar + WhatsApp di atas

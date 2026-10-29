@@ -16,6 +16,7 @@ const id = {
     positions: "Posisi",
     benefits: "Benefit",
     howToApply: "Proses Seleksi",
+    workCulture: "Bekerja di Lumina", // NR68 (#13)
     faq: "FAQ",
     status: "Cek Status",
     applyNow: "Lamar Sekarang",
@@ -985,6 +986,7 @@ type idDictShape = {
     positions: string;
     benefits: string;
     howToApply: string;
+    workCulture: string; // NR68 (#13)
     faq: string;
     status: string;
     applyNow: string;
@@ -1772,6 +1774,7 @@ const en: Dict = {
     positions: "Positions",
     benefits: "Benefits",
     howToApply: "Selection Process",
+    workCulture: "Working at Lumina", // NR68 (#13)
     faq: "FAQ",
     status: "Track Status",
     applyNow: "Apply Now",

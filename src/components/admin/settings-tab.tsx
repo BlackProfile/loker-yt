@@ -122,12 +122,14 @@ import {
   type Subscriber,
   type TagColor,
   type TeamMember,
+  type WorkCultureContent,
 } from "@/lib/types";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./api";
 import { copyText, formatDateTime, formatRelative, formatShortDateTime } from "./format";
 import { useAdminSession } from "./admin-context";
 import { SectionVisibilityCard, normalizeSections } from "./section-visibility-card";
 import { SelectionContentCard } from "./selection-content-card";
+import { WorkCultureContentCard } from "./work-culture-content-card";
 import { CollapsibleCard, type CardStatus } from "./collapsible-card";
 import { SectionGroup } from "./section-group";
 import { PermissionMatrixCard } from "./permission-matrix-card";
@@ -4127,6 +4129,11 @@ export function SettingsTab() {
     setSite((prev) => (prev ? { ...prev, selection: next } : prev));
   }
 
+  // NR68 (#13) — konten kustom section "Bekerja di Lumina" (null = section sembunyi).
+  function updateWorkCulture(next: WorkCultureContent | null) {
+    setSite((prev) => (prev ? { ...prev, workCulture: next } : prev));
+  }
+
   function updateBenefit(index: number, patch: Partial<SiteContent["benefits"][number]>) {
     setSite((prev) =>
       prev
@@ -4396,6 +4403,9 @@ export function SettingsTab() {
 
       {/* Proses Seleksi (NR67) */}
       <SelectionContentCard selection={site.selection} onChange={updateSelection} />
+
+      {/* Bekerja di Lumina (NR68 #13) */}
+      <WorkCultureContentCard workCulture={site.workCulture} onChange={updateWorkCulture} />
 
       {/* Kontak */}
       <CollapsibleCard
