@@ -4825,9 +4825,9 @@ Stage Summary:
 - Berkas: prisma/schema.prisma, src/lib/seed.ts, src/lib/types.ts, src/lib/form-schema.ts, src/lib/ai-features.ts, src/app/api/admin/interviews/[id]/scorecards/route.ts (baru), src/app/api/admin/applications/[id]/portfolio-quality/route.ts (baru), src/components/admin/ai-panel.tsx, src/components/admin/interview-session-dialog.tsx, src/components/admin/form-builder-page.tsx.
 - Sisa gelombang: NR70 (#1,#3), NR71 (#11,#12), NR72 (#13,#14), NR73 (#15,#16,#4).
 
-Task ID: NR68
+Task ID: NR70
 Agent: orchestrator (Z.ai Code)
-Task: "Tambahkan semuanya" — 16 ide fitur. Audit menemukan 6 ide SUDAH dibangun di sesi konteks-hilang (label NR69/70, tak ter-log); NR68 = dokumentasi 6 dark feature + bangun 2 yang benar-benar kurang (#15 Tips per posisi, #13 Section "Bekerja di Lumina") + roadmap sisanya.
+Task: "Tambahkan semuanya" — 16 ide fitur. Audit menemukan 6 ide SUDAH dibangun di sesi konteks-hilang (label NR69/70, tak ter-log); NR70 = dokumentasi 6 dark feature + bangun 2 yang benar-benar kurang (#15 Tips per posisi, #13 Section "Bekerja di Lumina") + roadmap sisanya. [Renum: semula ditulis NR68 — ID bentrok dengan entri sesi paralel "Gelombang 1"]
 
 Work Log:
 - AUDIT 16 ide terhadap kode:
@@ -4846,9 +4846,9 @@ Stage Summary:
 - Tanpa perubahan schema besar (hanya +1 kolom Position.selectionTips); field opsional (default []/null) sehingga data lama aman.
 - Berkas: prisma/schema.prisma, src/lib/types.ts, src/lib/defaults.ts, src/lib/seed.ts, src/lib/position-input.ts, src/app/api/admin/positions/route.ts, src/components/admin/position-form-page.tsx, src/components/admin/section-visibility-card.tsx, src/components/admin/settings-tab.tsx, src/components/admin/work-culture-content-card.tsx (baru), src/components/landing/position-detail.tsx, src/components/landing/landing-page.tsx, src/components/landing/work-culture-section.tsx (baru), src/components/landing/strings.ts, src/app/api/admin/settings/route.ts.
 
-Task ID: NR69
+Task ID: NR71
 Agent: orchestrator (Z.ai Code)
-Task: Batch operasional — verifikasi & lengkapi #1 Self-scheduling, #9 Talent pool re-engagement, #10 Auto-reject. Audit menemukan KETIGANYA sudah dibangun (dark features, sesi konteks-hilang); NR69 = verifikasi mendalam + temukan & perbaiki 1 bug nyata di alur slot.
+Task: Batch operasional — verifikasi & lengkapi #1 Self-scheduling, #9 Talent pool re-engagement, #10 Auto-reject. Audit menemukan KETIGANYA sudah dibangun (sebagian oleh sesi paralel "Gelombang 1", label NR69-lama); NR71 = verifikasi mendalam + temukan & perbaiki 1 bug nyata di alur slot. [Renum: semula ditulis NR69 — ID bentrok dengan entri sesi paralel "Gelombang 2"]
 
 Work Log:
 - AUDIT: #1 self-scheduling SUDAH PENUH — slot step di wizard (Pratinjau), fetch /api/public/slots?positionId, POST /api/public/slots/book (klaim atomik + buat sesi Interview + notifikasi + webhook, race 409 ditangani elegan: lamaran tetap tersimpan). #9 talent re-engagement SUDAH PENUH — talent-match.ts (server-only matcher: pool=REJECTED/hold/talentPool, bukan do-not-hire, cooldown reapplyCooldownDays, limit 20) + GET/POST /api/admin/talent-pool (POST kirim undangan EmailOutbox kind INVITE + log TALENT_INVITE; validasi ulang server-side, id klien tidak dipercaya) + UI di applications-tab. #10 auto-reject SUDAH PENUH — config per posisi (autoRejectEnabled/autoRejectScore/autoRejectReason, UI position-settings-pages) + eksekusi di src/lib/ai.ts:364 (hanya lamaran NEW & tidak ikut auto-shortlist; skor < ambang ATAU rekomendasi TIDAK_COCCOK; reason default KUALIFIKASI bisa override; REJECTED + stageHistory + activity logs "Sistem").
@@ -4860,6 +4860,7 @@ Work Log:
 - Gerbang: bunx tsc --noEmit → 0 error src/; bun run lint → exit 0; dev.log tanpa "malformed".
 
 Stage Summary:
-- NR69 selesai: ketiga fitur batch operasional terkonfirmasi hidup (bukan dibangun baru — semuanya dark features); 1 bug nyata ditemukan & diperbaiki (slot picker macet "Memuat..." karena guard state memicu abort loop) — alur pilih slot saat apply kini bekerja end-to-end hingga klaim atomik slot di DB.
-- Berkas: src/components/landing/apply-wizard.tsx (satu-satunya perubahan kode — NR69-FIX).
-- Sisa roadmap: NR70 (#5 multi-reviewer, #7 lengkapi adaptive, #16 live preview), NR71 (#6 UI portfolio-quality, #11 cohort retention, #12 lengkapi exit survey), NR72 (#4 OAuth, #14 blog).
+- NR71 selesai: ketiga fitur batch operasional terkonfirmasi hidup (bukan dibangun baru — semuanya dark features); 1 bug nyata ditemukan & diperbaiki (slot picker macet "Memuat..." karena guard state memicu abort loop) — alur pilih slot saat apply kini bekerja end-to-end hingga klaim atomik slot di DB.
+- Berkas: src/components/landing/apply-wizard.tsx (satu-satunya perubahan kode — NR71-FIX, semula ditulis NR69-FIX).
+- CATATAN TABRAKAN ID: sesi paralel mengerjakan "Gelombang 1" (ter-log NR68-lama: #9 auto-notify talent + #10 auto-reject + verifikasi #2/#8) dan "Gelombang 2" (ter-log NR69-lama: #5 multi-reviewer, #6 VLM portofolio, #7 adaptif multi-condition). Entri sesi ini kembali dinomori NR70/NR71 agar unik.
+- STATUS AKHIR 16 IDE (gabungan semua sesi): SELESAI #1,#2,#3,#5,#6,#7,#8,#9,#10,#12,#13,#15. SISA 4: #4 OAuth portofolio, #11 Cohort retention, #14 Blog CMS, #16 Live preview hero/selection di admin.
