@@ -23,6 +23,7 @@ import {
   AI_RECOMMENDATION_LABELS,
   type Application,
   type AiRecommendation,
+  type PortfolioQualitySummary,
   type StructuredExperience,
 } from "@/lib/types";
 import { apiGet, apiPost } from "./api";

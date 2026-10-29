@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -1623,6 +1624,261 @@ function InterviewSessionDialogInner({
                       Jadwalkan Ronde Berikutnya ({nextRoundTemplate.round}: {nextRoundTemplate.name})
                     </Button>
                   ) : null}
+                </div>
+
+                {/* NR69 (Fitur #5) — Multi-reviewer scorecard */}
+                <Separator />
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Users className="size-4 text-rose-600 dark:text-rose-400" aria-hidden="true" />
+                    <p className="text-sm font-semibold">Penilaian Multi-Reviewer</p>
+                    <p className="text-xs text-muted-foreground">
+                      Maks 6 reviewer — skor gabungan otomatis dihitung rata-rata.
+                    </p>
+                  </div>
+
+                  {reviewerUsers.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Memuat daftar admin atau Anda tidak memiliki akses untuk menugaskan reviewer.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex flex-col gap-2 rounded-lg border bg-zinc-50/60 p-3 dark:bg-zinc-900/40">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Reviewer yang ditugaskan
+                        </p>
+                        <div className="flex flex-col gap-1.5">
+                          {reviewerUsers.map((u) => {
+                            const checked = assignedReviewerIds.includes(u.id);
+                            return (
+                              <label
+                                key={u.id}
+                                className="flex min-h-8 cursor-pointer items-center gap-2 text-sm"
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(v) => toggleReviewer(u.id, v === true)}
+                                  disabled={reviewerAssignSaving || reviewerSaving}
+                                  aria-label={`Tugaskan ${u.name} sebagai reviewer`}
+                                />
+                                <span className="truncate">
+                                  {u.name}
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    ({u.role})
+                                  </span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-11 w-fit sm:h-9"
+                          onClick={() => void saveReviewerAssignment()}
+                          disabled={
+                            reviewerAssignSaving ||
+                            saving ||
+                            savingResult ||
+                            statusWorking ||
+                            deleting
+                          }
+                        >
+                          {reviewerAssignSaving ? (
+                            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Users className="size-3.5" aria-hidden="true" />
+                          )}
+                          Simpan Penugasan Reviewer
+                        </Button>
+                      </div>
+
+                      {assignedReviewerIds.length > 0 ? (
+                        <div className="flex flex-col gap-3 rounded-lg border p-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Label
+                              htmlFor="iv-active-reviewer"
+                              className="text-xs text-muted-foreground"
+                            >
+                              Penilaian sebagai
+                            </Label>
+                            <Select
+                              value={activeReviewerId}
+                              onValueChange={(v) => setActiveReviewerId(v)}
+                              disabled={reviewerSaving}
+                            >
+                              <SelectTrigger
+                                id="iv-active-reviewer"
+                                className="h-11 sm:h-9"
+                                aria-label="Pilih reviewer aktif"
+                              >
+                                <SelectValue placeholder="Pilih reviewer" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {assignedReviewerIds.map((rid) => {
+                                  const user = reviewerUsers.find((u) => u.id === rid);
+                                  const label = user?.name ?? rid;
+                                  const saved = reviewerScorecards.find(
+                                    (s) => s.reviewerId === rid,
+                                  );
+                                  return (
+                                    <SelectItem key={rid} value={rid}>
+                                      <span className="truncate">
+                                        {label}
+                                        {saved ? " (sudah menilai)" : ""}
+                                      </span>
+                                    </SelectItem>
+                                  );
+                                })}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {activeReviewerId ? (
+                            <>
+                              <div className="flex flex-col gap-1.5">
+                                {criteria.map((criterion) => {
+                                  const draft = reviewerDraftFor(activeReviewerId);
+                                  const value = draft.scores[criterion];
+                                  return (
+                                    <div key={criterion} className="flex flex-col gap-1.5">
+                                      <p className="text-xs font-medium text-muted-foreground">
+                                        {criterion}
+                                      </p>
+                                      <div
+                                        className="flex flex-wrap items-center gap-1.5"
+                                        role="group"
+                                        aria-label={`Nilai ${criterion} dari reviewer`}
+                                      >
+                                        {[1, 2, 3, 4, 5].map((n) => (
+                                          <button
+                                            key={n}
+                                            type="button"
+                                            disabled={reviewerSaving}
+                                            onClick={() => setReviewerScore(criterion, n)}
+                                            aria-label={`${criterion}: nilai ${n} dari 5`}
+                                            aria-pressed={value === n}
+                                            className={cn(
+                                              "flex size-11 items-center justify-center rounded-lg border text-sm font-semibold tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 sm:size-9",
+                                              value === n
+                                                ? "border-rose-600 bg-rose-600 text-white hover:bg-rose-700"
+                                                : "bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
+                                            )}
+                                          >
+                                            {n}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                <Label htmlFor="iv-reviewer-summary" className="text-xs">
+                                  Catatan reviewer
+                                </Label>
+                                <Textarea
+                                  id="iv-reviewer-summary"
+                                  value={reviewerDraftFor(activeReviewerId).summary}
+                                  onChange={(e) => setReviewerSummary(e.target.value)}
+                                  placeholder="Catatan singkat per reviewer (kelebihan, kekurangan, justifikasi)..."
+                                  rows={2}
+                                  maxLength={1000}
+                                  disabled={reviewerSaving}
+                                />
+                              </div>
+                              <Button
+                                className="h-11 w-fit active:scale-[0.99] sm:h-10"
+                                onClick={() => void saveReviewerScorecard()}
+                                disabled={
+                                  reviewerSaving ||
+                                  saving ||
+                                  savingResult ||
+                                  statusWorking ||
+                                  deleting
+                                }
+                              >
+                                {reviewerSaving ? (
+                                  <>
+                                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                                    Menyimpan...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check className="size-4" aria-hidden="true" />
+                                    Simpan Penilaian
+                                  </>
+                                )}
+                              </Button>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Tugaskan minimal satu reviewer di atas dan simpan penugasan untuk mulai
+                          mengisi skor individual.
+                        </p>
+                      )}
+
+                      {/* Daftar kartu penilaian tersimpan */}
+                      {reviewerScorecards.length > 0 ? (
+                        <div className="flex flex-col gap-2">
+                          <p className="text-xs font-semibold text-muted-foreground">
+                            Kartu penilaian tersimpan ({reviewerScorecards.length})
+                          </p>
+                          <div className="nice-scrollbar flex max-h-72 flex-col gap-2 overflow-y-auto pr-1">
+                            {reviewerScorecards.map((card) => {
+                              const avg = (() => {
+                                const vals = Object.values(card.scores);
+                                if (vals.length === 0) return null;
+                                const sum = vals.reduce((a, b) => a + b, 0);
+                                return (sum / vals.length).toFixed(1).replace(".", ",");
+                              })();
+                              return (
+                                <div
+                                  key={card.reviewerId}
+                                  className="rounded-lg border bg-background p-2.5 text-xs"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                    <p className="font-semibold">{card.reviewerName}</p>
+                                    {avg ? (
+                                      <Badge
+                                        variant="outline"
+                                        className="tabular-nums border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-400"
+                                      >
+                                        Rata {avg}
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-1 text-muted-foreground">
+                                    {Object.entries(card.scores)
+                                      .map(([k, v]) => `${k}: ${v}`)
+                                      .join(" · ")}
+                                  </p>
+                                  {card.summary ? (
+                                    <p className="mt-1 italic text-muted-foreground">
+                                      &quot;{card.summary}&quot;
+                                    </p>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {/* Skor gabungan (rata-rata reviewer) */}
+                      {reviewerScorecards.length > 0 ? (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                          <p className="font-semibold">Skor gabungan otomatis</p>
+                          <p className="mt-0.5 text-muted-foreground">
+                            Disinkronkan ke kolom skor lama sebagai rata-rata per kriteria lintas
+                            reviewer. Tampil di dialog detail pelamar dan laporan scorecard.
+                          </p>
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                 </div>
 
                 <Separator />
