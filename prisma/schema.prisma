@@ -110,6 +110,12 @@ model Position {
   aiCriteria         String? // kriteria AI khusus posisi (pelengkap prompt screening)
   autoShortlistScore Int? // skor AI minimal untuk auto-shortlist
   autoShortlistStage String? // tahap tujuan auto-shortlist (harus ada di stages posisi)
+  // NR68 — auto-reject berbasis AI (opt-in per posisi): kebalikan auto-shortlist.
+  autoRejectEnabled Boolean @default(false) // aktifkan penolakan otomatis lamaran baru
+  autoRejectScore   Int?     // skor AI MAKSIMAL yang memicu auto-reject (null = pakai rekomendasi TIDAK_COCCOK)
+  autoRejectReason  String? // alasan terstruktur (KEY REJECTION_REASONS); null = KUALIFIKASI
+  // NR68 — idempotensi notifikasi talent pool saat posisi dibuka (hanya sekali)
+  talentNotifiedAt  DateTime?
   applyTemplate      String? // template pesan konfirmasi lamaran ({nama},{posisi},{kode})
   acceptTemplate     String? // template pesan diterima
   rejectTemplate     String? // template pesan ditolak
