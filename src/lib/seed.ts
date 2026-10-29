@@ -647,6 +647,53 @@ function parseStructuredExperience(
   }
 }
 
+/**
+ * NR69 (Fitur #6) — parse ringkasan kualitas portofolio (VLM) dari JSON string.
+ * Aman terhadap nilai rusak; null bila struktur tidak lengkap.
+ */
+function parsePortfolioQualitySummary(
+  raw: string | null | undefined,
+): PortfolioQualitySummary | null {
+  if (!raw || !raw.trim()) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const obj = parsed as Record<string, unknown>;
+    const scoreNum = typeof obj.score === "number" ? obj.score : Number(obj.score);
+    if (!Number.isFinite(scoreNum)) return null;
+    const summary = typeof obj.summary === "string" ? obj.summary.trim().slice(0, 2000) : "";
+    const strengths = Array.isArray(obj.strengths)
+      ? obj.strengths
+          .filter((s): s is string => typeof s === "string")
+          .map((s) => s.trim().slice(0, 300))
+          .filter((s) => s.length > 0)
+          .slice(0, 10)
+      : [];
+    const weaknesses = Array.isArray(obj.weaknesses)
+      ? obj.weaknesses
+          .filter((s): s is string => typeof s === "string")
+          .map((s) => s.trim().slice(0, 300))
+          .filter((s) => s.length > 0)
+          .slice(0, 10)
+      : [];
+    const source =
+      obj.source === "youtube_thumbnail" || obj.source === "image_url"
+        ? (obj.source as "youtube_thumbnail" | "image_url")
+        : "image_url";
+    const generatedAt = typeof obj.generatedAt === "string" ? obj.generatedAt : "";
+    return {
+      score: Math.min(100, Math.max(0, Math.round(scoreNum))),
+      summary,
+      strengths,
+      weaknesses,
+      source,
+      generatedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Ubah record Prisma Application (include relasi) menjadi tipe `Application` v3. */
 export function serializeApplication(record: ApplicationRecord): Application {
   const status = record.status && record.status.trim().length > 0 ? record.status.trim() : "NEW";
@@ -686,6 +733,9 @@ export function serializeApplication(record: ApplicationRecord): Application {
     // NR50 — riwayat tahap mentah + uraian pengalaman terstruktur AI
     stageHistory: parseStageHistory(record.stageHistory),
     experienceStructured: parseStructuredExperience(record.experienceStructured),
+    // NR69 (Fitur #6) — skor kualitas portofolio (VLM)
+    portfolioQualityScore: record.portfolioQualityScore ?? null,
+    portfolioQualitySummary: parsePortfolioQualitySummary(record.portfolioQualitySummary),
     formAnswers: parseFormAnswers(record.formAnswers),
 
     // Info kehadiran posisi non-remote (on-site/hybrid)

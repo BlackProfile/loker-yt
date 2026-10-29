@@ -456,6 +456,19 @@ export type ReviewerScorecard = {
   updatedAt: string; // ISO
 };
 
+/**
+ * NR69 (Fitur #6) — ringkasan kualitas portofolio hasil VLM. Disimpan sebagai
+ * JSON di kolom Application.portfolioQualitySummary.
+ */
+export type PortfolioQualitySummary = {
+  score: number; // 0-100
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  source: "youtube_thumbnail" | "image_url";
+  generatedAt: string; // ISO
+};
+
 export type Application = {
   id: string;
   name: string;
@@ -493,6 +506,9 @@ export type Application = {
   // NR50 — riwayat tahap mentah + uraian pengalaman terstruktur AI
   stageHistory?: ApplicationStageEntry[];
   experienceStructured?: StructuredExperience | null;
+  // NR69 (Fitur #6) — skor kualitas konten portofolio via VLM
+  portfolioQualityScore?: number | null; // 0-100
+  portfolioQualitySummary?: PortfolioQualitySummary | null;
 
   // Info kehadiran untuk posisi non-remote (on-site/hybrid) — diisi dari wizard
   domisili?: string | null; // kota domisili pelamar

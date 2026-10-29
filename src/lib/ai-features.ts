@@ -241,6 +241,15 @@ export const AI_FEATURES: AiFeatureDef[] = [
     defaultQuota: null,
     maxQuota: 500,
   },
+  {
+    // NR69 (Fitur #6) — skor kualitas konten portofolio via VLM (thumbnail YouTube / URL gambar).
+    key: "portfolio_quality",
+    label: "Kualitas Portofolio (VLM)",
+    description: "Nilai kualitas konten portofolio kandidat (komposisi, daya tarik, editing, kesesuaian merek).",
+    priority: "manual",
+    defaultQuota: null,
+    maxQuota: 500,
+  },
 ];
 
 export const AI_FEATURE_KEYS = AI_FEATURES.map((f) => f.key) as string[];
