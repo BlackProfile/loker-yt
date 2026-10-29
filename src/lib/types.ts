@@ -168,6 +168,16 @@ export type SelectionContent = {
   stages: SelectionStage[];
 };
 
+// Konten section "Bekerja di Lumina" (budaya kerja) versi admin.
+// null = section disembunyikan (admin harus mengisi konten dulu).
+export type WorkCultureItem = { title: string; description: string };
+export type WorkCultureContent = {
+  badge: string;
+  title: string;
+  desc: string;
+  items: WorkCultureItem[];
+};
+
 // Konten situs yang bisa diatur lewat panel admin
 export type SiteContent = {
   siteName: string;
@@ -205,6 +215,8 @@ export type SiteContent = {
   recruitmentClosedMessage: string;
   // Konten section "Proses Seleksi" kustom (null = teks bawaan kamus ID/EN)
   selection: SelectionContent | null;
+  // NR68 (#13) — konten section "Bekerja di Lumina" (null = section disembunyikan)
+  workCulture: WorkCultureContent | null;
   // Visibilitas tiap bagian halaman publik (dikendalikan dari panel admin)
   sections: SectionVisibility;
 };
@@ -220,6 +232,7 @@ export type SectionKey =
   | "applyForm"
   | "statusCheck"
   | "testimonials"
+  | "workCulture" // NR68 (#13)
   | "faq"
   | "subscribe"
   | "finalCta"
@@ -234,6 +247,7 @@ export const SECTION_KEYS: SectionKey[] = [
   "applyForm",
   "statusCheck",
   "testimonials",
+  "workCulture", // NR68 (#13)
   "faq",
   "subscribe",
   "finalCta",
@@ -249,6 +263,7 @@ export const SECTION_LABELS: Record<SectionKey, string> = {
   applyForm: "Formulir Lamaran",
   statusCheck: "Cek Status Lamaran",
   testimonials: "Testimoni Tim",
+  workCulture: "Bekerja di Lumina", // NR68 (#13)
   faq: "FAQ",
   subscribe: "Langganan Notifikasi Posisi Baru",
   finalCta: "CTA Penutup",
