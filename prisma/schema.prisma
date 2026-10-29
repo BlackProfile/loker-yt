@@ -736,6 +736,24 @@ model ReferralSource {
   applications Application[] @relation("appSource")
 }
 
+// NR70 — kode referral ringan (program perujuk): kode unik per email perujuk;
+// dipakai saat pelamar mengirim lamaran (applicationId + usedAt terisi).
+// Tidak ada FK ke Application (disimpan sebagai plain string) agar penghapusan
+// lamaran tidak menghilangkan jejak referral; rewardedAt diisi admin nanti.
+model ReferralCode {
+  id            String    @id @default(cuid())
+  code          String    @unique // format "REF-XXXXXX" 6 alphanumeric upper
+  referrerName  String?
+  referrerEmail String
+  applicationId String? // id lamaran yang MEMPAKAI kode ini (bukan lamaran perujuk)
+  usedAt        DateTime?
+  rewardedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([referrerEmail])
+  @@index([usedAt])
+}
+
 // NR-41 — tampilan tersimpan server-side (lintas perangkat & bisa dibagikan antar admin)
 model SavedView {
   id        String   @id @default(cuid())
