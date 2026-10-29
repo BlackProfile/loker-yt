@@ -7,6 +7,7 @@ import {
   type SelectionContent,
   type SectionVisibility,
   type SiteContent,
+  type WorkCultureContent,
 } from "@/lib/types";
 
 export const DEFAULT_ADMIN_PASSWORD = "admin123";
@@ -23,15 +24,13 @@ export const DEFAULT_SECTIONS: SectionVisibility = {
   applyForm: true,
   statusCheck: true,
   testimonials: false,
+  workCulture: false, // NR68 (#13)
   faq: false,
   subscribe: false,
   finalCta: false,
   chatbot: false,
 };
 
-// Teks awal kartu editor admin untuk section "Proses Seleksi" (cerminan kamus ID).
-// Dipakai saat admin mengaktifkan teks kustom — nilai di DB tetap null (teks
-// bawaan) sampai admin benar-benar menyimpan.
 export const DEFAULT_SELECTION_CONTENT: SelectionContent = {
   badge: "Alur Seleksi",
   title: "Proses Seleksi dari Awal sampai Gabung",
@@ -97,6 +96,33 @@ export const DEFAULT_SELECTION_CONTENT: SelectionContent = {
         "Lengkapi dokumen onboarding sebelum hari pertama",
         "Catat pertanyaan apa saja — minggu pertama adalah waktu terbaik untuk bertanya",
       ],
+    },
+  ],
+};
+
+// NR68 (#13) — teks awal kartu editor admin untuk section "Bekerja di Lumina".
+// Dipakai saat admin mengaktifkan konten kustom; nilai di DB tetap null
+// (section disembunyikan) sampai admin benar-benar menyimpan.
+export const DEFAULT_WORK_CULTURE_CONTENT: WorkCultureContent = {
+  badge: "Budaya Kerja",
+  title: "Bekerja di Lumina Studio",
+  desc: "Tim kecil, ambisi besar — kami bikin konten yang ditonton jutaan, sambil saling jaga satu sama lain.",
+  items: [
+    {
+      title: "Tim Kecil, Suara Didengar",
+      description: "Tidak ada birokrasi berlapis. Ide kamu didengar langsung oleh tim inti dan bisa tayang minggu ini.",
+    },
+    {
+      title: "Konten yang Bicara",
+      description: "Kami mengejar konten yang relevan dan bermakna — bukan sekadar viral. Setiap video punya alasan.",
+    },
+    {
+      title: "Fleksibilitas Asli",
+      description: "Jam fleksibel, hasil yang dihitung. Remote, on-site, atau hybrid — yang penting karya kelar.",
+    },
+    {
+      title: "Tumbuh Bareng",
+      description: "Budget alat, kelas online, dan ruang tryout kreatif. Kamu naik, tim naik.",
     },
   ],
 };
@@ -211,6 +237,7 @@ export const DEFAULT_SITE: SiteContent = {
   recruitmentClosed: false,
   recruitmentClosedMessage: "",
   selection: null,
+  workCulture: null, // NR68 (#13)
   sections: { ...DEFAULT_SECTIONS },
 };
 

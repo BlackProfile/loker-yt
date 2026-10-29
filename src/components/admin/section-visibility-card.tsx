@@ -9,6 +9,7 @@ import {
   FileText,
   Flag,
   Gift,
+  Heart,
   Info,
   ListOrdered,
   MessagesSquare,
@@ -35,6 +36,7 @@ const SECTION_ICONS: Record<SectionKey, LucideIcon> = {
   applyForm: FileText,
   statusCheck: Search,
   testimonials: MessagesSquare,
+  workCulture: Heart, // NR68 (#13)
   faq: CircleHelp,
   subscribe: Bell,
   finalCta: Flag,
