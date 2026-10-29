@@ -814,6 +814,11 @@ export function ApplyWizard({
     setNik("");
     setBirthDate("");
     setDedupe(null);
+    // NR70 — slot milik posisi; ganti posisi bersihkan pilihan slot sebelumnya.
+    setSelectedSlotId("");
+    setSlotList([]);
+    setSlotError(null);
+    setSlotFetchedFor("");
     setErrors((prev) =>
       prev.nik || prev.birthDate ? { ...prev, nik: undefined, birthDate: undefined } : prev,
     );
@@ -1067,6 +1072,123 @@ export function ApplyWizard({
     const formEmail = values.email.trim();
     if (formEmail && linkEmail !== formEmail) setLinkEmail(formEmail);
   }, [values.email, linkEmail]);
+
+  // NR70 (Fitur #1) — saat pelamar mencapai langkah Pratinjau dengan posisi
+  // dipilih, muat slot wawancara terbuka untuk posisi itu (sekali per posisi).
+  // Gagal = senyap (kartu slot disembunyikan); tidak pernah memblokir submit.
+  useEffect(() => {
+    if (step !== previewStep) return;
+    if (!positionId) return;
+    if (slotFetchedFor === positionId) return;
+    setSlotFetchedFor(positionId);
+    setSlotLoading(true);
+    setSlotError(null);
+    slotAbortRef.current?.abort();
+    const ac = new AbortController();
+    slotAbortRef.current = ac;
+    fetch(`/api/public/slots?positionId=${encodeURIComponent(positionId)}`, {
+      cache: "no-store",
+      signal: ac.signal,
+    })
+      .then((res) => (res.ok ? res.json().catch(() => null) : null))
+      .then((json: unknown) => {
+        if (ac.signal.aborted) return;
+        if (!isRecord(json) || !Array.isArray(json.slots)) {
+          setSlotList([]);
+          setSlotError(t.apply.slot.error);
+          return;
+        }
+        const items = (json.slots as unknown[]).filter(
+          (item): item is TrackSlotInfo =>
+            isRecord(item) &&
+            typeof item.id === "string" &&
+            typeof item.scheduledAt === "string",
+        );
+        setSlotList(items);
+        // Slot terpilih sebelumnya hilang bila tidak ada lagi di daftar baru.
+        setSelectedSlotId((prev) =>
+          prev && items.some((item) => item.id === prev) ? prev : "",
+        );
+      })
+      .catch((err: unknown) => {
+        if (ac.signal.aborted) return;
+        // AbortError diabaikan; lainnya dianggap gagal memuat (kartu tetap muncul
+        // dengan pesan error singkat + opsi lanjut tanpa slot).
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setSlotList([]);
+        setSlotError(t.apply.slot.error);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setSlotLoading(false);
+      });
+    return () => {
+      ac.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, previewStep, positionId, slotFetchedFor, t.apply.slot.error]);
+
+  // NR70 (Fitur #3) — validasi kode referral debounced saat input berubah.
+  // Format invalid = state invalid (warna amber, pesan hint); format valid &
+  // ditemukan di DB = state valid (centang hijau + nama perujuk); tidak ditemukan
+  // = invalid. Input kosong = idle (tidak ada pesan).
+  useEffect(() => {
+    const code = referralCode.trim().toUpperCase();
+    if (!code) {
+      setReferralStatus({ state: "idle" });
+      return;
+    }
+    if (!/^REF-[A-Z0-9]{4,12}$/.test(code)) {
+      setReferralStatus({ state: "invalid" });
+      return;
+    }
+    setReferralStatus({ state: "checking" });
+    if (referralTimerRef.current !== null) {
+      window.clearTimeout(referralTimerRef.current);
+    }
+    referralTimerRef.current = window.setTimeout(() => {
+      referralAbortRef.current?.abort();
+      const ac = new AbortController();
+      referralAbortRef.current = ac;
+      fetch(`/api/public/referral?code=${encodeURIComponent(code)}`, {
+        cache: "no-store",
+        signal: ac.signal,
+      })
+        .then((res) => (res.ok ? res.json().catch(() => null) : null))
+        .then((json: unknown) => {
+          if (ac.signal.aborted) return;
+          if (isRecord(json) && json.valid === true) {
+            const name =
+              typeof json.referrerName === "string" ? json.referrerName : null;
+            setReferralStatus({ state: "valid", referrerName: name });
+          } else {
+            setReferralStatus({ state: "invalid" });
+          }
+        })
+        .catch((err: unknown) => {
+          if (ac.signal.aborted) return;
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          setReferralStatus({ state: "invalid" });
+        });
+    }, 350);
+    return () => {
+      if (referralTimerRef.current !== null) {
+        window.clearTimeout(referralTimerRef.current);
+        referralTimerRef.current = null;
+      }
+    };
+  }, [referralCode]);
+
+  // Cleanup: batalkan permintaan slot & referral saat wizard dilepas.
+  useEffect(
+    () => () => {
+      slotAbortRef.current?.abort();
+      referralAbortRef.current?.abort();
+      if (referralTimerRef.current !== null) {
+        window.clearTimeout(referralTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (submittedRef.current || draftDismissedRef.current) return;
@@ -2705,6 +2827,12 @@ export function ApplyWizard({
         fd.append("sourceId", sourceId);
       } else if (source) {
         fd.append("source", source);
+      }
+      // NR70 (Fitur #3) — kode referral opsional: hanya dikirim bila format
+      // valid (REF-XXXXXX); server mengabaikan kode invalid tanpa memblokir.
+      const referralTrimmed = referralCode.trim().toUpperCase();
+      if (referralTrimmed && /^REF-[A-Z0-9]{4,12}$/.test(referralTrimmed)) {
+        fd.append("referralCode", referralTrimmed);
       }
       // NR-41 J26 — token draft server: server mengadopsi file yang sudah
       // diunggah ke draft (CV/intro/dokumen/form) lalu menghapus draft.
