@@ -7,6 +7,7 @@ import { can } from "@/lib/permissions";
 import { closeExpiredPositions, serializePosition } from "@/lib/seed";
 import { sanitizePositionInput } from "@/lib/position-input";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { notifyTalentPoolForPosition } from "@/lib/talent-notify";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +129,10 @@ export async function POST(req: NextRequest) {
         aiCriteria: f.aiCriteria ?? null,
         autoShortlistScore: f.autoShortlistScore ?? null,
         autoShortlistStage: f.autoShortlistStage ?? null,
+        // NR68 — auto-reject berbasis AI (opt-in per posisi).
+        autoRejectEnabled: f.autoRejectEnabled ?? false,
+        autoRejectScore: f.autoRejectScore ?? null,
+        autoRejectReason: f.autoRejectReason ?? null,
         applyTemplate: f.applyTemplate ?? null,
         acceptTemplate: f.acceptTemplate ?? null,
         rejectTemplate: f.rejectTemplate ?? null,
@@ -151,6 +156,8 @@ export async function POST(req: NextRequest) {
 
     // Realtime: daftar posisi publik & admin diperbarui otomatis.
     void emitRealtime(REALTIME_EVENTS.positions);
+    // NR68 — umumkan posisi baru ke talent pool (fire-and-forget, idempoten).
+    void notifyTalentPoolForPosition(created.id);
     return NextResponse.json(serializePosition(created), { status: 201 });
   } catch (error) {
     console.error("[POST /api/admin/positions]", error);

@@ -322,6 +322,10 @@ export type Position = {
   aiCriteria: string | null;
   autoShortlistScore: number | null;
   autoShortlistStage: string | null;
+  // NR68 — auto-reject berbasis AI (opt-in per posisi).
+  autoRejectEnabled: boolean;
+  autoRejectScore: number | null;
+  autoRejectReason: string | null;
   replyTemplates: ReplyTemplates;
   assignment: AssignmentInfo;
 

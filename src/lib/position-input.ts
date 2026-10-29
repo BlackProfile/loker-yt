@@ -96,6 +96,10 @@ export type PositionFields = {
   aiCriteria?: string | null;
   autoShortlistScore?: number | null;
   autoShortlistStage?: string | null;
+  // NR68 — auto-reject berbasis AI (opt-in per posisi).
+  autoRejectEnabled?: boolean;
+  autoRejectScore?: number | null;
+  autoRejectReason?: string | null;
   applyTemplate?: string | null;
   acceptTemplate?: string | null;
   rejectTemplate?: string | null;
@@ -736,6 +740,28 @@ export async function sanitizePositionInput(
     }
   }
 
+  // NR68 — auto-reject berbasis AI (opt-in). Skor adalah ambang MAKSIMAL
+  // (lamaran di bawah ini ditolak); null = pakai rekomendasi TIDAK_COCCOK.
+  if (data.autoRejectEnabled !== undefined) {
+    if (data.autoRejectEnabled === null) {
+      return err("Saklar auto-reject tidak valid.");
+    }
+    f.autoRejectEnabled = data.autoRejectEnabled === true;
+  }
+  const autoRejectScore = sanitizeNullableInt(data.autoRejectScore, "Skor auto-reject", 0, 100);
+  if (!autoRejectScore.ok) return autoRejectScore;
+  if (autoRejectScore.value !== undefined) f.autoRejectScore = autoRejectScore.value;
+  if (data.autoRejectReason !== undefined) {
+    if (data.autoRejectReason === null) {
+      f.autoRejectReason = null;
+    } else if (typeof data.autoRejectReason === "string") {
+      const r = data.autoRejectReason.trim();
+      f.autoRejectReason = r || null;
+    } else {
+      return err("Alasan auto-reject tidak valid.");
+    }
+  }
+
   // Template balasan
   const applyTemplate = sanitizeNullableText(data.applyTemplate, "Template konfirmasi lamaran", 500);
   if (!applyTemplate.ok) return applyTemplate;
@@ -1044,6 +1070,10 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.aiCriteria !== undefined) out.aiCriteria = f.aiCriteria;
   if (f.autoShortlistScore !== undefined) out.autoShortlistScore = f.autoShortlistScore;
   if (f.autoShortlistStage !== undefined) out.autoShortlistStage = f.autoShortlistStage;
+  // NR68 — auto-reject (opt-in per posisi)
+  if (f.autoRejectEnabled !== undefined) out.autoRejectEnabled = f.autoRejectEnabled;
+  if (f.autoRejectScore !== undefined) out.autoRejectScore = f.autoRejectScore;
+  if (f.autoRejectReason !== undefined) out.autoRejectReason = f.autoRejectReason;
   if (f.applyTemplate !== undefined) out.applyTemplate = f.applyTemplate;
   if (f.acceptTemplate !== undefined) out.acceptTemplate = f.acceptTemplate;
   if (f.rejectTemplate !== undefined) out.rejectTemplate = f.rejectTemplate;

@@ -9,6 +9,7 @@ import { can } from "@/lib/permissions";
 import { serializePosition } from "@/lib/seed";
 import { positionFieldsToDb, sanitizePositionInput } from "@/lib/position-input";
 import { emitRealtime, REALTIME_EVENTS } from "@/lib/realtime-server";
+import { notifyTalentPoolForPosition } from "@/lib/talent-notify";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // Realtime: perubahan posisi (edit/toggle/arsip) disebarkan ke publik & admin.
     void emitRealtime(REALTIME_EVENTS.positions);
+    // NR68 — bila posisi baru saja dibuka (sebelumnya tutup/nonaktif) dan belum
+    // pernah diumumkan ke talent pool, picu umumkan otomatis (fire-and-forget).
+    const wasClosed = !existing.isActive || !existing.applyOpen;
+    const nowOpen = updated.isActive && updated.applyOpen;
+    if (wasClosed && nowOpen && !updated.talentNotifiedAt) {
+      void notifyTalentPoolForPosition(updated.id);
+    }
     return NextResponse.json(serializePosition(updated));
   } catch (error) {
     console.error("[PATCH /api/admin/positions/[id]]", error);

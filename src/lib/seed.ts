@@ -451,6 +451,10 @@ export function serializePosition(record: PositionRecordModel): Position {
     aiCriteria: record.aiCriteria,
     autoShortlistScore: record.autoShortlistScore,
     autoShortlistStage: record.autoShortlistStage,
+    // NR68 — auto-reject berbasis AI (opt-in per posisi).
+    autoRejectEnabled: record.autoRejectEnabled,
+    autoRejectScore: record.autoRejectScore,
+    autoRejectReason: record.autoRejectReason,
     replyTemplates: parseReplyTemplates(record.applyTemplate, record.acceptTemplate, record.rejectTemplate),
     assignment: parseAssignment(record.assignmentTitle, record.assignmentUrl, record.assignmentNote),
 
