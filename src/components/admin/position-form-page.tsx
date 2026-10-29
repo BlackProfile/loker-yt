@@ -141,6 +141,7 @@ type FormState = {
   salaryVisible: boolean;
   benefits: string[];
   examples: string[];
+  selectionTips: string[]; // NR68 (#15)
   urgent: boolean;
   featured: boolean;
   requireCv: boolean;
@@ -207,6 +208,7 @@ const EMPTY_FORM: FormState = {
   salaryVisible: false,
   benefits: [],
   examples: [],
+  selectionTips: [],
   urgent: false,
   featured: false,
   requireCv: true,
@@ -279,6 +281,7 @@ function buildFormState(p: Position): FormState {
     salaryVisible: p.salaryVisible,
     benefits: [...p.benefits],
     examples: [...p.examples],
+    selectionTips: [...(p.selectionTips ?? [])],
     urgent: p.urgent,
     featured: p.featured,
     requireCv: p.requireCv,
@@ -483,6 +486,7 @@ function formDataFromUnknown(raw: unknown): {
       salaryVisible: draftBoolean(d.salaryVisible, false),
       benefits: draftStringArray(d.benefits, 10, 120, []),
       examples: draftStringArray(d.examples, 6, 300, []),
+      selectionTips: draftStringArray(d.selectionTips, 8, 200, []),
       urgent: draftBoolean(d.urgent, false),
       featured: draftBoolean(d.featured, false),
       requireCv: draftBoolean(d.requireCv, true),
@@ -915,6 +919,7 @@ export function PositionFormPage({
       salaryVisible: form.salaryVisible,
       benefits: form.benefits.map((b) => b.trim()).filter(Boolean),
       examples: form.examples.map((e) => e.trim()).filter(Boolean),
+      selectionTips: form.selectionTips.map((t) => t.trim()).filter(Boolean),
       urgent: form.urgent,
       featured: form.featured,
       requireCv: form.requireCv,
