@@ -350,6 +350,9 @@ async function handlePost(req: NextRequest) {
     const utmCampaign = asOptionalString(fields.utmCampaign)?.slice(0, 60) ?? null;
     // Referrer: URL halaman saat pelamar mengirim (dikirim client bila ada; null bila tidak).
     const referrer = asOptionalString(fields.referrer)?.slice(0, 300) ?? null;
+    // NR70 (Fitur #3) — kode referral opsional: "REF-XXXXXX" (bila diisi pelamar).
+    // Validasi & pemakaian terjadi SETELAH lamaran tersimpan (bukan blokade submit).
+    const referralCodeRaw = asOptionalString(fields.referralCode)?.trim().toUpperCase() ?? "";
     // NR-24 — ekspektasi gaji bulanan (opsional): abaikan bila bukan angka valid.
     // Diterima sebagai string (multipart & JSON dinormalisasi sama) lalu divalidasi ketat.
     let expectedSalary: number | null = null;
