@@ -75,6 +75,7 @@ import {
   INTERVIEW_PLATFORMS,
   INTERVIEW_RECOMMENDATION_LABELS,
   INTERVIEW_STATUS_LABELS,
+  type AdminUser,
   type Application,
   type Interview,
   type InterviewMode,
@@ -82,6 +83,7 @@ import {
   type InterviewRecommendation,
   type InterviewStatus,
   type Position,
+  type ReviewerScorecard,
   type RoundPlanTemplate,
 } from "@/lib/types";
 import { apiDelete, apiGet, apiPatch, apiPost } from "./api";
@@ -283,6 +285,23 @@ function InterviewSessionDialogInner({
   // ---- Rencana ronde berikutnya (Position.roundPlan) ----
   const [roundPlan, setRoundPlan] = useState<RoundPlanTemplate[] | null>(null);
   const [schedulingNextRound, setSchedulingNextRound] = useState<RoundPlanTemplate | null>(null);
+
+  // NR69 (Fitur #5) — Multi-reviewer scorecard
+  const [reviewerUsers, setReviewerUsers] = useState<AdminUser[]>([]);
+  const [assignedReviewerIds, setAssignedReviewerIds] = useState<string[]>(
+    interview ? [...(interview.assignedReviewerIds ?? [])] : [],
+  );
+  const [reviewerScorecards, setReviewerScorecards] = useState<ReviewerScorecard[]>(
+    interview ? [...(interview.reviewerScorecards ?? [])] : [],
+  );
+  // Draf penilaian reviewer yang sedang aktif dipilih di dropdown.
+  const [activeReviewerId, setActiveReviewerId] = useState<string>("");
+  // Draf skor per reviewer yang belum disimpan: { [reviewerId]: { [criterion]: n } }.
+  const [reviewerDrafts, setReviewerDrafts] = useState<
+    Record<string, { scores: Record<string, number>; summary: string }>
+  >({});
+  const [reviewerSaving, setReviewerSaving] = useState(false);
+  const [reviewerAssignSaving, setReviewerAssignSaving] = useState(false);
 
   // ---- Aksi status & hapus ----
   const [statusWorking, setStatusWorking] = useState(false);
