@@ -2,7 +2,7 @@
 // Kontrak NR44: Position.interviewCriteriaWeights = JSON {[kriteria]: bobot 0-100};
 // null/kosong = bobot merata. Rata tertimbang = sum(nilai*bobot)/sum(bobot)
 // hanya atas kriteria yang punya nilai sekaligus bobot.
-import type { ReviewerScorecard } from "@/lib/types";
+import type { ReviewerScorecard as ReviewerScorecardType } from "@/lib/types";
 
 /** True jika nilai berupa objek kamus biasa (bukan array/null). */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -124,6 +124,7 @@ export function averageScoresAcrossSessions(
 /**
  * NR69 (Fitur #5) — bentuk publik satu kartu penilaian reviewer.
  * Disimpan di kolom Interview.reviewerScorecards sebagai JSON array.
+ * Tipe ini juga diekspor lewat src/lib/types.ts (sumber tunggal kontrak publik).
  */
 export type ReviewerScorecard = ReviewerScorecardType;
 
