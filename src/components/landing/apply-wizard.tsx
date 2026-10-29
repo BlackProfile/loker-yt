@@ -1186,7 +1186,6 @@ export function ApplyWizard({
     return () => {
       ac.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, previewStep, positionId, slotFetchedFor, t.apply.slot.error]);
 
   // NR70 (Fitur #3) — validasi kode referral debounced saat input berubah.
