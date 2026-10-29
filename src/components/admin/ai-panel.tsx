@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Copy,
   FileText,
+  Image as ImageIcon,
   Languages,
   Loader2,
   Mail,
@@ -118,6 +119,10 @@ export function AiPanel({
   const [experience, setExperience] = useState<StructuredExperience | null>(null);
   const [expLoading, setExpLoading] = useState(false);
 
+  // NR69 (Fitur #6) — skor kualitas portofolio via VLM (tersimpan di server).
+  const [portfolioQuality, setPortfolioQuality] = useState<PortfolioQualitySummary | null>(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+
   // Reset hasil alat AI saat kandidat berganti.
   useEffect(() => {
     setQuestions(null);
@@ -134,6 +139,8 @@ export function AiPanel({
     setTransLoading(false);
     setExperience(null);
     setExpLoading(false);
+    setPortfolioQuality(null);
+    setPortfolioLoading(false);
   }, [app.id]);
 
   // NR49 — baca diam-diam terjemahan tersimpan saat kandidat berganti (tanpa AI).
@@ -194,6 +201,33 @@ export function AiPanel({
       cancelled = true;
     };
   }, [app.id]);
+
+  // NR69 (Fitur #6) — baca diam-diam skor kualitas portofolio tersimpan.
+  useEffect(() => {
+    setPortfolioQuality(app.portfolioQualitySummary ?? null);
+  }, [app.id, app.portfolioQualitySummary]);
+
+  // NR69 (Fitur #6) — jalankan VLM untuk menilai kualitas portofolio kandidat.
+  async function runPortfolioQuality() {
+    if (portfolioLoading) return;
+    setPortfolioLoading(true);
+    try {
+      const res = await apiPost<PortfolioQualitySummary>(
+        `/api/admin/applications/${app.id}/portfolio-quality`
+      );
+      setPortfolioQuality(res);
+      onUpdated({
+        ...app,
+        portfolioQualityScore: res.score,
+        portfolioQualitySummary: res,
+      });
+      toast.success("Analisis kualitas portofolio selesai");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setPortfolioLoading(false);
+    }
+  }
 
   async function analyze() {
     if (analyzing) return;
@@ -642,6 +676,109 @@ export function AiPanel({
           <p className="text-xs text-muted-foreground">
             Teks CV belum diekstraksi untuk lamaran ini.
           </p>
+        )}
+      </div>
+
+      {/* NR69 (Fitur #6) — Skor kualitas portofolio (VLM) */}
+      <div className="flex flex-col gap-2 border-t pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <ImageIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+          <p className="text-sm font-semibold">Kualitas Portofolio (AI)</p>
+          {portfolioQuality ? (
+            <Badge variant="outline" className="tabular-nums">
+              {portfolioQuality.score}/100
+            </Badge>
+          ) : null}
+        </div>
+        {!app.portfolioUrl ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            Lamaran ini tidak memiliki URL portofolio. Minta kandidat melengkapi tautan
+            portofolio terlebih dahulu sebelum dapat dianalisis.
+          </p>
+        ) : (
+          <>
+            {portfolioQuality ? (
+              <div className="rounded-lg border bg-background p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={cn(
+                      "rounded-lg border px-2.5 py-0.5 text-sm font-bold tabular-nums",
+                      aiScoreStyle(portfolioQuality.score),
+                    )}
+                  >
+                    {portfolioQuality.score}
+                  </span>
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                    Sumber:{" "}
+                    {portfolioQuality.source === "youtube_thumbnail"
+                      ? "Thumbnail YouTube"
+                      : "URL gambar"}
+                  </Badge>
+                  {portfolioQuality.generatedAt ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      Dianalisis {formatDate(portfolioQuality.generatedAt)}
+                    </span>
+                  ) : null}
+                </div>
+                {portfolioQuality.summary ? (
+                  <p className="mt-2 text-sm leading-relaxed whitespace-pre-line text-muted-foreground">
+                    {portfolioQuality.summary}
+                  </p>
+                ) : null}
+                {portfolioQuality.strengths.length > 0 ? (
+                  <div className="mt-2">
+                    <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                      Kelebihan
+                    </p>
+                    <ul className="mt-0.5 list-disc pl-4 text-xs text-muted-foreground">
+                      {portfolioQuality.strengths.map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {portfolioQuality.weaknesses.length > 0 ? (
+                  <div className="mt-2">
+                    <p className="text-xs font-semibold text-rose-700 dark:text-rose-400">
+                      Kekurangan
+                    </p>
+                    <ul className="mt-0.5 list-disc pl-4 text-xs text-muted-foreground">
+                      {portfolioQuality.weaknesses.map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Hanya URL gambar (jpg/png/webp/gif) atau URL video YouTube yang didukung
+                analisis VLM. Untuk video Vimeo/Instagram/TikTok, lampirkan thumbnail manual
+                pada catatan lamaran.
+              </p>
+            )}
+            {canMutate ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-fit text-xs"
+                onClick={() => void runPortfolioQuality()}
+                disabled={portfolioLoading}
+              >
+                {portfolioLoading ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    Menganalisis...
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon className="size-3.5" aria-hidden="true" />
+                    {portfolioQuality ? "Analisis Ulang Kualitas" : "Analisis Kualitas Portofolio"}
+                  </>
+                )}
+              </Button>
+            ) : null}
+          </>
         )}
       </div>
 
