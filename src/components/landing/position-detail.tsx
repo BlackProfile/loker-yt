@@ -767,7 +767,7 @@ function PositionDetailViewInner({
   // berganti — struktur seksi & gerbang baca (id jangkar) tetap sama.
   const display = useMemo(() => {
     if (!position) {
-      return { title: "", description: "", requirements: [] as string[] };
+      return { title: "", description: "", requirements: [] as string[], selectionTips: [] as string[] };
     }
     return {
       title:
@@ -780,6 +780,8 @@ function PositionDetailViewInner({
         lang === "en" && position.requirementsEn.length > 0
           ? position.requirementsEn
           : position.requirements,
+      // NR68 (#15) — kiat lamar per posisi (teks admin, tampil apa adanya di kedua bahasa)
+      selectionTips: position.selectionTips ?? [],
     };
   }, [position, lang]);
 

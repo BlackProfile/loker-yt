@@ -249,6 +249,7 @@ export type DefaultPositionSeed = {
   salaryVisible?: boolean;
   benefits?: string[];
   examples?: string[];
+  selectionTips?: string[]; // NR68 (#15) — kiat lamar per posisi
   urgent?: boolean;
   featured?: boolean;
   screeningQuestions?: ScreeningQuestion[];
