@@ -2,6 +2,7 @@
 // Kontrak NR44: Position.interviewCriteriaWeights = JSON {[kriteria]: bobot 0-100};
 // null/kosong = bobot merata. Rata tertimbang = sum(nilai*bobot)/sum(bobot)
 // hanya atas kriteria yang punya nilai sekaligus bobot.
+import type { ReviewerScorecard } from "@/lib/types";
 
 /** True jika nilai berupa objek kamus biasa (bukan array/null). */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -118,4 +119,83 @@ export function averageScoresAcrossSessions(
     merged[key] = Math.round((total / count) * 10) / 10;
   }
   return merged;
+}
+
+/**
+ * NR69 (Fitur #5) — bentuk publik satu kartu penilaian reviewer.
+ * Disimpan di kolom Interview.reviewerScorecards sebagai JSON array.
+ */
+export type ReviewerScorecard = ReviewerScorecardType;
+
+/** Parse kolom Interview.reviewerScorecards (JSON string) — aman terhadap nilai rusak. */
+export function parseReviewerScorecards(raw: string | null | undefined): ReviewerScorecard[] {
+  if (!raw || typeof raw !== "string") return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const result: ReviewerScorecard[] = [];
+  for (const item of parsed) {
+    if (!isPlainObject(item)) continue;
+    const reviewerId = typeof item.reviewerId === "string" ? item.reviewerId.trim() : "";
+    if (!reviewerId) continue;
+    const reviewerName = typeof item.reviewerName === "string" ? item.reviewerName.trim().slice(0, 80) : "";
+    const scoresRaw = item.scores;
+    const scores: Record<string, number> = {};
+    if (isPlainObject(scoresRaw)) {
+      for (const [key, value] of Object.entries(scoresRaw)) {
+        const k = typeof key === "string" ? key.trim().slice(0, 120) : "";
+        const num = typeof value === "number" ? value : Number(value);
+        if (!k || !Number.isFinite(num)) continue;
+        // Skor scorecard pakai skala 1-5 (sama seperti kolom Interview.scores lama).
+        scores[k] = Math.min(5, Math.max(1, Math.round(num)));
+        if (Object.keys(scores).length >= 8) break;
+      }
+    }
+    const summary = typeof item.summary === "string" ? item.summary.trim().slice(0, 1000) : "";
+    const updatedAt = typeof item.updatedAt === "string" ? item.updatedAt : new Date().toISOString();
+    // Hindari duplikat reviewerId — ambil kemunculan terakhir.
+    const existingIdx = result.findIndex((r) => r.reviewerId === reviewerId);
+    const entry: ReviewerScorecard = { reviewerId, reviewerName, scores, summary, updatedAt };
+    if (existingIdx >= 0) result[existingIdx] = entry;
+    else result.push(entry);
+  }
+  return result.slice(0, 6);
+}
+
+/** Parse kolom Interview.assignedReviewerIds (JSON string[] AdminUser id) — aman. */
+export function parseAssignedReviewerIds(raw: string | null | undefined): string[] {
+  if (!raw || typeof raw !== "string") return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of parsed) {
+    if (typeof item !== "string") continue;
+    const id = item.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    result.push(id);
+    if (result.length >= 6) break;
+  }
+  return result;
+}
+
+/**
+ * Hitung ulang skor gabungan (Interview.scores) dari daftar reviewerScorecard:
+ * rata-rata per kriteria lintas reviewer (memakai averageScoresAcrossSessions).
+ * Mengembalikan objek kosong bila belum ada reviewer yang mengisi skor apa pun.
+ */
+export function mergeReviewerScorecards(
+  scorecards: ReviewerScorecard[],
+): Record<string, number> {
+  return averageScoresAcrossSessions(scorecards.map((s) => s.scores));
 }

@@ -444,6 +444,18 @@ export type StructuredExperience = {
   generatedAt: string;
 };
 
+/**
+ * NR69 (Fitur #5) — kartu penilaian satu reviewer dalam sesi wawancara.
+ * Disimpan di kolom Interview.reviewerScorecards sebagai JSON array.
+ */
+export type ReviewerScorecard = {
+  reviewerId: string;
+  reviewerName: string;
+  scores: Record<string, number>; // {kriteria: 1-5}
+  summary: string;
+  updatedAt: string; // ISO
+};
+
 export type Application = {
   id: string;
   name: string;
@@ -1273,6 +1285,9 @@ export type Interview = {
   transcript?: string | null;
   transcriptSummary?: string | null;
   slotId?: string | null; // slot self-service yang dipilih pelamar
+  // NR69 (Fitur #5) — multi-reviewer scorecard (assignment + kartu penilaian individual)
+  assignedReviewerIds?: string[];
+  reviewerScorecards?: ReviewerScorecard[];
 };
 
 /* ------------------------------ Slot wawancara self-service ------------------------------ */

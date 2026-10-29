@@ -9,7 +9,11 @@ import type {
 import { db } from "@/lib/db";
 import { parseHiddenUi } from "@/lib/hidden-ui"; // NR-22 — blok UI tersembunyi per posisi
 import { parseStageHistory } from "@/lib/stage-history"; // NR50 — riwayat tahap utk frontend
-import { parseCriteriaWeights } from "@/lib/scorecard"; // NR44 — bobot scorecard
+import {
+  parseAssignedReviewerIds,
+  parseCriteriaWeights,
+  parseReviewerScorecards,
+} from "@/lib/scorecard"; // NR44 + NR69 — bobot & multi-reviewer scorecard
 import { parsePositionStageNotes } from "@/lib/stage-notes";
 import { parseStageWipLimits } from "@/lib/wip-limits";
 import {
@@ -799,6 +803,9 @@ export function serializeInterview(record: InterviewRecordModel): Interview {
       : null,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+    // NR69 (Fitur #5) — multi-reviewer scorecard (assignment + kartu penilaian individual)
+    assignedReviewerIds: parseAssignedReviewerIds(record.assignedReviewerIds),
+    reviewerScorecards: parseReviewerScorecards(record.reviewerScorecards),
   };
 }
 
