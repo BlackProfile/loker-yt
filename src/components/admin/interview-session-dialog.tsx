@@ -331,6 +331,41 @@ function InterviewSessionDialogInner({
   const showLinkField = mode === "ONLINE";
   const showAddressField = mode === "ONSITE";
 
+  // NR69 (Fitur #5) — Ambil daftar admin users sekali saat mode edit (untuk pemilihan reviewer).
+  // Hanya OWNER/HR yang dapat menugaskan reviewer; VIEWER tetap bisa melihat kartu tersimpan.
+  useEffect(() => {
+    if (isCreate || !canMutate) return;
+    let cancelled = false;
+    apiGet<AdminUser[]>("/api/admin/users")
+      .then((users) => {
+        if (cancelled) return;
+        // Hanya tampilkan akun aktif.
+        setReviewerUsers(users.filter((u) => u.isActive));
+      })
+      .catch(() => {
+        // silent — fitur reviewer opsional
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCreate, canMutate]);
+
+  // NR69 (Fitur #5) — Pilih reviewer aktif default = reviewer terassign pertama.
+  useEffect(() => {
+    if (!isCreate && assignedReviewerIds.length > 0 && !activeReviewerId) {
+      setActiveReviewerId(assignedReviewerIds[0]);
+    }
+  }, [isCreate, assignedReviewerIds, activeReviewerId]);
+
+  // NR69 (Fitur #5) — Sinkronkan state saat sesi berganti (prop interview diganti).
+  useEffect(() => {
+    if (!interview) return;
+    setAssignedReviewerIds([...(interview.assignedReviewerIds ?? [])]);
+    setReviewerScorecards([...(interview.reviewerScorecards ?? [])]);
+    setReviewerDrafts({});
+    setActiveReviewerId(interview.assignedReviewerIds?.[0] ?? "");
+  }, [interview?.id, interview?.updatedAt]);
+
   // Isi otomatis alamat kantor dari posisi saat mode on-site dipakai dan alamat
   // masih kosong (tetap bisa diedit manual). Berlaku untuk sesi baru maupun edit.
   useEffect(() => {
@@ -804,6 +839,127 @@ function InterviewSessionDialogInner({
       if (ok) toast.success("Pesan undangan disalin ke clipboard");
       else toast.error("Gagal menyalin ke clipboard");
     });
+  }
+
+  /* --------- NR69 (Fitur #5) — Multi-reviewer scorecard handlers --------- */
+
+  /** Centang/hapus keanggotaan reviewer dari daftar penugasan. */
+  function toggleReviewer(id: string, checked: boolean) {
+    setAssignedReviewerIds((prev) => {
+      if (checked) {
+        if (prev.length >= 6) {
+          toast.error("Maksimal 6 reviewer per sesi.");
+          return prev;
+        }
+        if (prev.includes(id)) return prev;
+        const next = [...prev, id];
+        // Auto-pilih reviewer pertama yang ditambahkan.
+        if (!activeReviewerId) setActiveReviewerId(id);
+        return next;
+      }
+      return prev.filter((x) => x !== id);
+    });
+  }
+
+  /** Simpan penugasan reviewer ke server (PATCH /api/admin/interviews/[id]/scorecards). */
+  async function saveReviewerAssignment() {
+    if (reviewerAssignSaving || !interview) return;
+    setReviewerAssignSaving(true);
+    try {
+      const res = await apiPatch<{ interview: Interview }>(
+        `/api/admin/interviews/${interview.id}/scorecards`,
+        { assignedReviewerIds },
+      );
+      onSaved(res.interview);
+      toast.success("Penugasan reviewer disimpan");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setReviewerAssignSaving(false);
+    }
+  }
+
+  /** Ambil draf skor untuk reviewer aktif (gabungan kartu tersimpan + perubahan draf). */
+  function reviewerDraftFor(id: string): { scores: Record<string, number>; summary: string } {
+    const saved = reviewerScorecards.find((s) => s.reviewerId === id);
+    const draft = reviewerDrafts[id];
+    if (draft) return draft;
+    return {
+      scores: saved ? { ...saved.scores } : {},
+      summary: saved?.summary ?? "",
+    };
+  }
+
+  /** Update satu skor kriteria untuk reviewer aktif. */
+  function setReviewerScore(criterion: string, value: number) {
+    if (!activeReviewerId) return;
+    setReviewerDrafts((prev) => {
+      const current = prev[activeReviewerId] ?? reviewerDraftFor(activeReviewerId);
+      return {
+        ...prev,
+        [activeReviewerId]: {
+          scores: { ...current.scores, [criterion]: value },
+          summary: current.summary,
+        },
+      };
+    });
+  }
+
+  /** Update ringkasan teks untuk reviewer aktif. */
+  function setReviewerSummary(text: string) {
+    if (!activeReviewerId) return;
+    setReviewerDrafts((prev) => {
+      const current = prev[activeReviewerId] ?? reviewerDraftFor(activeReviewerId);
+      return {
+        ...prev,
+        [activeReviewerId]: {
+          scores: { ...current.scores },
+          summary: text.slice(0, 1000),
+        },
+      };
+    });
+  }
+
+  /** Simpan draf penilaian reviewer aktif ke server (POST /scorecards). */
+  async function saveReviewerScorecard() {
+    if (reviewerSaving || !interview || !activeReviewerId) return;
+    const draft = reviewerDrafts[activeReviewerId] ?? reviewerDraftFor(activeReviewerId);
+    const scores = Object.fromEntries(
+      Object.entries(draft.scores).filter(
+        ([, v]) => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 5,
+      ),
+    );
+    if (Object.keys(scores).length === 0) {
+      toast.error("Isi minimal satu kriteria skor (1-5) sebelum menyimpan.");
+      return;
+    }
+    setReviewerSaving(true);
+    try {
+      const res = await apiPost<{
+        interview: Interview;
+        reviewerScorecards: ReviewerScorecard[];
+        mergedScores: Record<string, number>;
+      }>(`/api/admin/interviews/${interview.id}/scorecards`, {
+        reviewerId: activeReviewerId,
+        scores,
+        summary: draft.summary.trim(),
+      });
+      setReviewerScorecards(res.reviewerScorecards);
+      // Update scoreValues (skor gabungan) agar tampil live di scorecard lama juga.
+      setScoreValues(res.mergedScores ?? {});
+      // Hapus draf yang baru disimpan.
+      setReviewerDrafts((prev) => {
+        const next = { ...prev };
+        delete next[activeReviewerId];
+        return next;
+      });
+      onSaved(res.interview);
+      toast.success("Penilaian reviewer disimpan");
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setReviewerSaving(false);
+    }
   }
 
   /* --------------------------------- Render --------------------------------- */
