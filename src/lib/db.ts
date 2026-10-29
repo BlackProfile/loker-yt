@@ -1,8 +1,30 @@
 import { PrismaClient } from '@prisma/client'
 
+// NR70 — version pembangun schema: bila berubah (mis. model baru ditambahkan
+// & `db:push` membangun ulang client), instance PrismaClient global di-restart
+// agar runtime memakai schema terbaru. Tanpa ini, instance lama (tanpa model
+// baru) tetap dipakai lintas hot-reload Next.js dev server.
+const SCHEMA_BUILD_VERSION = 'nr70-referral-1'
+
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
+  prismaSchemaVersion?: string
 }
+
+// Versi berubah -> tutup instance lama & buat ulang agar client runtime
+// mengenali skema (mis. unique constraint baru) yang dihasilkan terbaru.
+if (
+  globalForPrisma.prisma &&
+  globalForPrisma.prismaSchemaVersion !== SCHEMA_BUILD_VERSION
+) {
+  try {
+    void globalForPrisma.prisma.$disconnect()
+  } catch {
+    // abaikan: operasi fire-and-forget
+  }
+  globalForPrisma.prisma = undefined
+}
+globalForPrisma.prismaSchemaVersion = SCHEMA_BUILD_VERSION
 
 export const db =
   globalForPrisma.prisma ??
