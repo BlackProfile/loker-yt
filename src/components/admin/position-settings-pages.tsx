@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
   BadgeCheck,
+  Ban,
   CalendarClock,
   Check,
   ClipboardCheck,
@@ -61,6 +62,8 @@ import {
   INTERVIEW_PLATFORM_LABELS,
   INTERVIEW_PLATFORMS,
   ONSITE_DOC_PRESETS,
+  REJECTION_REASON_LABELS,
+  REJECTION_REASONS,
   STAGE_CATEGORIES,
   STAGE_CATEGORY_LABELS,
   type InterviewMode,
@@ -784,6 +787,10 @@ type SelectionState = {
   aiCriteria: string;
   autoShortlistScore: string;
   autoShortlistStage: string; // "" = nonaktif
+  // NR68 — auto-reject berbasis AI (opt-in per posisi).
+  autoRejectEnabled: boolean;
+  autoRejectScore: string; // "" = pakai rekomendasi TIDAK_COCCOK
+  autoRejectReason: string; // "" = KUALIFIKASI (default)
   assignmentTitle: string;
   assignmentUrl: string;
   assignmentNote: string;
@@ -807,6 +814,9 @@ function buildSelectionState(p: Position): SelectionState {
     hiddenUi: [...p.hiddenUi], // NR-22
     autoShortlistScore: p.autoShortlistScore == null ? "" : String(p.autoShortlistScore),
     autoShortlistStage: p.autoShortlistStage ?? "",
+    autoRejectEnabled: p.autoRejectEnabled ?? false,
+    autoRejectScore: p.autoRejectScore == null ? "" : String(p.autoRejectScore),
+    autoRejectReason: p.autoRejectReason ?? "",
     assignmentTitle: p.assignment.title ?? "",
     assignmentUrl: p.assignment.url ?? "",
     assignmentNote: p.assignment.note ?? "",
@@ -921,6 +931,14 @@ export function PositionSelectionPage({
           )
             errors.push("Skor auto-shortlist harus angka bulat 0-100, atau dikosongkan.");
         }
+        if (form.autoRejectEnabled && form.autoRejectScore.trim() !== "") {
+          if (
+            !isInt(form.autoRejectScore) ||
+            Number(form.autoRejectScore) < 0 ||
+            Number(form.autoRejectScore) > 100
+          )
+            errors.push("Skor auto-reject harus angka bulat 0-100, atau dikosongkan.");
+        }
         // NR-40 — ambang hari mengendap kanban: kosong = bawaan 7, else 0-90.
         if (form.agingWarnDays.trim() !== "") {
           if (
@@ -948,6 +966,11 @@ export function PositionSelectionPage({
           form.autoShortlistScore.trim() === "" ? null : Number(form.autoShortlistScore),
         autoShortlistStage:
           cleanedStages.length === 0 ? null : form.autoShortlistStage || null,
+        // NR68 — auto-reject (opt-in per posisi)
+        autoRejectEnabled: form.autoRejectEnabled,
+        autoRejectScore:
+          form.autoRejectScore.trim() === "" ? null : Number(form.autoRejectScore),
+        autoRejectReason: form.autoRejectReason.trim() || null,
         // NR-40 — kosong = null (server memakai bawaan 7 hari)
         agingWarnDays: form.agingWarnDays.trim() === "" ? null : Number(form.agingWarnDays.trim()),
         assignmentTitle: form.assignmentTitle.trim() || null,
@@ -1202,6 +1225,76 @@ export function PositionSelectionPage({
                 : "Lamaran dipindah ke tahap ini saat ambang skor tercapai."}
             </p>
           </div>
+        </div>
+      </FormSection>
+
+      {/* NR68 — Auto-reject berbasis AI (opt-in per posisi) */}
+      <FormSection
+        id="auto-reject"
+        icon={Ban}
+        title="Auto-Reject"
+        hint="Tolak otomatis lamaran Baru dengan skor AI rendah / rekomendasi Kurang Cocok."
+        hasError={hasErr("auto-reject")}
+      >
+        <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Tolak lamaran berbasis AI secara otomatis</p>
+              <p className="text-xs text-muted-foreground">
+                Lamaran Baru yang terpicu akan ditolak + dikirim email penolakan sopan. Tidak saling membatalkan dengan auto-shortlist.
+              </p>
+            </div>
+            <Switch
+              checked={form.autoRejectEnabled}
+              onCheckedChange={(v) => set("autoRejectEnabled", v)}
+              aria-label="Aktifkan auto-reject berbasis AI"
+            />
+          </div>
+          {form.autoRejectEnabled ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="pos-rejectScore">Ambang Skor Auto-Reject (opsional)</Label>
+                <Input
+                  id="pos-rejectScore"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={form.autoRejectScore}
+                  onChange={(e) => set("autoRejectScore", e.target.value)}
+                  placeholder="mis. 30"
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lamaran dengan skor di bawah angka ini ditolak. Kosongkan untuk memakai rekomendasi AI “Kurang Cocok”.
+                </p>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Alasan Penolakan</Label>
+                <Select
+                  value={form.autoRejectReason || SHORTLIST_NONE}
+                  onValueChange={(v) =>
+                    set("autoRejectReason", v === SHORTLIST_NONE ? "" : v)
+                  }
+                >
+                  <SelectTrigger className="h-10 w-full" aria-label="Alasan auto-reject">
+                    <SelectValue placeholder="KUALIFIKASI (default)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={SHORTLIST_NONE}>KUALIFIKASI (default)</SelectItem>
+                    {REJECTION_REASONS.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {REJECTION_REASON_LABELS[r]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Alasan terstruktur yang tercatat di lamaran &amp; ditampilkan ke pelamar.
+                </p>
+              </div>
+            </div>
+          ) : null}
         </div>
       </FormSection>
 
