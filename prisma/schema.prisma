@@ -76,6 +76,7 @@ model Position {
   salaryVisible Boolean    @default(false)
   benefits      String     @default("[]") // JSON string[] URL contoh karya (YouTube/TikTok/IG)
   examples      String     @default("[]") // JSON string[]
+  selectionTips String     @default("[]") // NR68 (#15) — JSON string[] kiat lamar per posisi (detail lowongan)
   urgent        Boolean    @default(false) // badge "Urgent"
   featured      Boolean    @default(false) // pin di urutan atas
 

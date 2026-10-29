@@ -289,6 +289,7 @@ export type Position = {
   salaryVisible: boolean;
   benefits: string[];
   examples: string[]; // URL contoh karya (YouTube/TikTok/Instagram)
+  selectionTips: string[]; // NR68 (#15) — kiat lamar per posisi (tampil di detail lowongan)
   urgent: boolean;
   featured: boolean;
 

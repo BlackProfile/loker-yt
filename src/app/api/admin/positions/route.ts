@@ -101,6 +101,7 @@ export async function POST(req: NextRequest) {
         salaryVisible: f.salaryVisible ?? false,
         benefits: JSON.stringify(f.benefits ?? []),
         examples: JSON.stringify(f.examples ?? []),
+        selectionTips: JSON.stringify(f.selectionTips ?? []),
         urgent: f.urgent ?? false,
         featured: f.featured ?? false,
 

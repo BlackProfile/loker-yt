@@ -416,6 +416,7 @@ export function serializePosition(record: PositionRecordModel): Position {
     salaryVisible: record.salaryVisible,
     benefits: parseRequirements(record.benefits),
     examples: parseRequirements(record.examples),
+    selectionTips: parseRequirements(record.selectionTips),
     urgent: record.urgent,
     featured: record.featured,
 
@@ -1491,6 +1492,7 @@ async function runSeed(): Promise<void> {
           salaryVisible: position.salaryVisible ?? false,
           benefits: JSON.stringify(position.benefits ?? []),
           examples: JSON.stringify(position.examples ?? []),
+          selectionTips: JSON.stringify(position.selectionTips ?? []),
           urgent: position.urgent ?? false,
           featured: position.featured ?? false,
           screeningQuestions: JSON.stringify(position.screeningQuestions ?? []),

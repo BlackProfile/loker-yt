@@ -68,6 +68,7 @@ export type PositionFields = {
   salaryVisible?: boolean;
   benefits?: string[];
   examples?: string[];
+  selectionTips?: string[]; // NR68 (#15) — kiat lamar per posisi
   urgent?: boolean;
   featured?: boolean;
   screeningQuestions?: string; // JSON string {id,label,required}[]
@@ -623,6 +624,13 @@ export async function sanitizePositionInput(
   if (!examples.ok) return examples;
   if (examples.value !== undefined) f.examples = examples.value;
 
+  // NR68 (#15) — kiat lamar per posisi (teks bebas, bukan URL).
+  const selectionTips = sanitizeStringList(data.selectionTips, {
+    name: "Kiat lamar", maxItems: 8, minLen: 2, maxLen: 200,
+  });
+  if (!selectionTips.ok) return selectionTips;
+  if (selectionTips.value !== undefined) f.selectionTips = selectionTips.value;
+
   const customDocs = sanitizeStringList(data.customDocs, {
     name: "Dokumen wajib", maxItems: 8, minLen: 2, maxLen: 80,
   });
@@ -1034,6 +1042,7 @@ export function positionFieldsToDb(f: PositionFields): Prisma.PositionUpdateInpu
   if (f.salaryVisible !== undefined) out.salaryVisible = f.salaryVisible;
   if (f.benefits !== undefined) out.benefits = JSON.stringify(f.benefits);
   if (f.examples !== undefined) out.examples = JSON.stringify(f.examples);
+  if (f.selectionTips !== undefined) out.selectionTips = JSON.stringify(f.selectionTips);
   if (f.urgent !== undefined) out.urgent = f.urgent;
   if (f.featured !== undefined) out.featured = f.featured;
   if (f.screeningQuestions !== undefined) out.screeningQuestions = f.screeningQuestions;
