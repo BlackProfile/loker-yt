@@ -65,6 +65,7 @@ import {
   type SectionVisibility,
   type SiteContent,
   type TeamMember,
+  type WorkCultureContent,
   type ExtraDoc,
   WORK_MODES,
   SHIFT_SYSTEMS,
@@ -1050,6 +1051,33 @@ export function sanitizeSelectionContent(value: unknown): SelectionContent | nul
   };
 }
 
+// NR68 (#13) — sanitasi konten section "Bekerja di Lumina".
+const MAX_WORKCULTURE_ITEMS = 8;
+export function sanitizeWorkCultureContent(value: unknown): WorkCultureContent | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const obj = value as Record<string, unknown>;
+  if (!Array.isArray(obj.items)) return null;
+  const items: WorkCultureContent["items"] = [];
+  for (const raw of obj.items) {
+    if (items.length >= MAX_WORKCULTURE_ITEMS) break;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const it = raw as Record<string, unknown>;
+    const title = typeof it.title === "string" ? it.title.trim().slice(0, 120) : "";
+    if (!title) continue;
+    items.push({
+      title,
+      description: typeof it.description === "string" ? it.description.trim().slice(0, 400) : "",
+    });
+  }
+  if (items.length === 0) return null;
+  return {
+    badge: typeof obj.badge === "string" ? obj.badge.trim().slice(0, 60) : "",
+    title: typeof obj.title === "string" ? obj.title.trim().slice(0, 120) : "",
+    desc: typeof obj.desc === "string" ? obj.desc.trim().slice(0, 400) : "",
+    items,
+  };
+}
+
 /**
  * Normalisasi objek konten situs menjadi `SiteContent` lengkap.
  * Field yang tidak valid/tidak ada diambil dari `fallback` — sehingga field baru
@@ -1140,6 +1168,11 @@ export function sanitizeSiteContent(value: unknown, fallback: SiteContent = DEFA
       obj.selection === undefined
         ? fallback.selection
         : sanitizeSelectionContent(obj.selection),
+    // NR68 (#13) — konten "Bekerja di Lumina": undefined = fallback, null/invalid = null (section sembunyi).
+    workCulture:
+      obj.workCulture === undefined
+        ? fallback.workCulture
+        : sanitizeWorkCultureContent(obj.workCulture),
     sections: sanitizeSections(obj.sections, fallback.sections),
   };
 }

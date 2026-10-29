@@ -75,6 +75,13 @@ export async function PUT(req: NextRequest) {
     ) {
       return NextResponse.json({ error: "Konten proses seleksi tidak valid." }, { status: 400 });
     }
+    if (
+      siteObj.workCulture !== undefined &&
+      siteObj.workCulture !== null &&
+      (typeof siteObj.workCulture !== "object" || Array.isArray(siteObj.workCulture))
+    ) {
+      return NextResponse.json({ error: "Konten budaya kerja tidak valid." }, { status: 400 });
+    }
 
     const currentSetting = await db.setting.findUnique({ where: { key: "site" } });
     const merged = sanitizeSiteContent(siteObj, parseSiteContent(currentSetting?.value));
