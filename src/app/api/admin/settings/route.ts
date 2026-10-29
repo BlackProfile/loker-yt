@@ -68,6 +68,13 @@ export async function PUT(req: NextRequest) {
     if (siteObj.teamMembers !== undefined && !Array.isArray(siteObj.teamMembers)) {
       return NextResponse.json({ error: "Daftar anggota tim harus berupa array." }, { status: 400 });
     }
+    if (
+      siteObj.selection !== undefined &&
+      siteObj.selection !== null &&
+      (typeof siteObj.selection !== "object" || Array.isArray(siteObj.selection))
+    ) {
+      return NextResponse.json({ error: "Konten proses seleksi tidak valid." }, { status: 400 });
+    }
 
     const currentSetting = await db.setting.findUnique({ where: { key: "site" } });
     const merged = sanitizeSiteContent(siteObj, parseSiteContent(currentSetting?.value));

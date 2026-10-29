@@ -1144,7 +1144,7 @@ function LandingShell({
           ) : null}
           {sections.about ? <AboutSection content={content} /> : null}
           {sections.benefits ? <BenefitsSection content={content} /> : null}
-          {sections.steps ? <SelectionProcessSection /> : null}
+          {sections.steps ? <SelectionProcessSection content={content} /> : null}
           {sections.statusCheck ? <StatusCheckSection /> : null}
           {sections.testimonials ? <VoicesSection content={content} /> : null}
           {sections.faq ? <FaqSection content={content} /> : null}

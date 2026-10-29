@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useLang } from "@/components/landing/lang-context";
+import type { SiteContent } from "@/lib/types";
 import {
   Container,
   FadeIn,
@@ -41,8 +42,11 @@ const STAGE_ICONS = [
   Rocket,
 ] as const;
 
-export function SelectionProcessSection() {
+export function SelectionProcessSection({ content }: { content: SiteContent }) {
   const { t } = useLang();
+  // Konten kustom admin menimpa teks kamus bila diisi; label UI chrome
+  // (tombol kiat, CTA) tetap dari kamus agar tetap ikut bahasa aktif.
+  const sel = content.selection ?? t.selection;
   // Hanya SATU kumpulan kiat yang terbuka pada satu waktu (null = semua lipat).
   const [openTipsIndex, setOpenTipsIndex] = useState<number | null>(null);
 
@@ -51,22 +55,22 @@ export function SelectionProcessSection() {
       <Container>
         <FadeIn className="max-w-2xl">
           <Badge variant="outline" className={ROSE_BADGE}>
-            {t.selection.badge}
+            {sel.badge}
           </Badge>
           <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">
-            {t.selection.title}
+            {sel.title}
           </h2>
-          <p className="mt-3 text-muted-foreground">{t.selection.desc}</p>
+          <p className="mt-3 text-muted-foreground">{sel.desc}</p>
         </FadeIn>
 
-        {/* NR62 — grid 3×2 (xl:grid-cols-6 dihapus: kartu terlalu sempit); nomor
-            besar "ghost" diganti nomor kecil di samping tile ikon. */}
+        {/* NR67 — tahap berasal dari konten kustom admin (site.selection) atau
+            teks kamus; jumlah tahap fleksibel, ikon siklus mengikuti urutan. */}
         <Stagger className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {t.selection.stages.map((stage, index) => {
+          {sel.stages.map((stage, index) => {
             const Icon = STAGE_ICONS[index % STAGE_ICONS.length];
             const tipsOpen = openTipsIndex === index;
             return (
-              <StaggerItem key={stage.title} className="h-full">
+              <StaggerItem key={index} className="h-full">
                 <HoverLift className="h-full">
                   <Card className="h-full gap-3 rounded-2xl p-6 transition-shadow hover:shadow-md">
                     <div className="flex items-center justify-between">

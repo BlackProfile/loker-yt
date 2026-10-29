@@ -55,6 +55,8 @@ import {
   type RejectionReason,
   type ReplyTemplates,
   type ScreeningQuestion,
+  type SelectionContent,
+  type SelectionStage,
   type StageCategory,
   type SectionVisibility,
   type SiteContent,
@@ -938,6 +940,53 @@ export function sanitizeSections(value: unknown, fallback: SectionVisibility): S
   return result;
 }
 
+// Batas wajar konten kustom "Proses Seleksi" (mencegah payload tak terbatas).
+const MAX_SELECTION_STAGES = 10;
+const MAX_SELECTION_TIPS = 6;
+
+/**
+ * Normalisasi konten kustom section "Proses Seleksi".
+ * Mengembalikan null bila data tidak valid / tidak punya tahap — penelepon
+ * memutuskan sendiri apakah null berarti "teks bawaan".
+ */
+export function sanitizeSelectionContent(value: unknown): SelectionContent | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const obj = value as Record<string, unknown>;
+  if (!Array.isArray(obj.stages)) return null;
+
+  const stages: SelectionStage[] = [];
+  for (const raw of obj.stages) {
+    if (stages.length >= MAX_SELECTION_STAGES) break;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const s = raw as Record<string, unknown>;
+    const title = typeof s.title === "string" ? s.title.trim().slice(0, 120) : "";
+    if (!title) continue; // tahap tanpa judul dibuang
+    const tips: string[] = [];
+    if (Array.isArray(s.tips)) {
+      for (const tip of s.tips) {
+        if (tips.length >= MAX_SELECTION_TIPS) break;
+        if (typeof tip !== "string") continue;
+        const clean = tip.trim().slice(0, 200);
+        if (clean) tips.push(clean);
+      }
+    }
+    stages.push({
+      title,
+      description: typeof s.description === "string" ? s.description.trim().slice(0, 400) : "",
+      duration: typeof s.duration === "string" ? s.duration.trim().slice(0, 60) : "",
+      tips,
+    });
+  }
+  if (stages.length === 0) return null;
+
+  return {
+    badge: typeof obj.badge === "string" ? obj.badge.trim().slice(0, 60) : "",
+    title: typeof obj.title === "string" ? obj.title.trim().slice(0, 120) : "",
+    desc: typeof obj.desc === "string" ? obj.desc.trim().slice(0, 400) : "",
+    stages,
+  };
+}
+
 /**
  * Normalisasi objek konten situs menjadi `SiteContent` lengkap.
  * Field yang tidak valid/tidak ada diambil dari `fallback` — sehingga field baru
@@ -1022,6 +1071,12 @@ export function sanitizeSiteContent(value: unknown, fallback: SiteContent = DEFA
     telegramQuotaAlerts: sanitizeNumberMap(obj.telegramQuotaAlerts),
     recruitmentClosed: pickBoolean(obj, "recruitmentClosed", fallback.recruitmentClosed),
     recruitmentClosedMessage: pickString(obj, "recruitmentClosedMessage", fallback.recruitmentClosedMessage),
+    // Konten kustom "Proses Seleksi": undefined = field lama (pakai fallback),
+    // null = reset ke teks bawaan, objek = hasil sanitasi (invalid -> null).
+    selection:
+      obj.selection === undefined
+        ? fallback.selection
+        : sanitizeSelectionContent(obj.selection),
     sections: sanitizeSections(obj.sections, fallback.sections),
   };
 }
