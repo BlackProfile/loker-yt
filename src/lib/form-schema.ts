@@ -173,27 +173,95 @@ export type FormField = {
   group?: string; // sub-kelompok visual dalam satu langkah (header kecil)
   groupEn?: string;
   autocomplete?: string; // hint isi-otomatis browser (whitelist FORM_AUTOCOMPLETE_KEYS)
-  showIf?: { fieldId: string; values: string[] }; // tampil hanya bila jawaban field pilihan cocok
+  // NR69 (Fitur #7) — syarat tampil multi-kondisi (AND). Bentuk baru:
+  //   {conditions: [{fieldId, values[]}, ...]} — semua kondisi harus cocok.
+  // Bentuk lama {fieldId, values[]} tetap diterima (lihat normalizeShowIf).
+  showIf?: ShowIfSpec;
 };
 
 /**
- * NR-32 — visibilitas field kondisional terhadap jawaban saat ini.
+ * NR69 (Fitur #7) — satu kondisi tampil (fieldId sumber + nilai opsi yang cocok).
+ */
+export type ShowIfCondition = {
+  fieldId: string;
+  values: string[];
+};
+
+/**
+ * NR69 (Fitur #7) — syarat tampil bersyarat, mendukung banyak kondisi AND.
+ * - Bentuk baru: { conditions: ShowIfCondition[] } — semua kondisi harus cocok.
+ * - Bentuk lama (kompatibilitas mundur): { fieldId, values[] } — dianggap
+ *   satu kondisi.
+ */
+export type ShowIfSpec =
+  | { conditions: ShowIfCondition[] }
+  | { fieldId: string; values: string[] };
+
+/**
+ * NR69 (Fitur #7) — ekstrak daftar kondisi dari `field.showIf` (mendukung
+ * bentuk baru `{conditions: [...]}` maupun bentuk lama `{fieldId, values}`).
+ * Tidak pernah melempar; hasil array kosong berarti field selalu tampil.
+ */
+export function showIfConditions(field: FormField): ShowIfCondition[] {
+  if (!field.showIf) return [];
+  const si = field.showIf;
+  // Bentuk baru: {conditions: [...]}
+  if ("conditions" in si && Array.isArray(si.conditions)) {
+    return si.conditions
+      .map((c) => ({
+        fieldId: typeof c.fieldId === "string" ? c.fieldId : "",
+        values: Array.isArray(c.values)
+          ? c.values
+              .filter((v): v is string => typeof v === "string")
+              .map((v) => v.trim())
+              .filter(Boolean)
+          : [],
+      }))
+      .filter((c) => c.fieldId && c.values.length > 0);
+  }
+  // Bentuk lama: {fieldId, values}
+  if ("fieldId" in si && typeof si.fieldId === "string" && Array.isArray(si.values)) {
+    const values = si.values
+      .filter((v): v is string => typeof v === "string")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    if (si.fieldId && values.length > 0) {
+      return [{ fieldId: si.fieldId, values }];
+    }
+  }
+  return [];
+}
+
+/**
+ * NR69 (Fitur #7) — visibilitas field kondisional terhadap jawaban saat ini.
  * Sumber harus field pilihan (radio/dropdown/checkbox) di bagian yang sama;
  * checkbox dicocokkan bila SALAH SATU nilainya masuk daftar.
+ * Multi-kondisi: SEMUA kondisi harus cocok (AND).
+ * Backward compatible dengan bentuk lama {fieldId, values} tunggal.
  */
 export function isFieldVisible(
   field: FormField,
   answers: Record<string, unknown> | null | undefined,
 ): boolean {
   if (!field.showIf) return true;
-  const raw = answers ? answers[field.showIf.fieldId] : undefined;
-  if (Array.isArray(raw)) {
-    return raw.some(
-      (v) => typeof v === "string" && field.showIf!.values.includes(v.trim()),
-    );
+  const conditions = showIfConditions(field);
+  if (conditions.length === 0) return true;
+  // AND: setiap kondisi harus cocok. Bila satu pun tidak cocok -> field tersembunyi.
+  for (const cond of conditions) {
+    const raw = answers ? answers[cond.fieldId] : undefined;
+    let match: boolean;
+    if (Array.isArray(raw)) {
+      match = raw.some(
+        (v) => typeof v === "string" && cond.values.includes(v.trim()),
+      );
+    } else if (typeof raw === "string") {
+      match = cond.values.includes(raw.trim());
+    } else {
+      match = false;
+    }
+    if (!match) return false;
   }
-  if (typeof raw !== "string") return false;
-  return field.showIf.values.includes(raw.trim());
+  return true;
 }
 
 /** Jenis bagian: tiga bawaan + kustom. Bawaan bisa disembunyikan (tombstone NR-23), kustom bisa dihapus fisik. */
@@ -558,11 +626,15 @@ export function filesConfigFromSchema(schema: FormSchema): {
 const ID_RE = /^[a-z0-9][a-z0-9_-]{1,39}$/i;
 
 /**
- * NR-32 — validasi & rapikan showIf dari input mentah (parse maupun sanitasi).
+ * NR-32 + NR69 (Fitur #7) — validasi & rapikan showIf dari input mentah
+ * (parse maupun sanitasi). Mendukung dua bentuk:
+ *   - Bentuk baru: { conditions: [{fieldId, values[]}, ...] } (AND multi-kondisi).
+ *   - Bentuk lama (kompatibilitas mundur): { fieldId, values[] } tunggal.
  * Source WAJIB field pilihan di bagian yang sama yang muncul SEBELUM field ini
  * (sudah diparse) — mencegah referensi silang/lingkaran. strict=true
  * mengembalikan pesan error (sanitasi server); strict=false memotong diam-diam
- * (parser DB toleran).
+ * (parser DB toleran). Selalu mengembalikan bentuk baru (memakai wrapper
+ * {conditions: [...]} bila ada minimal satu kondisi valid).
  */
 function normalizeShowIf(
   rawShowIf: unknown,
@@ -570,38 +642,81 @@ function normalizeShowIf(
   currentSectionId: string,
   parsedById: Map<string, FormField>,
   strict: boolean,
-): { fieldId: string; values: string[] } | null | string {
+): ShowIfSpec | null | string {
   if (rawShowIf == null) return null;
   if (typeof rawShowIf !== "object" || Array.isArray(rawShowIf)) {
     return strict ? "Syarat tampil harus berupa objek." : null;
   }
   const si = rawShowIf as Record<string, unknown>;
-  const srcId = typeof si.fieldId === "string" && ID_RE.test(si.fieldId) ? si.fieldId : "";
-  if (!srcId) return strict ? "Syarat tampil butuh ID pertanyaan sumber yang valid." : null;
-  if (srcId === currentId) return strict ? "Pertanyaan tidak bisa mensyaratkan dirinya sendiri." : null;
-  const src = parsedById.get(srcId);
-  if (!src) {
-    return strict
-      ? "Syarat tampil harus menunjuk pertanyaan pilihan yang ada SEBELUM pertanyaan ini."
-      : null;
+
+  // Kumpulkan daftar kondisi mentah dari kedua bentuk.
+  type RawCond = { fieldId: unknown; values: unknown };
+  let rawConds: RawCond[] = [];
+  if (Array.isArray(si.conditions)) {
+    rawConds = si.conditions.filter(
+      (c): c is RawCond =>
+        !!c && typeof c === "object" && !Array.isArray(c) && "fieldId" in (c as object),
+    );
+  } else if (typeof si.fieldId === "string") {
+    // Bentuk lama — anggap satu kondisi.
+    rawConds = [{ fieldId: si.fieldId, values: si.values }];
+  } else {
+    // Bukan bentuk yang dikenal.
+    return strict ? "Syarat tampil butuh ID pertanyaan sumber yang valid." : null;
   }
-  if (src.sectionId !== currentSectionId) {
-    return strict ? "Syarat tampil harus dari pertanyaan di bagian yang sama." : null;
+  if (rawConds.length === 0) {
+    return strict ? "Syarat tampil butuh minimal satu kondisi." : null;
   }
-  if (!isChoiceType(src.type)) {
-    return strict ? "Syarat tampil hanya bisa dari pertanyaan pilihan (pilihan ganda/kotak centang/dropdown)." : null;
+  // Batas keras: maks 5 kondisi (cukup untuk skenario umum, anti-penyalahgunaan).
+  if (rawConds.length > 5) {
+    rawConds = rawConds.slice(0, 5);
   }
-  const values = Array.isArray(si.values)
-    ? si.values
-        .filter((v): v is string => typeof v === "string")
-        .map((v) => v.trim())
-        .filter(Boolean)
-    : [];
-  const valid = values.filter((v) => src.options.includes(v));
-  if (valid.length === 0) {
-    return strict ? "Syarat tampil butuh minimal satu nilai opsi yang cocok." : null;
+
+  const conditions: ShowIfCondition[] = [];
+  for (const raw of rawConds) {
+    const srcId =
+      typeof raw.fieldId === "string" && ID_RE.test(raw.fieldId) ? raw.fieldId : "";
+    if (!srcId) {
+      return strict ? "Syarat tampil butuh ID pertanyaan sumber yang valid." : null;
+    }
+    if (srcId === currentId) {
+      return strict ? "Pertanyaan tidak bisa mensyaratkan dirinya sendiri." : null;
+    }
+    const src = parsedById.get(srcId);
+    if (!src) {
+      return strict
+        ? "Syarat tampil harus menunjuk pertanyaan pilihan yang ada SEBELUM pertanyaan ini."
+        : null;
+    }
+    if (src.sectionId !== currentSectionId) {
+      return strict ? "Syarat tampil harus dari pertanyaan di bagian yang sama." : null;
+    }
+    if (!isChoiceType(src.type)) {
+      return strict
+        ? "Syarat tampil hanya bisa dari pertanyaan pilihan (pilihan ganda/kotak centang/dropdown)."
+        : null;
+    }
+    const values = Array.isArray(raw.values)
+      ? raw.values
+          .filter((v): v is string => typeof v === "string")
+          .map((v) => v.trim())
+          .filter(Boolean)
+      : [];
+    const valid = values.filter((v) => src.options.includes(v));
+    if (valid.length === 0) {
+      return strict ? "Syarat tampil butuh minimal satu nilai opsi yang cocok." : null;
+    }
+    conditions.push({
+      fieldId: src.id,
+      values: valid.slice(0, FORM_LIMITS.maxOptions),
+    });
   }
-  return { fieldId: src.id, values: valid.slice(0, FORM_LIMITS.maxOptions) };
+  if (conditions.length === 0) {
+    return strict ? "Syarat tampil butuh minimal satu kondisi valid." : null;
+  }
+  // Selalu kembalikan bentuk baru {conditions: [...]} — backward-compat pada
+  // konsumen (isFieldVisible & showIfConditions membaca kedua bentuk).
+  return { conditions };
 }
 
 /** ID field/section baru yang aman untuk kunci jawaban (dipakai builder di klien). */
